@@ -1,0 +1,296 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "QwenMultiangleCameraNode": {
+      "class": "QwenMultiangleCameraNode",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": true,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "ui"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/multiangle",
+          "description": "Interactive 3D camera angle control for multi-angle image generation",
+          "display_name": "Qwen Multiangle Camera",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "node_id": "QwenMultiangleCameraNode",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id",
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": "Horizontal Angle",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "horizontal_angle",
+              "lazy": null,
+              "max": 360,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Camera azimuth angle (0-360\u00b0)",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": "Vertical Angle",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "vertical_angle",
+              "lazy": null,
+              "max": 60,
+              "min": -30,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Camera elevation angle (-30\u00b0 to 60\u00b0)",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 5.0,
+              "display_mode": null,
+              "display_name": "Zoom",
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "zoom",
+              "lazy": null,
+              "max": 10.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.1,
+              "tooltip": "Camera distance (0=wide, 10=close-up)",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Default Prompts",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "default_prompts",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Deprecated, kept for backward compatibility",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Camera View",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "camera_view",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Toggle camera perspective preview",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional input image to display in the 3D scene"
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "Prompt",
+              "id": "prompt",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "Camera Info",
+              "id": "camera_info",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LOAD3D_CAMERA",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "QwenMultiangleCameraTranslateNode": {
+      "class": "QwenMultiangleCameraTranslateNode",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/multiangle",
+          "description": "Translate camera/shot terms in a prompt to a target language via a maintained glossary; non-camera words pass through.",
+          "display_name": "Qwen Multiangle Camera Translate",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "QwenMultiangleCameraTranslateNode",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": "Prompt",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "prompt",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Prompt text containing camera terms to translate (link from the camera node, or paste text)",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "\u4e2d\u6587 (Chinese)",
+              "display_name": "Target Language",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "target_language",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "\u4e2d\u6587 (Chinese)",
+                "\u65e5\u672c\u8a9e (Japanese)",
+                "\ud55c\uad6d\uc5b4 (Korean)",
+                "English"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Language to translate camera terms into. Only glossary phrases are translated; everything else is untouched. Select English for a pass-through.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "Prompt",
+              "id": "prompt",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "js"
+}

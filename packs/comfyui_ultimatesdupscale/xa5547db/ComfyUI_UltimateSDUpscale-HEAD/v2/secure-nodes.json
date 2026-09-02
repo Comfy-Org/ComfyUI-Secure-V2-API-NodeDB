@@ -1,0 +1,2467 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "UltimateSDUpscale": {
+      "class": "UltimateSDUpscaleSecure_26cfe40d3b",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "sample"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/upscaling",
+          "description": "",
+          "display_name": "Ultimate SD Upscale",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UltimateSDUpscale",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to upscale."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The model to use for image-to-image."
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "positive",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The positive conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "negative",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The negative conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "vae",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The VAE model to use for tiles."
+            },
+            "io_type": "VAE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "upscale_by",
+              "lazy": null,
+              "max": 4,
+              "min": 0.05,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "The factor to upscale the image by.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 18446744073709551615,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The seed to use for image-to-image.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 20,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "steps",
+              "lazy": null,
+              "max": 10000,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of steps to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 8.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "cfg",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The CFG scale to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "euler",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sampler_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "euler",
+                "euler_cfg_pp",
+                "euler_ancestral",
+                "euler_ancestral_cfg_pp",
+                "heun",
+                "heunpp2",
+                "exp_heun_2_x0",
+                "exp_heun_2_x0_sde",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "dpm_fast",
+                "dpm_adaptive",
+                "dpmpp_2s_ancestral",
+                "dpmpp_2s_ancestral_cfg_pp",
+                "dpmpp_sde",
+                "dpmpp_sde_gpu",
+                "dpmpp_2m",
+                "dpmpp_2m_cfg_pp",
+                "dpmpp_2m_sde",
+                "dpmpp_2m_sde_gpu",
+                "dpmpp_2m_sde_heun",
+                "dpmpp_2m_sde_heun_gpu",
+                "dpmpp_3m_sde",
+                "dpmpp_3m_sde_gpu",
+                "ddpm",
+                "lcm",
+                "ipndm",
+                "ipndm_v",
+                "deis",
+                "res_multistep",
+                "res_multistep_cfg_pp",
+                "res_multistep_ancestral",
+                "res_multistep_ancestral_cfg_pp",
+                "gradient_estimation",
+                "gradient_estimation_cfg_pp",
+                "er_sde",
+                "seeds_2",
+                "seeds_3",
+                "sa_solver",
+                "sa_solver_pece",
+                "ddim",
+                "uni_pc",
+                "uni_pc_bh2"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The sampler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "simple",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scheduler",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "karras",
+                "exponential",
+                "ddim_uniform",
+                "beta",
+                "normal",
+                "linear_quadratic",
+                "kl_optimal"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The scheduler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "upscale_model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The upscaler model for upscaling the image."
+            },
+            "io_type": "UPSCALE_MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Linear",
+                "Chess",
+                "None"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The tiling order to use for the redraw step.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_height",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The height of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply between tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "None",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "None",
+                "Band Pass",
+                "Half Tile",
+                "Half Tile + Intersections"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The seam fix mode to use.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "seam_fix_denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for the seam fix.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of the bands used for the Band Pass seam fix mode.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the seam fix mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 16,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply for the seam fix tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "force_uniform_tiles",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Force all tiles to be the same as the set tile size, even when tiles could be smaller. This can help prevent the model from working with irregular tile sizes.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiled_decode",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use tiled decoding when decoding tiles.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of tiles to process in a batch. Higher values can reduce processing time but use more VRAM. Yields different results than individual tiles. Only affects the main redraw step, not the seam fix step.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "output_0",
+              "is_output_list": false,
+              "tooltip": "The final upscaled image."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "UltimateSDUpscaleCustomSample": {
+      "class": "UltimateSDUpscaleCustomSampleSecure_05a4008c73",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "sample"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/upscaling",
+          "description": "",
+          "display_name": "Ultimate SD Upscale (Custom Sample)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UltimateSDUpscaleCustomSample",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to upscale."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The model to use for image-to-image."
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "positive",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The positive conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "negative",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The negative conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "vae",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The VAE model to use for tiles."
+            },
+            "io_type": "VAE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "upscale_by",
+              "lazy": null,
+              "max": 4,
+              "min": 0.05,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "The factor to upscale the image by.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 18446744073709551615,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The seed to use for image-to-image.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 20,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "steps",
+              "lazy": null,
+              "max": 10000,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of steps to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 8.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "cfg",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The CFG scale to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "euler",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sampler_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "euler",
+                "euler_cfg_pp",
+                "euler_ancestral",
+                "euler_ancestral_cfg_pp",
+                "heun",
+                "heunpp2",
+                "exp_heun_2_x0",
+                "exp_heun_2_x0_sde",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "dpm_fast",
+                "dpm_adaptive",
+                "dpmpp_2s_ancestral",
+                "dpmpp_2s_ancestral_cfg_pp",
+                "dpmpp_sde",
+                "dpmpp_sde_gpu",
+                "dpmpp_2m",
+                "dpmpp_2m_cfg_pp",
+                "dpmpp_2m_sde",
+                "dpmpp_2m_sde_gpu",
+                "dpmpp_2m_sde_heun",
+                "dpmpp_2m_sde_heun_gpu",
+                "dpmpp_3m_sde",
+                "dpmpp_3m_sde_gpu",
+                "ddpm",
+                "lcm",
+                "ipndm",
+                "ipndm_v",
+                "deis",
+                "res_multistep",
+                "res_multistep_cfg_pp",
+                "res_multistep_ancestral",
+                "res_multistep_ancestral_cfg_pp",
+                "gradient_estimation",
+                "gradient_estimation_cfg_pp",
+                "er_sde",
+                "seeds_2",
+                "seeds_3",
+                "sa_solver",
+                "sa_solver_pece",
+                "ddim",
+                "uni_pc",
+                "uni_pc_bh2"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The sampler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "simple",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scheduler",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "karras",
+                "exponential",
+                "ddim_uniform",
+                "beta",
+                "normal",
+                "linear_quadratic",
+                "kl_optimal"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The scheduler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Linear",
+                "Chess",
+                "None"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The tiling order to use for the redraw step.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_height",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The height of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply between tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "None",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "None",
+                "Band Pass",
+                "Half Tile",
+                "Half Tile + Intersections"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The seam fix mode to use.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "seam_fix_denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for the seam fix.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of the bands used for the Band Pass seam fix mode.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the seam fix mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 16,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply for the seam fix tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "force_uniform_tiles",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Force all tiles to be the same as the set tile size, even when tiles could be smaller. This can help prevent the model from working with irregular tile sizes.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiled_decode",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use tiled decoding when decoding tiles.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of tiles to process in a batch. Higher values can reduce processing time but use more VRAM. Yields different results than individual tiles. Only affects the main redraw step, not the seam fix step.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "upscale_model",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "The model to use for upscaling the image. If not provided, a simple Lanczos scaling will be used instead."
+            },
+            "io_type": "UPSCALE_MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "custom_sampler",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "A custom sampler to use instead of the built-in ComfyUI sampler specified by sampler_name. Only used if both custom_sampler and custom_sigmas are provided."
+            },
+            "io_type": "SAMPLER",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "custom_sigmas",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "A custom noise schedule to use during sampling. Only used if both custom_sampler and custom_sigmas are provided."
+            },
+            "io_type": "SIGMAS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "output_0",
+              "is_output_list": false,
+              "tooltip": "The final upscaled image."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "UltimateSDUpscaleGuider": {
+      "class": "UltimateSDUpscaleGuiderSecure_1d37b85f73",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "sample"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/upscaling",
+          "description": "",
+          "display_name": "Ultimate SD Upscale (Guider)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UltimateSDUpscaleGuider",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to upscale."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "guider",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The guider to use for sampling. Encapsulates the model, conditioning, and CFG scale."
+            },
+            "io_type": "GUIDER",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "sampler",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The sampler to use for each tile."
+            },
+            "io_type": "SAMPLER",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "sigmas",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The noise schedule (sigmas) to use for sampling."
+            },
+            "io_type": "SIGMAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "vae",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The VAE model to use for tiles."
+            },
+            "io_type": "VAE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "upscale_by",
+              "lazy": null,
+              "max": 4,
+              "min": 0.05,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "The factor to upscale the image by.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 18446744073709551615,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The seed to use for noise generation.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "upscale_model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The upscaler model for upscaling the image."
+            },
+            "io_type": "UPSCALE_MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Linear",
+                "Chess",
+                "None"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The tiling order to use for the redraw step.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_height",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The height of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply between tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "None",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "None",
+                "Band Pass",
+                "Half Tile",
+                "Half Tile + Intersections"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The seam fix mode to use.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "seam_fix_denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for the seam fix.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of the bands used for the Band Pass seam fix mode.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the seam fix mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 16,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply for the seam fix tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "force_uniform_tiles",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Force all tiles to be the same as the set tile size, even when tiles could be smaller. This can help prevent the model from working with irregular tile sizes.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiled_decode",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use tiled decoding when decoding tiles.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of tiles to process in a batch. Higher values can reduce processing time but use more VRAM. Yields different results than individual tiles. Only affects the main redraw step, not the seam fix step.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "output_0",
+              "is_output_list": false,
+              "tooltip": "The final upscaled image."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "UltimateSDUpscaleNoUpscale": {
+      "class": "UltimateSDUpscaleNoUpscaleSecure_025e36f454",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "sample"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/upscaling",
+          "description": "",
+          "display_name": "Ultimate SD Upscale (No Upscale)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UltimateSDUpscaleNoUpscale",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "upscaled_image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to upscale."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The model to use for image-to-image."
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "positive",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The positive conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "negative",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The negative conditioning for each tile."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "vae",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The VAE model to use for tiles."
+            },
+            "io_type": "VAE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 18446744073709551615,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The seed to use for image-to-image.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 20,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "steps",
+              "lazy": null,
+              "max": 10000,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of steps to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 8.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "cfg",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The CFG scale to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "euler",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sampler_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "euler",
+                "euler_cfg_pp",
+                "euler_ancestral",
+                "euler_ancestral_cfg_pp",
+                "heun",
+                "heunpp2",
+                "exp_heun_2_x0",
+                "exp_heun_2_x0_sde",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "dpm_fast",
+                "dpm_adaptive",
+                "dpmpp_2s_ancestral",
+                "dpmpp_2s_ancestral_cfg_pp",
+                "dpmpp_sde",
+                "dpmpp_sde_gpu",
+                "dpmpp_2m",
+                "dpmpp_2m_cfg_pp",
+                "dpmpp_2m_sde",
+                "dpmpp_2m_sde_gpu",
+                "dpmpp_2m_sde_heun",
+                "dpmpp_2m_sde_heun_gpu",
+                "dpmpp_3m_sde",
+                "dpmpp_3m_sde_gpu",
+                "ddpm",
+                "lcm",
+                "ipndm",
+                "ipndm_v",
+                "deis",
+                "res_multistep",
+                "res_multistep_cfg_pp",
+                "res_multistep_ancestral",
+                "res_multistep_ancestral_cfg_pp",
+                "gradient_estimation",
+                "gradient_estimation_cfg_pp",
+                "er_sde",
+                "seeds_2",
+                "seeds_3",
+                "sa_solver",
+                "sa_solver_pece",
+                "ddim",
+                "uni_pc",
+                "uni_pc_bh2"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The sampler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "simple",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scheduler",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "karras",
+                "exponential",
+                "ddim_uniform",
+                "beta",
+                "normal",
+                "linear_quadratic",
+                "kl_optimal"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The scheduler to use for each tile.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for each tile.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Linear",
+                "Chess",
+                "None"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The tiling order to use for the redraw step.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_height",
+              "lazy": null,
+              "max": 8192,
+              "min": 64,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The height of each tile.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply between tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "None",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "None",
+                "Band Pass",
+                "Half Tile",
+                "Half Tile + Intersections"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The seam fix mode to use.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "seam_fix_denoise",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The denoising strength to use for the seam fix.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_width",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The width of the bands used for the Band Pass seam fix mode.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 8,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_mask_blur",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The blur radius for the seam fix mask.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 16,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_fix_padding",
+              "lazy": null,
+              "max": 8192,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "The padding to apply for the seam fix tiles.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "force_uniform_tiles",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Force all tiles to be the same as the set tile size, even when tiles could be smaller. This can help prevent the model from working with irregular tile sizes.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiled_decode",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use tiled decoding when decoding tiles.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The number of tiles to process in a batch. Higher values can reduce processing time but use more VRAM. Yields different results than individual tiles. Only affects the main redraw step, not the seam fix step.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "output_0",
+              "is_output_list": false,
+              "tooltip": "The final refined image."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}

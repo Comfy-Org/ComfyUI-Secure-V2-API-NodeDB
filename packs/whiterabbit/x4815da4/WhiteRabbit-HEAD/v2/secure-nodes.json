@@ -1,0 +1,3834 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "AssembleLoopFrames": {
+      "class": "AssembleLoopFramesSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Builds the final loop: appends only the new in-between seam frames to your original clip\u2014no duplicate of frame 1.",
+          "display_name": "\ud83d\udc07 Assemble Loop Frames",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "AssembleLoopFrames",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "original_images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your original clip (frames\u00d7H\u00d7W\u00d7C)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "interpolated_frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Frames that bridge last\u2192first. The first and last of this batch are the originals; only the middle ones get added."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "AutocropToLoop": {
+      "class": "AutocropToLoopSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Auto-crops the clip to create a smoother loop: tests crops from the end and scores the seam so it feels like a normal step.",
+          "display_name": "\ud83d\udc07 Autocrop to Loop",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "AutocropToLoop",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip_frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your full clip (NHWC, 0\u20131). Tries every crop from 0..max_end_crop_frames and returns the best loop."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 12,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_end_crop_frames",
+              "lazy": null,
+              "max": 10000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Largest crop to test at the END. Higher = more candidates (slower), but potentially better.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "include_first_step",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Use the first neighbor pair (frame 0\u21921) as a target step size/similarity.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "include_last_step",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Use the last neighbor pair inside the KEPT region as a target.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "include_global_median_step",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Also use the median step across the KEPT region (needs \u22653 frames). Helps ignore outliers.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seam_window_frames",
+              "lazy": null,
+              "max": 6,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Average over multiple aligned pairs across the seam. Larger = more robust.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "L1",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "distance_metric",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "L1",
+                "MSE"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How to measure step size for matching. L1 is usually more forgiving; MSE penalizes big errors more.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "score_in_8bit",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Score with an 8-bit view (simulate export). Output video still stays float.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_ssim_similarity",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Include SSIM so the seam \u2018looks\u2019 like a normal neighbor\u2014avoid freeze or jump.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_exposure_guard",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Promote smooth brightness across the seam (reduces flicker pops).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_flow_guard",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Encourage consistent motion across the seam (needs OpenCV; slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.55,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "weight_step_size",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Importance of matching step size. Higher = less freeze/jump risk.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.3,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "weight_similarity",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Importance of visual similarity (SSIM). Helps avoid a frozen-looking seam.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "weight_exposure",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Importance of even brightness across the seam.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.05,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "weight_flow",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Importance of motion continuity across the seam.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "1,2",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ssim_downsample_scales",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "SSIM scales to average, as a comma list. Example: 1,2 = full-res and half-res.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "accelerate_with_gpu",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "If ON and CUDA is available, run scoring on GPU for a big speedup (same results).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_mixed_precision",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "If ON (with GPU), use mixed precision for SSIM/conv math (faster on larger clips).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "cropped_clip",
+              "id": "cropped_clip",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "end_crop_frames",
+              "id": "end_crop_frames",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "cropped_length",
+              "id": "cropped_length",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "score",
+              "id": "score",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "diagnostics_csv",
+              "id": "diagnostics_csv",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "BatchResizeWithLanczos": {
+      "class": "BatchResizeWithLanczosSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/resize",
+          "description": "CUDA-accelerated, gamma-correct Lanczos resizer (TorchLanc).\n\nModes:\n\u2022 Keep AR\n\u2022 Stretch\n\u2022 Crop (Cover + Crop)\n\u2022 Pad (Fit + Pad)\n\u2022 AR Scale + Divisible Crop\n\nNode functionality based on Resize nodes by Kijai\n\nMore from me!: https://artificialsweetener.ai",
+          "display_name": "\ud83d\udc07 Batch Resize w/ Lanczos",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "BatchResizeWithLanczos",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Input batch (B,H,W,C) in [0,1] float.\nProcessed on GPU."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "width",
+              "lazy": null,
+              "max": 16384,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Target width (pixels).\n\nNotes:\n\u2022 Keep AR / Pad: maximum width for the fit\n\u2022 Crop: final output width\n\u2022 AR Scale + Divisible Crop: requested width before divisibility",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 576,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "height",
+              "lazy": null,
+              "max": 16384,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Target height (pixels).\n\nNotes:\n\u2022 Keep AR / Pad: maximum height for the fit\n\u2022 Crop: final output height\n\u2022 AR Scale + Divisible Crop: requested height before divisibility",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Keep AR",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "resize_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Keep AR",
+                "Stretch",
+                "Crop (Cover + Crop)",
+                "Pad (Fit + Pad)",
+                "AR Scale + Divisible Crop"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Modes:\n- Keep AR: Fit inside width\u00d7height (preserve aspect)\n- Stretch: Force to width\u00d7height (may distort)\n- Crop (Cover + Crop): Scale to cover, then crop to width\u00d7height\n- Pad (Fit + Pad): Fit inside, then pad to width\u00d7height\n- AR Scale + Divisible Crop: Scale by SOURCE long side to \u2264 requested divisible; crop ONLY the short side to its divisible",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "divisible_by",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Force output dimensions to multiples of N.\n\nDetails:\n\u2022 Keep AR: Fit \u2192 then step down to the largest size \u2264 requested that keeps AR AND makes both sides divisible\n\u2022 AR Scale + Divisible Crop: Lock the scaled LONG side to its divisible target; crop ONLY the short side to its divisible\nSet to 1 (or 0 in UI) to disable",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "0 = process whole batch\n>0 = chunk the batch to this size",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 3,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sinc_window",
+              "lazy": null,
+              "max": 8,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Lanczos window size (a). Higher = sharper (more ringing).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "0, 0, 0",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "pad_color",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Pad mode only. RGB as 'r, g, b' (0-255).",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "center",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_position",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "center",
+                "top-left",
+                "top",
+                "top-right",
+                "left",
+                "right",
+                "bottom-left",
+                "bottom",
+                "bottom-right"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Where to crop/pad from.\nChoose which edges are preserved for cropping, or where padding is added.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "fp32",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "precision",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "fp32",
+                "fp16",
+                "bf16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Resampling compute dtype.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional mask (B,H,W) in [0,1].\nResized with nearest.\nFollows the same crop/pad as the image."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "IMAGE",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "width",
+              "id": "width",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "height",
+              "id": "height",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "mask",
+              "id": "mask",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "BatchWatermarkSingle": {
+      "class": "BatchWatermarkSingleSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "assets"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/post",
+          "description": "GPU accelerated watermark overlay. TorchLanc resize for quality and speed. Works for single images, but efficient for batches, too!",
+          "display_name": "\ud83d\udc07 Watermark",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "BatchWatermarkSingle",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Images to watermark. Accepts (H,W,C) or (B,H,W,C) with values in [0\u20131]. Processed on GPU."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {
+                "image_upload": true
+              },
+              "force_input": null,
+              "id": "watermark",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Select or upload the watermark image (PNG recommended). The file\u2019s transparency is preserved.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "bottom-right",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "position",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "bottom-right",
+                "bottom-left",
+                "top-right",
+                "top-left",
+                "center"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Where to place the watermark. Padding is ignored when 'center' is selected. Rotation expands the watermark canvas.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 70,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scale",
+              "lazy": null,
+              "max": 100,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Width-based scaling. Target watermark width = image width \u00d7 (scale/100). Aspect ratio preserved.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 100,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "transparency",
+              "lazy": null,
+              "max": 100,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Alpha multiplier for the watermark: 100 = unchanged, 0 = fully transparent.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "rotation",
+              "lazy": null,
+              "max": 359,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Rotate the watermark (degrees) with bicubic resampling. Canvas expands so nothing is clipped (PIL-style).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "padding_x",
+              "lazy": null,
+              "max": 16384,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Extra horizontal padding in pixels from the chosen edge (ignored when position='center').",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "padding_y",
+              "lazy": null,
+              "max": 16384,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Extra vertical padding in pixels from the chosen edge (ignored when position='center').",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "optical_padding",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Adjust placement by the watermark\u2019s visual center so equal padding looks right (optical alignment). Affects corner positions; ignored when position='center'.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 40,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "optical_strength",
+              "lazy": null,
+              "max": 100,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 5,
+              "tooltip": "How strongly to nudge toward visual centering (0\u2013100). 0 = off. Higher values shift more for wide/rotated marks.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Process images in chunks to control VRAM. 0 = process the whole batch at once.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 3,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sinc_window",
+              "lazy": null,
+              "max": 8,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Lanczos window size (a) used when resizing the watermark. Higher = sharper (but more ringing).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "fp32",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "precision",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "fp32",
+                "fp16",
+                "bf16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Resampling compute dtype. fp32 = safest quality; fp16/bf16 can be faster on many GPUs.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "PixelHold": {
+      "class": "PixelHoldSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Locks parts of each frame to a chosen reference (external image or a frame from the clip) whenever changes are small\u2014useful for stabilizing flat areas or backgrounds while leaving motion to pass through.",
+          "display_name": "\ud83d\udc07 Pixel Hold",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "PixelHold",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your clip (frames\u00d7H\u00d7W\u00d7C, values 0\u20131)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "external",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ref_source",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "external",
+                "batch_index"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Pick the reference: an external image or a frame from this clip.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ref_index",
+              "lazy": null,
+              "max": 999999,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "If using a frame from this clip, which frame to use as the reference.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "reference",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional external reference (1\u00d7H\u00d7W\u00d7C). If sizes differ, it will be resized to match."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "linearize",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Work in linear color for steadier results on flat areas.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_luma",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Auto sensitivity for brightness changes (adapts per frame).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.5,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "auto_k",
+              "lazy": null,
+              "max": 6.0,
+              "min": 0.5,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.1,
+              "tooltip": "Auto strength. Higher = lock more to the reference (2\u20133 is typical).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0058823529411764705,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_luma",
+              "lazy": null,
+              "max": 0.01568627450980392,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Manual brightness threshold when Auto is OFF. Lower = stricter (more locking).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.02,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_grad",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "How much edge change to allow. Lower protects edges more.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "tile",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "tile",
+                "pixel"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Tile: fast & robust. Pixel: finer but noisier.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_size",
+              "lazy": null,
+              "max": 256,
+              "min": 8,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 8,
+              "tooltip": "Tile size when using Tile mode.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "l1_tile",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "score_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "l1_tile",
+                "mad_tile"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How tiles measure change: mean abs diff (fast) or median abs dev (robust).",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "edge_band",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Protect a belt around strong edges to avoid wobble/stretch.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 4,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "band_radius",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Width of the protected belt (pixels).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0058823529411764705,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_edge_low",
+              "lazy": null,
+              "max": 0.25,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Treat as low-motion below this level (edge belt).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.023529411764705882,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_edge_high",
+              "lazy": null,
+              "max": 0.5,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Treat as high-motion above this level (edge belt).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "all",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "apply",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "all",
+                "lowfreq"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Hold the whole image (All) or only its smooth part (Low-freq).",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dilate",
+              "lazy": null,
+              "max": 16,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Expand the mask (pixels).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "feather_sigma",
+              "lazy": null,
+              "max": 16.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.5,
+              "tooltip": "Soften mask edges (pixels).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "auto",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "process_on",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "cpu",
+                "gpu"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose CPU/GPU. Auto switches to GPU on very large frames.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "gpu_clear_every",
+              "lazy": null,
+              "max": 1000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "If >0 and using GPU, free memory every N frames.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "mask_preview",
+              "id": "mask_preview",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "PrepareLoopFrames": {
+      "class": "PrepareLoopFramesSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Prepares the wrap seam: builds a tiny 2-frame batch [last, first] for your interpolator and also passes the original clip through unchanged.",
+          "display_name": "\ud83d\udc07 Prepare Loop Frames",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "PrepareLoopFrames",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your clip as an IMAGE batch (frames\u00d7H\u00d7W\u00d7C, values 0\u20131). Outputs: [last, first] for the seam, plus the original clip."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "interp_batch",
+              "id": "interp_batch",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "original_images",
+              "id": "original_images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "RIFE_FPS_Resample": {
+      "class": "RifeFpsResampleSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "assets",
+        "models.download"
+      ],
+      "required_weights": [
+        {
+          "filename": "rife47.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "dci05049/rife47.pth",
+          "revision": "40100cdd99f12af05f1e3630f8de32208d741fbc",
+          "sha256": "6a8a825ab2750558bdd20dcced386fd82b7222c7ba58c11d3b611d9c44f1be63"
+        },
+        {
+          "filename": "rife49.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "VMTamashii/rife49",
+          "revision": "6213b4f9df15a06c7883ad6c9362c44a44ba2fa4",
+          "sha256": "e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.25.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "1505884b9bdae956795430d2a70f7e2317b2abd8f130f8cfdb35a5759f909481"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.26.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "151874592c877740e5db11522f4514df569eeafb0a0fcb2696f16e9e8d317c94"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Convert a clip from one FPS to another using RIFE 4.7, 4.9, 4.25, or 4.26. Non-integer changes synthesize in-betweens; exact integer downscales just decimate. Includes optional stabilizers to reduce flicker and protect edges.",
+          "display_name": "\ud83d\udc07 RIFE VFI FPS Resample",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "RIFE_FPS_Resample",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "rife47.pth",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ckpt_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "rife47.pth",
+                "rife49.pth",
+                "rife_v4.25.safetensors",
+                "rife_v4.26.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose RIFE 4.7, 4.9, 4.25, or 4.26 (for interpolation). Missing catalog models download automatically into ComfyUI's frame_interpolation model folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your input clip: one image per frame."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 24.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "fps_in",
+              "lazy": null,
+              "max": 1000.0,
+              "min": 1e-06,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Current frame rate of your clip (frames per second).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 60.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "fps_out",
+              "lazy": null,
+              "max": 2000.0,
+              "min": 1e-06,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Target frame rate you want (frames per second).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "scale_factor",
+              "lazy": null,
+              "max": 4.0,
+              "min": 0.25,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "Quality vs speed. 1.0 recommended. Lower = faster/softer; higher = sharper/slower.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ensemble",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Blend forward & backward predictions to reduce artifacts (slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "linearize",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Work in linear light for more accurate brightness and gradients (slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "lf_guardrail",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Keep overall brightness and gradients close to the originals to reduce flicker.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 13.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "lf_sigma",
+              "lazy": null,
+              "max": 64.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.5,
+              "tooltip": "How strong the low-frequency smoothing is. Higher = smoother changes.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "source_pair_match",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Match exposure and contrast to the source pair to reduce flicker.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.02,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "match_a_cap",
+              "lazy": null,
+              "max": 0.2,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Maximum change allowed for exposure scale.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.00784313725490196,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "match_b_cap",
+              "lazy": null,
+              "max": 0.1,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Maximum change allowed for brightness offset.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "edge_band_lock",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Protect sharp edges: near edges, mix in more of the nearest real frame to avoid smearing.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0058823529411764705,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_low",
+              "lazy": null,
+              "max": 0.25,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Edge sensitivity: lower threshold (smaller finds more edges).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.023529411764705882,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "tau_high",
+              "lazy": null,
+              "max": 0.5,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0005,
+              "tooltip": "Edge sensitivity: higher threshold (larger finds only strong edges).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 4,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "band_radius",
+              "lazy": null,
+              "max": 64,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Width of the edge protection band (pixels).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "band_soft_sigma",
+              "lazy": null,
+              "max": 16.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.5,
+              "tooltip": "Soften the edge band. Higher = smoother.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 10,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "clear_cache_after_n_frames",
+              "lazy": null,
+              "max": 1000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Free up GPU memory every N output frames (advanced). Set 0 to never.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "RIFE_SeamTimingAnalyzer": {
+      "class": "RifeSeamTimingAnalyzerSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "assets",
+        "models.download"
+      ],
+      "required_weights": [
+        {
+          "filename": "rife47.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "dci05049/rife47.pth",
+          "revision": "40100cdd99f12af05f1e3630f8de32208d741fbc",
+          "sha256": "6a8a825ab2750558bdd20dcced386fd82b7222c7ba58c11d3b611d9c44f1be63"
+        },
+        {
+          "filename": "rife49.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "VMTamashii/rife49",
+          "revision": "6213b4f9df15a06c7883ad6c9362c44a44ba2fa4",
+          "sha256": "e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.25.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "1505884b9bdae956795430d2a70f7e2317b2abd8f130f8cfdb35a5759f909481"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.26.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "151874592c877740e5db11522f4514df569eeafb0a0fcb2696f16e9e8d317c94"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Finds a smooth loop timing: measures motion in your clip and solves a set of t-values across the wrap [last\u2192first] so the seam blends naturally.",
+          "display_name": "\ud83d\udc07 RIFE Seam Timing Analyzer",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "RIFE_SeamTimingAnalyzer",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "rife47.pth",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ckpt_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "rife47.pth",
+                "rife49.pth",
+                "rife_v4.25.safetensors",
+                "rife_v4.26.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose RIFE 4.7, 4.9, 4.25, or 4.26 (used only to test candidate timings). Missing catalog models download automatically into ComfyUI's frame_interpolation model folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "scale_factor",
+              "lazy": null,
+              "max": 4.0,
+              "min": 0.25,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "Quality vs speed for the probe renders. 1.0 recommended.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ensemble",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Blend forward & backward predictions to reduce artifacts (slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "full_clip",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your input clip (\u22652 frames). Real motion here decides the loop seam timing."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 4,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "multiplier",
+              "lazy": null,
+              "max": null,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "How many new frames you plan to create at the loop seam [last\u2192first]. Set 0 to skip.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_first_two",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Match the motion between the first two frames in your clip.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_last_two",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Match the motion between the last two frames in your clip.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_global_median",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Use the median motion across the whole clip (needs \u22653 frames). Helps ignore outliers.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "MSE",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "calibrate_metric",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "MSE",
+                "L1"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How we compare frames while solving: MSE (more sensitive) or L1 (more forgiving).",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 12,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "calibrate_iters",
+              "lazy": null,
+              "max": 24,
+              "min": 4,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Search depth per solve. Higher = slower, but a tighter match.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_min",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Earliest allowed blend point at the seam (0 = exactly the last frame).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.96,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_max",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Latest allowed blend point at the seam (keep below 1.0 to avoid sticking to the first frame).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_tmax",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Automatically push the upper limit closer to the next frame to hit the target motion step.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.995,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_cap",
+              "lazy": null,
+              "max": 0.9999,
+              "min": 0.5,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.0001,
+              "tooltip": "Safety cap used with the auto upper limit (keeps it just shy of 1.0).",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "t_list_csv",
+              "id": "t_list_csv",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "multiplier",
+              "id": "multiplier",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "RIFE_VFI_Advanced": {
+      "class": "RifeVfiAdvancedSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "assets",
+        "models.download"
+      ],
+      "required_weights": [
+        {
+          "filename": "rife47.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "dci05049/rife47.pth",
+          "revision": "40100cdd99f12af05f1e3630f8de32208d741fbc",
+          "sha256": "6a8a825ab2750558bdd20dcced386fd82b7222c7ba58c11d3b611d9c44f1be63"
+        },
+        {
+          "filename": "rife49.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "VMTamashii/rife49",
+          "revision": "6213b4f9df15a06c7883ad6c9362c44a44ba2fa4",
+          "sha256": "e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.25.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "1505884b9bdae956795430d2a70f7e2317b2abd8f130f8cfdb35a5759f909481"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.26.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "151874592c877740e5db11522f4514df569eeafb0a0fcb2696f16e9e8d317c94"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Custom timing for RIFE 4.7, 4.9, 4.25, or 4.26 \u2014 still \u201cinterpolate by multiple,\u201d but you control where the in-betweens land (ease in/out, clamps, or your own t-list).",
+          "display_name": "\ud83d\udc07 RIFE VFI Custom Timing",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "RIFE_VFI_Advanced",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "rife47.pth",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ckpt_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "rife47.pth",
+                "rife49.pth",
+                "rife_v4.25.safetensors",
+                "rife_v4.26.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose RIFE 4.7, 4.9, 4.25, or 4.26 (for interpolation). Missing catalog models download automatically into ComfyUI's frame_interpolation model folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your input clip: one image per frame."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "multiplier",
+              "lazy": null,
+              "max": null,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "How many new frames to create between each pair. 0 = passthrough (no new frames).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "t_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "linear",
+                "gamma_in",
+                "gamma_out",
+                "gamma_in_out",
+                "bounded_linear",
+                "custom_list"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How to spread the new frames over time: straight line, ease in/out, limit the range, or provide your own list.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_gamma",
+              "lazy": null,
+              "max": 10.0,
+              "min": 0.05,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "Easing strength for gamma modes. Higher = more easing.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_min",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Earliest allowed position between the two frames (0 = exactly the first frame). Use with bounded_linear.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "t_max",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Latest allowed position between the two frames (1 = exactly the next frame). Use with bounded_linear.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "scale_factor",
+              "lazy": null,
+              "max": 4.0,
+              "min": 0.25,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "Quality vs speed. 1.0 recommended. Lower = faster/softer; higher = sharper/slower.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ensemble",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Blend forward & backward predictions to reduce artifacts (slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 10,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "clear_cache_after_n_frames",
+              "lazy": null,
+              "max": 1000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Free up GPU memory every N generated frames (advanced). Set 0 to never.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "custom_t_list_csv",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Exact positions between the two frames (0\u20131), comma-separated, e.g. 0.18,0.41,0.66. Overrides the schedule.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "optional_interpolation_states",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Don\u2019t create in-between frames for selected frame pairs (e.g., scene cuts). Timing stays the same."
+            },
+            "io_type": "INTERPOLATION_STATES",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "RIFE_VFI_Opt": {
+      "class": "RifeVfiOptSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw",
+        "assets",
+        "models.download"
+      ],
+      "required_weights": [
+        {
+          "filename": "rife47.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "dci05049/rife47.pth",
+          "revision": "40100cdd99f12af05f1e3630f8de32208d741fbc",
+          "sha256": "6a8a825ab2750558bdd20dcced386fd82b7222c7ba58c11d3b611d9c44f1be63"
+        },
+        {
+          "filename": "rife49.pth",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "VMTamashii/rife49",
+          "revision": "6213b4f9df15a06c7883ad6c9362c44a44ba2fa4",
+          "sha256": "e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.25.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "1505884b9bdae956795430d2a70f7e2317b2abd8f130f8cfdb35a5759f909481"
+        },
+        {
+          "filename": "frame_interpolation/rife_v4.26.safetensors",
+          "folder": "frame_interpolation",
+          "on_demand": true,
+          "repo_id": "Comfy-Org/frame_interpolation",
+          "revision": "f8ffff13b0df7fb55cd3fc15f0834a27979c92e1",
+          "sha256": "151874592c877740e5db11522f4514df569eeafb0a0fcb2696f16e9e8d317c94"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Interpolate a clip by a chosen multiple using RIFE 4.7, 4.9, 4.25, or 4.26 \u2014 inserts evenly spaced in-between frames between every pair (e.g., \u00d72 adds 1 frame per pair).",
+          "display_name": "\ud83d\udc07 RIFE VFI Interpolate by Multiple",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "RIFE_VFI_Opt",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "rife47.pth",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ckpt_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "rife47.pth",
+                "rife49.pth",
+                "rife_v4.25.safetensors",
+                "rife_v4.26.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose RIFE 4.7, 4.9, 4.25, or 4.26 (for interpolation). Missing catalog models download automatically into ComfyUI's frame_interpolation model folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your input clip: one image per frame."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "multiplier",
+              "lazy": null,
+              "max": null,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Adds extra frames to smooth motion: 2 adds 1 new frame per pair; 4 adds 3.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "scale_factor",
+              "lazy": null,
+              "max": 4.0,
+              "min": 0.25,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.05,
+              "tooltip": "Quality vs speed. 1.0 recommended. Lower = faster/softer; higher = sharper/slower.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ensemble",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Blend forward & backward predictions to reduce artifacts (slower).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 10,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "clear_cache_after_n_frames",
+              "lazy": null,
+              "max": 1000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Free up GPU memory every N generated frames (advanced). Set 0 to never.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "optional_interpolation_states",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Don\u2019t create in-between frames for selected frame pairs (e.g., scene cuts). Timing stays the same."
+            },
+            "io_type": "INTERPOLATION_STATES",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "RollFrames": {
+      "class": "RollFramesSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Rolls the clip in a loop by an integer amount (cyclic shift). Also returns the same offset so you can undo it later.",
+          "display_name": "\ud83d\udc07 Roll Frames",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "RollFrames",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your clip (frames\u00d7H\u00d7W\u00d7C)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "offset",
+              "lazy": null,
+              "max": 9999,
+              "min": -9999,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "How far to rotate the clip. Positive = forward in time; negative = backward.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "offset_out",
+              "id": "offset_out",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "TrimBatchEnds": {
+      "class": "TrimBatchEndsSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Quickly remove frames from the start and/or end of a clip. Always keeps at least one frame.",
+          "display_name": "\ud83d\udc07 Trim Batch Ends",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "TrimBatchEnds",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip_frames",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Your clip (frames\u00d7H\u00d7W\u00d7C, 0\u20131)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "trim_start_frames",
+              "lazy": null,
+              "max": 100000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Frames to remove from the START.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "trim_end_frames",
+              "lazy": null,
+              "max": 100000,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Frames to remove from the END.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "UnrollFrames": {
+      "class": "UnrollFramesSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "video utils",
+          "description": "Undo a previous roll after interpolation by accounting for the inserted frames (rotate by base_offset \u00d7 (m+1)).",
+          "display_name": "\ud83d\udc07 Unroll Frames",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UnrollFrames",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Clip after interpolation (frames\u2032\u00d7H\u00d7W\u00d7C)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "base_offset",
+              "lazy": null,
+              "max": 9999,
+              "min": -9999,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Use the exact offset_out that came from RollFrames.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "m",
+              "lazy": null,
+              "max": 9999,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "How many in-betweens per gap were added (the interpolation multiple).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "images",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "UpscaleWithModelAdvanced": {
+      "class": "UpscaleWithModelAdvancedSecure",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/upscaling",
+          "description": "Based on Comfy's native \"Upscale Image (using Model)\", with controls exposed to tune for large batches, avoid slow\nOOM fallbacks, and create opportunities to optimize for speed.\n\nDefaults\n- Behaves about the same as the original node.\n\nControls\n- max_batch_size > 0: process images in chunks to keep VRAM steady and reduce fallback slowdowns.\n- tile_size: choose a starting tile; original node defaults to 512. 0 = auto (falls back 512 \u2192 256 \u2192 128 on OOM).\n- channels_last: try ON for a speedup on some systems.\n- precision: lower (fp16/bf16) can be faster; may impact quality depending on the model.\n",
+          "display_name": "\ud83d\udc07 Upscale w/ Model (Advanced)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "UpscaleWithModelAdvanced",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "upscale_model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Pick your ESRGAN model (e.g. 2\u00d7 / 4\u00d7)."
+            },
+            "io_type": "UPSCALE_MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Images to upscale. Accepts a batch: frames\u00d7H\u00d7W\u00d7C with values in [0\u20131]."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "How many images to process at once. 0 = all at once. Set >0 if you hit OOM.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_size",
+              "lazy": null,
+              "max": 2048,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 32,
+              "tooltip": "How big each tile is. 0 = auto (starts at 512 and halves on OOM). Bigger is faster; smaller is safer.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "channels_last",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Try this ON for a small speed boost on some GPUs. If you see no gain, leave it OFF.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "fp32",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "precision",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "fp32",
+                "fp16",
+                "bf16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Math mode. fp32 = safest. fp16/bf16 can be faster on many GPUs, may impact image quality.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "dependencies": {
+      "profile_sha256": "79a6f88ddff48f9a0fa7d0d05dbb64807b705425aeae0ee9e8d2b70dd0d31b2f"
+    },
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}

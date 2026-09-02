@@ -1,0 +1,219 @@
+# v1.24.0
+
+- Add rng artist/tag picker.
+- Add EmptyLatent node.
+
+# v1.23.0
+
+ - Introduce an optional Pipe architecture to streamline metadata management and reduce wire clutter in complex, multi-stage workflows. See examples in the examples directory.
+ - Support zero-padded counter format.
+
+# v1.22.0
+
+- Change `steps` minimum to zero so Civitai skips it.
+- Add random tag picker node
+- Cleaner naming for batch saves bugfix
+
+# v1.21.0
+
+- Cleaner naming for batch saves.
+- Allow custom time_format via prompt parameters in image saver.
+
+# v1.20.0
+
+- Add RandomShapeGenerator
+
+# v1.19.0
+
+- Bring sampler/scheduler selectors back.
+
+# v1.18.0
+
+- Add WorkflowInputValue node to retrieve input values from nodes in workflow.
+
+# v1.17.0
+
+- BREAKING CHANGE: sampler/scheduler loaders are removed. Instead AnyToString node is added to help convert sampler/scheduler types to string, which works with native loaders. Besides loader nodes removal, Input Parameters has to be recreated and reconnected with the saver node(s). Check example workflow for reference.
+
+# v1.16.0
+
+- Improved Civitai Hash Fetcher search reliability with smart matching and fallbacks
+- Added NSFW model search support
+- Fixed Civitai Hash Fetcher caching bug
+- Refactored file matching with multi-level fallback strategy
+- Added GGUF model format support
+- Case-insensitive extension check for checkpoints
+- Skip resources with missing hashes
+
+# v1.15.2
+
+- Bugfix: sanitize filename only, without the path
+
+# v1.15.1
+
+- Bugfix: Add missing parameter
+- Bugfix: Don't sanitize slashes in filenames
+
+# v1.15.0
+
+- Allow custom info to be added to metadata, inserted into the a111 string between clip skip and model hash
+- Sanitize filenames
+- Fixed timeout exception to prevent network timeout crashes
+
+# v1.14.2
+
+- Update list of schedulers
+
+# v1.14.1
+
+- Expose ConditioningConcatOptional utility
+
+# v1.14.0
+
+- Add ConditioningConcatOptional utility
+
+# v1.13.1
+
+- Fix parameter name mismatch
+
+# v1.13.0
+
+- Add support for Efficiency node pack's schedulers
+
+# v1.12.0
+
+- Schedulers list for KSampler (inspire) has been updated.
+- BREAKING CHANGE: To avoid confusion, following nodes have been renamed:
+    SchedulerSelector -> SchedulerSelectorInspire
+    SchedulerSelectorComfy -> SchedulerSelector
+    SchedulerToString -> SchedulerInspireToString
+    SchedulerComfyToString -> SchedulerToString
+
+# v1.11.1
+
+- Place preview switch at the end
+
+# v1.11.0
+
+- Allow disabling the previews
+
+# v1.10.1
+
+- Fix regression with path handling
+
+# v1.10.0
+
+- Provide 'Image Saver Simple' & 'Image Saver Metadata' that can be used together, separating metadata node from image saver node
+- `scheduler` input has been renamed to `scheduler_name`
+
+# v1.9.2
+
+- Do not override proxy settings of requests.get
+
+# v1.9.1
+
+- Bugfix: handle network connection error for civitai
+
+# v1.9.0
+
+- Allow multiple comma-separated model names
+- Add debug a111_params output
+
+# v1.8.0
+
+- Allow workflow embed for all file formats.
+- Added optional version field for Civitai Hash Fetcher.
+- Added InputParameters node to simplify common KSampler parameters input.
+
+# v1.7.0
+
+- Add hash output for optional chaining of additional hashes.
+- Add tests for image saving.
+- Fix f-string failure.
+
+# v1.6.0
+
+- Add Civitai download option for LoRA weight saving (#68).
+- Add easy_remix option for stripping LoRAs from prompt (#68).
+- Add width/height filename variables (#67).
+- Add progress bar for sha256 calculation (#70).
+- Add "jpg" extension to the list for more control over the target filename (#69).
+
+# v1.5.2
+
+- Reverted experimental webp support for the moment. Needs more testing.
+- Fix putting "prompt" into JPEGs.
+
+# v1.5.1
+
+- Fix workflow storage in lossless webp
+
+# v1.5.0
+
+- New lines are no longer removed from prompts.
+- Added Civitai Hash Fetcher node that can retrieve a ressource hash from civitai based on its name.
+- Added an "aditional hashes" input that accepts a comma separated list of resource hahes that will be stored in the image metadata.
+- Experimental support for storing workflow in webp.
+
+# v1.4.0
+
+- Add UNETLoaderWithName
+- Also check the unet directory (if not found in checkpoints) when calculating model hash
+- Add tooltips
+- Image Saver: Add clip skip parameter
+- Adds the suffix _0x to the file name if a file with that name already exists (#40)
+- Remove strip_a1111_params option
+- Bugfix: Fixing the outputs names of SchedulerToString, SchedulerComfyToString and SamplerToString nodes
+
+# v1.3.0
+
+- Saver node: converted sampler input to string
+- SamplerSelector node: output sampler name also as a string
+- Add SamplerToString util node
+- Fixed converter nodes
+- Change min value for widgets with fixed steps
+
+# v1.2.1
+
+- Update Impact Pack scheduler list
+
+# v1.2.0
+
+- Add option to strip positive/negative prompt from the a1111 parameters comment (hashes for loras/embeddings are still always added)
+- Add option for embedding prompt/workflow in PNG
+- Add 'AYS SDXL', 'AYS SD1' and 'AYS SVD' to scheduler selectors
+- added dpmpp_3m_sde sampler
+- added exponential scheduler
+- Fix suffix for batches
+- Save json for each image in batch
+- Allow to leave modelname empty
+
+# v1.1.0
+
+-  Fix extension check in full_lora_path_for
+-  add 'save_workflow_as_json', which allows saving an additional file with the json workflow included
+
+# v1.0.0
+
+- **BREAKING CHANGE**: Convert CheckpointSelector to CheckpointLoaderWithName (571fcfa319438a32e051f90b32827363bccbd2ef). Fixes 2 issues:
+    - oversized search fields (https://github.com/giriss/comfy-image-saver/issues/5)
+    - selector breaking when model files are added/removed at runtime
+- Try to find loras with incomplete paths (002471d95078d8b2858afc92bc4589c8c4e8d459):
+    - `<lora:asdf:1.2>` will be found and hashed if the actual location is `<lora:subdirectory/asdf:1.2>`
+- Update default filename pattern from `%time_%seed` to `%time_%basemodelname_%seed` (72f17f0a4e97a7c402806cc21e9f564a5209073d)
+- Include embedding, lora and model information in the metadata in civitai format (https://github.com/alexopus/ComfyUI-Image-Saver/pull/2)
+- Rename all nodes to avoid conflicts with the forked repo
+- Make PNG optimization optional and off by default (c760e50b62701af3d44edfb69d3776965a645406)
+- Calculate model hash only if there is no calculated one on disk already. Store on disk after calculation (96df2c9c74c089a8cca811ccf7aaa72f68faf9db)
+- Fix civitai sampler/scheduler name (af4eec9bc1cc55643c0df14aaf3a446fbbc3d86d)
+- Fix metadata format according to https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/5ef669de080814067961f28357256e8fe27544f4/modules/processing.py#L673 (https://github.com/giriss/comfy-image-saver/pull/11)
+- Add input `denoise` (https://github.com/Danand/comfy-image-saver/commit/37fc8903e05c0d70a7b7cfb3a4bcc51f4f464637)
+- Add resolving of more placeholders for file names (https://github.com/giriss/comfy-image-saver/pull/16)
+    - `%sampler_name`
+    - `%steps`
+    - `%cfg`
+    - `%scheduler`
+    - `%basemodelname`
+
+
+Changes since the fork from https://github.com/giriss/comfy-image-saver.

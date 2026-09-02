@@ -1,0 +1,631 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ResolutionMaster": {
+      "class": "ResolutionMaster",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "aztoolkit",
+      "permissions": [
+        "graph"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "utils/azToolkit",
+          "description": "Interactive resolution, scaling, preset, and latent-size helper with optional input-image auto-detection.",
+          "display_name": "Resolution Master",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ResolutionMaster",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id",
+          "prompt"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Manual",
+                "Manual Sliders",
+                "Common Resolutions",
+                "Aspect Ratios"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose how to control the output size. Manual mode uses the Resolution Master canvas.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "latent_4x8",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "latent_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "latent_4x8",
+                "latent_128x16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Choose the latent type. Use 4x8 for most models, or 128x16 for Flux.2.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "width",
+              "lazy": null,
+              "max": 32768,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 64,
+              "tooltip": "Final output width in pixels.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "height",
+              "lazy": null,
+              "max": 32768,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 64,
+              "tooltip": "Final output height in pixels.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_detect",
+              "label_off": "Manual",
+              "label_on": "Auto-detect from input",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Detect the size from the connected input image.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "backend",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_detect_source",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Technical setting used by the Resolution Master interface.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_detect_width",
+              "lazy": null,
+              "max": 32768,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Detected input width used by auto-detect.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_detect_height",
+              "lazy": null,
+              "max": 32768,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Detected input height used by auto-detect.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_fit_on_change",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When a new image is detected, fit it to the closest preset automatically.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_resize_on_change",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When a new image is detected, resize it automatically using the selected scaling mode.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_snap_on_change",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When a new image is detected, round its size to the selected snap step.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "smart_fit",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Fit to the closest preset aspect ratio while keeping the size close to the current resolution.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_custom_calc",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When a new image is detected, apply the selected model or category size rules automatically.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "preserve_scaling_ratio",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Keep the image proportions while scaling.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "selected_category",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Selected preset category.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "snap_value",
+              "lazy": null,
+              "max": 32768,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Snap step used when rounding width and height.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "upscale_value",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Manual scale multiplier.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1080,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "target_resolution",
+              "lazy": null,
+              "max": 32768,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Target p-resolution used for scaling.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "target_megapixels",
+              "lazy": null,
+              "max": 1000.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Target megapixels used for scaling.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "{}",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "auto_detect_presets_json",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Technical preset data used by auto-detect.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "resolution",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "rescale_mode",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Scaling mode used for the Rescale Factor output.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "rescale_value",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Current Rescale Factor value shown by the interface.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "How many latent images to create in one batch.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "input_image",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional image used for auto-detecting width and height."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "width",
+              "id": "width",
+              "is_output_list": false,
+              "tooltip": "Final output width in pixels."
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "height",
+              "id": "height",
+              "is_output_list": false,
+              "tooltip": "Final output height in pixels."
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "rescale_factor",
+              "id": "rescale_factor",
+              "is_output_list": false,
+              "tooltip": "Scale factor calculated from the selected scaling mode."
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "batch_size",
+              "id": "batch_size",
+              "is_output_list": false,
+              "tooltip": "Number of latent images created in one batch."
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "latent",
+              "id": "latent",
+              "is_output_list": false,
+              "tooltip": "Empty latent created with the selected size, batch size, and latent type."
+            },
+            "io_type": "LATENT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "js"
+}

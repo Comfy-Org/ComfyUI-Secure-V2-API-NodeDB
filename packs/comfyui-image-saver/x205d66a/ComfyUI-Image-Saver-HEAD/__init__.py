@@ -1,0 +1,47 @@
+from typing import Any
+
+from .nodes import ImageSaver, ImageSaverSimple, ImageSaverMetadata
+from .nodes_pipe import MakeImageSaverPipe, EditImageSaverPipe, ReadImageSaverPipe, ImageSaverFromPipe, MakeImageSaverSimpleConfig, MakeImageSaverMetadataConfig
+from .nodes_literals import SeedGenerator, StringLiteral, SizeLiteral, IntLiteral, FloatLiteral, CfgLiteral, ConditioningConcatOptional, RandomShapeGenerator, EmptyLatent
+from .nodes_loaders import CheckpointLoaderWithName, UNETLoaderWithName
+from .nodes_selectors import SamplerSelector, SchedulerSelector, SchedulerSelectorInspire, SchedulerSelectorEfficiency, InputParameters, AnyToString, WorkflowInputValue
+from .civitai_nodes import CivitaiHashFetcher
+from .random_tag_picker import RandomTagPicker, RandomCharacterPicker, RandomArtistPicker
+
+NODE_CLASS_MAPPINGS: dict[str, Any] = {
+    "Checkpoint Loader with Name (Image Saver)": CheckpointLoaderWithName,
+    "UNet loader with Name (Image Saver)": UNETLoaderWithName,
+    "Image Saver": ImageSaver,
+    "Image Saver Simple": ImageSaverSimple,
+    "Image Saver Metadata": ImageSaverMetadata,
+    "Make Image Saver Simple Config": MakeImageSaverSimpleConfig,
+    "Make Image Saver Metadata Config": MakeImageSaverMetadataConfig,
+    "Make Image Saver Pipe": MakeImageSaverPipe,
+    "Edit Image Saver Pipe": EditImageSaverPipe,
+    "Read Image Saver Pipe": ReadImageSaverPipe,
+    "Image Saver (From Pipe)": ImageSaverFromPipe,
+    "Sampler Selector (Image Saver)": SamplerSelector,
+    "Scheduler Selector (Image Saver)": SchedulerSelector,
+    "Scheduler Selector (inspire) (Image Saver)": SchedulerSelectorInspire,
+    "Scheduler Selector (Eff.) (Image Saver)": SchedulerSelectorEfficiency,
+    "Input Parameters (Image Saver)": InputParameters,
+    "Any to String (Image Saver)": AnyToString,
+    "Workflow Input Value (Image Saver)": WorkflowInputValue,
+    "Seed Generator (Image Saver)": SeedGenerator,
+    "String Literal (Image Saver)": StringLiteral,
+    "Width/Height Literal (Image Saver)": SizeLiteral,
+    "Cfg Literal (Image Saver)": CfgLiteral,
+    "Int Literal (Image Saver)": IntLiteral,
+    "Float Literal (Image Saver)": FloatLiteral,
+    "Conditioning Concat Optional (Image Saver)": ConditioningConcatOptional,
+    "RandomShapeGenerator": RandomShapeGenerator,
+    "Empty Latent (Image Saver)": EmptyLatent,
+    "Civitai Hash Fetcher (Image Saver)": CivitaiHashFetcher,
+    "Random Tag Picker (Image Saver)": RandomTagPicker,
+    "Random Character Picker (Image Saver)": RandomCharacterPicker,
+    "Random Artist Picker (Image Saver)": RandomArtistPicker,
+}
+
+WEB_DIRECTORY = "js"
+
+__all__ = ['NODE_CLASS_MAPPINGS', 'WEB_DIRECTORY']

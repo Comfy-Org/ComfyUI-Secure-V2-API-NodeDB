@@ -1,0 +1,20 @@
+# Pack snapshots and their patch pairs are hashed, and several tests pin those
+# hashes, so what git checks out has to be byte-for-byte what was committed.
+# End-of-line translation would silently change them.
+* -text
+
+# This does not reach everywhere. Eighteen vendored packs ship their own
+# `.gitattributes` — usually `* text=auto` — and a nested file wins over this
+# one for its own subtree. That is upstream's file, part of the snapshot, so it
+# is left alone rather than edited to suit us.
+#
+# The consequence is one file: AIGODLIKE-COMFYUI-TRANSLATION declares
+# `eol=crlf`, so its `v2/comfy-api.pyi` is checked out with CRLF and hashes
+# differently than the copy that was committed. Every other pinned artifact —
+# the other 67 stubs and all 69 patch pairs — resolves to `eol: unspecified`
+# and round-trips exactly.
+#
+# ComfyUI_secure_nodes carries the same defect for the same reason; this is
+# inherited, not introduced. Fixing it means neutralising the vendored
+# attributes files, which is a change to snapshot fidelity and wants its own
+# decision.

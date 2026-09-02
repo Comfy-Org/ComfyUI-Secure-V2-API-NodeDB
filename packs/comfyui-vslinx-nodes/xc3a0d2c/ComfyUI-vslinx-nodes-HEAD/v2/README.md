@@ -1,0 +1,330 @@
+# ComfyUI-vslinx-nodes
+Custom ComfyUI nodes to streamline workflows: load multiple images via a multi-select dialog as a batch or list, or load the last generated image from the output folder with auto-refresh; fit an image inside a mask’s bounding box for compositing poses, objects, or decals; convert images to pixel art with retro palettes (GameBoy, CGA, NES, Pico-8); upscale to any exact scale factor using an upscale model (nearest/bilinear/area/Lanczos); decode latents in adjustable batch sizes via batched VAE Decode and VAE Decode (Tiled) to cut peak VRAM; an interactive detailer (Impact-Pack) that pauses for a per-segment prompt dialog; boolean AND/OR/flip plus nodes that bypass or mute downstream nodes from a boolean or by following another node’s bypass/mute state for easy workflow branching; pack and unpack up to 5 values through a single pipe wire (Any to Pipe / Pipe to Any) to declutter large graphs; bookmark and jump to workflow groups from a side panel; multiline wildcard text input with dropdown for Impact-Pack; and append LoRA info from rgthree Power LoRA Loader into image metadata. Also includes settings to show hover previews for all models & LoRAs across all model loaders - compatible with rgthree’s subdirectory view - and a global fix for “Return type mismatch” errors caused by custom nodes like RES4LYF that extend combo lists such as schedulers.
+
+## How to Install
+### **Recommended**
+* Install via [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager).
+
+### **Manual**
+* Navigate to `ComfyUI/custom_nodes` in your terminal (cmd).
+* Clone the repository under the `custom_nodes` directory using the following command:
+  ```
+  git clone https://github.com/vslinx/ComfyUI-vslinx-nodes.git comfyui-vslinx-nodes
+  ```
+
+## Settings
+#### Fix combo type mismatches between custom nodes
+Is enabled by default and prevents "Return type mismatch between linked nodes" errors that occur when custom nodes (e.g. RES4LYF) extend combo lists like schedulers with additional entries. When a mismatch is detected, the fix automatically corrects the expected list to match the input list of the receiving node — this is universal, works across subgraphs and all custom nodes, and does nothing when there is no mismatch. A message is logged to the console whenever the fix is applied.
+Disable if you experience unexpected behavior.
+
+#### Show hover previews in all model dropdowns
+When enabled, this feature shows a preview for the model you’re hovering with your mouse.  
+It works across **all model / LoRA loaders** and supports **`.safetensors`**, **`.ckpt`**, **`.pt`**, and **`.gguf`** files located in these folders:
+
+- `loras`
+- `checkpoints`
+- `unet`
+- `diffusion_models`
+
+It is also compatible with the **[rgthree-comfy](https://github.com/rgthree/rgthree-comfy)** node’s **“Auto Nest Subdirectories in Menus”** setting. A feature that often breaks preview behavior when combined with other custom nodes (e.g. **[ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts)**).
+
+Preview files must be placed **in the same folder as the model** and use the **same base filename**.
+
+Supported formats:
+
+**Images**
+- `png`
+- `jpg`
+- `jpeg`
+- `webp`
+
+**Videos**
+- `mp4`
+- `webm`
+
+The extension will look for previews using the most common naming schemes:
+- `ModelName.png` / `ModelName.webm` / etc.
+- `ModelName.preview.png` / `ModelName.preview.webm` / etc.
+
+Compatible with well-known ComfyUI custom nodes/plugins that save metadata and/or previews, such as  
+**[ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)**.
+
+<img width="549" height="678" alt="Image" src="https://github.com/user-attachments/assets/2fbfb270-562c-48f5-a9a5-19062410da7e" />
+
+## Nodes
+
+### Text
+#### (Impact-Pack) Multiline Wildcard Text
+Provides a simple multiline text field with a wildcard selector that automatically appends selected wildcards. This node uses the API endpoint from the [Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) custom node to provide a dropdown that lets you select wildcards to be added to your prompt.  
+This node does not resolve these wildcards by itself and is intended to be passed into the **“Populated Prompt”** field in the Impact-Pack **“ImpactWildcardProcessor”** node.<br>
+<img width="1562" height="447" alt="Image" src="https://github.com/user-attachments/assets/27c5e3e3-4e51-450e-b91d-6f3ef48b2f28" />
+
+### Image
+#### Load (Multiple) Images (List)
+Provides a simple node with a “Select Images” button that lets you choose one or multiple images. After selection, the images are uploaded to your ``input`` folder in ComfyUI (the same behavior as the default Load Image node). The node also includes a preview of the selected images: you can click on an image to switch from the tile view to a full image view. Clicking the X returns you to the tile view, while the numbering in the bottom-right corner allows you to switch between images. <br>
+The node includes a ``max_images`` property that defines how many images can be loaded. If set to 0 or left empty, the number of allowed images is unlimited. <br>
+It also includes a ``fail_if_empty`` property to throw an error if no elements are being passed, likely caused by images having been deleted or moved from the input folder.
+Furthermore includes a ``filename_handling`` property that lets you control how the filenames are being output.
+- ``full filename`` will output the full filename without it's extension<br>
+``image (1).png`` will return ``image (1)``
+- ``deduped filename`` will return the filename while removing any automatically appended `` (incrementing number)`` elements that are added when uploading more than 1 picture with the same filename + extension to the comfyui/input folder.
+
+<b>The images and filenames are returned as a list</b>, allowing downstream nodes to process them one after another. <br>
+<img width="1040" height="510" alt="Image" src="https://github.com/user-attachments/assets/83d6c60c-5069-4c3b-9886-0f4cefb64df9" />
+
+#### Load (Multiple) Images (Batch)
+This node works the same way as the [Load (Multiple) Images (List)](#load-multiple-images-list)-Node but <b>the images are returned as a batch</b>, allowing downstream nodes to process them together while the <b>filenames are returned as a string of all filenames seperated by a comma</b>. <br>
+
+Note that a batch is a tensor of the same shape, if your images have different heights and width they'll be resized to fit one common size of the first image, even if that means that they'll get cropped, resized or padded. <br>
+**Using a batch always implies using uniform dimensions!**
+
+#### Upscale by Factor (With Model)
+his node upscales an image using a selected <b>upscale model</b> and then resizes the result to a target scale factor. <b>Upscale models typically operate at a fixed scale (e.g. 2× or 4×).</b> This node first runs the model at its native scale, then applies a final resize step to match your requested factor. The final resize step supports the ``nearest-exact``, ``bilinear``, ``area`` and ``lanczos`` methods. Minimum is 0.1 scale while the maximum is 8.0 scale.
+<img width="1420" height="602" alt="Image" src="https://github.com/user-attachments/assets/d1845c2e-0d8b-480d-8177-7799f8259b2a" />
+
+#### Image to Pixel Art
+This node converts an image into <b>true pixel art</b> by downscaling it to a discrete low-resolution pixel grid, quantizing colors to a limited palette, and scaling back up with nearest-neighbor so every pixel block is hard-edged and solid with no blending or anti-aliasing.
+<img width="1310" height="557" alt="Image" src="https://github.com/user-attachments/assets/7505fe22-0458-43cf-89d1-c040f2316261" />
+
+#### Load Last Generated Image
+This node loads an image from your ``output`` folder and serves as a replacement for ComfyUI's built-in **LoadImageOutput** node. A dropdown lists all images sorted by newest first, so the most recent generation is always at the top. When ``Auto refresh after generation`` is enabled, the node automatically picks up newly generated images after each workflow execution — but only when a new file actually appeared, so your current selection stays untouched otherwise.
+
+The node supports the **MaskEditor** (right-click → "Open in MaskEditor"). Painted masks are preserved across workflow executions, tab switches, and page reloads. If no image is available or the selected file was deleted, the node outputs a 512×512 black image to prevent blocking your workflow.
+
+A ``include_subfolders`` property (right-click → Properties) controls whether images from subfolders inside the ``output`` directory are included in the dropdown and refresh functions.
+
+### Boolean
+#### Boolean AND Operator
+Provides a node with 2 boolean inputs. Outputs True only if both inputs are True. Otherwise returns False. <br>
+<img width="1284" height="182" alt="Image" src="https://github.com/user-attachments/assets/a7c0a40b-8246-4aa5-806a-ba4d7b749ad9" />
+
+#### Boolean OR Operator
+Just like the AND Operator it provides a node with 2 boolean inputs. Outputs True if either input is True. Returns False only if both are False.
+
+#### Boolean Flip
+Flips the input value: True → False, False → True. Useful for inverting conditions.
+
+#### Int to Bool (Threshold)
+Converts an integer into a boolean using a threshold. Outputs True if the input ``value`` is greater than or equal to ``threshold``, otherwise False. With the default ``threshold`` of 1 this behaves like a classic "1 or above → True" check, but the threshold field lets you gate on any cutoff you like.
+
+### Utility
+#### Forward/Bypass on Boolean (Any)
+This node accepts any input type and forwards it unchanged. Its pass-through behavior can be controlled with the built-in boolean switch or by linking an external boolean node. This allows you to create conditional branches in your workflow. The bypass state is applied instantly in the UI, without waiting for workflow execution. <br>
+<img width="1318" height="343" alt="Image" src="https://github.com/user-attachments/assets/94a8d6e8-fbd5-4a0d-8ca4-d557cb4bfd7a" />
+
+#### Forward/Mute on Boolean (Any)
+This node works the same way as ``Forward/Bypass on Boolean (Any)``, but instead of bypassing the connected nodes it mutes them. The mute state can be controlled with the built-in boolean switch or by linking an external boolean, and changes are applied instantly in the UI.
+
+#### Forward/Bypass-Mute on State (Any)
+Like the two nodes above, this node forwards any value unchanged, but instead of a boolean it **mirrors the bypass/mute state of another node** onto the directly connected downstream node(s). Use it when you don't have a boolean to drive the decision, but you do have another node whose state should determine it.
+
+Connect the node you want to watch to the **``trigger``** input (its value is never used — only the link matters). The downstream node(s) then follow that node's state: **bypassed → bypassed**, **muted → muted**, **normal → normal**. When ``trigger`` is left unconnected, the downstream node(s) run normally and the node is a plain pass-through. As with the other forward nodes, mirroring is applied instantly in the UI and is pipe-aware (follows ``Any to Pipe`` → ``Pipe to Any``).
+
+Two toggles fine-tune the behavior:
+- **``Ignore subgraph boundary``** - when enabled, the trigger lookup crosses subgraph boundaries (both inbound and outbound) until it reaches a real node, instead of stopping at the boundary. When disabled, only the node directly wired into ``trigger`` in the same graph is read.
+- **``Mirror this node's own bypass/mute``** - when enabled, this node also mirrors its **own** bypass/mute state onto the downstream node(s), taking precedence over the trigger. Handy for chaining, so bypassing/muting this node propagates that state onward.
+
+#### Bookmarks
+A UI-only node that adds a collapsible side panel on the right edge of the ComfyUI canvas, listing your bookmarks. You can bookmark **whole groups** as well as **individual nodes**. Clicking a group bookmark centers the canvas on that group and zooms to fit it into view; clicking a node bookmark centers on and selects that node.
+
+Click **"Manage Bookmarks"** on the node to open the bookmark manager. The left column is a searchable **Groups & Nodes** tree: click a group name to bookmark the whole group, or click the arrow (▸) to expand it and bookmark a single node inside. Nodes that aren't in any group are listed at the bottom under **Ungrouped nodes**. The right column shows your active bookmarks, each tagged **GROUP** or **NODE**; drag the handle (⠿) to reorder them. Bookmarks can be organized into named, collapsible **sections** using the **"+ Add Section"** button — any bookmark dragged below a section header belongs to it.
+
+The side panel can be toggled open and closed via an arrow tab on the right edge of the canvas. Panel visibility, section collapsed state, and the full bookmark list are persisted with the workflow.
+
+#### Any to Pipe
+This node packs up to 5 values of any type into a single pipe connection. All slots are optional — leave any unconnected and only use the ones you need. Slot positions are preserved, so slot_1 in always comes out as slot_1 in the receiving ``Pipe to Any`` node. Useful for reducing visual clutter in large workflows by bundling multiple unrelated values into a single wire that can be routed across the canvas and unpacked later.
+
+#### Pipe to Any
+Unpacks a pipe connection produced by ``Any to Pipe`` back into up to 5 individual outputs. Slots that were left unconnected on the packing end are output as ``None``. Connect only the outputs that were actually packed on the sending end.
+
+#### Power Lora Loader to Prompt (Image Saver)
+This node acts as a bridge between the **Power Lora Loader (rgthree)** node by [rgthree](https://github.com/rgthree/rgthree-comfy) and the **Image Saver** node by [alexopus](https://github.com/alexopus/ComfyUI-Image-Saver).<br>
+You can either **connect a model**, or **provide the id**  or **title** of a `Power Lora Loader (rgthree)` node, along with your prompt as a text string. The node will then **append the LoRAs** in the correct format for the Image Saver node. When you pass this new string to Image Saver as the **positive prompt**, it will save the hashes of the LoRAs for Civitai and other AI platforms while removing the LoRAs from the final string, so your prompt doesn’t look messy.
+
+<img width="1766" height="498" alt="Image" src="https://github.com/user-attachments/assets/cb1d76a7-d638-4573-950e-4ae371d428be" />
+
+### Detailer
+#### (Impact-Pack) Interactive Detailer
+A clone of the Impact-Pack **FaceDetailer** node **without the wildcard field**. Instead of writing fragile SEGS-wildcard syntax up front, the workflow **pauses** when the detector finds segments and a **dialog pops up** so you can write a prompt for each detected segment individually before detailing continues.
+
+**Requires [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack).** This node is only registered when Impact-Pack is installed, so all other vsLinx nodes keep working without it. It can also be found in the node search under terms like ``Guided Detailer``, ``Face Detailer`` or ``Interactive Detailer``.
+
+The dialog shows the full image with a numbered box on every detected segment, plus a crop preview and its own prompt textfield per segment:
+
+<img width="883" height="902" alt="Image" src="https://github.com/user-attachments/assets/5185485e-4efa-4474-b81a-c813ffb83d38" />
+
+How the per-segment prompt fields behave:
+- **Empty field** → the segment is detailed with the node's base ``positive`` conditioning (identical to FaceDetailer without a wildcard).
+- **Any text** → the text is encoded with the connected ``clip`` and **replaces** the positive conditioning for that segment only. Impact's ``<lora:name:weight>`` syntax is supported and applies the LoRA to that segment only.
+- **``[CONCAT]`` prefix** → the text is concatenated to the base positive conditioning instead of replacing it.
+- **``[SKIP]``** → the segment is left completely untouched.
+
+The dialog remembers your last prompts per node (browser localStorage) and prefills them on the next run, ``Ctrl+Enter`` confirms, and clicking a box in the overview focuses its textfield. If the page is reloaded while the workflow is waiting, the dialog is restored automatically.
+
+In addition to the standard FaceDetailer parameters, the node adds ``segment_order`` (the order segments are numbered and processed in), ``timeout_sec`` + ``on_timeout`` (how long to wait for the dialog and what to do if it's never answered — important when running headless via the API so the queue doesn't hang), and ``always_ask`` (re-ask on every run vs. reuse the cached result when inputs are unchanged). It also outputs a ``used_prompts`` string summarizing the prompt used per segment, handy for image-saver metadata.
+
+### Latent
+#### VAE Decode (Batched)
+A drop-in replacement for ComfyUI's built-in **VAE Decode** node that works and behaves exactly the same, but adds a single extra ``batch_size`` field. By default ComfyUI decodes the entire latent batch in one VAE call; this node lets you decode only ``batch_size`` latents at a time (default ``1``, i.e. one image at a time) and concatenates the results back into the same output batch.
+
+Decoding fewer latents per call **lowers peak VRAM** and on many setups **speeds up generation**, because a large single decode can push ComfyUI into a slower tiled/low-VRAM fallback or spill VRAM. Setting ``batch_size`` to a value equal to or greater than the number of latents behaves identically to the built-in node (a single decode), so there's no downside to leaving it in your workflow.
+
+#### VAE Decode Tiled (Batched)
+The same idea applied to ComfyUI's **VAE Decode (Tiled)** node: all original fields (``tile_size``, ``overlap``, ``temporal_size``, ``temporal_overlap``) are kept unchanged and a ``batch_size`` field is added on top. ``batch_size`` controls *how many latents* are decoded per call, while the tiling fields control how each individual latent is split spatially — the two are independent and combine freely.
+
+### Sampling
+#### Anima LLLite Tiled ControlNet Sampler
+An all-in-one node that replaces a whole manual <b>Anima ControlNet-LLLite tiled upscale</b> graph (image tiling → per-tile VAE encode / LLLite apply / KSampler / VAE decode → batch + untile) with a single node. The grid is <b>dynamic</b>: change ``rows``/``columns`` and the node loops the correct number of times instead of forcing you to wire up one sampler chain per tile.
+
+For every tile in the ``rows`` × ``columns`` grid it applies **Anima ControlNet-LLLite** to the model using that tile as the control image, **VAE-encodes** the tile, runs the **KSampler** with the shared ``positive``/``negative`` conditioning, and **VAE-decodes** the result. When all tiles are done they are feathered along their overlaps and **stitched back** into a single image (same tiling/feathering math as comfyui_essentials Image Tile / Image Untile). All tiles share the same ``seed``.
+
+It exposes the sampler fields (``seed``, ``steps``, ``cfg``, ``sampler``, ``scheduler``, ``denoise``), the LLLite fields (``LLLite Model``, ``strength``, ``start_percent``, ``end_percent``, ``preserve_wrapper``) and the tiling fields (``rows``, ``columns``, ``overlap``, ``overlap_x``, ``overlap_y``, ``method``). The overlaps used for stitching are the ones actually computed during tiling, so the geometry always lines up. For lower VRAM, use more ``rows``/``columns`` (smaller tiles).
+
+It has two ``sampling_mode``s:
+- **``per_tile``** (default) — sample each tile to completion, then stitch. Lowest VRAM. Because tiles are sampled independently they can show seams or "double-exposure" ghosting; the optional ``color_match`` (``mean_std`` / ``wavelet``, with ``color_match_strength``) re-anchors each tile's colour to its source tile to fix *tonal* seams (brightness/colour steps), but it can't fully remove structural disagreement.
+- **``multidiffusion``** — a single sampling pass over the whole image that splits the latent into overlapping tiles every denoising step, runs the model per tile (each with its own LLLite control crop), and averages the overlaps in latent space. The tiles are re-synced every step so they can't diverge — seams and double-exposure are eliminated. Uses a little more VRAM (it holds the full latent), and ``method`` / ``color_match`` don't apply. Its final VAE decode is a single full-image pass (independent of ``rows``/``columns``); if that pins your VRAM, enable ``vae_decode_tiled`` (with ``vae_decode_tile_size``) to decode it in tiles. These two fields only show in ``multidiffusion`` mode.
+
+The ``LLLite Model`` can be picked on the node's own dropdown, or driven from outside by connecting the **Load Anima LLLite Model** node (below) — handy for selecting it once and driving several samplers, or keeping model selection in a loaders group.
+
+**No extra node packs are required** - the Anima ControlNet-LLLite apply logic is bundled (vendored from [kohya-ss/ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite), see [Credits](#credits)), so the node works on its own. It can also be found in the node search under terms like ``Anima LLLite Tiled Sampler`` or ``Anima Tile Upscale``.
+
+#### Load Anima LLLite Model
+A small loader that selects an Anima ControlNet-LLLite weights file (from the ``controlnet`` folder) and outputs its filename for the **Anima LLLite Tiled ControlNet Sampler**'s ``lllite_name`` input — letting you choose the LLLite model once and route it into one or more samplers. It only outputs the filename (the LLLite module is built inside the sampler), so it needs no other node packs.
+
+#### MultiDiffusion Tiled Hires Fix
+A model-agnostic **tiled hires-fix / refiner** — the ``multidiffusion`` behaviour of the Anima sampler with the LLLite parts removed, so it works on any model (SD/SDXL/Flux/etc.) and needs no extra node packs. It runs a single sampling pass over the whole image, splitting the latent into overlapping tiles every denoising step and averaging the overlaps in latent space, so there are no tile seams and per-step UNet activations stay tile-sized (whole-image coherence at roughly tile-sized peak VRAM). It doesn't upscale on its own: upscale the image first, then refine it here with a low ``denoise`` (~0.3–0.5). The same optional ``vae_decode_tiled`` / ``vae_decode_tile_size`` keep the final full-image decode from spiking VRAM. It also auto-detects **upscale VAEs** loaded via packs like [ComfyUI-VAE-Utils](https://github.com/spacepxl/ComfyUI-VAE-Utils) (e.g. the Wan2.1 ``upscale2x`` image VAE) and decodes them the way that pack's own decode node does, so the output isn't a broken multi-channel result. Findable in node search under ``hires fix``, ``tiled diffusion``, ``multidiffusion``, ``tiled upscale`` and similar.
+
+### Inpaint helper
+#### Fit Image into BBox Mask
+This node fits an image <b>inside the bounding box region of a mask</b> and places it into a destination image (or a blank canvas). It’s useful for workflows where you want to insert or align a smaller image (e.g. pose, object, logo, patch) into a specific masked region while keeping correct proportions.
+This node does the following:
+- Detects the bounding box (BBox) of your input mask — that is, the smallest rectangle that covers all white/non-zero pixels.
+- Resizes the source image to fit inside (or cover) that bounding box, preserving aspect ratio.
+- Places the resized image at the corresponding position in the destination image.
+- Outputs the final composited image, a stand-alone fitted image, and a mask showing the exact placed region.
+
+You can find an example workflow [here](https://github.com/user-attachments/assets/fb344190-206b-4c15-93ae-cac05c8b6740) for the images generated in the gif below(download and drop the workflow image into comfyui).
+
+<img width="1567" height="732" alt="Image" src="https://github.com/user-attachments/assets/ce8aa314-33e0-408f-b1dc-c98f966ea1a4" />
+
+<img width="512" height="512" src="https://github.com/user-attachments/assets/8c4d8a46-42e9-4da0-ab72-7d00b5bd7d8f"/>
+
+## Changelog
+### v.1.16.1
+- fixed ``Forward/Bypass on Boolean (Any)`` and ``Forward/Mute on Boolean (Any)`` ignoring the bypass/mute state of upstream boolean nodes: a muted or bypassed source (e.g. one of the two inputs of a ``Boolean AND Operator``) is now read as False / passed through like ComfyUI does at execution time, so the toggled downstream node matches what the workflow actually computes.
+
+### v.1.16.0
+- added new ``Int to Bool (Threshold)``-Node in the ``vsLinx/boolean`` group. Like a classic int-to-bool conversion, but with a ``threshold`` field: it outputs True when the input ``value`` is greater than or equal to ``threshold`` (default 1, so 1-or-above → True) and False otherwise, letting you gate on any cutoff instead of only ``>= 1``.
+- reworked the ``Group Bookmarks`` node into a general ``Bookmarks`` node (renamed; the node identifier is unchanged, so existing workflows keep working). You can now bookmark **individual nodes** in addition to whole groups: the redesigned "Manage Bookmarks" modal shows a searchable **Groups & Nodes** tree where each group can be expanded (▸) to reveal and bookmark the nodes inside it, with ungrouped nodes listed at the bottom. Active bookmarks are tagged **GROUP**/**NODE**, stay reorderable by drag, and clicking a node bookmark in the side panel jumps to and selects that node. Old group-only bookmarks (including sections) are migrated automatically.
+
+### v.1.15.1
+- fixed ``MultiDiffusion Tiled Hires Fix`` throwing ``AttributeError: 'CustomVAE' object has no attribute 'format_encoded'`` (or ``handles_tiling``) after updating to ComfyUI 0.27.0. That release added new attributes to ComfyUI's base VAE that out-of-date custom-VAE packs (e.g. [ComfyUI-VAE-Utils](https://github.com/spacepxl/ComfyUI-VAE-Utils), whose ``CustomVAE`` copies an older VAE init and never calls ``super().__init__()``) don't set, so encoding/decoding through them raised an error. The node now back-fills only the missing attributes with ComfyUI's own defaults before use; up-to-date VAEs are left untouched.
+
+### v.1.15.0
+- ``MultiDiffusion Tiled Hires Fix`` now works with **upscale VAEs** loaded through node packs like [ComfyUI-VAE-Utils](https://github.com/spacepxl/ComfyUI-VAE-Utils) (e.g. the Wan2.1 ``upscale2x`` image VAE). These VAEs' decoders emit extra channels (``3 × k²``) that have to be ``pixel_shuffle``-d back into a ``k``-times larger RGB image — a step the stock VAE Decode doesn't do, so previously the node returned a broken multi-channel result with them. The node now auto-detects such a VAE and switches to a decode that matches that pack's own decode node (channel unshuffle + range guard), while every normal VAE keeps the exact same decode path as before. The ``vae_decode_tiled`` / ``vae_decode_tile_size`` options are honored on this path too.
+
+### v.1.14.0
+- added an optional ``vae_decode_tiled`` (with ``vae_decode_tile_size``) to the ``Anima LLLite Tiled ControlNet Sampler`` for ``multidiffusion`` mode. That mode's final VAE decode is a single full-image pass (independent of ``rows``/``columns``), which can spike VRAM on large images — or, on Windows, crawl by spilling into shared system memory instead of raising a clean out-of-memory error. Enabling it decodes the latent in bounded tiles. Default off, and the two fields only show when ``sampling_mode`` is ``multidiffusion`` (they have no effect in ``per_tile`` mode, where each tile is already decoded on its own).
+- added a new model-agnostic ``MultiDiffusion Tiled Hires Fix`` node in the ``vsLinx/sampling`` group. It's the ``multidiffusion`` behaviour of the ``Anima LLLite Tiled ControlNet Sampler`` with the LLLite parts stripped out, so it works on any model (SD/SDXL/Flux/etc.): one sampling pass over the whole image, splitting the latent into overlapping tiles each denoising step and averaging the overlaps in latent space — no tile seams, and per-step VRAM stays tile-sized. Upscale the image first, then refine it here with a low ``denoise``. Includes the optional ``vae_decode_tiled``/``vae_decode_tile_size`` and search aliases like ``hires fix`` / ``tiled diffusion`` / ``tiled upscale`` so it's findable without knowing the term "multidiffusion".
+
+### v.1.13.0
+- added a new ``Load Anima LLLite Model``-Node in the ``vsLinx/sampling`` group that outputs an LLLite weights filename for the ``Anima LLLite Tiled ControlNet Sampler``'s ``lllite_name`` input - letting you select the LLLite model from outside the sampler (e.g. choose it once for several samplers, or keep it in a loaders group).
+
+### v.1.12.0
+- added a ``sampling_mode`` to the ``Anima LLLite Tiled ControlNet Sampler``: the new ``multidiffusion`` mode runs a single sampling pass over the whole image, splitting the latent into overlapping tiles each denoising step, applying LLLite per tile and averaging the overlaps in latent space. Because the tiles are re-synced every step they can't diverge, eliminating the tile seams and "double-exposure" ghosting that the ``per_tile`` mode (still the default) can produce. Uses slightly more VRAM (holds the full latent; the VAE auto-tiles if needed); ``method``/``color_match`` don't apply in this mode.
+
+### v.1.11.1
+- fixed ``Anima LLLite Tiled ControlNet Sampler`` mangling **image batches**: a batch of N images is now tiled, sampled and stitched per-image and returned as a batch of N (previously the tiles of all images were mixed into one morphed result). Batch of 1 and list inputs are unchanged.
+- added an optional per-tile ``color_match`` (``mean_std`` / ``wavelet``, with ``color_match_strength``) to the ``Anima LLLite Tiled ControlNet Sampler``. It re-anchors each tile's colour to its source tile before stitching, fixing tonal seams (faint brightness/colour steps between independently-sampled tiles, most visible on smooth gradients). Default ``none``, so existing graphs are unaffected; it's a pixel-stats pass and adds no extra sampling.
+
+### v.1.11.0
+- added new ``Anima LLLite Tiled ControlNet Sampler``-Node in the ``vsLinx/sampling`` group. An all-in-one node that tiles an image into a dynamic ``rows`` × ``columns`` grid and, for each tile, applies Anima ControlNet-LLLite (tile as control), VAE-encodes, KSamples and VAE-decodes, then feathers and stitches the tiles back together — replacing a whole manual tile/sample/untile graph with a single node. Exposes the sampler, LLLite and tiling (``overlap``/``overlap_x``/``overlap_y``/``method``) fields, plus a per-tile ``color_match`` (``mean_std``/``wavelet``) that fixes tonal seams between tiles. Needs no extra node packs — the Anima ControlNet-LLLite logic is bundled (vendored from kohya-ss, see Credits).
+
+### v.1.10.0
+- added new ``Forward/Bypass-Mute on State (Any)``-Node in the ``vsLinx/utility`` group. Forwards any value while mirroring the bypass/mute state of the node connected to its ``trigger`` input onto the directly connected downstream node(s) (bypass → bypass, mute → mute, normal → normal). Includes an ``Ignore subgraph boundary`` toggle to follow the trigger across subgraph boundaries until a real node, and a ``Mirror this node's own bypass/mute`` toggle to also propagate this node's own state downstream.
+- added new ``VAE Decode (Batched)`` and ``VAE Decode Tiled (Batched)`` nodes in the ``vsLinx/latent`` group. They work exactly like ComfyUI's built-in VAE Decode / VAE Decode (Tiled) but add a ``batch_size`` field that controls how many latents are decoded by the VAE at once (default ``1``). Decoding fewer at a time lowers peak VRAM and can speed up generation; values >= the batch size behave identically to the built-in nodes.
+- added new ``(Impact-Pack) Interactive Detailer``-Node in the ``vsLinx/detailer`` group. A FaceDetailer clone that, instead of a wildcard field, pauses the workflow and pops up a dialog to enter a prompt per detected segment (empty = base prompt, ``[CONCAT]`` to append, ``[SKIP]`` to leave untouched), then details each segment with its own prompt. Requires ComfyUI-Impact-Pack.
+- added ``lanczos`` as an additional ``upscale_method`` option to the ``Upscale by Factor (With Model)``-Node. Lanczos gives the sharpest, highest-quality resize but runs on the CPU (via PIL), so it is somewhat slower than the other methods.
+
+### v.1.9.1
+- ``Forward/Bypass on Boolean (Any)`` and ``Forward/Mute on Boolean (Any)`` are now pipe-aware: bypass/mute correctly propagates through ``Any to Pipe`` → ``Pipe to Any`` to the real downstream nodes, and boolean values routed through a pipe are resolved at the correct slot index instead of scanning all slots
+
+### v.1.9.0
+- added new ``Any to Pipe``-Node in the ``vsLinx/utility`` group. Packs up to 5 values of any type into a single pipe connection to reduce visual clutter in large workflows.
+- added new ``Pipe to Any``-Node in the ``vsLinx/utility`` group. Unpacks a pipe connection produced by ``Any to Pipe`` back into up to 5 individual outputs.
+
+### v.1.8.1
+- fixed ``(Impact-Pack) Multiline Wildcard Text`` wildcard dropdown not resetting after selection, which could make users think only one wildcard could be added per session
+
+### v.1.8.0
+- added new ``Group Bookmarks``-Node in the ``vsLinx/utility`` group. A UI-only node that adds a collapsible side panel on the right edge of the ComfyUI canvas listing bookmarked workflow groups. Clicking a bookmark entry centers the canvas on that group and zooms to fit it into view. Groups can be organized into named, collapsible sections inside the panel. Section collapsed state and panel visibility are persisted with the workflow.
+- fixed ``Image to Pixel Art`` node name to match naming schema and link to actual documentation
+
+### v.1.7.4
+- added full subgraph support to ``Forward/Bypass on Boolean (Any)`` and ``Forward/Mute on Boolean (Any)``: boolean values passed in from outside a subgraph are now correctly resolved inside it at any nesting depth, and nodes outside the subgraph connected to its output are bypassed/muted accordingly
+
+### v.1.7.3
+- added new ``Image to Pixel Art``-Node that converts images to true pixel art via downscaling to a discrete pixel grid, color quantization with fixed historical palettes (GameBoy, Pico-8, CGA, C64, NES) or auto palette, and optional Floyd-Steinberg or ordered Bayer dithering
+- improved ``Forward/Bypass on Boolean (Any)`` and ``Forward/Mute on Boolean (Any)`` upstream boolean resolution: the resolver now recursively walks the full upstream graph at any depth, covering arbitrary pass-through and relay nodes, instead of only handling the known vsLinx AND/OR/Flip nodes. This fixes cases where a linked boolean didn't resolve correctly when chained through one or more intermediate nodes.
+
+### v.1.7.2
+- introduced new setting that is activated by default and fixes global scheduler issues introduced by nodes like RES4LYF that overwrite global scheduler lists which does not work well with subgraphs or other custom nodes, if there's a mismatch this fix will automatically correct the expected list with the input list of the node and prevent erros
+
+### v.1.7.1
+- fixed ``Load Last Generated Image`` node preview getting stuck on a previously drawn mask after using the MaskEditor, then refreshing or auto-refreshing to a new image. Caused by ComfyUI frontend >=1.41 introducing a Vue-based node output store that the MaskEditor writes to; stale clipspace data in that store was overriding the node's preview on every frame. The fix clears the store entry and suppresses the Vue overlay when switching back to an output image.
+
+### v.1.7.0
+- added new ``Load Last Generated Image``-Node as a replacement for ComfyUI's built-in **LoadImageOutput** node. Provides a dropdown of all images in the output folder (newest first), auto-refresh after generation, a manual refresh button, a file upload button, and full MaskEditor support with mask persistence across executions, tab switches, and page reloads. Falls back to a 512×512 black image when no image is available.
+
+### v.1.6.1
+- added filename export for ``Load (Multiple) Images (List)`` and ``Load (Multiple) Images (Batch)`` with a node-property to also dedupe the filename to remove `` (number)`` from the name in case of a duplicate filename 
+
+### v.1.6.0
+- added new "Upscale by Factor (With Model)"-Node that upscales an image to the desired factor of it's original size by using an upscale model + ``nearest-exact``, ``bilinear`` or ``area`` upscaling to resize the image to the desired factor afterwards
+
+### v.1.5.0
+- added new setting that allows you to add previews for all model loaders (+ rgthree subfolder compatible)
+
+### v.1.4.0
+- added the "(Impact-Pack) Multiline Wildcard Text"-Node that provides a simple multiline text field with a wildcard selector that automatically appends selected wildcards. 
+
+### v1.3.1
+* fixed a bug where the ``Power Lora Loader to Prompt (Image Saver)`` could not gather the information of the loras if they were qwen, flux or lumina2 (Z-IMG)
+
+### v1.3.0
+* added new ``Power Lora Loader to Prompt (Image Saver)``-Node to the utility group. This Node can read the loras of a Power Lora Loader from rgthree and append them to a text string - this is helpful in combination with the Image Saver Node from alexopus to persist loras & their weights.
+
+### v1.2.0
+* added documentation including input & output parameters for every single node, viewable via the in-comfy node info view
+* changed some of the texts in readme & removed parameter documentation from readme
+* changed folder structure to include docs alongside js
+
+### v1.1.3
+* added new ``Fit Image into BBox Mask``-Node in it's own ``vsLinx/inpaint`` node-library. This node fits an image <b>inside the bounding box region of a mask</b> and places it into a destination image (or a blank canvas). It’s useful for workflows where you want to insert or align a smaller image (e.g. pose, object, logo, patch) into a specific masked region while keeping correct proportions. It's intended to be used in an inpainting process where you'll pre-process this image and execute a controlnet on the masked area. An example and can be found in the node description above.
+
+### v1.1.2
+* The ``Forward/Bypass on Boolean (Any)`` and ``Forward/Mute on Boolean (Any)`` now search for the parent boolean value(s) of the upstream nodes if they're either ``Boolean AND Operator``, ``Boolean OR Operator`` or ``Boolean flip`` to ensure bypassing even if boolean value is passed by a node instead of the in-node switch.
+
+### v1.1.1
+* added ``Forward/Bypass on Boolean (Any)`` that lets you bypass directly connected node(s) based on a boolean value
+* added ``Forward/Mute on Boolean (Any)`` that lets you mute directly connected node(s) based on a boolean value
+* added ``Boolean AND Operator`` that returns true if both of it's boolean inputs are true, otherwise returns false
+* added ``Boolean OR Operator`` that returns true if either of it's boolean inputs are true, otherwise returns false
+* added ``Boolean flip`` that flips a boolean value: True becomes False, False becomes True.
+* added descriptions for the ``Load (Multiple) Images (List/Batch)``-Nodes 
+
+### v1.0.1 
+* added ``fail_if_empty`` property in Properties (default true) to stop graph when selection resolves to no images
+* improved runtime errors when files are missing from input (clear “No valid images found…” message)
+* check for removed/missing files against server (HEAD/GET) after load/upload and before preview
+* preview no longer prunes on browser decode failure; it’s best-effort and non-blocking
+* de-duplicate selections (order-preserving) and respect ``max_images`` cap
+* auto-prune missing files from ``selected_paths`` after restarts or external deletions
+* renamed nodes (display names only; IDs unchanged for backward compatibility)
+
+### v1.0.0 
+* initial release
+
+## Credits
+- **[kohya-ss](https://github.com/kohya-ss)** for **[ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite)** (Apache License 2.0). The ``Anima LLLite Tiled ControlNet Sampler`` node bundles a vendored copy of its ControlNet-LLLite apply logic (under ``nodes/_vendor``, with the Apache license kept alongside) so the node runs without requiring that pack to be installed.
+- **[ltdrdata](https://github.com/ltdrdata)** for **[ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack)**, which powers the ``(Impact-Pack) Interactive Detailer`` and ``(Impact-Pack) Multiline Wildcard Text`` nodes.

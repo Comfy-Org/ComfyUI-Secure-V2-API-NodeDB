@@ -1,0 +1,474 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "SaveImageExtended": {
+      "class": "SaveImageExtended",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": true,
+        "validate_inputs": false
+      },
+      "module": "save_image_extended",
+      "permissions": [
+        "assets",
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image",
+          "description": "\n## Advice\nEnable node-id badges when selecting a value from a particular node, then use\n`node_id.widget_name` in a filename or folder key.\n\nUnqualified widget names use the last matching prompt value. `resolution`,\ncheckpoint/LoRA/control-net names and paths, and strftime tokens are supported.\nGenerated names are confined to ComfyUI's managed output directory; absolute\npaths and parent-directory traversal are rejected.\n",
+          "display_name": "\ud83d\udcbe Save Image Extended 2.88",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "node_id": "SaveImageExtended",
+          "not_idempotent": true,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "sampler_name, cfg, steps, %F %H-%M-%S",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_keys",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "foldername_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ckpt_name",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "foldername_keys",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "-",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "delimiter",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "disabled",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_job_data",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "disabled",
+                "prompt",
+                "basic, prompt",
+                "basic, sampler, prompt",
+                "basic, models, sampler, prompt"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "job_data_per_image",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "job_custom_text",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 4,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "counter_digits",
+              "lazy": null,
+              "max": 8,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "last",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "counter_position",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "last",
+                "first"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "one_counter_per_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image_preview",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": ".webp",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_ext",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                ".webp",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".j2k",
+                ".jp2",
+                ".gif",
+                ".tiff",
+                ".bmp",
+                ".avif"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 90,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "quality",
+              "lazy": null,
+              "max": 100,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "named_keys",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "positive_text_opt",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "negative_text_opt",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "js"
+}

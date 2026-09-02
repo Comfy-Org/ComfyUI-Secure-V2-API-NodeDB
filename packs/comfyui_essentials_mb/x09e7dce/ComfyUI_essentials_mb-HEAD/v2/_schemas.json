@@ -1,0 +1,7347 @@
+{
+  "ApplyCLIPSeg+": {
+    "category": "essentials_mb/segmentation",
+    "class": "ApplyCLIPSeg",
+    "description": "",
+    "display_name": "🔧 Apply CLIPSeg",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "clip_seg",
+        "optional": false,
+        "options": {},
+        "type": "CLIP_SEG"
+      },
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "prompt",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "threshold",
+        "optional": false,
+        "options": {
+          "default": 0.4,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "smooth",
+        "optional": false,
+        "options": {
+          "default": 9,
+          "max": 32,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "dilate",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 32,
+          "min": -32,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "blur",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 64,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "segmentation",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "BatchCount+": {
+    "category": "essentials_mb/utilities",
+    "class": "BatchCount",
+    "description": "",
+    "display_name": "🔧 Batch Count",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "batch",
+        "optional": false,
+        "options": {},
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      }
+    ]
+  },
+  "CLIPTextEncodeSDXL+": {
+    "category": "essentials_mb/conditioning",
+    "class": "CLIPTextEncodeSDXLSimplified",
+    "description": "",
+    "display_name": "🔧 SDXL CLIPTextEncode",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 1024.0,
+          "max": 16384,
+          "min": 0
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 1024.0,
+          "max": 16384,
+          "min": 0
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "size_cond_factor",
+        "optional": false,
+        "options": {
+          "default": 4,
+          "max": 16,
+          "min": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "text",
+        "optional": false,
+        "options": {
+          "default": "",
+          "dynamicPrompts": true,
+          "multiline": true
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "clip",
+        "optional": false,
+        "options": {},
+        "type": "CLIP"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CONDITIONING",
+        "type": "CONDITIONING"
+      }
+    ]
+  },
+  "ConditioningCombineMultiple+": {
+    "category": "essentials_mb/conditioning",
+    "class": "ConditioningCombineMultiple",
+    "description": "",
+    "display_name": "🔧 Cond Combine Multiple",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "conditioning_1",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "conditioning_2",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "conditioning_3",
+        "optional": true,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "conditioning_4",
+        "optional": true,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "conditioning_5",
+        "optional": true,
+        "options": {},
+        "type": "CONDITIONING"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CONDITIONING",
+        "type": "CONDITIONING"
+      }
+    ]
+  },
+  "ConsoleDebug+": {
+    "category": "essentials_mb/utilities",
+    "class": "ConsoleDebug",
+    "description": "",
+    "display_name": "🔧 Console Debug",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {},
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "prefix",
+        "optional": true,
+        "options": {
+          "default": "Value:",
+          "multiline": false
+        },
+        "type": "STRING"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": true,
+    "method": "execute",
+    "module": "misc",
+    "outputs": []
+  },
+  "DebugTensorShape+": {
+    "category": "essentials_mb/utilities",
+    "class": "DebugTensorShape",
+    "description": "",
+    "display_name": "🔧 Debug Tensor Shape",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "tensor",
+        "optional": false,
+        "options": {},
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": true,
+    "method": "execute",
+    "module": "misc",
+    "outputs": []
+  },
+  "DisplayAny": {
+    "category": "essentials_mb/utilities",
+    "class": "DisplayAny",
+    "description": "",
+    "display_name": "🔧 Display Any",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "input",
+        "optional": false,
+        "options": {},
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "mode",
+        "optional": false,
+        "options": {},
+        "type": [
+          "raw value",
+          "tensor shape"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": true,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "STRING",
+        "type": "STRING"
+      }
+    ]
+  },
+  "DrawText+": {
+    "category": "essentials_mb/text",
+    "class": "DrawText",
+    "description": "",
+    "display_name": "🔧 Draw Text",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "text",
+        "optional": false,
+        "options": {
+          "default": "Hello, World!",
+          "dynamicPrompts": true,
+          "multiline": true
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "font",
+        "optional": false,
+        "options": {},
+        "type": [
+          "ShareTechMono-Regular.ttf"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "size",
+        "optional": false,
+        "options": {
+          "default": 56,
+          "max": 9999,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "color",
+        "optional": false,
+        "options": {
+          "default": "#FFFFFF"
+        },
+        "type": "COLOR"
+      },
+      {
+        "extra": [],
+        "name": "alpha",
+        "optional": false,
+        "options": {
+          "default": 255,
+          "max": 255,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "background_color",
+        "optional": false,
+        "options": {
+          "default": "#000000"
+        },
+        "type": "COLOR"
+      },
+      {
+        "extra": [],
+        "name": "background_alpha",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 255,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "shadow_distance",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 100,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "shadow_blur",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 100,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "shadow_color",
+        "optional": false,
+        "options": {
+          "default": "#000000",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "horizontal_align",
+        "optional": false,
+        "options": {},
+        "type": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "vertical_align",
+        "optional": false,
+        "options": {},
+        "type": [
+          "top",
+          "center",
+          "bottom"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "offset_x",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "offset_y",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "direction",
+        "optional": false,
+        "options": {},
+        "type": [
+          "ltr",
+          "rtl"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "img_composite",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "text",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "FluxAttentionSeeker+": {
+    "category": "essentials_mb/conditioning",
+    "class": "FluxAttentionSeeker",
+    "description": "",
+    "display_name": "🔧 Flux Attention Seeker",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "clip",
+        "optional": false,
+        "options": {},
+        "type": "CLIP"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_query",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_key",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_value",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_out",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_0",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_1",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_2",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_3",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_4",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_5",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_6",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_7",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_8",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_9",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_10",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_11",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_0",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_1",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_2",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_3",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_4",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_5",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_6",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_7",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_8",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_9",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_10",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_11",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_12",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_13",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_14",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_15",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_16",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_17",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_18",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_19",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_20",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_21",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_22",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_23",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CLIP",
+        "type": "CLIP"
+      }
+    ]
+  },
+  "FluxBlocksBuster+": {
+    "category": "essentials_mb/conditioning",
+    "class": "FluxBlocksBuster",
+    "description": "",
+    "display_name": "🔧 Flux Model Blocks Buster",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "blocks",
+        "optional": false,
+        "options": {
+          "default": "## 0 = 1.0\n## 1 = 1.0\n## 2 = 1.0\n## 3 = 1.0\n## 4 = 1.0\n## 5 = 1.0\n## 6 = 1.0\n## 7 = 1.0\n## 8 = 1.0\n## 9 = 1.0\n## 10 = 1.0\n## 11 = 1.0\n## 12 = 1.0\n## 13 = 1.0\n## 14 = 1.0\n## 15 = 1.0\n## 16 = 1.0\n## 17 = 1.0\n## 18 = 1.0\n# 0 = 1.0\n# 1 = 1.0\n# 2 = 1.0\n# 3 = 1.0\n# 4 = 1.0\n# 5 = 1.0\n# 6 = 1.0\n# 7 = 1.0\n# 8 = 1.0\n# 9 = 1.0\n# 10 = 1.0\n# 11 = 1.0\n# 12 = 1.0\n# 13 = 1.0\n# 14 = 1.0\n# 15 = 1.0\n# 16 = 1.0\n# 17 = 1.0\n# 18 = 1.0\n# 19 = 1.0\n# 20 = 1.0\n# 21 = 1.0\n# 22 = 1.0\n# 23 = 1.0\n# 24 = 1.0\n# 25 = 1.0\n# 26 = 1.0\n# 27 = 1.0\n# 28 = 1.0\n# 29 = 1.0\n# 30 = 1.0\n# 31 = 1.0\n# 32 = 1.0\n# 33 = 1.0\n# 34 = 1.0\n# 35 = 1.0\n# 36 = 1.0\n# 37 = 1.0",
+          "dynamicPrompts": true,
+          "multiline": true
+        },
+        "type": "STRING"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "patch",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MODEL",
+        "type": "MODEL"
+      },
+      {
+        "is_list": false,
+        "name": "patched_blocks",
+        "type": "STRING"
+      }
+    ]
+  },
+  "FluxSamplerParams+": {
+    "category": "essentials_mb/sampling",
+    "class": "FluxSamplerParams",
+    "description": "",
+    "display_name": "🔧 Flux Sampler Parameters",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "conditioning",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "latent_image",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      },
+      {
+        "extra": [],
+        "name": "seed",
+        "optional": false,
+        "options": {
+          "default": "?",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "sampler",
+        "optional": false,
+        "options": {
+          "default": "euler",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "scheduler",
+        "optional": false,
+        "options": {
+          "default": "simple",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "steps",
+        "optional": false,
+        "options": {
+          "default": "20",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "guidance",
+        "optional": false,
+        "options": {
+          "default": "3.5",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "max_shift",
+        "optional": false,
+        "options": {
+          "default": "",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "base_shift",
+        "optional": false,
+        "options": {
+          "default": "",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "denoise",
+        "optional": false,
+        "options": {
+          "default": "1.0",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "loras",
+        "optional": true,
+        "options": {},
+        "type": "LORA_PARAMS"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "latent",
+        "type": "LATENT"
+      },
+      {
+        "is_list": false,
+        "name": "params",
+        "type": "SAMPLER_PARAMS"
+      }
+    ]
+  },
+  "GetImageSize+": {
+    "category": "essentials_mb/image utils",
+    "class": "GetImageSize",
+    "description": "",
+    "display_name": "🔧 Get Image Size",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "height",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "count",
+        "type": "INT"
+      }
+    ]
+  },
+  "GuidanceTimestepping+": {
+    "category": "essentials_mb/sampling",
+    "class": "GuidanceTimestepping",
+    "description": "",
+    "display_name": "🔧 Guidance Timestep (experimental)",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 2.0,
+          "max": 100.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "start_at",
+        "optional": false,
+        "options": {
+          "default": 0.2,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "end_at",
+        "optional": false,
+        "options": {
+          "default": 0.8,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MODEL",
+        "type": "MODEL"
+      }
+    ]
+  },
+  "ImageApplyLUT+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageApplyLUT",
+    "description": "",
+    "display_name": "🔧 Image Apply LUT",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "lut_file",
+        "optional": false,
+        "options": {},
+        "type": [
+          "put_luts_files_here.txt"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "gamma_correction",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "clip_values",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "strength",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageBatchMultiple+": {
+    "category": "essentials_mb/image batch",
+    "class": "ImageBatchMultiple",
+    "description": "",
+    "display_name": "🔧 Images Batch Multiple",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image_1",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {
+          "default": "lanczos"
+        },
+        "type": [
+          "nearest-exact",
+          "bilinear",
+          "area",
+          "bicubic",
+          "lanczos"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "image_2",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "image_3",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "image_4",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "image_5",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageBatchToList+": {
+    "category": "essentials_mb/image batch",
+    "class": "ImageBatchToList",
+    "description": "",
+    "display_name": "🔧 Image Batch To List",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": true,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageCASharpening+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageCAS",
+    "description": "",
+    "display_name": "🔧 Image Contrast Adaptive Sharpening",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "amount",
+        "optional": false,
+        "options": {
+          "default": 0.8,
+          "max": 1,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageColorMatch+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageColorMatch",
+    "description": "",
+    "display_name": "🔧 Image Color Match",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "reference",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "color_space",
+        "optional": false,
+        "options": {},
+        "type": [
+          "LAB",
+          "YCbCr",
+          "RGB",
+          "LUV",
+          "YUV",
+          "XYZ"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "device",
+        "optional": false,
+        "options": {},
+        "type": [
+          "auto",
+          "cpu",
+          "gpu"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "batch_size",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 1024,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "reference_mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageColorMatchAdobe+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageColorMatchAdobe",
+    "description": "",
+    "display_name": "🔧 Image Color Match Adobe",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "reference",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "color_space",
+        "optional": false,
+        "options": {},
+        "type": [
+          "RGB",
+          "LAB"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "luminance_factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 2.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "color_intensity_factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 2.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "fade_factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "neutralization_factor",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "device",
+        "optional": false,
+        "options": {},
+        "type": [
+          "auto",
+          "cpu",
+          "gpu"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "reference_mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageComposite+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageComposite",
+    "description": "",
+    "display_name": "🔧 Image Composite",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "destination",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "source",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "x",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "y",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "offset_x",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "offset_y",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": -16384,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageCompositeFromMaskBatch+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageCompositeFromMaskBatch",
+    "description": "",
+    "display_name": "🔧 Image Composite From Mask Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image_from",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "image_to",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageCrop+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageCrop",
+    "description": "",
+    "display_name": "🔧 Image Crop",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 256,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 256,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "position",
+        "optional": false,
+        "options": {},
+        "type": [
+          "top-left",
+          "top-center",
+          "top-right",
+          "right-center",
+          "bottom-right",
+          "bottom-center",
+          "bottom-left",
+          "left-center",
+          "center"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "x_offset",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "min": -99999,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "y_offset",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "min": -99999,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "x",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "y",
+        "type": "INT"
+      }
+    ]
+  },
+  "ImageDesaturate+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageDesaturate",
+    "description": "",
+    "display_name": "🔧 Image Desaturate",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {},
+        "type": [
+          "luminance (Rec.709)",
+          "luminance (Rec.601)",
+          "average",
+          "lightness"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageEnhanceDifference+": {
+    "category": "essentials_mb/image analysis",
+    "class": "ImageEnhanceDifference",
+    "description": "",
+    "display_name": "🔧 Image Enhance Difference",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image1",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "image2",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "exponent",
+        "optional": false,
+        "options": {
+          "default": 0.75,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageExpandBatch+": {
+    "category": "essentials_mb/image batch",
+    "class": "ImageExpandBatch",
+    "description": "",
+    "display_name": "🔧 Image Expand Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "size",
+        "optional": false,
+        "options": {
+          "default": 16,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {},
+        "type": [
+          "expand",
+          "repeat all",
+          "repeat first",
+          "repeat last"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageFlip+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageFlip",
+    "description": "",
+    "display_name": "🔧 Image Flip",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "axis",
+        "optional": false,
+        "options": {},
+        "type": [
+          "x",
+          "y",
+          "xy"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageFromBatch+": {
+    "category": "essentials_mb/image batch",
+    "class": "ImageFromBatch",
+    "description": "",
+    "display_name": "🔧 Image From Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "start",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "length",
+        "optional": false,
+        "options": {
+          "default": -1,
+          "min": -1,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageHistogramMatch+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageHistogramMatch",
+    "description": "",
+    "display_name": "🔧 Image Histogram Match",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "reference",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {},
+        "type": [
+          "pytorch",
+          "skimage"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "factor",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "device",
+        "optional": false,
+        "options": {},
+        "type": [
+          "auto",
+          "cpu",
+          "gpu"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageListToBatch+": {
+    "category": "essentials_mb/image batch",
+    "class": "ImageListToBatch",
+    "description": "",
+    "display_name": "🔧 Image List To Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": true,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImagePosterize+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImagePosterize",
+    "description": "",
+    "display_name": "🔧 Image Posterize",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "threshold",
+        "optional": false,
+        "options": {
+          "default": 0.5,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImagePreviewFromLatent+": {
+    "category": "essentials_mb/image utils",
+    "class": "ImagePreviewFromLatent",
+    "description": "",
+    "display_name": "🔧 Image Preview From Latent",
+    "hidden": [
+      "PROMPT",
+      "EXTRA_PNGINFO"
+    ],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "latent",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      },
+      {
+        "extra": [],
+        "name": "vae",
+        "optional": false,
+        "options": {},
+        "type": "VAE"
+      },
+      {
+        "extra": [],
+        "name": "tile_size",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 4096,
+          "min": 0,
+          "step": 64
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "image",
+        "optional": true,
+        "options": {
+          "image_upload": false
+        },
+        "type": [
+          "none"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": true,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "height",
+        "type": "INT"
+      }
+    ]
+  },
+  "ImageRandomTransform+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageRandomTransform",
+    "description": "",
+    "display_name": "🔧 Image Random Transform",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "seed",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "repeat",
+        "optional": false,
+        "options": {
+          "default": 1,
+          "max": 256,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "variation",
+        "optional": false,
+        "options": {
+          "default": 0.1,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageRemoveAlpha+": {
+    "category": "essentials_mb/image utils",
+    "class": "ImageRemoveAlpha",
+    "description": "",
+    "display_name": "🔧 Image Remove Alpha",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageRemoveBackground+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageRemoveBackground",
+    "description": "",
+    "display_name": "🔧 Image Remove Background",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "rembg_session",
+        "optional": false,
+        "options": {},
+        "type": "REMBG_SESSION"
+      },
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "ImageResize+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageResize",
+    "description": "",
+    "display_name": "🔧 Image Resize",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "interpolation",
+        "optional": false,
+        "options": {},
+        "type": [
+          "nearest",
+          "bilinear",
+          "bicubic",
+          "area",
+          "nearest-exact",
+          "lanczos"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {},
+        "type": [
+          "stretch",
+          "keep proportion",
+          "fill / crop",
+          "pad"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "condition",
+        "optional": false,
+        "options": {},
+        "type": [
+          "always",
+          "downscale if bigger",
+          "upscale if smaller",
+          "if bigger area",
+          "if smaller area"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "multiple_of",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 512,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "height",
+        "type": "INT"
+      }
+    ]
+  },
+  "ImageSeamCarving+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageSeamCarving",
+    "description": "",
+    "display_name": "🔧 Image Seam Carving",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "energy",
+        "optional": false,
+        "options": {},
+        "type": [
+          "backward",
+          "forward"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "order",
+        "optional": false,
+        "options": {},
+        "type": [
+          "width-first",
+          "height-first"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "keep_mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "drop_mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageSmartSharpen+": {
+    "category": "essentials_mb/image processing",
+    "class": "ImageSmartSharpen",
+    "description": "",
+    "display_name": "🔧 Image Smart Sharpen",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "noise_radius",
+        "optional": false,
+        "options": {
+          "default": 7,
+          "max": 25,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "preserve_edges",
+        "optional": false,
+        "options": {
+          "default": 0.75,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "sharpen",
+        "optional": false,
+        "options": {
+          "default": 5.0,
+          "max": 25.0,
+          "min": 0.0,
+          "step": 0.5
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "ratio",
+        "optional": false,
+        "options": {
+          "default": 0.5,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageTile+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageTile",
+    "description": "",
+    "display_name": "🔧 Image Tile",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "rows",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 256,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "cols",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 256,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "overlap",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 0.5,
+          "min": 0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "overlap_x",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 8192,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "overlap_y",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 8192,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "tile_width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "tile_height",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "overlap_x",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "overlap_y",
+        "type": "INT"
+      }
+    ]
+  },
+  "ImageToDevice+": {
+    "category": "essentials_mb/image utils",
+    "class": "ImageToDevice",
+    "description": "",
+    "display_name": "🔧 Image To Device",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "device",
+        "optional": false,
+        "options": {},
+        "type": [
+          "auto",
+          "cpu",
+          "gpu"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "ImageUntile+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "ImageUntile",
+    "description": "",
+    "display_name": "🔧 Image Untile",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "tiles",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "overlap_x",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 8192,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "overlap_y",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 8192,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "rows",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 256,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "cols",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 256,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "InjectLatentNoise+": {
+    "category": "essentials_mb/sampling",
+    "class": "InjectLatentNoise",
+    "description": "",
+    "display_name": "🔧 Inject Latent Noise",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "latent",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      },
+      {
+        "extra": [],
+        "name": "noise_seed",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "noise_strength",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 20.0,
+          "min": -20.0,
+          "round": 0.01,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "normalize",
+        "optional": false,
+        "options": {
+          "default": "false"
+        },
+        "type": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": true,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LATENT",
+        "type": "LATENT"
+      }
+    ]
+  },
+  "KSamplerVariationsStochastic+": {
+    "category": "essentials_mb/sampling",
+    "class": "KSamplerVariationsStochastic",
+    "description": "",
+    "display_name": "🔧 KSampler Stochastic Variations",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "latent_image",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      },
+      {
+        "extra": [],
+        "name": "noise_seed",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "steps",
+        "optional": false,
+        "options": {
+          "default": 25,
+          "max": 10000,
+          "min": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "cfg",
+        "optional": false,
+        "options": {
+          "default": 7.0,
+          "max": 100.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "sampler",
+        "optional": false,
+        "options": {},
+        "type": [
+          "euler",
+          "euler_cfg_pp",
+          "euler_ancestral",
+          "euler_ancestral_cfg_pp",
+          "heun",
+          "heunpp2",
+          "exp_heun_2_x0",
+          "exp_heun_2_x0_sde",
+          "dpm_2",
+          "dpm_2_ancestral",
+          "lms",
+          "dpm_fast",
+          "dpm_adaptive",
+          "dpmpp_2s_ancestral",
+          "dpmpp_2s_ancestral_cfg_pp",
+          "dpmpp_sde",
+          "dpmpp_sde_gpu",
+          "dpmpp_2m",
+          "dpmpp_2m_cfg_pp",
+          "dpmpp_2m_sde",
+          "dpmpp_2m_sde_gpu",
+          "dpmpp_2m_sde_heun",
+          "dpmpp_2m_sde_heun_gpu",
+          "dpmpp_3m_sde",
+          "dpmpp_3m_sde_gpu",
+          "ddpm",
+          "lcm",
+          "ipndm",
+          "ipndm_v",
+          "deis",
+          "res_multistep",
+          "res_multistep_cfg_pp",
+          "res_multistep_ancestral",
+          "res_multistep_ancestral_cfg_pp",
+          "gradient_estimation",
+          "gradient_estimation_cfg_pp",
+          "er_sde",
+          "seeds_2",
+          "seeds_3",
+          "sa_solver",
+          "sa_solver_pece",
+          "ddim",
+          "uni_pc",
+          "uni_pc_bh2"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "scheduler",
+        "optional": false,
+        "options": {},
+        "type": [
+          "simple",
+          "sgm_uniform",
+          "karras",
+          "exponential",
+          "ddim_uniform",
+          "beta",
+          "normal",
+          "linear_quadratic",
+          "kl_optimal"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "positive",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "negative",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "variation_seed",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT:seed"
+      },
+      {
+        "extra": [],
+        "name": "variation_strength",
+        "optional": false,
+        "options": {
+          "default": 0.2,
+          "max": 1.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "cfg_scale",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LATENT",
+        "type": "LATENT"
+      }
+    ]
+  },
+  "KSamplerVariationsWithNoise+": {
+    "category": "essentials_mb/sampling",
+    "class": "KSamplerVariationsWithNoise",
+    "description": "",
+    "display_name": "🔧 KSampler Variations with Noise Injection",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "latent_image",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      },
+      {
+        "extra": [],
+        "name": "main_seed",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT:seed"
+      },
+      {
+        "extra": [],
+        "name": "steps",
+        "optional": false,
+        "options": {
+          "default": 20,
+          "max": 10000,
+          "min": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "cfg",
+        "optional": false,
+        "options": {
+          "default": 8.0,
+          "max": 100.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "sampler_name",
+        "optional": false,
+        "options": {},
+        "type": [
+          "euler",
+          "euler_cfg_pp",
+          "euler_ancestral",
+          "euler_ancestral_cfg_pp",
+          "heun",
+          "heunpp2",
+          "exp_heun_2_x0",
+          "exp_heun_2_x0_sde",
+          "dpm_2",
+          "dpm_2_ancestral",
+          "lms",
+          "dpm_fast",
+          "dpm_adaptive",
+          "dpmpp_2s_ancestral",
+          "dpmpp_2s_ancestral_cfg_pp",
+          "dpmpp_sde",
+          "dpmpp_sde_gpu",
+          "dpmpp_2m",
+          "dpmpp_2m_cfg_pp",
+          "dpmpp_2m_sde",
+          "dpmpp_2m_sde_gpu",
+          "dpmpp_2m_sde_heun",
+          "dpmpp_2m_sde_heun_gpu",
+          "dpmpp_3m_sde",
+          "dpmpp_3m_sde_gpu",
+          "ddpm",
+          "lcm",
+          "ipndm",
+          "ipndm_v",
+          "deis",
+          "res_multistep",
+          "res_multistep_cfg_pp",
+          "res_multistep_ancestral",
+          "res_multistep_ancestral_cfg_pp",
+          "gradient_estimation",
+          "gradient_estimation_cfg_pp",
+          "er_sde",
+          "seeds_2",
+          "seeds_3",
+          "sa_solver",
+          "sa_solver_pece",
+          "ddim",
+          "uni_pc",
+          "uni_pc_bh2"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "scheduler",
+        "optional": false,
+        "options": {},
+        "type": [
+          "simple",
+          "sgm_uniform",
+          "karras",
+          "exponential",
+          "ddim_uniform",
+          "beta",
+          "normal",
+          "linear_quadratic",
+          "kl_optimal"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "positive",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "negative",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "variation_strength",
+        "optional": false,
+        "options": {
+          "default": 0.17,
+          "max": 1.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "variation_seed",
+        "optional": false,
+        "options": {
+          "default": 12345,
+          "max": 18446744073709551615,
+          "min": 0
+        },
+        "type": "INT:seed"
+      },
+      {
+        "extra": [],
+        "name": "denoise",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "round": 0.01,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LATENT",
+        "type": "LATENT"
+      }
+    ]
+  },
+  "LoadCLIPSegModels+": {
+    "category": "essentials_mb/segmentation",
+    "class": "LoadCLIPSegModels",
+    "description": "",
+    "display_name": "🔧 Load CLIPSeg Models",
+    "hidden": [],
+    "inputs": [],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "segmentation",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CLIP_SEG",
+        "type": "CLIP_SEG"
+      }
+    ]
+  },
+  "LorasForFluxParams+": {
+    "category": "essentials_mb/sampling",
+    "class": "LorasForFluxParams",
+    "description": "",
+    "display_name": "🔧 LoRA for Flux Parameters",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "lora_1",
+        "optional": false,
+        "options": {
+          "tooltip": "The name of the LoRA."
+        },
+        "type": []
+      },
+      {
+        "extra": [],
+        "name": "strength_model_1",
+        "optional": false,
+        "options": {
+          "default": "1.0",
+          "dynamicPrompts": false,
+          "multiline": false
+        },
+        "type": "STRING"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LORA_PARAMS",
+        "type": "LORA_PARAMS"
+      }
+    ]
+  },
+  "MaskBatch+": {
+    "category": "essentials_mb/mask batch",
+    "class": "MaskBatch",
+    "description": "",
+    "display_name": "🔧 Mask Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask1",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "mask2",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskBlur+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskBlur",
+    "description": "",
+    "display_name": "🔧 Mask Blur",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "amount",
+        "optional": false,
+        "options": {
+          "default": 6,
+          "max": 256,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "device",
+        "optional": false,
+        "options": {},
+        "type": [
+          "auto",
+          "cpu",
+          "gpu"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskBoundingBox+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskBoundingBox",
+    "description": "",
+    "display_name": "🔧 Mask Bounding Box",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "padding",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 4096,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "blur",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 256,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "image_optional",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      },
+      {
+        "is_list": false,
+        "name": "x",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "y",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "height",
+        "type": "INT"
+      }
+    ]
+  },
+  "MaskExpandBatch+": {
+    "category": "essentials_mb/mask batch",
+    "class": "MaskExpandBatch",
+    "description": "",
+    "display_name": "🔧 Mask Expand Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "size",
+        "optional": false,
+        "options": {
+          "default": 16,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "method",
+        "optional": false,
+        "options": {},
+        "type": [
+          "expand",
+          "repeat all",
+          "repeat first",
+          "repeat last"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFix+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFix",
+    "description": "",
+    "display_name": "🔧 Mask Fix",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "erode_dilate",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 256,
+          "min": -256,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "fill_holes",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 128,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "remove_isolated_pixels",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 32,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "smooth",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 256,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "blur",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 256,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFlip+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFlip",
+    "description": "",
+    "display_name": "🔧 Mask Flip",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "axis",
+        "optional": false,
+        "options": {},
+        "type": [
+          "x",
+          "y",
+          "xy"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFromBatch+": {
+    "category": "essentials_mb/mask batch",
+    "class": "MaskFromBatch",
+    "description": "",
+    "display_name": "🔧 Mask From Batch",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "start",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "length",
+        "optional": false,
+        "options": {
+          "default": 1,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFromColor+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFromColor",
+    "description": "",
+    "display_name": "🔧 Mask From Color",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "red",
+        "optional": false,
+        "options": {
+          "default": 255,
+          "max": 255,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "green",
+        "optional": false,
+        "options": {
+          "default": 255,
+          "max": 255,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "blue",
+        "optional": false,
+        "options": {
+          "default": 255,
+          "max": 255,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "threshold",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 127,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFromList+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFromList",
+    "description": "",
+    "display_name": "🔧 Mask From List",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 32,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 32,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "values",
+        "optional": true,
+        "options": {
+          "default": 0.0,
+          "max": 1.0,
+          "min": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "str_values",
+        "optional": true,
+        "options": {
+          "default": "",
+          "multiline": true,
+          "placeholder": "0.0, 0.5, 1.0"
+        },
+        "type": "STRING"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFromRGBCMYBW+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFromRGBCMYBW",
+    "description": "",
+    "display_name": "🔧 Mask From RGB/CMY/BW",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "threshold_r",
+        "optional": false,
+        "options": {
+          "default": 0.15,
+          "max": 1,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "threshold_g",
+        "optional": false,
+        "options": {
+          "default": 0.15,
+          "max": 1,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "threshold_b",
+        "optional": false,
+        "options": {
+          "default": 0.15,
+          "max": 1,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "red",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "green",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "blue",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "cyan",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "magenta",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "yellow",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "black",
+        "type": "MASK"
+      },
+      {
+        "is_list": false,
+        "name": "white",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskFromSegmentation+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskFromSegmentation",
+    "description": "",
+    "display_name": "🔧 Mask From Segmentation",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "segments",
+        "optional": false,
+        "options": {
+          "default": 6,
+          "max": 16,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "remove_isolated_pixels",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 32,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "remove_small_masks",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "fill_holes",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "MaskPreview+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskPreview",
+    "description": "",
+    "display_name": "🔧 Mask Preview",
+    "hidden": [
+      "PROMPT",
+      "EXTRA_PNGINFO"
+    ],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": true,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "images",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "MaskSmooth+": {
+    "category": "essentials_mb/mask",
+    "class": "MaskSmooth",
+    "description": "",
+    "display_name": "🔧 Mask Smooth",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mask",
+        "optional": false,
+        "options": {},
+        "type": "MASK"
+      },
+      {
+        "extra": [],
+        "name": "amount",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 127,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "ModelCompile+": {
+    "category": "essentials_mb/utilities",
+    "class": "ModelCompile",
+    "description": "",
+    "display_name": "🔧 Model Compile",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "fullgraph",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dynamic",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "mode",
+        "optional": false,
+        "options": {},
+        "type": [
+          "default",
+          "reduce-overhead",
+          "max-autotune",
+          "max-autotune-no-cudagraphs"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MODEL",
+        "type": "MODEL"
+      }
+    ]
+  },
+  "ModelSamplingSD3Advanced+": {
+    "category": "essentials_mb/sampling",
+    "class": "ModelSamplingSD3Advanced",
+    "description": "",
+    "display_name": "🔧 Model Sampling SD3 Advanced",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": "MODEL"
+      },
+      {
+        "extra": [],
+        "name": "shift",
+        "optional": false,
+        "options": {
+          "default": 3.0,
+          "max": 100.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "cut_off",
+        "optional": false,
+        "options": {
+          "default": 0.5,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "shift_multiplier",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 10,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MODEL",
+        "type": "MODEL"
+      }
+    ]
+  },
+  "NoiseFromImage+": {
+    "category": "essentials_mb/image utils",
+    "class": "NoiseFromImage",
+    "description": "",
+    "display_name": "🔧 Noise From Image",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "noise_strenght",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "noise_size",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "color_noise",
+        "optional": false,
+        "options": {
+          "default": 0.2,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "mask_strength",
+        "optional": false,
+        "options": {
+          "default": 0.5,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "mask_scale_diff",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.01
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "mask_contrast",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 100.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "saturation",
+        "optional": false,
+        "options": {
+          "default": 2.0,
+          "max": 100.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "contrast",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 100.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "blur",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 10.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "noise_mask",
+        "optional": true,
+        "options": {},
+        "type": "IMAGE"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "PixelOEPixelize+": {
+    "category": "essentials_mb/image processing",
+    "class": "PixelOEPixelize",
+    "description": "",
+    "display_name": "🔧 Pixelize",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "image",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "downscale_mode",
+        "optional": false,
+        "options": {},
+        "type": [
+          "contrast",
+          "bicubic",
+          "nearest",
+          "center",
+          "k-centroid"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "target_size",
+        "optional": false,
+        "options": {
+          "default": 128,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "patch_size",
+        "optional": false,
+        "options": {
+          "default": 16,
+          "max": 32,
+          "min": 4,
+          "step": 2
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "thickness",
+        "optional": false,
+        "options": {
+          "default": 2,
+          "max": 16,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "color_matching",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "upscale",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "PlotParameters+": {
+    "category": "essentials_mb/sampling",
+    "class": "PlotParameters",
+    "description": "",
+    "display_name": "🔧 Plot Sampler Parameters",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "images",
+        "optional": false,
+        "options": {},
+        "type": "IMAGE"
+      },
+      {
+        "extra": [],
+        "name": "params",
+        "optional": false,
+        "options": {},
+        "type": "SAMPLER_PARAMS"
+      },
+      {
+        "extra": [],
+        "name": "order_by",
+        "optional": false,
+        "options": {},
+        "type": [
+          "none",
+          "time",
+          "seed",
+          "steps",
+          "denoise",
+          "sampler",
+          "scheduler",
+          "guidance",
+          "max_shift",
+          "base_shift",
+          "lora_strength"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "cols_value",
+        "optional": false,
+        "options": {},
+        "type": [
+          "none",
+          "time",
+          "seed",
+          "steps",
+          "denoise",
+          "sampler",
+          "scheduler",
+          "guidance",
+          "max_shift",
+          "base_shift",
+          "lora_strength"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "cols_num",
+        "optional": false,
+        "options": {
+          "default": -1,
+          "max": 1024,
+          "min": -1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "add_prompt",
+        "optional": false,
+        "options": {},
+        "type": [
+          "false",
+          "true",
+          "excerpt"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "add_params",
+        "optional": false,
+        "options": {
+          "default": "true"
+        },
+        "type": [
+          "false",
+          "true",
+          "changes only"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "IMAGE",
+        "type": "IMAGE"
+      }
+    ]
+  },
+  "RemBGSession+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "RemBGSession",
+    "description": "",
+    "display_name": "🔧 RemBG Session",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "model",
+        "optional": false,
+        "options": {},
+        "type": [
+          "u2net: general purpose",
+          "u2netp: lightweight general purpose",
+          "u2net_human_seg: human segmentation",
+          "u2net_cloth_seg: cloths Parsing",
+          "silueta: very small u2net",
+          "isnet-general-use: general purpose",
+          "isnet-anime: anime illustrations",
+          "sam: general purpose"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "providers",
+        "optional": false,
+        "options": {},
+        "type": [
+          "CPU",
+          "CUDA",
+          "ROCM",
+          "DirectML",
+          "OpenVINO",
+          "CoreML",
+          "Tensorrt",
+          "Azure"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "REMBG_SESSION",
+        "type": "REMBG_SESSION"
+      }
+    ]
+  },
+  "RemoveLatentMask+": {
+    "category": "essentials_mb/utilities",
+    "class": "RemoveLatentMask",
+    "description": "",
+    "display_name": "🔧 Remove Latent Mask",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "samples",
+        "optional": false,
+        "options": {},
+        "type": "LATENT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LATENT",
+        "type": "LATENT"
+      }
+    ]
+  },
+  "SD3AttentionSeekerLG+": {
+    "category": "essentials_mb/conditioning",
+    "class": "SD3AttentionSeekerLG",
+    "description": "",
+    "display_name": "🔧 SD3 Attention Seeker L/G",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "clip",
+        "optional": false,
+        "options": {},
+        "type": "CLIP"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_query",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_key",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_value",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_out",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_0",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_1",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_2",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_3",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_4",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_5",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_6",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_7",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_8",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_9",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_10",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_l_11",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_0",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_1",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_2",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_3",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_4",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_5",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_6",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_7",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_8",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_9",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_10",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_11",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_12",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_13",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_14",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_15",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_16",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_17",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_18",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_19",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_20",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_21",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_22",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_23",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_24",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_25",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_26",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_27",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_28",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_29",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_30",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "clip_g_31",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CLIP",
+        "type": "CLIP"
+      }
+    ]
+  },
+  "SD3AttentionSeekerT5+": {
+    "category": "essentials_mb/conditioning",
+    "class": "SD3AttentionSeekerT5",
+    "description": "",
+    "display_name": "🔧 SD3 Attention Seeker T5",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "clip",
+        "optional": false,
+        "options": {},
+        "type": "CLIP"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_query",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_key",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_value",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "apply_to_out",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_0",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_1",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_2",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_3",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_4",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_5",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_6",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_7",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_8",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_9",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_10",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_11",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_12",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_13",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_14",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_15",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_16",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_17",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_18",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_19",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_20",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_21",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_22",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "t5xxl_23",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "display": "slider",
+          "max": 5,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CLIP",
+        "type": "CLIP"
+      }
+    ]
+  },
+  "SD3NegativeConditioning+": {
+    "category": "essentials_mb/conditioning",
+    "class": "SD3NegativeConditioning",
+    "description": "",
+    "display_name": "🔧 SD3 Negative Conditioning",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "conditioning",
+        "optional": false,
+        "options": {},
+        "type": "CONDITIONING"
+      },
+      {
+        "extra": [],
+        "name": "end",
+        "optional": false,
+        "options": {
+          "default": 0.1,
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "conditioning",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CONDITIONING",
+        "type": "CONDITIONING"
+      }
+    ]
+  },
+  "SDXLEmptyLatentSizePicker+": {
+    "category": "essentials_mb/utilities",
+    "class": "SDXLEmptyLatentSizePicker",
+    "description": "",
+    "display_name": "🔧 Empty Latent Size Picker",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "resolution",
+        "optional": false,
+        "options": {
+          "default": "1024x1024 (1.0)"
+        },
+        "type": [
+          "360x640 (0.56)",
+          "480x854 (0.56)",
+          "576x1024 (0.56)",
+          "720x1280 (0.56)",
+          "1080x1920 (0.56)",
+          "1440x2560 (0.56)",
+          "2160x3840 (0.56)",
+          "4320x7680 (0.56)",
+          "360x480 (0.75)",
+          "540x720 (0.75)",
+          "720x960 (0.75)",
+          "1080x1440 (0.75)",
+          "1440x1920 (0.75)",
+          "2160x2880 (0.75)",
+          "704x1408 (0.5)",
+          "704x1344 (0.52)",
+          "768x1344 (0.57)",
+          "768x1280 (0.6)",
+          "832x1216 (0.68)",
+          "832x1152 (0.72)",
+          "896x1152 (0.78)",
+          "896x1088 (0.82)",
+          "960x1088 (0.88)",
+          "960x1024 (0.94)",
+          "1024x1024 (1.0)",
+          "1024x960 (1.07)",
+          "1088x960 (1.13)",
+          "1088x896 (1.21)",
+          "1152x896 (1.29)",
+          "1152x832 (1.38)",
+          "1216x832 (1.46)",
+          "640x480 (1.33)",
+          "800x600 (1.33)",
+          "1024x768 (1.33)",
+          "1280x960 (1.33)",
+          "1600x1200 (1.33)",
+          "1920x1440 (1.33)",
+          "2560x1920 (1.33)",
+          "640x360 (1.78)",
+          "854x480 (1.78)",
+          "1280x720 (1.78)",
+          "1920x1080 (1.78)",
+          "2560x1440 (1.78)",
+          "3840x2160 (1.78)",
+          "7680x4320 (1.78)",
+          "1280x768 (1.67)",
+          "1344x768 (1.75)",
+          "1344x704 (1.91)",
+          "1408x704 (2.0)",
+          "1472x704 (2.09)",
+          "1536x640 (2.4)",
+          "1600x640 (2.5)",
+          "1664x576 (2.89)",
+          "1728x576 (3.0)"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "batch_size",
+        "optional": false,
+        "options": {
+          "default": 1,
+          "max": 4096,
+          "min": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "width_override",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height_override",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 16384,
+          "min": 0,
+          "step": 8
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "LATENT",
+        "type": "LATENT"
+      },
+      {
+        "is_list": false,
+        "name": "width",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "height",
+        "type": "INT"
+      }
+    ]
+  },
+  "SamplerSelectHelper+": {
+    "category": "essentials_mb/sampling",
+    "class": "SamplerSelectHelper",
+    "description": "",
+    "display_name": "🔧 Sampler Select Helper",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "euler",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "euler_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "euler_ancestral",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "euler_ancestral_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "heun",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "heunpp2",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "exp_heun_2_x0",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "exp_heun_2_x0_sde",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpm_2",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpm_2_ancestral",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "lms",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpm_fast",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpm_adaptive",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2s_ancestral",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2s_ancestral_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_sde",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_sde_gpu",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m_sde",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m_sde_gpu",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m_sde_heun",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_2m_sde_heun_gpu",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_3m_sde",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "dpmpp_3m_sde_gpu",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "ddpm",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "lcm",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "ipndm",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "ipndm_v",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "deis",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "res_multistep",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "res_multistep_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "res_multistep_ancestral",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "res_multistep_ancestral_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "gradient_estimation",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "gradient_estimation_cfg_pp",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "er_sde",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "seeds_2",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "seeds_3",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "sa_solver",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "sa_solver_pece",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "ddim",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "uni_pc",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "uni_pc_bh2",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "STRING",
+        "type": "STRING"
+      }
+    ]
+  },
+  "SchedulerSelectHelper+": {
+    "category": "essentials_mb/sampling",
+    "class": "SchedulerSelectHelper",
+    "description": "",
+    "display_name": "🔧 Scheduler Select Helper",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "simple",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "sgm_uniform",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "karras",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "exponential",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "ddim_uniform",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "beta",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "normal",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "linear_quadratic",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      },
+      {
+        "extra": [],
+        "name": "kl_optimal",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "STRING",
+        "type": "STRING"
+      }
+    ]
+  },
+  "SimpleComparison+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleComparison",
+    "description": "",
+    "display_name": "🔧 Simple Comparison",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "a",
+        "optional": false,
+        "options": {
+          "default": 0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "b",
+        "optional": false,
+        "options": {
+          "default": 0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "comparison",
+        "optional": false,
+        "options": {},
+        "type": [
+          "==",
+          "!=",
+          "<",
+          "<=",
+          ">",
+          ">="
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "BOOLEAN",
+        "type": "BOOLEAN"
+      }
+    ]
+  },
+  "SimpleCondition+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleCondition",
+    "description": "",
+    "display_name": "🔧 Simple Condition",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "evaluate",
+        "optional": false,
+        "options": {
+          "default": 0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "on_true",
+        "optional": false,
+        "options": {
+          "default": 0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "on_false",
+        "optional": true,
+        "options": {
+          "default": null
+        },
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "result",
+        "type": "*"
+      }
+    ]
+  },
+  "SimpleMath+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMath",
+    "description": "",
+    "display_name": "🔧 Simple Math",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "a",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "b",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "c",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      }
+    ]
+  },
+  "SimpleMathBoolean+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathBoolean",
+    "description": "",
+    "display_name": "🔧 Simple Math Boolean",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": false
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "BOOLEAN",
+        "type": "BOOLEAN"
+      }
+    ]
+  },
+  "SimpleMathCondition+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathCondition",
+    "description": "",
+    "display_name": "🔧 Simple Math Condition",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "evaluate",
+        "optional": false,
+        "options": {
+          "default": 0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "on_true",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "on_false",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "a",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "b",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "c",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      }
+    ]
+  },
+  "SimpleMathDual+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathDual",
+    "description": "",
+    "display_name": "🔧 Simple Math Dual",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value_1",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "value_2",
+        "optional": false,
+        "options": {
+          "default": "",
+          "multiline": false
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "a",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "b",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "c",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      },
+      {
+        "extra": [],
+        "name": "d",
+        "optional": true,
+        "options": {
+          "default": 0.0
+        },
+        "type": "*"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "int_1",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "float_1",
+        "type": "FLOAT"
+      },
+      {
+        "is_list": false,
+        "name": "int_2",
+        "type": "INT"
+      },
+      {
+        "is_list": false,
+        "name": "float_2",
+        "type": "FLOAT"
+      }
+    ]
+  },
+  "SimpleMathFloat+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathFloat",
+    "description": "",
+    "display_name": "🔧 Simple Math Float",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      }
+    ]
+  },
+  "SimpleMathInt+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathInt",
+    "description": "",
+    "display_name": "🔧 Simple Math Int",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      }
+    ]
+  },
+  "SimpleMathPercent+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathPercent",
+    "description": "",
+    "display_name": "🔧 Simple Math Percent",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 1,
+          "min": 0,
+          "step": 0.05
+        },
+        "type": "FLOAT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      }
+    ]
+  },
+  "SimpleMathSlider+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathSlider",
+    "description": "",
+    "display_name": "🔧 Simple Math Slider",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 0.5,
+          "display": "slider",
+          "max": 1.0,
+          "min": 0.0,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "min",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "max",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "rounding",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 10,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      },
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      }
+    ]
+  },
+  "SimpleMathSliderLowRes+": {
+    "category": "essentials_mb/utilities",
+    "class": "SimpleMathSliderLowRes",
+    "description": "",
+    "display_name": "🔧 Simple Math Slider low-res",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "value",
+        "optional": false,
+        "options": {
+          "default": 5,
+          "display": "slider",
+          "max": 10,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "min",
+        "optional": false,
+        "options": {
+          "default": 0.0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "max",
+        "optional": false,
+        "options": {
+          "default": 1.0,
+          "max": 18446744073709551615,
+          "min": -18446744073709551615,
+          "step": 0.001
+        },
+        "type": "FLOAT"
+      },
+      {
+        "extra": [],
+        "name": "rounding",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "max": 10,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "misc",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "FLOAT",
+        "type": "FLOAT"
+      },
+      {
+        "is_list": false,
+        "name": "INT",
+        "type": "INT"
+      }
+    ]
+  },
+  "TextEncodeForSamplerParams+": {
+    "category": "essentials_mb/sampling",
+    "class": "TextEncodeForSamplerParams",
+    "description": "",
+    "display_name": "🔧Text Encode for Sampler Params",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "text",
+        "optional": false,
+        "options": {
+          "default": "Separate prompts with at least three dashes\n---\nLike so",
+          "dynamicPrompts": true,
+          "multiline": true
+        },
+        "type": "STRING"
+      },
+      {
+        "extra": [],
+        "name": "clip",
+        "optional": false,
+        "options": {},
+        "type": "CLIP"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "sampling",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "CONDITIONING",
+        "type": "CONDITIONING"
+      }
+    ]
+  },
+  "TransitionMask+": {
+    "category": "essentials_mb/mask",
+    "class": "TransitionMask",
+    "description": "",
+    "display_name": "🔧 Transition Mask",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "width",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "height",
+        "optional": false,
+        "options": {
+          "default": 512,
+          "max": 16384,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "frames",
+        "optional": false,
+        "options": {
+          "default": 16,
+          "max": 9999,
+          "min": 1,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "start_frame",
+        "optional": false,
+        "options": {
+          "default": 0,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "end_frame",
+        "optional": false,
+        "options": {
+          "default": 9999,
+          "min": 0,
+          "step": 1
+        },
+        "type": "INT"
+      },
+      {
+        "extra": [],
+        "name": "transition_type",
+        "optional": false,
+        "options": {},
+        "type": [
+          "horizontal slide",
+          "vertical slide",
+          "horizontal bar",
+          "vertical bar",
+          "center box",
+          "horizontal door",
+          "vertical door",
+          "circle",
+          "fade"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "timing_function",
+        "optional": false,
+        "options": {},
+        "type": [
+          "linear",
+          "in",
+          "out",
+          "in-out"
+        ]
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "mask",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "MASK",
+        "type": "MASK"
+      }
+    ]
+  },
+  "TransparentBGSession+": {
+    "category": "essentials_mb/image manipulation",
+    "class": "TransparentBGSession",
+    "description": "",
+    "display_name": "🔧 InSPyReNet TransparentBG",
+    "hidden": [],
+    "inputs": [
+      {
+        "extra": [],
+        "name": "mode",
+        "optional": false,
+        "options": {},
+        "type": [
+          "base",
+          "fast",
+          "base-nightly"
+        ]
+      },
+      {
+        "extra": [],
+        "name": "use_jit",
+        "optional": false,
+        "options": {
+          "default": true
+        },
+        "type": "BOOLEAN"
+      }
+    ],
+    "is_input_list": false,
+    "is_output_node": false,
+    "method": "execute",
+    "module": "image",
+    "outputs": [
+      {
+        "is_list": false,
+        "name": "REMBG_SESSION",
+        "type": "REMBG_SESSION"
+      }
+    ]
+  }
+}

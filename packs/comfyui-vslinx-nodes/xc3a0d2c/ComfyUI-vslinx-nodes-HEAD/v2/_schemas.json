@@ -1,0 +1,4816 @@
+{
+  "vsLinx_AnimaLLLiteLoader": {
+    "class": "VSLinx_AnimaLLLiteLoader",
+    "hidden_parameters": [],
+    "method": "load",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.anima_lllite_tiled_sampler",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/sampling",
+        "description": "Picks an Anima ControlNet-LLLite weights file and outputs the filename as a\ncombo, so it can drive the Anima LLLite Tiled ControlNet Sampler's\n``lllite_name``. Lets you choose the LLLite model once and route it\ninto one or more samplers.\n\nIt only outputs the filename — the actual LLLite module is built against the\nmodel inside the sampler — so it has no dependency on any other node pack.",
+        "display_name": "Load Anima LLLite Model",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_AnimaLLLiteLoader",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "lllite_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Anima ControlNet-LLLite weights file (from the controlnet folder).",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "lllite_name",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "[]",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_AnimaLLLiteTiledSampler": {
+    "class": "VSLinx_AnimaLLLiteTiledSampler",
+    "hidden_parameters": [],
+    "method": "execute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.anima_lllite_tiled_sampler",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/sampling",
+        "description": "",
+        "display_name": "Anima LLLite Tiled ControlNet Sampler",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_AnimaLLLiteTiledSampler",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "model",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "positive",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "negative",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "per_tile",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sampling_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "per_tile",
+              "multidiffusion"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "per_tile: sample each tile fully then stitch (lowest VRAM; can show seams/ghosting). multidiffusion: one sampling pass over the whole image, averaging overlapping tiles in latent space every step — tiles stay in sync so seams and double-exposure are eliminated (slightly more VRAM). In multidiffusion mode the 'method' and 'color_match' fields are not used.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": true,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 18446744073709551615,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 20,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "steps",
+            "lazy": null,
+            "max": 10000,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 7.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "cfg",
+            "lazy": null,
+            "max": 100.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": 0.01,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "euler",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sampler_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "euler",
+              "euler_cfg_pp",
+              "euler_ancestral",
+              "euler_ancestral_cfg_pp",
+              "heun",
+              "heunpp2",
+              "exp_heun_2_x0",
+              "exp_heun_2_x0_sde",
+              "dpm_2",
+              "dpm_2_ancestral",
+              "lms",
+              "dpm_fast",
+              "dpm_adaptive",
+              "dpmpp_2s_ancestral",
+              "dpmpp_2s_ancestral_cfg_pp",
+              "dpmpp_sde",
+              "dpmpp_sde_gpu",
+              "dpmpp_2m",
+              "dpmpp_2m_cfg_pp",
+              "dpmpp_2m_sde",
+              "dpmpp_2m_sde_gpu",
+              "dpmpp_2m_sde_heun",
+              "dpmpp_2m_sde_heun_gpu",
+              "dpmpp_3m_sde",
+              "dpmpp_3m_sde_gpu",
+              "ddpm",
+              "lcm",
+              "ipndm",
+              "ipndm_v",
+              "deis",
+              "res_multistep",
+              "res_multistep_cfg_pp",
+              "res_multistep_ancestral",
+              "res_multistep_ancestral_cfg_pp",
+              "gradient_estimation",
+              "gradient_estimation_cfg_pp",
+              "er_sde",
+              "seeds_2",
+              "seeds_3",
+              "sa_solver",
+              "sa_solver_pece",
+              "ddim",
+              "uni_pc",
+              "uni_pc_bh2"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "simple",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "scheduler",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "simple",
+              "sgm_uniform",
+              "karras",
+              "exponential",
+              "ddim_uniform",
+              "beta",
+              "normal",
+              "linear_quadratic",
+              "kl_optimal"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "denoise",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "lllite_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Anima ControlNet-LLLite weights file (from the controlnet folder).",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "strength",
+            "lazy": null,
+            "max": 10.0,
+            "min": -10.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "start_percent",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.001,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "end_percent",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.001,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preserve_wrapper",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Delegate to any model_function_wrapper already installed upstream instead of overwriting it, so multiple wrapper nodes can stack. Same toggle as the AnimaLLLiteApply node.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "rows",
+            "lazy": null,
+            "max": 256,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "columns",
+            "lazy": null,
+            "max": 256,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "overlap",
+            "lazy": null,
+            "max": 0.5,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": "Overlap between tiles as a fraction of tile size, added on top of overlap_x/overlap_y.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "overlap_x",
+            "lazy": null,
+            "max": 8192,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Extra horizontal overlap in pixels.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "overlap_y",
+            "lazy": null,
+            "max": 8192,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Extra vertical overlap in pixels.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "lanczos",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "method",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "lanczos",
+              "nearest-exact",
+              "bilinear",
+              "area",
+              "bicubic"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Resampling used to keep every decoded tile at a uniform size before stitching.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "none",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "color_match",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "none",
+              "mean_std",
+              "wavelet"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Per-tile color matching against the source tile, to fix tonal seams (brightness/colour steps between tiles). 'mean_std' re-scales each tile's per-channel mean/std (fast, simple); 'wavelet' keeps the tile's detail but takes the source tile's broad tone (better on textured tiles).",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "color_match_strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": "How strongly to apply the color match (0 = off, 1 = full).",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "vae_decode_tiled",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "(multidiffusion only) Decode the final full-image latent in tiles instead of one pass, to avoid a single huge VAE decode that can spike VRAM (or spill into slow shared system memory). No effect in per_tile mode, where each tile is already decoded on its own.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "vae_decode_tile_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 32,
+            "tooltip": "(multidiffusion only) Tile size in pixels for the tiled VAE decode.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_AnyToPipe": {
+    "class": "vsLinx_AnyToPipe",
+    "hidden_parameters": [],
+    "method": "pack",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.pipe_utils",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Any to Pipe",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_AnyToPipe",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "slot_1",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "slot_2",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "slot_3",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "slot_4",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "slot_5",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "pipe",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "VSLINX_PIPE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_AppendLorasFromNodeToString": {
+    "class": "vsLinx_AppendLorasFromNodeToString",
+    "hidden_parameters": [
+      "extra_pnginfo",
+      "prompt",
+      "unique_id"
+    ],
+    "method": "run",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": false
+    },
+    "module": "nodes.lora_save_helper",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Power Lora Loader to Prompt (Image Saver)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_AppendLorasFromNodeToString",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "extra_pnginfo",
+        "prompt",
+        "unique_id"
+      ],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": null,
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "id",
+            "lazy": null,
+            "max": 100000,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "node_title",
+            "lazy": null,
+            "multiline": false,
+            "optional": true,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "powerloraloader_model",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "only_enabled",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "debug",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "STRING",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_BooleanAndOperator": {
+    "class": "VSLinx_BooleanAndOperator",
+    "hidden_parameters": [],
+    "method": "compute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.boolean_operator",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/boolean",
+        "description": "",
+        "display_name": "Boolean AND Operator",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_BooleanAndOperator",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "boolean_a",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "boolean_b",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "boolean",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_BooleanFlip": {
+    "class": "VSLinx_BooleanFlip",
+    "hidden_parameters": [],
+    "method": "compute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.boolean_operator",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/boolean",
+        "description": "",
+        "display_name": "Boolean Flip",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_BooleanFlip",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "boolean",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "boolean",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_BooleanOrOperator": {
+    "class": "VSLinx_BooleanOrOperator",
+    "hidden_parameters": [],
+    "method": "compute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.boolean_operator",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/boolean",
+        "description": "",
+        "display_name": "Boolean OR Operator",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_BooleanOrOperator",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "boolean_a",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "boolean_b",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "boolean",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_BypassMuteOnState": {
+    "class": "vsLinx_BypassMuteOnState",
+    "hidden_parameters": [],
+    "method": "forward",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.bypass_helper",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Forward/Bypass-Mute on State (Any)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_BypassMuteOnState",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "any",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "ignore_subgraph_boundary",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "When enabled, the trigger lookup crosses subgraph boundaries (inbound and outbound) until it reaches a real node, instead of stopping at the boundary.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "mirror_own_state",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "When enabled, this node also mirrors its OWN bypass/mute state onto the downstream node(s): if this node is bypassed/muted, the output node is too. Its own state takes precedence over the trigger.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "trigger",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "any",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_BypassOnBool": {
+    "class": "vsLinx_BypassOnBool",
+    "hidden_parameters": [],
+    "method": "forward",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.bypass_helper",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Forward/Bypass on Boolean (Any)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_BypassOnBool",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "any",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "bypass",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "any",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_FitImageIntoBBoxMask": {
+    "class": "vsLinx_FitImageIntoBBoxMask",
+    "hidden_parameters": [],
+    "method": "run",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.inpaint_helper",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/inpaint",
+        "description": "",
+        "display_name": "Fit Image into BBox Mask",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_FitImageIntoBBoxMask",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "source",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": "The image you want to insert (e.g. pose, object, decal)."
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "mask",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": "Defines where the image will be placed. The white area determines the bounding box."
+          },
+          "io_type": "MASK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "fit",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "fit",
+              "fill"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "fit scales the image inside the mask’s box (no crop). fill covers the box completely (may crop edges).",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "center",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "align_x",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "center",
+              "left",
+              "right"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Alignment on the x axis of the fitted image inside the box if the aspect ratio doesn’t match perfectly.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "center",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "align_y",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "center",
+              "top",
+              "bottom"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Alignment on the y axis of the fitted image inside the box if the aspect ratio doesn’t match perfectly.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "offset_x",
+            "lazy": null,
+            "max": 4096,
+            "min": -4096,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Manual pixel offset on the x axis for fine-tuning the placement.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "offset_y",
+            "lazy": null,
+            "max": 4096,
+            "min": -4096,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Manual pixel offset on the y axis for fine-tuning the placement.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "threshold",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": "Mask brightness threshold for detecting the box. 0.5 works for most cases.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pad",
+            "lazy": null,
+            "max": 4096,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Expands the bounding box outward by N pixels.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_source_alpha",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "If true, respects transparency in the source image during paste.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "lanczos",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "antialias",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "lanczos",
+              "bicubic",
+              "bilinear"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Resampling method used when resizing the source image.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "destination",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": "The image you’re compositing onto. If not provided, a blank canvas is created."
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1024,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "canvas_w",
+            "lazy": null,
+            "max": 8192,
+            "min": 16,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Canvas width when no destination image is given.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1024,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "canvas_h",
+            "lazy": null,
+            "max": 8192,
+            "min": 16,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Canvas height when no destination image is given.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "composite",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "fitted_source",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "placed_mask",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "MASK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "x",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "y",
+            "id": "output_4",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "w",
+            "id": "output_5",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "h",
+            "id": "output_6",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_GroupBookmarks": {
+    "class": "vsLinx_GroupBookmarks",
+    "hidden_parameters": [],
+    "method": "execute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.group_bookmarks",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Bookmarks",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": true,
+        "node_id": "vsLinx_GroupBookmarks",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "prompt",
+        "extra_pnginfo"
+      ],
+      "inputs": [],
+      "outputs": []
+    },
+    "source_v3": false
+  },
+  "vsLinx_ImageToPixelArt": {
+    "class": "vsLinx_ImageToPixelArt",
+    "hidden_parameters": [],
+    "method": "convert",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.image_to_pixel_art",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/image",
+        "description": "",
+        "display_name": "Image to Pixel Art",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_ImageToPixelArt",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 8,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pixel_size",
+            "lazy": null,
+            "max": 128,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "How many original pixels make up one pixel-art pixel. 8 on a 512px image → 64×64 pixel grid.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 32,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_colors",
+            "lazy": null,
+            "max": 256,
+            "min": 2,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Max palette size when using Auto or Grayscale palette.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Floyd-Steinberg",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "dithering",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "None",
+              "Floyd-Steinberg",
+              "Bayer 2x2",
+              "Bayer 4x4",
+              "Bayer 8x8"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "palette",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Auto",
+              "Grayscale",
+              "C64 (16)",
+              "CGA (16)",
+              "GameBoy (4)",
+              "NES (52)",
+              "Pico-8 (16)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Box (smooth)",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "downscale_filter",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Box (smooth)",
+              "Nearest (harsh)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Box averages each pixel block before quantizing (better color). Nearest samples a single pixel (harder, more aliased).",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "upscale_to_original",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Scale the pixel grid back to the original image size using nearest-neighbor so each pixel block is clearly visible. Disable to output the raw low-resolution pixel art.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "pixel_art",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_ImpactMultilineWildcardText": {
+    "class": "vsLinx_ImpactMultilineWildcardText",
+    "hidden_parameters": [],
+    "method": "output",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.impact_multiline_wildcard_text",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/text",
+        "description": "",
+        "display_name": "(Impact-Pack) Multiline Wildcard Text",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_ImpactMultilineWildcardText",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "string",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_IntToBool": {
+    "class": "VSLinx_IntToBool",
+    "hidden_parameters": [],
+    "method": "compute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.boolean_operator",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/boolean",
+        "description": "",
+        "display_name": "Int to Bool (Threshold)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_IntToBool",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "value",
+            "lazy": null,
+            "max": null,
+            "min": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "threshold",
+            "lazy": null,
+            "max": null,
+            "min": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "boolean",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_InteractiveDetailer": {
+    "class": "vsLinx_InteractiveDetailer",
+    "hidden_parameters": [
+      "unique_id"
+    ],
+    "method": "doit",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": false
+    },
+    "module": "nodes.interactive_detailer",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/detailer",
+        "description": "FaceDetailer clone that asks for one prompt per detected segment.",
+        "display_name": "Interactive Detailer (Impact-Pack)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_InteractiveDetailer",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "unique_id"
+      ],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "model",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "clip",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CLIP",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "guide_size",
+            "lazy": null,
+            "max": 16384,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 8,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "guide_size_for",
+            "label_off": "crop_region",
+            "label_on": "bbox",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1024,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "max_size",
+            "lazy": null,
+            "max": 16384,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 8,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 18446744073709551615,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 20,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "steps",
+            "lazy": null,
+            "max": 10000,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 8.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "cfg",
+            "lazy": null,
+            "max": 100.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "euler",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sampler_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "euler",
+              "euler_cfg_pp",
+              "euler_ancestral",
+              "euler_ancestral_cfg_pp",
+              "heun",
+              "heunpp2",
+              "exp_heun_2_x0",
+              "exp_heun_2_x0_sde",
+              "dpm_2",
+              "dpm_2_ancestral",
+              "lms",
+              "dpm_fast",
+              "dpm_adaptive",
+              "dpmpp_2s_ancestral",
+              "dpmpp_2s_ancestral_cfg_pp",
+              "dpmpp_sde",
+              "dpmpp_sde_gpu",
+              "dpmpp_2m",
+              "dpmpp_2m_cfg_pp",
+              "dpmpp_2m_sde",
+              "dpmpp_2m_sde_gpu",
+              "dpmpp_2m_sde_heun",
+              "dpmpp_2m_sde_heun_gpu",
+              "dpmpp_3m_sde",
+              "dpmpp_3m_sde_gpu",
+              "ddpm",
+              "lcm",
+              "ipndm",
+              "ipndm_v",
+              "deis",
+              "res_multistep",
+              "res_multistep_cfg_pp",
+              "res_multistep_ancestral",
+              "res_multistep_ancestral_cfg_pp",
+              "gradient_estimation",
+              "gradient_estimation_cfg_pp",
+              "er_sde",
+              "seeds_2",
+              "seeds_3",
+              "sa_solver",
+              "sa_solver_pece",
+              "ddim",
+              "uni_pc",
+              "uni_pc_bh2"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "simple",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "scheduler",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "simple",
+              "sgm_uniform",
+              "karras",
+              "exponential",
+              "ddim_uniform",
+              "beta",
+              "normal",
+              "linear_quadratic",
+              "kl_optimal"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "positive",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": "Base positive conditioning. Used for every segment whose dialog prompt is left empty."
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "negative",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "denoise",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0001,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "feather",
+            "lazy": null,
+            "max": 100,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "noise_mask",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "force_inpaint",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "bbox_threshold",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 10,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "bbox_dilation",
+            "lazy": null,
+            "max": 512,
+            "min": -512,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 3.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "bbox_crop_factor",
+            "lazy": null,
+            "max": 10,
+            "min": 1.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "center-1",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sam_detection_hint",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "center-1",
+              "horizontal-2",
+              "vertical-2",
+              "rect-4",
+              "diamond-4",
+              "mask-area",
+              "mask-points",
+              "mask-point-bbox",
+              "none"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sam_dilation",
+            "lazy": null,
+            "max": 512,
+            "min": -512,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.93,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "sam_threshold",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sam_bbox_expansion",
+            "lazy": null,
+            "max": 1000,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.7,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "sam_mask_hint_threshold",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "False",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sam_mask_hint_use_negative",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "False",
+              "Small",
+              "Outter"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 10,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "drop_size",
+            "lazy": null,
+            "max": 16384,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "bbox_detector",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "BBOX_DETECTOR",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "cycle",
+            "lazy": null,
+            "max": 10,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "left-right",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "segment_order",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "left-right",
+              "top-bottom",
+              "largest-first",
+              "confidence",
+              "detector"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Order in which segments are numbered in the dialog and processed.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 300,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "timeout_sec",
+            "lazy": null,
+            "max": 86400,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "How long to wait for the dialog before applying the timeout policy. 0 = wait forever. Keep > 0 if you also run workflows headless via the API.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "use base prompt",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "on_timeout",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "use base prompt",
+              "skip detailing",
+              "cancel run"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "always_ask",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "When enabled, the node re-executes (and re-asks) on every run even if inputs are unchanged. When disabled, unchanged inputs reuse the cached result without showing the dialog.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "sam_model_opt",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "SAM_MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "segm_detector_opt",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "SEGM_DETECTOR",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "detailer_hook",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "DETAILER_HOOK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "inpaint_model",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 20,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "noise_mask_feather",
+            "lazy": null,
+            "max": 100,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "scheduler_func_opt",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "SCHEDULER_FUNC",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tiled_encode",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tiled_decode",
+            "label_off": "disabled",
+            "label_on": "enabled",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "cropped_refined",
+            "id": "output_1",
+            "is_output_list": true,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "cropped_enhanced_alpha",
+            "id": "output_2",
+            "is_output_list": true,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "mask",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "MASK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "cnet_images",
+            "id": "output_4",
+            "is_output_list": true,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "used_prompts",
+            "id": "output_5",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_LoadLastGeneratedImage": {
+    "class": "VSLinx_LoadLastGeneratedImage",
+    "hidden_parameters": [],
+    "method": "load_image",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": true
+    },
+    "module": "nodes.load_last_generated",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/image",
+        "description": "",
+        "display_name": "Load Last Generated Image",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_LoadLastGeneratedImage",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "image",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_refresh",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "mask",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "MASK",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_LoadSelectedImagesBatch": {
+    "class": "VSLinx_LoadSelectedImagesBatch",
+    "hidden_parameters": [],
+    "method": "load_batch",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.multi_image_select",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/image",
+        "description": "Returns a batched IMAGE tensor (B,H,W,3) and a single comma-separated\nSTRING of filenames (without extension) per 'filename_handling'.\nAll images are resized to the first image's size for a valid batch.",
+        "display_name": "Load (Multiple) Images (Batch)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_LoadSelectedImagesBatch",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selected_paths",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": "Filled by the 'Select images' button (JSON array).",
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "fail_if_empty",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "full filename",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "filename_handling",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "full filename",
+              "deduped filename"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "images",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "filenames",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_LoadSelectedImagesList": {
+    "class": "VSLinx_LoadSelectedImagesList",
+    "hidden_parameters": [],
+    "method": "load",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.multi_image_select",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/image",
+        "description": "Reads files listed in `selected_paths` and outputs:\n  - IMAGE list (each item BHWC with B=1)\n  - STRING list of filenames (without extension), per 'filename_handling'.",
+        "display_name": "Load (Multiple) Images (List)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_LoadSelectedImagesList",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selected_paths",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": "Filled by the 'Select images' button (JSON array).",
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "fail_if_empty",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "full filename",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "filename_handling",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "full filename",
+              "deduped filename"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "images",
+            "id": "output_0",
+            "is_output_list": true,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "filenames",
+            "id": "output_1",
+            "is_output_list": true,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_MultiDiffusionTiledHiresFix": {
+    "class": "VSLinx_MultiDiffusionTiledHiresFix",
+    "hidden_parameters": [],
+    "method": "execute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.multidiffusion_tiled_hires",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/sampling",
+        "description": "",
+        "display_name": "MultiDiffusion Tiled Hires Fix",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_MultiDiffusionTiledHiresFix",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "model",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "positive",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "negative",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": true,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 18446744073709551615,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 20,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "steps",
+            "lazy": null,
+            "max": 10000,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 7.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "cfg",
+            "lazy": null,
+            "max": 100.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": 0.01,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "euler",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "sampler_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "euler",
+              "euler_cfg_pp",
+              "euler_ancestral",
+              "euler_ancestral_cfg_pp",
+              "heun",
+              "heunpp2",
+              "exp_heun_2_x0",
+              "exp_heun_2_x0_sde",
+              "dpm_2",
+              "dpm_2_ancestral",
+              "lms",
+              "dpm_fast",
+              "dpm_adaptive",
+              "dpmpp_2s_ancestral",
+              "dpmpp_2s_ancestral_cfg_pp",
+              "dpmpp_sde",
+              "dpmpp_sde_gpu",
+              "dpmpp_2m",
+              "dpmpp_2m_cfg_pp",
+              "dpmpp_2m_sde",
+              "dpmpp_2m_sde_gpu",
+              "dpmpp_2m_sde_heun",
+              "dpmpp_2m_sde_heun_gpu",
+              "dpmpp_3m_sde",
+              "dpmpp_3m_sde_gpu",
+              "ddpm",
+              "lcm",
+              "ipndm",
+              "ipndm_v",
+              "deis",
+              "res_multistep",
+              "res_multistep_cfg_pp",
+              "res_multistep_ancestral",
+              "res_multistep_ancestral_cfg_pp",
+              "gradient_estimation",
+              "gradient_estimation_cfg_pp",
+              "er_sde",
+              "seeds_2",
+              "seeds_3",
+              "sa_solver",
+              "sa_solver_pece",
+              "ddim",
+              "uni_pc",
+              "uni_pc_bh2"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "simple",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "scheduler",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "simple",
+              "sgm_uniform",
+              "karras",
+              "exponential",
+              "ddim_uniform",
+              "beta",
+              "normal",
+              "linear_quadratic",
+              "kl_optimal"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "denoise",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": "Denoise strength. For a tiled hires-fix on an already-upscaled image keep this low (e.g. 0.3-0.5).",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "rows",
+            "lazy": null,
+            "max": 256,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "columns",
+            "lazy": null,
+            "max": 256,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "overlap",
+            "lazy": null,
+            "max": 0.5,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": "Overlap between tiles as a fraction of tile size, added on top of overlap_x/overlap_y.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "overlap_x",
+            "lazy": null,
+            "max": 8192,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Extra horizontal overlap in pixels.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "overlap_y",
+            "lazy": null,
+            "max": 8192,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Extra vertical overlap in pixels.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "vae_decode_tiled",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Decode the final full-image latent in tiles instead of one pass, to avoid a single huge VAE decode that can spike VRAM (or, on Windows, spill into slow shared system memory). The decode is a single full-image pass independent of rows/columns, so adding tiles won't shrink it - enable this instead.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "vae_decode_tile_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 32,
+            "tooltip": "Tile size in pixels for the tiled VAE decode.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_MuteOnBool": {
+    "class": "vsLinx_MuteOnBool",
+    "hidden_parameters": [],
+    "method": "forward",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.bypass_helper",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Forward/Mute on Boolean (Any)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_MuteOnBool",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "any",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "mute",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "any",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_PipeToAny": {
+    "class": "vsLinx_PipeToAny",
+    "hidden_parameters": [],
+    "method": "unpack",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.pipe_utils",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/utility",
+        "description": "",
+        "display_name": "Pipe to Any",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_PipeToAny",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "pipe",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VSLINX_PIPE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "slot_1",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "slot_2",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "slot_3",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "slot_4",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "slot_5",
+            "id": "output_4",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_UpscaleByFactorWithModel": {
+    "class": "VSLinx_UpscaleByFactorWithModel",
+    "hidden_parameters": [],
+    "method": "upscale",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.upscale_by_factor_with_model",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/image",
+        "description": "",
+        "display_name": "Upscale by Factor (With Model)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_UpscaleByFactorWithModel",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "upscale_model",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "UPSCALE_MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "nearest-exact",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "upscale_method",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "nearest-exact",
+              "bilinear",
+              "area",
+              "lanczos"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 2.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "factor",
+            "lazy": null,
+            "max": 8.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_VAEDecodeBatched": {
+    "class": "vsLinx_VAEDecodeBatched",
+    "hidden_parameters": [],
+    "method": "decode",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.vae_decode_batched",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/latent",
+        "description": "VAEDecode with a batch_size field to decode fewer latents at a time.",
+        "display_name": "VAE Decode (Batched)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_VAEDecodeBatched",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "samples",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": "The latent to be decoded."
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": "The VAE model used for decoding the latent."
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "batch_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "How many latents to hand to the VAE per decode call. Lower values reduce peak VRAM at the cost of more sequential calls; the default of 1 decodes one image at a time. Values >= the batch size behave exactly like the built-in node (single decode).",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "IMAGE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": "The decoded image."
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "vsLinx_VAEDecodeTiledBatched": {
+    "class": "vsLinx_VAEDecodeTiledBatched",
+    "hidden_parameters": [],
+    "method": "decode",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "nodes.vae_decode_batched",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "vsLinx/latent",
+        "description": "VAEDecodeTiled with a batch_size field to decode fewer latents at a time.",
+        "display_name": "VAE Decode Tiled (Batched)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "vsLinx_VAEDecodeTiledBatched",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "samples",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": true,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 32,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": true,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "overlap",
+            "lazy": null,
+            "max": 4096,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 32,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": true,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "temporal_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 8,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 4,
+            "tooltip": "Only used for video VAEs: Amount of frames to decode at a time.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": true,
+            "control_after_generate": null,
+            "default": 8,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "temporal_overlap",
+            "lazy": null,
+            "max": 4096,
+            "min": 4,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 4,
+            "tooltip": "Only used for video VAEs: Amount of frames to overlap.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "batch_size",
+            "lazy": null,
+            "max": 4096,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "How many latents to hand to the VAE per decode call. Lower values reduce peak VRAM at the cost of more sequential calls; the default of 1 decodes one image at a time. Values >= the batch size behave exactly like the built-in node (single decode).",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "IMAGE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  }
+}

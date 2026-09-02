@@ -1,0 +1,38 @@
+# This repository vendors third-party pack sources verbatim, so an ignore rule
+# here can silently drop code the conversion is supposed to operate on. Only
+# patterns that are editor or tool droppings are listed — nothing that a pack
+# might legitimately ship.
+#
+# Deliberately NOT ignored, despite being usual entries elsewhere:
+#   dist/    two packs declare `WEB_DIRECTORY = "./dist"` and serve their
+#            frontend JS from it
+#   build/   absent today, and the same risk as dist/ if a pack adopts it
+#   scripts/ two packs declare `WEB_DIRECTORY = "./scripts"`
+
+# macOS
+.DS_Store
+._*
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editors — present in several vendored packs
+.vscode/
+.idea/
+*.swp
+
+# Python — packs are Python, and importing them during conversion or testing
+# writes caches straight into the pack tree
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Node — packs that build their frontend assets
+node_modules/
+.eslintcache
+*.tsbuildinfo

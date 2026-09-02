@@ -1,0 +1,108 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "basic_data_handling"
+version = "1.6.0"
+requires-python = ">=3.13,<3.14"
+description = """Basic Python functions for manipulating data that every programmer is used to, lightweight with no additional dependencies.
+
+Supported data types:
+- ComfyUI native: BOOLEAN, FLOAT, INT, STRING, and data lists
+- Python types as custom data types: DICT, LIST, SET, DATETIME, TIMEDELTA
+- PyTorch: TENSOR
+
+Feature categories:
+- Boolean logic operations
+- Type casting/conversion between all supported data types
+- Comparison operations
+- Data container manipulation
+- Flow control (conditionals, branching, execution order)
+- Mathematical operations
+- Mathematical formula node in a safe implementation
+- String manipulation
+- File system path handling, including STRING, IMAGE and MASK load and save
+- SET operations
+- time and date handling
+- PyTorch Tensor manipulation (arithmetic, slicing, reshaping)"""
+authors = [
+  {name = "StableLlama"}
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "bump-my-version",
+    "coverage",  # testing
+    "frozendict", # an example not-a-dict-but-mapping class for dict nodes
+    "mypy",  # linting
+    "pre-commit", # runs linting on commit
+    "pytest",  # testing
+    "ruff",  # linting
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/StableLlama/ComfyUI-basic_data_handling/issues"
+homepage = "https://github.com/StableLlama/ComfyUI-basic_data_handling"
+Repository = "https://github.com/StableLlama/ComfyUI-basic_data_handling"
+
+[tool.comfy]
+PublisherId = "stablellama"
+DisplayName = "Basic data handling"
+Icon = "https://raw.githubusercontent.com/StableLlama/ComfyUI-basic_data_handling/refs/heads/main/web/img/basic_data_handling_icon_400.png"
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+pythonpath = [
+    "src",
+    "../..",  # Path to parent directory containing comfy module
+    "."
+]
+testpaths = [
+    "tests",
+]
+python_files = ["test_*.py"]
+#python_files = ["conftest.py", "test_boolean_nodes.py"]
+#python_files = ["test_boolean_nodes.py"]
+
+[tool.mypy]
+files = "."
+
+# Use strict defaults
+strict = true
+warn_unreachable = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+# Don't require test functions to include types
+module = "tests.*"
+allow_untyped_defs = true
+disable_error_code = "attr-defined"
+
+[tool.ruff]
+# extend-exclude = ["static", "ci/templates"]
+line-length = 140
+src = ["src", "tests"]
+target-version = "py39"
+
+# Add rules to ban exec/eval
+[tool.ruff.lint]
+select = [
+    "S102",  # exec-builtin
+    "S307",  # eval-used
+    "W293",
+    "F",  # The "F" series in Ruff stands for "Pyflakes" rules, which catch various Python syntax errors and undefined names.
+    # See all rules here: https://docs.astral.sh/ruff/rules/#pyflakes-f
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"

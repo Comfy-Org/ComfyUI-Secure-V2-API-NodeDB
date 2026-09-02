@@ -1,0 +1,1485 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "nodes": {
+    "smZ CLIPTextEncode": {
+      "module": "nodes",
+      "class": "smZ_CLIPTextEncode",
+      "sdk_refs": true,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "smZ CLIPTextEncode",
+          "display_name": "CLIP Text Encode++",
+          "category": "conditioning",
+          "description": "smZ prompt parsers and scheduling using bounded CLIP ops. See SECURE_CONVERSION.md for fail-closed model features.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": true
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "parser",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "comfy",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "comfy",
+                "comfy++",
+                "A1111",
+                "full",
+                "compel",
+                "fixed attention"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "mean_normalization",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "multi_conditioning",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "use_old_emphasis_implementation",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "with_SDXL",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "ascore",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 6.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1000.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1024,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1024,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "crop_w",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "crop_h",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "target_width",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1024,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "target_height",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1024,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 16384,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text_g",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "CLIP_G",
+              "dynamic_prompts": true
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text_l",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "CLIP_L",
+              "dynamic_prompts": true
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "smZ_steps",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 18446744073709551615,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_0_CONDITIONING_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "smZ Settings": {
+      "module": "nodes",
+      "class": "smZ_Settings",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "smZ Settings",
+          "display_name": "Settings (smZ)",
+          "category": "advanced",
+          "description": "Workflow-compatible pass-through. Non-default settings that depended on forbidden global sampler/noise hooks fail closed.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "*",
+            "attrs": {
+              "id": "*",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "forceInput": true
+              },
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "extra",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "{\"show_headings\":true,\"show_descriptions\":false,\"mode\":\"*\"}",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Stable Diffusion",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Stable Diffusion",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_comma_padding_backtrack",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Prompt word wrap length limit",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "Prompt word wrap length limit",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 20,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 74,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "enable_emphasis",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_RNG",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Random number generator source",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "RNG",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "cpu",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "cpu",
+                "gpu",
+                "nv"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Compute Settings",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Compute Settings",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_disable_nan_check",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Disable NaN check",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "disable_nan_check",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤㅤㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Sampler parameters",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Sampler parameters",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_eta_ancestral",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Eta for k-diffusion samplers",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "eta",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_s_churn",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Sigma churn",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "s_churn",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 100.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_s_tmin",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Sigma tmin",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "s_tmin",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_s_tmax",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Sigma tmax; zero means infinity",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "s_tmax",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 999.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_s_noise",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Sigma noise",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "s_noise",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.1,
+              "step": 0.001,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_eta_noise_seed_delta",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Eta noise seed delta",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "ENSD",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 18446744073709551615,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_skip_early_cond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Ignore negative prompt during early sampling",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "skip_early_cond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_sgm_noise_multiplier",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "SGM noise multiplier",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "sgm_noise_multiplier",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_upcast_sampling",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Upcast sampling",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "upcast_sampling",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤㅤㅤㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Optimizations",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Optimizations",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_NGMS",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Negative Guidance minimum sigma",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "NGMS",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 15.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_NGMS_all_steps",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Negative Guidance minimum sigma all steps",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "NGMS all steps",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_pad_cond_uncond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Pad prompt and negative prompt",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "pad_cond_uncond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_batch_cond_uncond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Batch conditional and unconditional",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "batch_cond_uncond",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤㅤㅤㅤㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Compatibility",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Compatibility",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_use_prev_scheduling",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Previous prompt editing timelines",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "Use previous prompt editing timelines",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "ㅤㅤㅤㅤㅤㅤ",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Experimental",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": "Experimental",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_use_CFGDenoiser",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Use the legacy CFGDenoiser",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "Use CFGDenoiser",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "info_debug",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": "Debugging messages",
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "debug",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "on",
+              "label_off": "off"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "*",
+            "attrs": {
+              "id": "*",
+              "display_name": "*",
+              "tooltip": "The unchanged input value.",
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    }
+  },
+  "web_directory": "web"
+}

@@ -1,0 +1,6069 @@
+{
+  "LTXVContext_TTP": {
+    "class": "LTXVContext_TTP",
+    "hidden_parameters": [],
+    "method": "apply_context",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "LTXVFirstLastFrameControl_TTP",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "conditioning/video_models",
+        "description": "视频续接Context节点\n\n功能:\n- 从上一个视频提取结尾帧作为context\n- 应用到新视频的开头\n- 实现平滑续接",
+        "display_name": "LTX Video Context (TTP)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "LTXVContext_TTP",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "previous_video",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "latent",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 6,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "context_latent_frames",
+            "lazy": null,
+            "max": 20,
+            "min": 2,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": "Context的latent帧数（推荐6）\n注：latent帧0=1原始帧，其余=8原始帧\n6帧 = 1+40 = 41原始帧 ≈ 1.64秒@25fps",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "context_strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": true,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": "Context固定强度（1.0=完全固定）",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "latent",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "LTXVFirstLastFrameControl_TTP": {
+    "class": "LTXVFirstLastFrameControl_TTP",
+    "hidden_parameters": [],
+    "method": "execute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "LTXVFirstLastFrameControl_TTP",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "conditioning/video_models",
+        "description": "控制LTX视频生成的首帧和尾帧，支持中间帧融合",
+        "display_name": "LTX First Last Frame Control (TTP)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "LTXVFirstLastFrameControl_TTP",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vae",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "VAE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "latent",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "first_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": "首帧图像(可选)"
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "last_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": "尾帧图像(可选)"
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "first_strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": "首帧嵌入强度 (1.0=完全替换, 0.0=不嵌入)",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "last_strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": "尾帧嵌入强度 (1.0=完全替换, 0.0=不嵌入)",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "middle_frames",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": "Optional chain from LTX Middle Frame (TTP)"
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "latent",
+            "id": "_0_LATENT_",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": true
+  },
+  "LTXVMiddleFrame_TTP": {
+    "class": "LTXVMiddleFrame_TTP",
+    "hidden_parameters": [],
+    "method": "execute",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "LTXVFirstLastFrameControl_TTP",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "conditioning/video_models",
+        "description": "中间帧节点 - 可串联（传统ComfyUI格式）\n\n使用传统的INPUT_TYPES和RETURN_TYPES定义，支持anytype\"*\"",
+        "display_name": "LTX Middle Frame (TTP)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "LTXVMiddleFrame_TTP",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "position",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "middle_frames",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "middle_frames",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "*",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_CoordinateSplitter": {
+    "class": "TTP_CoordinateSplitter",
+    "hidden_parameters": [],
+    "method": "split_coordinates",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Conditioning",
+        "description": "",
+        "display_name": "TTP_CoordinateSplitter",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_CoordinateSplitter",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "Positions",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "Coordinates",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Expand_And_Mask": {
+    "class": "TTP_Expand_And_Mask",
+    "hidden_parameters": [],
+    "method": "expand_and_mask",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Image",
+        "description": "这是一个节点类，用于将输入图片在指定方向扩展一定数量的块并创建相应蒙版。\n\n功能：\n1. 支持同时在多个方向上扩展图像。\n2. 分别控制每个方向的扩展块数量。\n3. 将输入图像的透明通道（Alpha 通道）信息转换为蒙版，并与新创建的蒙版合并。\n4. 添加一个布尔参数 fill_alpha_decision 来决定是否将输出图片中的透明区域填充为指定颜色，并输出 RGB 图像。",
+        "display_name": "TTP_Expand_And_Mask",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Expand_And_Mask",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "duplicate",
+            "display_name": null,
+            "extra_dict": {
+              "label": "Fill Mode"
+            },
+            "force_input": null,
+            "id": "fill_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "duplicate",
+              "white"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "fill_alpha_decision",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "#7F7F7F",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "fill_color",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "expand_left",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "expand_right",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "expand_top",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "expand_bottom",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_blocks_left",
+            "lazy": null,
+            "max": 3,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_blocks_right",
+            "lazy": null,
+            "max": 3,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_blocks_top",
+            "lazy": null,
+            "max": 3,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_blocks_bottom",
+            "lazy": null,
+            "max": 3,
+            "min": 0,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "EXPANDED_IMAGE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "MASK",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "MASK",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Image_Assy": {
+    "class": "TTP_Image_Assy",
+    "hidden_parameters": [],
+    "method": "assemble_image",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Image",
+        "description": "",
+        "display_name": "TTP_Image_Assy",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Image_Assy",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "tiles",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "positions",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "original_size",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TUPLE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "grid_size",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TUPLE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "padding",
+            "lazy": null,
+            "max": null,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "RECONSTRUCTED_IMAGE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Image_Tile_Batch": {
+    "class": "TTP_Image_Tile_Batch",
+    "hidden_parameters": [],
+    "method": "tile_image",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Image",
+        "description": "",
+        "display_name": "TTP_Image_Tile_Batch",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Image_Tile_Batch",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1024,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_width",
+            "lazy": null,
+            "max": null,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1024,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_height",
+            "lazy": null,
+            "max": null,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "IMAGES",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "POSITIONS",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "ORIGINAL_SIZE",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TUPLE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "GRID_SIZE",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TUPLE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_QwenVL3_Local_Loader_Experimental": {
+    "class": "TTP_QwenVL3_Local_Loader_Experimental",
+    "hidden_parameters": [],
+    "method": "load_model",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP QwenVL3 Local Loader",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_QwenVL3_Local_Loader_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "put_qwenvl3_model_in_models_text_encoders.safetensors",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_file",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "put_qwenvl3_model_in_models_text_encoders.safetensors"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_family",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "qwen_vl"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": true,
+            "control_after_generate": null,
+            "default": "default",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "default",
+              "cpu"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "qwen_vl_model",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_QWENVL3_MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "info",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Assemble_Experimental": {
+    "class": "TTP_Smart_Tile_Assemble_Experimental",
+    "hidden_parameters": [],
+    "method": "assemble_tiles",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Assemble",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Assemble_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "blend_multiplier",
+            "lazy": null,
+            "max": 4.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "output_scale",
+            "lazy": null,
+            "max": 16.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_priority",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "center_crop",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_alignment",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "center_crop",
+              "crop_or_pad",
+              "resize",
+              "off"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "edge_crop_px",
+            "lazy": null,
+            "max": 512,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "off",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "color_correction",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "off",
+              "local_mean_std",
+              "reinhard_lab",
+              "mkl_lab",
+              "histogram"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.35,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "color_strength",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "mask_feather",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "mask_blend_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "off",
+              "auto",
+              "mask_only",
+              "mask_feather"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "off",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pixel_alignment",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "off",
+              "mask_edge_match",
+              "edge_match"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 8,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pixel_alignment_radius",
+            "lazy": null,
+            "max": 64,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pixel_alignment_device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cpu",
+              "gpu"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "use_if_higher_resolution",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "large_tile_policy",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "use_if_higher_resolution",
+              "context_only",
+              "always_use"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.55,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "large_tile_area_threshold",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.05,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.95,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "min_tile_scale_ratio",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.25,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.25,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "context_tile_weight",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "assemble_device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cpu",
+              "gpu"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "final_only",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "assemble_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "final_only",
+              "always"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "base_canvas_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "black",
+              "base_image",
+              "source_image"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "raw_weight",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "weight_preview_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "raw_weight",
+              "coverage"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "small_tile_on_top",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "safe_auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_composite_policy",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "safe_auto",
+              "strict_layer",
+              "soft_detail",
+              "replace_object",
+              "replace_tile"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "mask_first",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "replace_tile_shape",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "mask_first",
+              "tile_box_first"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "sampled_tiles",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "tile_meta",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_META",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "tile_set",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "base_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "source_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "color_reference_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": true,
+            "id": "done",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "weight_preview",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Composite_Override_Experimental": {
+    "class": "TTP_Smart_Tile_Composite_Override_Experimental",
+    "hidden_parameters": [],
+    "method": "override_composite",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Composite Override",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Composite_Override_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "index",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selector_type",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "all",
+              "index",
+              "name",
+              "label",
+              "prompt_tag",
+              "source",
+              "semantic_category",
+              "semantic_role",
+              "prompt_contains",
+              "regex"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "T1",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selector",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "unmatched_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "drop_unmatched"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "replace_tile",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "composite_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "replace_tile",
+              "soft_overlay",
+              "blend",
+              "replace",
+              "context"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "replace_tile_shape",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "mask_first",
+              "tile_box_first"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "max",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "layer_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "set",
+              "add",
+              "max",
+              "min"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 10.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "layer",
+            "lazy": null,
+            "max": 1000000.0,
+            "min": -1000000.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 1.0,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "max",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "priority_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "set",
+              "add",
+              "max",
+              "min"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 200.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "priority",
+            "lazy": null,
+            "max": 1000000.0,
+            "min": -1000000.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 1.0,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "max",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "occlusion_priority_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "set",
+              "add",
+              "max",
+              "min"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 50000.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "occlusion_priority",
+            "lazy": null,
+            "max": 1000000.0,
+            "min": -1000000.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 10.0,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "blend_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "set",
+              "add",
+              "max",
+              "min"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 32,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "blend",
+            "lazy": null,
+            "max": 2048,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "importance_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "set",
+              "add",
+              "max",
+              "min"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "importance",
+            "lazy": null,
+            "max": 10.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "composite_json",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "summary",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Image_Upscale_Prep_Experimental": {
+    "class": "TTP_Smart_Tile_Image_Upscale_Prep_Experimental",
+    "hidden_parameters": [],
+    "method": "upscale_tile",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Image Upscale Prep",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Image_Upscale_Prep_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 2.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "scale",
+            "lazy": null,
+            "max": 16.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 8,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "round_to",
+            "lazy": null,
+            "max": 256,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "lanczos",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "resampling",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "lanczos",
+              "bicubic",
+              "bilinear",
+              "area",
+              "nearest-exact",
+              "nearest"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "max_megapixels",
+            "lazy": null,
+            "max": 64.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_upscale_model",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "upscale_model",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "UPSCALE_MODEL",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "info",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Interactive_Crop_Experimental": {
+    "class": "TTP_Smart_Tile_Interactive_Crop_Experimental",
+    "hidden_parameters": [
+      "unique_id"
+    ],
+    "method": "interactive_crop_tiles",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": true
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Interactive Crop",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": true,
+        "node_id": "TTP_Smart_Tile_Interactive_Crop_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "unique_id",
+        "prompt",
+        "extra_pnginfo"
+      ],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "example.png",
+            "display_name": null,
+            "extra_dict": {
+              "image_upload": true
+            },
+            "force_input": null,
+            "id": "image",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "example.png",
+              "z_image_turbo_secure.png"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "{\"tiles\":[{\"name\":\"tile_1\",\"x0\":0.0,\"y0\":0.0,\"x1\":0.5,\"y1\":0.5},{\"name\":\"tile_2\",\"x0\":0.5,\"y0\":0.0,\"x1\":1.0,\"y1\":0.5},{\"name\":\"tile_3\",\"x0\":0.0,\"y0\":0.5,\"x1\":0.5,\"y1\":1.0},{\"name\":\"tile_4\",\"x0\":0.5,\"y0\":0.5,\"x1\":1.0,\"y1\":1.0}]}",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "layout_json",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 128,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "default_pad",
+            "lazy": null,
+            "max": 2048,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 8,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 64,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "default_blend",
+            "lazy": null,
+            "max": 1024,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 8,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "include_full_image",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 8,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "round_to",
+            "lazy": null,
+            "max": 128,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "none",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_detect_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "none",
+              "sam3.1",
+              "qwenvl3"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_detect_request",
+            "lazy": null,
+            "max": 2147483647,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "person, face, hands, eyes, text, foreground object, important object",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_prompt",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "allow_object_overlap",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 96,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_object_padding",
+            "lazy": null,
+            "max": 2048,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 8,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 16,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_mask_expand",
+            "lazy": null,
+            "max": 2048,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 4,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 16,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_max_tiles",
+            "lazy": null,
+            "max": 64,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "auto_paint_mask",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "source_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vision_model",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "MODEL",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "vision_conditioning",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "clip",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CLIP",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "qwen_vl_model",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_QWENVL3_MODEL",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "source_image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "tiles",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "tile_meta",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_META",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "positions",
+            "id": "output_4",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "preview",
+            "id": "output_5",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "layout_json",
+            "id": "output_6",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Loop_Collect_Experimental": {
+    "class": "TTP_Smart_Tile_Loop_Collect_Experimental",
+    "hidden_parameters": [],
+    "method": "loop_collect",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Loop Collect",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Loop_Collect_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_task",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_TASK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "processed_image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "done",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "next_index",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "status",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Loop_Source_Experimental": {
+    "class": "TTP_Smart_Tile_Loop_Source_Experimental",
+    "hidden_parameters": [
+      "unique_id"
+    ],
+    "method": "loop_source",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": true,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Loop Source",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Loop_Source_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "unique_id"
+      ],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "default",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "session_id",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "restart_request",
+            "lazy": null,
+            "max": 2147483647,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "loop_request",
+            "lazy": null,
+            "max": 2147483647,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "clip",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CLIP",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "tile_task",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_TASK",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "index",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "count",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "done",
+            "id": "output_4",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "status",
+            "id": "output_5",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "prompt",
+            "id": "output_6",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "negative",
+            "id": "output_7",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "caption",
+            "id": "output_8",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "label",
+            "id": "output_9",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "prompt_tag",
+            "id": "output_10",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "positive_conditioning",
+            "id": "output_11",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "negative_conditioning",
+            "id": "output_12",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Output_Size_Estimate_Experimental": {
+    "class": "TTP_Smart_Tile_Output_Size_Estimate_Experimental",
+    "hidden_parameters": [],
+    "method": "estimate_output_size",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Output Size Estimate",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Output_Size_Estimate_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "median",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "scale_strategy",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "median",
+              "mean",
+              "min",
+              "max",
+              "focus_weighted"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "source_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": true,
+            "id": "done",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "output_scale",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "width",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "height",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "scale_x",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "scale_y",
+            "id": "output_4",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "info",
+            "id": "output_5",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Prompt_Override_Experimental": {
+    "class": "TTP_Smart_Tile_Prompt_Override_Experimental",
+    "hidden_parameters": [],
+    "method": "override_prompts",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Prompt Override",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Prompt_Override_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "label",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selector_type",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "all",
+              "index",
+              "name",
+              "label",
+              "prompt_tag",
+              "source",
+              "semantic_category",
+              "semantic_role",
+              "prompt_contains",
+              "regex"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selector",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "unmatched_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "drop_unmatched"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "replace",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "replace",
+              "prepend",
+              "append",
+              "find_replace",
+              "clear"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "negative_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "replace",
+              "prepend",
+              "append",
+              "find_replace",
+              "clear"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "negative_text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "find_text",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "override_json",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "summary",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_QwenVL_Prompt_Set_Builder_Experimental": {
+    "class": "TTP_Smart_Tile_QwenVL_Prompt_Set_Builder_Experimental",
+    "hidden_parameters": [],
+    "method": "build_prompt_set",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile QwenVL Prompt Set Builder",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_QwenVL_Prompt_Set_Builder_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "contact_sheet",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "reference_image_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "none",
+              "first_message",
+              "every_tile",
+              "contact_sheet"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "system_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_instruction",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "global_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "global_plus_label_plus_caption",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_merge_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "caption_only",
+              "global_plus_caption",
+              "global_plus_label_plus_caption"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "english",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "output_language",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "english",
+              "chinese",
+              "bilingual"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_new_tokens",
+            "lazy": null,
+            "max": 4096,
+            "min": 32,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 16,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "temperature",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "tile_img2img_prompt",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_preset",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "tile_img2img_prompt",
+              "tile_caption_only",
+              "tile_json_strict",
+              "bbox_detect",
+              "style_material_lighting"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 768,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "qwen_max_side",
+            "lazy": null,
+            "max": 4096,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 32,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 786432,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "qwen_max_pixels",
+            "lazy": null,
+            "max": 16777216,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 65536,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_tile_cache",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": false,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "global_negative",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 123,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "qwen_seed",
+            "lazy": null,
+            "max": 2147483647,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "reference_image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "qwen_vl_model",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_QWENVL3_MODEL",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "prompt_set_json",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "summary",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Save_Final_Image_Experimental": {
+    "class": "TTP_Smart_Tile_Save_Final_Image_Experimental",
+    "hidden_parameters": [
+      "prompt",
+      "extra_pnginfo"
+    ],
+    "method": "save_final_image",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Save Final Image",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": true,
+        "node_id": "TTP_Smart_Tile_Save_Final_Image_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [
+        "prompt",
+        "extra_pnginfo"
+      ],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "images",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "done",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "TTP_Smart_Tile",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "filename_prefix",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ],
+      "outputs": []
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Semantic_Rank_Experimental": {
+    "class": "TTP_Smart_Tile_Semantic_Rank_Experimental",
+    "hidden_parameters": [],
+    "method": "rank_tiles",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Semantic Rank",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Semantic_Rank_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "portrait",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "rank_policy",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "portrait",
+              "balanced",
+              "product",
+              "text"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "apply_composite_rank",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.5,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "face_bias",
+            "lazy": null,
+            "max": 4.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "detail_bias",
+            "lazy": null,
+            "max": 4.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.4,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "text_bias",
+            "lazy": null,
+            "max": 4.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.25,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "background_weight",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.35,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "small_tile_bias",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "semantic_report",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Set_Preview_Experimental": {
+    "class": "TTP_Smart_Tile_Set_Preview_Experimental",
+    "hidden_parameters": [],
+    "method": "preview_tile_set",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Set Preview",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Set_Preview_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "contact_sheet",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "contact_sheet",
+              "selected_tile"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "selected_index",
+            "lazy": null,
+            "max": 63,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 256,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "thumbnail_size",
+            "lazy": null,
+            "max": 1024,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 16,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 4,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "columns",
+            "lazy": null,
+            "max": 8,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "show_labels",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "info",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Smart_Tile_Stack_Order_Experimental": {
+    "class": "TTP_Smart_Tile_Stack_Order_Experimental",
+    "hidden_parameters": [],
+    "method": "apply_stack_order",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Smart Tile",
+        "description": "",
+        "display_name": "TTP Smart Tile Stack Order",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Smart_Tile_Stack_Order_Experimental",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "tile_set",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "T1,T3,T2",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "tile_order",
+            "lazy": null,
+            "multiline": false,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "first_on_top",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "top_order",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "first_on_top",
+              "last_on_top"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "replace_tile",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "composite_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "replace_tile",
+              "keep"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "keep",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "replace_tile_shape",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "keep",
+              "mask_first",
+              "tile_box_first"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_set",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "TTP_SMART_TILE_SET",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "order_json",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "summary",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_Tile_image_size": {
+    "class": "Tile_imageSize",
+    "hidden_parameters": [],
+    "method": "image_width_height",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Image",
+        "description": "",
+        "display_name": "TTP_Tile_image_size",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_Tile_image_size",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 3,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "width_factor",
+            "lazy": null,
+            "max": 10,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 3,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "height_factor",
+            "lazy": null,
+            "max": 10,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "overlap_rate",
+            "lazy": null,
+            "max": 0.95,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "tile_width",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "tile_height",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_condsetarea_merge": {
+    "class": "TTP_condsetarea_merge",
+    "hidden_parameters": [],
+    "method": "apply_coordinates_to_batch",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Conditioning",
+        "description": "",
+        "display_name": "TTP_condsetarea_merge",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_condsetarea_merge",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "conditioning_batch",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "coordinates",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "strength",
+            "lazy": null,
+            "max": 10.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "CONDITIONING",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_condsetarea_merge_test": {
+    "class": "TTP_condsetarea_merge_test",
+    "hidden_parameters": [],
+    "method": "apply_coordinates_to_batch",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Conditioning",
+        "description": "",
+        "display_name": "TTP_condsetarea_merge_test",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_condsetarea_merge_test",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "conditioning_batch",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "coordinates",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LIST",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "group_size",
+            "lazy": null,
+            "max": null,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "strength",
+            "lazy": null,
+            "max": 10.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.01,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "CONDITIONING",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_condtobatch": {
+    "class": "TTP_condtobatch",
+    "hidden_parameters": [],
+    "method": "combine_to_batch",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/Conditioning",
+        "description": "",
+        "display_name": "TTP_cond to batch",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": true,
+        "is_output_node": false,
+        "node_id": "TTP_condtobatch",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {
+              "forceInput": true
+            },
+            "id": "conditionings",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "CONDITIONING",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "CONDITIONING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTP_text_mix": {
+    "class": "TTP_text_mix",
+    "hidden_parameters": [],
+    "method": "mix_texts",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/text",
+        "description": "",
+        "display_name": "TTP_text_mix",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTP_text_mix",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "text1",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "text2",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "text3",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "template",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "text1",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "text2",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "text3",
+            "id": "output_2",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "final_text",
+            "id": "output_3",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TTPlanet_Tile_Preprocessor_Simple": {
+    "class": "TTPlanet_Tile_Preprocessor_Simple",
+    "hidden_parameters": [],
+    "method": "process_image",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "TTP/TILE",
+        "description": "",
+        "display_name": "TTP Tile Preprocessor Simple",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TTPlanet_Tile_Preprocessor_Simple",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 2.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "scale_factor",
+            "lazy": null,
+            "max": 8.0,
+            "min": 1.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.05,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "blur_strength",
+            "lazy": null,
+            "max": 20.0,
+            "min": 1.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "image_output",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "TeaCacheHunyuanVideoSampler": {
+    "class": "TeaCacheHunyuanVideoSampler",
+    "hidden_parameters": [],
+    "method": "sample",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "TTP_toolsets",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "sampling/custom_sampling",
+        "description": "",
+        "display_name": "TTP_TeaCache HunyuanVideo Sampler",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "TeaCacheHunyuanVideoSampler",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "noise",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "NOISE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "guider",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "GUIDER",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "sampler",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "SAMPLER",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "sigmas",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "SIGMAS",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "latent_image",
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Fast (1.6x)",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "speedup",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Original (1x)",
+              "Fast (1.6x)",
+              "Faster (2.1x)",
+              "Ultra Fast (3.2x)",
+              "Shapeless Fast (4.4x)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Control TeaCache speed/quality trade-off:\nOriginal: Base quality\nFast: 1.6x speedup\nFaster: 2.1x speedup\nUltra Fast: 3.2x speedup\nShapeless Fast: 4.4x speedup",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "enable_custom_speed",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "custom_speed",
+            "lazy": null,
+            "max": 4.4,
+            "min": 1.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": 0.1,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "output",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "display_name": "denoised_output",
+            "id": "output_1",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "LATENT",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  }
+}

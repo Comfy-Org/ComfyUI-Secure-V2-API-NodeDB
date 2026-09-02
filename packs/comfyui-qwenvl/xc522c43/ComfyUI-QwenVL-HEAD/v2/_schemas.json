@@ -1,0 +1,2246 @@
+{
+  "AILab_QwenVL": {
+    "class": "AILab_QwenVL",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3-VL-2B-Instruct",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3-VL-2B-Instruct",
+              "Qwen3-VL-2B-Thinking",
+              "Qwen3-VL-2B-Instruct-FP8",
+              "Qwen3-VL-2B-Thinking-FP8",
+              "Qwen3-VL-4B-Instruct",
+              "Qwen3-VL-4B-Thinking",
+              "Qwen3-VL-4B-Instruct-FP8",
+              "Qwen3-VL-4B-Thinking-FP8",
+              "Qwen3-VL-8B-Instruct",
+              "Qwen3-VL-8B-Thinking",
+              "Qwen3-VL-8B-Instruct-FP8",
+              "Qwen3-VL-8B-Thinking-FP8",
+              "Qwen3-VL-32B-Instruct",
+              "Qwen3-VL-32B-Thinking",
+              "Qwen3-VL-32B-Instruct-FP8",
+              "Qwen3-VL-32B-Thinking-FP8",
+              "Qwen2.5-VL-3B-Instruct",
+              "Qwen2.5-VL-7B-Instruct"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Pick the Qwen-VL checkpoint. First run downloads weights into models/LLM/Qwen-VL, so leave disk space.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "None (FP16)",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "quantization",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "4-bit (VRAM-friendly)",
+              "8-bit (Balanced)",
+              "None (FP16)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Precision vs VRAM. FP16 gives the best quality if memory allows; 8-bit suits 8–16 GB GPUs; 4-bit fits 6 GB or lower but is slower.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "attention_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "sage",
+              "flash_attention_2",
+              "sdpa"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "auto tries flash-attn v2 when installed and falls back to SDPA. Only override when debugging attention backends.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "🖼️ Detailed Description",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preset_prompt",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "🖼️ Tags",
+              "🖼️ Simple Description",
+              "🖼️ Detailed Description",
+              "🖼️ Ultra Detailed Description",
+              "🎬 Cinematic Description",
+              "🖼️ Detailed Analysis",
+              "📹 Video Summary",
+              "📖 Short Story",
+              "🪄 Prompt Refine & Expand"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Built-in instruction describing how Qwen-VL should analyze the media input.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Optional override—when filled it completely replaces the preset template.",
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 2048,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Maximum number of new tokens to decode. Larger values yield longer answers but consume more time and memory.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "keep_model_loaded",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Keeps the model resident in VRAM/RAM after the run so the next prompt skips loading.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Seed controlling sampling and frame picking; reuse it to reproduce results.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "video",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "RESPONSE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "AILab_QwenVL_Advanced": {
+    "class": "AILab_QwenVL_Advanced",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL (Advanced)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL_Advanced",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3-VL-2B-Instruct",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3-VL-2B-Instruct",
+              "Qwen3-VL-2B-Thinking",
+              "Qwen3-VL-2B-Instruct-FP8",
+              "Qwen3-VL-2B-Thinking-FP8",
+              "Qwen3-VL-4B-Instruct",
+              "Qwen3-VL-4B-Thinking",
+              "Qwen3-VL-4B-Instruct-FP8",
+              "Qwen3-VL-4B-Thinking-FP8",
+              "Qwen3-VL-8B-Instruct",
+              "Qwen3-VL-8B-Thinking",
+              "Qwen3-VL-8B-Instruct-FP8",
+              "Qwen3-VL-8B-Thinking-FP8",
+              "Qwen3-VL-32B-Instruct",
+              "Qwen3-VL-32B-Thinking",
+              "Qwen3-VL-32B-Instruct-FP8",
+              "Qwen3-VL-32B-Thinking-FP8",
+              "Qwen2.5-VL-3B-Instruct",
+              "Qwen2.5-VL-7B-Instruct"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Pick the Qwen-VL checkpoint. First run downloads weights into models/LLM/Qwen-VL, so leave disk space.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "None (FP16)",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "quantization",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "4-bit (VRAM-friendly)",
+              "8-bit (Balanced)",
+              "None (FP16)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Precision vs VRAM. FP16 gives the best quality if memory allows; 8-bit suits 8–16 GB GPUs; 4-bit fits 6 GB or lower but is slower.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "attention_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "sage",
+              "flash_attention_2",
+              "sdpa"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "auto tries flash-attn v2 when installed and falls back to SDPA. Only override when debugging attention backends.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_torch_compile",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Enable torch.compile('reduce-overhead') on supported CUDA/Torch 2.1+ builds for extra throughput after the first compile.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cpu",
+              "mps"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Choose where to run the model: auto, cpu, mps, or cuda:x for multi-GPU systems.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "🖼️ Detailed Description",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preset_prompt",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "🖼️ Tags",
+              "🖼️ Simple Description",
+              "🖼️ Detailed Description",
+              "🖼️ Ultra Detailed Description",
+              "🎬 Cinematic Description",
+              "🖼️ Detailed Analysis",
+              "📹 Video Summary",
+              "📖 Short Story",
+              "🪄 Prompt Refine & Expand"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Built-in instruction describing how Qwen-VL should analyze the media input.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Optional override—when filled it completely replaces the preset template.",
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 4096,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Maximum number of new tokens to decode. Larger values yield longer answers but consume more time and memory.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.6,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "temperature",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Sampling randomness when num_beams == 1. 0.2–0.4 is focused, 0.7+ is creative.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.9,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "top_p",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Nucleus sampling cutoff when num_beams == 1. Lower values keep only top tokens; 0.9–0.95 allows more variety.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "num_beams",
+            "lazy": null,
+            "max": 8,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Beam-search width. Values >1 disable temperature/top_p and trade speed for more stable answers.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "repetition_penalty",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.5,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Values >1 (e.g., 1.1–1.3) penalize repeated phrases; 1.0 leaves logits untouched.",
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 16,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "frame_count",
+            "lazy": null,
+            "max": 64,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Number of frames extracted from video inputs before prompting Qwen-VL. More frames provide context but cost time.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "keep_model_loaded",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Keeps the model resident in VRAM/RAM after the run so the next prompt skips loading.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": "Seed controlling sampling and frame picking; reuse it to reproduce results.",
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "video",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "RESPONSE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "AILab_QwenVL_GGUF": {
+    "class": "AILab_QwenVL_GGUF",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL_GGUF",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL (GGUF)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL_GGUF",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3VL-4B-Instruct-F16.gguf",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3VL-4B-Instruct-F16.gguf",
+              "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+              "Qwen3VL-4B-Instruct-Q8_0.gguf",
+              "Qwen3VL-4B-Thinking-F16.gguf",
+              "Qwen3VL-4B-Thinking-Q4_K_M.gguf",
+              "Qwen3VL-4B-Thinking-Q8_0.gguf",
+              "Qwen3VL-8B-Instruct-F16.gguf",
+              "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+              "Qwen3VL-8B-Instruct-Q8_0.gguf",
+              "Qwen3VL-8B-Thinking-F16.gguf",
+              "Qwen3VL-8B-Thinking-Q4_K_M.gguf",
+              "Qwen3VL-8B-Thinking-Q8_0.gguf"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "🖼️ Detailed Description",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preset_prompt",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "🖼️ Tags",
+              "🖼️ Simple Description",
+              "🖼️ Detailed Description",
+              "🖼️ Ultra Detailed Description",
+              "🎬 Cinematic Description",
+              "🖼️ Detailed Analysis",
+              "📹 Video Summary",
+              "📖 Short Story",
+              "🪄 Prompt Refine & Expand"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 2048,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "keep_model_loaded",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "video",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "RESPONSE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "AILab_QwenVL_GGUF_Advanced": {
+    "class": "AILab_QwenVL_GGUF_Advanced",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL_GGUF",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL Advanced (GGUF)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL_GGUF_Advanced",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3VL-4B-Instruct-F16.gguf",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3VL-4B-Instruct-F16.gguf",
+              "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+              "Qwen3VL-4B-Instruct-Q8_0.gguf",
+              "Qwen3VL-4B-Thinking-F16.gguf",
+              "Qwen3VL-4B-Thinking-Q4_K_M.gguf",
+              "Qwen3VL-4B-Thinking-Q8_0.gguf",
+              "Qwen3VL-8B-Instruct-F16.gguf",
+              "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+              "Qwen3VL-8B-Instruct-Q8_0.gguf",
+              "Qwen3VL-8B-Thinking-F16.gguf",
+              "Qwen3VL-8B-Thinking-Q4_K_M.gguf",
+              "Qwen3VL-8B-Thinking-Q8_0.gguf"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cpu",
+              "mps"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "🖼️ Detailed Description",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preset_prompt",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "🖼️ Tags",
+              "🖼️ Simple Description",
+              "🖼️ Detailed Description",
+              "🖼️ Ultra Detailed Description",
+              "🎬 Cinematic Description",
+              "🖼️ Detailed Analysis",
+              "📹 Video Summary",
+              "📖 Short Story",
+              "🪄 Prompt Refine & Expand"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 4096,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.6,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "temperature",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.9,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "top_p",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.2,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "repetition_penalty",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.5,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 16,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "frame_count",
+            "lazy": null,
+            "max": 64,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 8192,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "ctx",
+            "lazy": null,
+            "max": 262144,
+            "min": 1024,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 512,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 512,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "n_batch",
+            "lazy": null,
+            "max": 32768,
+            "min": 64,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 64,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": -1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "gpu_layers",
+            "lazy": null,
+            "max": 200,
+            "min": -1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 4096,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "image_max_tokens",
+            "lazy": null,
+            "max": 1024000,
+            "min": 256,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 256,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 0,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "top_k",
+            "lazy": null,
+            "max": 32768,
+            "min": 0,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 4194304,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "pool_size",
+            "lazy": null,
+            "max": 10485760,
+            "min": 1048576,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": 524288,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "keep_model_loaded",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "image",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "display_name": null,
+            "extra_dict": {},
+            "id": "video",
+            "lazy": null,
+            "optional": true,
+            "rawLink": null,
+            "tooltip": null
+          },
+          "io_type": "IMAGE",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "RESPONSE",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "AILab_QwenVL_GGUF_PromptEnhancer": {
+    "class": "AILab_QwenVL_GGUF_PromptEnhancer",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL_GGUF_PromptEnhancer",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL Prompt Enhancer (GGUF)",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL_GGUF_PromptEnhancer",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3-4B-Q4_K_M.gguf",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3-4B-Q4_K_M.gguf",
+              "Qwen3-4B-Q5_0.gguf",
+              "Qwen3-4B-Q5_K_M.gguf",
+              "Qwen3-4B-Q6_K.gguf",
+              "Qwen3-4B-Q8_0.gguf",
+              "Qwen3-4B-abliterated-bf16.gguf",
+              "Qwen3-4B-abliterated-bf16_q8_0.gguf",
+              "Qwen3-4B-abliterated-f16_q8_0.gguf",
+              "Qwen3-4B-abliterated-iq2_m.gguf",
+              "Qwen3-4B-abliterated-iq2_s.gguf",
+              "Qwen3-4B-abliterated-iq2_xs.gguf",
+              "Qwen3-4B-abliterated-iq2_xxs.gguf",
+              "Qwen3-4B-abliterated-iq3_m.gguf",
+              "Qwen3-4B-abliterated-iq3_s.gguf",
+              "Qwen3-4B-abliterated-iq3_xs.gguf",
+              "Qwen3-4B-abliterated-iq3_xxs.gguf",
+              "Qwen3-4B-abliterated-iq4_nl.gguf",
+              "Qwen3-4B-abliterated-iq4_xs.gguf",
+              "Qwen3-4B-abliterated-q2_k_s.gguf",
+              "Qwen3-4B-abliterated-q3_k_m.gguf",
+              "Qwen3-4B-abliterated-q3_k_s.gguf",
+              "Qwen3-4B-abliterated-q4_0.gguf",
+              "Qwen3-4B-abliterated-q4_1.gguf",
+              "Qwen3-4B-abliterated-q4_k_m.gguf",
+              "Qwen3-4B-abliterated-q4_k_s.gguf",
+              "Qwen3-4B-abliterated-q5_0.gguf",
+              "Qwen3-4B-abliterated-q5_1.gguf",
+              "Qwen3-4B-abliterated-q5_k_m.gguf",
+              "Qwen3-4B-abliterated-q5_k_s.gguf",
+              "Qwen3-4B-abliterated-q6_k_m.gguf",
+              "Qwen3-4B-abliterated-q8_0.gguf"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "GGUF model entry defined in gguf_models.json.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Prompt text to enhance. Leave blank to just emit the preset instruction.",
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "📝 Enhance",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "preset_system_prompt",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "📝 Enhance",
+              "📝 Refine",
+              "📝 Creative Rewrite",
+              "📝 Detailed Visual",
+              "📝 Artistic Style",
+              "📝 Technical Specs"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_system_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 256,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 1024,
+            "min": 32,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.7,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "temperature",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.9,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "top_p",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "repetition_penalty",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.5,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "english_output",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Force final output in English using translation prompt.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cuda",
+              "cpu",
+              "mps"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Select device; auto prefers GPU when available.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "ENHANCED_OUTPUT",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  },
+  "AILab_QwenVL_PromptEnhancer": {
+    "class": "AILab_QwenVL_PromptEnhancer",
+    "hidden_parameters": [],
+    "method": "process",
+    "methods": {
+      "check_lazy_status": false,
+      "fingerprint_inputs": false,
+      "validate_inputs": false
+    },
+    "module": "AILab_QwenVL_PromptEnhancer",
+    "schema": {
+      "attrs": {
+        "accept_all_inputs": false,
+        "category": "🧪AILab/QwenVL",
+        "description": "",
+        "display_name": "QwenVL Prompt Enhancer",
+        "enable_expand": false,
+        "essentials_category": null,
+        "has_intermediate_output": false,
+        "is_api_node": false,
+        "is_deprecated": false,
+        "is_dev_only": false,
+        "is_experimental": false,
+        "is_input_list": false,
+        "is_output_node": false,
+        "node_id": "AILab_QwenVL_PromptEnhancer",
+        "not_idempotent": false,
+        "price_badge": null,
+        "search_aliases": []
+      },
+      "hidden": [],
+      "inputs": [
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "Qwen3-0.6B",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "model_name",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "Qwen3-0.6B",
+              "qwen3-4b-Z-Image-Engineer",
+              "Qwen3-4B-Instruct-2507",
+              "Qwen3-VL-2B-Instruct",
+              "Qwen3-VL-2B-Thinking",
+              "Qwen3-VL-2B-Instruct-FP8",
+              "Qwen3-VL-2B-Thinking-FP8",
+              "Qwen3-VL-4B-Instruct",
+              "Qwen3-VL-4B-Thinking",
+              "Qwen3-VL-4B-Instruct-FP8",
+              "Qwen3-VL-4B-Thinking-FP8",
+              "Qwen3-VL-8B-Instruct",
+              "Qwen3-VL-8B-Thinking",
+              "Qwen3-VL-8B-Instruct-FP8",
+              "Qwen3-VL-8B-Thinking-FP8",
+              "Qwen3-VL-32B-Instruct",
+              "Qwen3-VL-32B-Thinking",
+              "Qwen3-VL-32B-Instruct-FP8",
+              "Qwen3-VL-32B-Thinking-FP8",
+              "Qwen2.5-VL-3B-Instruct",
+              "Qwen2.5-VL-7B-Instruct"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Pick the Qwen-VL checkpoint. First run downloads weights into models/LLM/Qwen-VL, so leave disk space.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "None (FP16)",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "quantization",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "4-bit (VRAM-friendly)",
+              "8-bit (Balanced)",
+              "None (FP16)"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Precision vs VRAM. FP16 gives the best quality if memory allows; 8-bit suits 8–16 GB GPUs; 4-bit fits 6 GB or lower but is slower.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "attention_mode",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "sage",
+              "flash_attention_2",
+              "sdpa"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "auto tries flash-attn v2 when installed and falls back to SDPA. Only override when debugging attention backends.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": false,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "use_torch_compile",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Enable torch.compile('reduce-overhead') on supported CUDA/Torch 2.1+ builds for extra throughput after the first compile.",
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "auto",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "device",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "auto",
+              "cuda",
+              "cpu",
+              "mps"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": "Choose where to run the model: auto, cpu, mps, or cuda:x for multi-GPU systems.",
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "prompt_text",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": "Prompt text to enhance. Leave blank to just emit the preset instruction.",
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": "📝 Enhance",
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "enhancement_style",
+            "image_folder": null,
+            "lazy": null,
+            "multiselect": false,
+            "optional": false,
+            "options": [
+              "📝 Enhance",
+              "📝 Refine",
+              "📝 Creative Rewrite",
+              "📝 Detailed Visual",
+              "📝 Artistic Style",
+              "📝 Technical Specs"
+            ],
+            "rawLink": null,
+            "remote": null,
+            "socketless": null,
+            "tooltip": null,
+            "upload": null,
+            "widget_type": null
+          },
+          "io_type": "COMBO",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": "",
+            "display_name": null,
+            "dynamic_prompts": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "custom_system_prompt",
+            "lazy": null,
+            "multiline": true,
+            "optional": false,
+            "placeholder": null,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 256,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "max_tokens",
+            "lazy": null,
+            "max": 1024,
+            "min": 32,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.7,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "temperature",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.1,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 0.9,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "top_p",
+            "lazy": null,
+            "max": 1.0,
+            "min": 0.0,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": 1.1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "gradient_stops": null,
+            "id": "repetition_penalty",
+            "lazy": null,
+            "max": 2.0,
+            "min": 0.5,
+            "optional": false,
+            "rawLink": null,
+            "round": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "FLOAT",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "default": true,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "keep_model_loaded",
+            "label_off": null,
+            "label_on": null,
+            "lazy": null,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "BOOLEAN",
+          "kind": "standard"
+        },
+        {
+          "attrs": {
+            "advanced": null,
+            "control_after_generate": null,
+            "default": 1,
+            "display_mode": null,
+            "display_name": null,
+            "extra_dict": {},
+            "force_input": null,
+            "id": "seed",
+            "lazy": null,
+            "max": 4294967295,
+            "min": 1,
+            "optional": false,
+            "rawLink": null,
+            "socketless": null,
+            "step": null,
+            "tooltip": null,
+            "widget_type": null
+          },
+          "io_type": "INT",
+          "kind": "standard"
+        }
+      ],
+      "outputs": [
+        {
+          "attrs": {
+            "display_name": "ENHANCED_OUTPUT",
+            "id": "output_0",
+            "is_output_list": false,
+            "tooltip": null
+          },
+          "io_type": "STRING",
+          "kind": "standard"
+        }
+      ]
+    },
+    "source_v3": false
+  }
+}
