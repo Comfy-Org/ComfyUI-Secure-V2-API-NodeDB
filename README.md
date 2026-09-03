@@ -1,8 +1,12 @@
 # pack-db
 
-Working copy of the custom-nodes pack database, staged here until it moves to
-the db repository. `packs/` mirrors that repository's root, so the trees move
-across unchanged.
+Converted Secure Nodes pack database. Each pack root preserves the pristine V1
+source at the commit recorded in `packs/packs.json`; its materialized `v2/`
+directory is the review copy of the conversion. The matching files under
+`patches/` are the deployable recipe: applying the `.json` manifest and `.diff`
+to that pristine V1 source reproduces the complete V2 tree byte-for-byte.
+
+`ComfyUI_secure_nodes` consumes this repository as its `pack-db` submodule.
 
     packs/<slug>/<xsha>/<Pack-Name>-HEAD/
         …the pack, exactly as upstream ships it…
