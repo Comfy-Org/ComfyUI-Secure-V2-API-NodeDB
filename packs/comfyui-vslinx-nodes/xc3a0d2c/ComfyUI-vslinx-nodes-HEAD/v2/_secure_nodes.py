@@ -616,13 +616,12 @@ async def _anima_apply(
     model, weights, image, strength, start_percent, end_percent,
     preserve_wrapper,
 ):
-    integration = getattr(_ctx().integrations, "anima", None)
-    if integration is None:
-        raise RuntimeError("the host does not provide the Anima integration")
-    return await integration.apply_lllite(
-        model,
-        weights,
-        image,
+    return await _ctx().integrations.call(
+        "anima",
+        "apply_lllite",
+        model=model,
+        weights=weights,
+        image=image,
         strength=float(strength),
         start_percent=float(start_percent),
         end_percent=float(end_percent),

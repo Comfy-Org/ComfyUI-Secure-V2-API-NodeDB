@@ -355,19 +355,7 @@ async def _load_llama_model(
     expected = 2 if multimodal else 1
     if len(logical) != expected:
         raise RuntimeError("sealed llama.cpp artifact set has changed")
-    return await _ctx().integrations.llama_cpp.load_chat_model(
-        logical[0],
-        logical[1] if multimodal else None,
-        family=str(family),
-        device=_llama_device(device),
-        context_length=int(context_length),
-        batch_size=int(batch_size),
-        gpu_layers=int(gpu_layers),
-        image_max_tokens=int(image_max_tokens),
-        top_k=int(top_k),
-        pool_size=int(pool_size),
-        cache=bool(cache),
-    )
+    return await _ctx().integrations.call("llama_cpp", "load_chat_model", model_weight=logical[0], mmproj_weight=logical[1] if multimodal else None, family=str(family), device=_llama_device(device), context_length=int(context_length), batch_size=int(batch_size), gpu_layers=int(gpu_layers), image_max_tokens=int(image_max_tokens), top_k=int(top_k), pool_size=int(pool_size), cache=bool(cache))
 
 
 async def _generate_llama(

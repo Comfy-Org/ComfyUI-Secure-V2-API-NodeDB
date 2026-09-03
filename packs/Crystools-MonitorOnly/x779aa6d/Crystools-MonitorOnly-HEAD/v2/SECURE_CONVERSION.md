@@ -4,7 +4,7 @@
 - Commit: `779aa6d8537e44acf0db1534a35d813bdd1ad452`
 - Source tree: `d2331b7d4565bec51f58c35904f5b462e0b4033b`
 - Release key: `x779aa6d`
-- Frozen Python contract: `8800a3ac91604c8b67185bcac307a202d644ed253c2f6ffe66251a32a3cfa9c9`
+- Frozen Python contract: `9fa75d099086e25a456aad642306fd8d12a5d8f3d1a090b45393018a5b8258a8`
 - Frozen TypeScript contract: `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
 
 The pinned pack registers no backend nodes and exactly one frontend extension,

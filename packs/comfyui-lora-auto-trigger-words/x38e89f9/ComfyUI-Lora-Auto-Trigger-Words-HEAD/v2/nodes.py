@@ -145,10 +145,7 @@ async def _civitai_tags(digest: str, force_fetch: bool) -> list[str]:
                 return _bounded_tags(decoded)
 
     try:
-        info = await _ctx().integrations.civitai.model_version_by_hash(
-            digest,
-            refresh=bool(force_fetch),
-        )
+        info = await _ctx().integrations.call("civitai", "model_version_by_hash", hash_value=digest, refresh=bool(force_fetch))
         words = _bounded_tags(
             info.get("trainedWords", []) if isinstance(info, dict) else []
         )

@@ -2,8 +2,8 @@
 
 Prompt construction, option filtering, context chaining, and conversation
 history remain pack-owned.  The host sees only three bounded Ollama operations
-through ``ctx.integrations.ollama``; the pack never receives a socket, client,
-credential, filesystem path, or raw image tensor.
+through ``ctx.integrations.call("ollama", ...)``; the pack never receives a
+socket, client, credential, filesystem path, or raw image tensor.
 """
 from __future__ import annotations
 
@@ -482,19 +482,7 @@ class OllamaGenerateV2(io.ComfyNode):
         if keep_context and tokens is None:
             tokens = _GENERATE_CONTEXTS.get(node_key)
         response = _response(
-            await sdk.ctx().integrations.ollama.generate(
-                endpoint=connection["url"],
-                model=connection["model"],
-                system=_bounded_text(system, "system"),
-                prompt=_bounded_text(prompt, "prompt"),
-                images=_validate_image_ref(images),
-                context=tokens,
-                think=bool(think),
-                options=_filter_enabled_options(merged.get("options")),
-                keep_alive=connection["keep_alive"],
-                keep_alive_unit=connection["keep_alive_unit"],
-                format=_format(format),
-            )
+            await sdk.ctx().integrations.call("ollama", "generate", endpoint=connection["url"], model=connection["model"], system=_bounded_text(system, "system"), prompt=_bounded_text(prompt, "prompt"), images=_validate_image_ref(images), context=tokens, think=bool(think), options=_filter_enabled_options(merged.get("options")), keep_alive=connection["keep_alive"], keep_alive_unit=connection["keep_alive_unit"], format=_format(format))
         )
         result = _bounded_text(response.get("response"), "response")
         thinking = (
@@ -595,17 +583,7 @@ class OllamaChat(io.ComfyNode):
         messages = [dict(message) for message in session.messages]
 
         response = _response(
-            await sdk.ctx().integrations.ollama.chat(
-                endpoint=connection["url"],
-                model=connection["model"],
-                messages=messages,
-                images=_validate_image_ref(images),
-                think=bool(think),
-                options=_filter_enabled_options(merged.get("options")),
-                keep_alive=connection["keep_alive"],
-                keep_alive_unit=connection["keep_alive_unit"],
-                format=_format(format),
-            )
+            await sdk.ctx().integrations.call("ollama", "chat", endpoint=connection["url"], model=connection["model"], messages=messages, images=_validate_image_ref(images), think=bool(think), options=_filter_enabled_options(merged.get("options")), keep_alive=connection["keep_alive"], keep_alive_unit=connection["keep_alive_unit"], format=_format(format))
         )
         result = _bounded_text(response.get("response"), "response")
         thinking = (

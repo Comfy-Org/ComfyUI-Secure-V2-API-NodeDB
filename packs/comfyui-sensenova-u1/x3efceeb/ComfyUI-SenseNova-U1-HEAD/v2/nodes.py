@@ -91,15 +91,7 @@ async def _chat(
     max_tokens: int,
     timeout: int,
 ) -> io.NodeOutput:
-    result = await sdk.ctx().integrations.sensenova.chat(
-        text=text,
-        system_prompt=system_prompt,
-        model=model,
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        timeout_seconds=timeout,
-    )
+    result = await sdk.ctx().integrations.call("sensenova", "chat", text=text, system_prompt=system_prompt, model=model, temperature=temperature, top_p=top_p, max_tokens=max_tokens, timeout_seconds=timeout)
     return io.NodeOutput(
         result["text"], result["usage_json"], result["raw_json"])
 
@@ -165,12 +157,7 @@ class SenseNovaImageGenerate(io.ComfyNode):
     async def execute(
         cls, prompt: str, model: str, size: str, timeout: int,
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.sensenova.generate_image(
-            prompt=prompt,
-            model=model,
-            size=size,
-            timeout_seconds=timeout,
-        )
+        result = await sdk.ctx().integrations.call("sensenova", "generate_image", prompt=prompt, model=model, size=size, timeout_seconds=timeout)
         return io.NodeOutput(
             result["image"],
             result["image_base64"],
@@ -254,16 +241,7 @@ class SenseNovaVisionURL(io.ComfyNode):
         max_tokens: int,
         timeout: int,
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.sensenova.vision_url(
-            image_url=image_url,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            model=model,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            timeout_seconds=timeout,
-        )
+        result = await sdk.ctx().integrations.call("sensenova", "vision_url", image_url=image_url, prompt=prompt, system_prompt=system_prompt, model=model, temperature=temperature, top_p=top_p, max_tokens=max_tokens, timeout_seconds=timeout)
         return _vision_output(result)
 
 
@@ -293,16 +271,7 @@ class SenseNovaVisionImage(io.ComfyNode):
         max_tokens: int,
         timeout: int,
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.sensenova.vision_image(
-            image=image,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            model=model,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            timeout_seconds=timeout,
-        )
+        result = await sdk.ctx().integrations.call("sensenova", "vision_image", image=image, prompt=prompt, system_prompt=system_prompt, model=model, temperature=temperature, top_p=top_p, max_tokens=max_tokens, timeout_seconds=timeout)
         return _vision_output(result)
 
 

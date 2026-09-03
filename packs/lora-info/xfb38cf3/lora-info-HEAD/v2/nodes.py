@@ -166,9 +166,7 @@ async def _get_lora_info(lora_name: Any):
 
     if info is None:
         try:
-            fetched = await _ctx().integrations.civitai.model_version_by_hash(
-                digest
-            )
+            fetched = await _ctx().integrations.call("civitai", "model_version_by_hash", hash_value=digest)
         except Exception as error:
             if _is_authority_error(error):
                 raise

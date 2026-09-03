@@ -7,8 +7,8 @@
 - Pristine census: 26 tracked files, preserved byte-for-byte outside `v2/`
 - Pristine digest: `485d3904eeab99634cd0cc6ccd55498fb9792fce126a42e8573e1fbd9d63d1f6`
 - Declared weights: none
-- Frozen Python stub: `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142`
-- Frozen TypeScript stub: `e3d18332e216894bbd5f2116a3adb184efac273f235d91da6a20dff924d610f1`
+- Frozen Python stub: `9fa75d099086e25a456aad642306fd8d12a5d8f3d1a090b45393018a5b8258a8`
+- Frozen TypeScript stub: `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
 
 The current implementation keeps prompt construction, text transformation,
 JSON selection, directory iteration, caption formatting, frame selection, tool

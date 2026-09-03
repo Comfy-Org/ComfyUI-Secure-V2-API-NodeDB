@@ -61,19 +61,7 @@ class OllamaVision(io.ComfyNode):
     ) -> io.NodeOutput:
         del debug
         response = _response(
-            await sdk.ctx().integrations.ollama.generate(
-                endpoint=_endpoint(url),
-                model=_model(model),
-                system="",
-                prompt=_bounded_text(query, "query"),
-                images=_validate_image_ref(images),
-                context=None,
-                think=False,
-                options={"seed": int(seed)},
-                keep_alive=int(keep_alive),
-                keep_alive_unit="minutes",
-                format=_format(format),
-            )
+            await sdk.ctx().integrations.call("ollama", "generate", endpoint=_endpoint(url), model=_model(model), system="", prompt=_bounded_text(query, "query"), images=_validate_image_ref(images), context=None, think=False, options={"seed": int(seed)}, keep_alive=int(keep_alive), keep_alive_unit="minutes", format=_format(format))
         )
         return io.NodeOutput(_bounded_text(response.get("response"), "response"))
 
@@ -113,19 +101,7 @@ class OllamaGenerate(io.ComfyNode):
     ) -> io.NodeOutput:
         del debug
         response = _response(
-            await sdk.ctx().integrations.ollama.generate(
-                endpoint=_endpoint(url),
-                model=_model(model),
-                system="",
-                prompt=_bounded_text(prompt, "prompt"),
-                images=None,
-                context=None,
-                think=False,
-                options=None,
-                keep_alive=int(keep_alive),
-                keep_alive_unit="minutes",
-                format=_format(format),
-            )
+            await sdk.ctx().integrations.call("ollama", "generate", endpoint=_endpoint(url), model=_model(model), system="", prompt=_bounded_text(prompt, "prompt"), images=None, context=None, think=False, options=None, keep_alive=int(keep_alive), keep_alive_unit="minutes", format=_format(format))
         )
         text = _bounded_text(response.get("response"), "response")
         if filter_thinking:
@@ -219,19 +195,7 @@ class OllamaGenerateAdvance(io.ComfyNode):
             "tfs_z": float(tfs_z),
         }
         response = _response(
-            await sdk.ctx().integrations.ollama.generate(
-                endpoint=_endpoint(url),
-                model=_model(model),
-                system=_bounded_text(system, "system"),
-                prompt=_bounded_text(prompt, "prompt"),
-                images=None,
-                context=tokens,
-                think=False,
-                options=options,
-                keep_alive=int(keep_alive),
-                keep_alive_unit="minutes",
-                format=_format(format),
-            )
+            await sdk.ctx().integrations.call("ollama", "generate", endpoint=_endpoint(url), model=_model(model), system=_bounded_text(system, "system"), prompt=_bounded_text(prompt, "prompt"), images=None, context=tokens, think=False, options=options, keep_alive=int(keep_alive), keep_alive_unit="minutes", format=_format(format))
         )
         output_context = _response_context(response)
         if keep_context:

@@ -146,18 +146,7 @@ async def _generate(
     capture_errors: bool = True,
 ) -> str:
     try:
-        response = await sdk.ctx().integrations.ollama.generate(
-            endpoint=_endpoint(endpoint),
-            model=model,
-            system=_bounded_text(system, "system"),
-            prompt=_bounded_text(prompt, "prompt"),
-            images=images,
-            options=options,
-            keep_alive=_keep_alive(keep_alive),
-            keep_alive_unit="minutes",
-            format=_format(structured_output_format),
-            timeout_seconds=_timeout(timeout),
-        )
+        response = await sdk.ctx().integrations.call("ollama", "generate", endpoint=_endpoint(endpoint), model=model, system=_bounded_text(system, "system"), prompt=_bounded_text(prompt, "prompt"), images=images, options=options, keep_alive=_keep_alive(keep_alive), keep_alive_unit="minutes", format=_format(structured_output_format), timeout_seconds=_timeout(timeout))
         return _response_text(response)
     except Exception as error:
         if capture_errors:
@@ -924,24 +913,12 @@ class OllamaAgent(io.ComfyNode):
         ]
         try:
             for _iteration in range(10):
-                response = await sdk.ctx().integrations.llm.chat(
-                    provider="ollama",
-                    profile=_endpoint(api_host),
-                    model=_model(model, custom_model),
-                    messages=messages,
-                    tools=tool_schemas or None,
-                    temperature=float(temperature),
-                    max_tokens=int(max_tokens),
-                    thinking=bool(think),
-                    response_format="",
-                    timeout_seconds=_timeout(timeout),
-                    vendor_options={
+                response = await sdk.ctx().integrations.call("llm", "chat", provider="ollama", profile=_endpoint(api_host), model=_model(model, custom_model), messages=messages, tools=tool_schemas or None, temperature=float(temperature), max_tokens=int(max_tokens), thinking=bool(think), response_format="", timeout_seconds=_timeout(timeout), vendor_options={
                         "ollama": {
                             "keep_alive": 5,
                             "keep_alive_unit": "minutes",
                         },
-                    },
-                )
+                    })
                 if not isinstance(response, dict):
                     raise TypeError("LLM integration returned a non-object response")
                 content = _bounded_text(
@@ -997,12 +974,7 @@ class OllamaAgent(io.ComfyNode):
                             ).strip()
                             if not query:
                                 raise ValueError("web-search query must not be empty")
-                            results = await sdk.ctx().integrations.web.search(
-                                query,
-                                provider_profile=descriptor["provider_profile"],
-                                limit=descriptor["max_results"],
-                                vendor_options=None,
-                            )
+                            results = await sdk.ctx().integrations.call("web", "search", query=query, provider_profile=descriptor["provider_profile"], limit=descriptor["max_results"], vendor_options=None)
                             if not results:
                                 tool_result = f"No results found for '{query}'."
                             elif descriptor["provider_profile"] == "ollama":

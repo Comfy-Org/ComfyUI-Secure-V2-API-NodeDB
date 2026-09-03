@@ -159,11 +159,7 @@ class ImgBBUpload(io.ComfyNode):
         if not api_key:
             raise ValueError("API Key is required")
         expiration = int(expiration_time) if expire else None
-        url = await sdk.ctx().integrations.imgbb.upload(
-            api_key,
-            image,
-            expiration_seconds=expiration,
-        )
+        url = await sdk.ctx().integrations.call("imgbb", "upload", api_key=api_key, image=image, expiration_seconds=expiration)
         return io.NodeOutput(url)
 
 
@@ -201,11 +197,7 @@ class LumaText2Video(io.ComfyNode):
     ) -> io.NodeOutput:
         if prompt == "":
             raise ValueError("Prompt is required")
-        result = await sdk.ctx().integrations.luma.create_video(
-            await _api_key(client), prompt, model,
-            duration=duration, loop=loop, aspect_ratio=aspect_ratio,
-            resolution=resolution, save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_video", api_key=await _api_key(client), prompt=prompt, model=model, duration=duration, loop=loop, aspect_ratio=aspect_ratio, resolution=resolution, save=save, filename=filename)
         generation_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], generation_id,
@@ -259,11 +251,7 @@ class LumaImage2Video(io.ComfyNode):
             keyframes["frame0"] = {"type": "image", "url": init_image_url}
         if final_image_url:
             keyframes["frame1"] = {"type": "image", "url": final_image_url}
-        result = await sdk.ctx().integrations.luma.create_video(
-            await _api_key(client), prompt, model,
-            duration=duration, loop=loop, resolution=resolution,
-            keyframes=keyframes, save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_video", api_key=await _api_key(client), prompt=prompt, model=model, duration=duration, loop=loop, resolution=resolution, keyframes=keyframes, save=save, filename=filename)
         generation_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], generation_id,
@@ -311,11 +299,7 @@ class LumaInterpolateGenerations(io.ComfyNode):
             "frame0": {"type": "generation", "id": generation_id_1},
             "frame1": {"type": "generation", "id": generation_id_2},
         }
-        result = await sdk.ctx().integrations.luma.create_video(
-            await _api_key(client), prompt, model,
-            resolution=resolution, keyframes=keyframes,
-            save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_video", api_key=await _api_key(client), prompt=prompt, model=model, resolution=resolution, keyframes=keyframes, save=save, filename=filename)
         generation_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], generation_id,
@@ -392,11 +376,7 @@ class LumaExtendGeneration(io.ComfyNode):
             keyframes["frame1"] = {
                 "type": "generation", "id": final_generation_id,
             }
-        result = await sdk.ctx().integrations.luma.create_video(
-            await _api_key(client), prompt, model, loop=loop,
-            resolution=resolution, keyframes=keyframes,
-            save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_video", api_key=await _api_key(client), prompt=prompt, model=model, loop=loop, resolution=resolution, keyframes=keyframes, save=save, filename=filename)
         generation_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], generation_id,
@@ -536,13 +516,7 @@ class LumaImageGeneration(io.ComfyNode):
             await _materialize(character_ref)
             if character_ref is not None else None
         )
-        result = await sdk.ctx().integrations.luma.create_image(
-            await _api_key(client), prompt, model,
-            aspect_ratio=aspect_ratio,
-            image_ref=images,
-            style_ref=[style] if style is not None else None,
-            character_ref=character,
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_image", api_key=await _api_key(client), prompt=prompt, model=model, aspect_ratio=aspect_ratio, image_ref=images, style_ref=[style] if style is not None else None, character_ref=character)
         generation_id = result["generation_id"]
         image = result["image"]
         await _save_generated_image(image, filename, generation_id)
@@ -578,10 +552,7 @@ class LumaModifyImage(io.ComfyNode):
         cls, client: Any, model: str, prompt: str,
         modify_image_ref: Any,
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.luma.create_image(
-            await _api_key(client), prompt, model,
-            modify_image_ref=await _materialize(modify_image_ref),
-        )
+        result = await sdk.ctx().integrations.call("luma", "create_image", api_key=await _api_key(client), prompt=prompt, model=model, modify_image_ref=await _materialize(modify_image_ref))
         generation_id = result["generation_id"]
         image = result["image"]
         await _save_generated_image(image, "", generation_id)
@@ -618,10 +589,7 @@ class LumaAddAudio2Video(io.ComfyNode):
         cls, client: Any, generation_id: str, prompt: str,
         negative_prompt: str, save: bool, filename: str = "",
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.luma.add_audio(
-            await _api_key(client), generation_id, prompt, negative_prompt,
-            save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "add_audio", api_key=await _api_key(client), generation_id=generation_id, prompt=prompt, negative_prompt=negative_prompt, save=save, filename=filename)
         result_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], result_id,
@@ -654,10 +622,7 @@ class LumaUpscaleGeneration(io.ComfyNode):
         cls, client: Any, generation_id: str, resolution: str,
         save: bool, filename: str = "",
     ) -> io.NodeOutput:
-        result = await sdk.ctx().integrations.luma.upscale_video(
-            await _api_key(client), generation_id, resolution,
-            save=save, filename=filename,
-        )
+        result = await sdk.ctx().integrations.call("luma", "upscale_video", api_key=await _api_key(client), generation_id=generation_id, resolution=resolution, save=save, filename=filename)
         result_id = result["generation_id"]
         return io.NodeOutput(
             result["url"], result_id,

@@ -20,7 +20,7 @@
 
 ## Frozen public artifacts
 
-- `comfy-api.pyi`: SHA-256 `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142`.
+- `comfy-api.pyi`: SHA-256 `9fa75d099086e25a456aad642306fd8d12a5d8f3d1a090b45393018a5b8258a8`.
 - `comfy-api.d.ts`: SHA-256 `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`.
 
 ## Behavior and authorities

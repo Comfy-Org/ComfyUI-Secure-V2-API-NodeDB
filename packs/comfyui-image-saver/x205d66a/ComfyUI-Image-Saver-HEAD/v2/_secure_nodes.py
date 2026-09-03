@@ -395,9 +395,7 @@ async def _civitai_metadata(
             info = None
             if hash_value:
                 try:
-                    info = await _ctx().integrations.civitai.model_version_by_hash(
-                        hash_value
-                    )
+                    info = await _ctx().integrations.call("civitai", "model_version_by_hash", hash_value=hash_value)
                 except Exception:
                     info = None
             if isinstance(info, dict):
@@ -1201,14 +1199,10 @@ async def _civitai_hash(username: str, model_name: str, version: str = ""):
     if key in _CIVITAI_HASH_CACHE:
         return (_CIVITAI_HASH_CACHE[key],)
     try:
-        data = await _ctx().integrations.civitai.search_models(
-            username=username, query=model_name, limit=20, nsfw=True
-        )
+        data = await _ctx().integrations.call("civitai", "search_models", username=username, query=model_name, limit=20, nsfw=True)
         items = list(data.get("items", []))
         if not items:
-            data = await _ctx().integrations.civitai.search_models(
-                username=username, query=None, limit=100, nsfw=True
-            )
+            data = await _ctx().integrations.call("civitai", "search_models", username=username, query=None, limit=100, nsfw=True)
             items = list(data.get("items", []))
         if not items:
             return (f"No models found for user '{username}' with name '{model_name}'",)
@@ -1234,7 +1228,7 @@ async def _civitai_hash(username: str, model_name: str, version: str = ""):
                 if version.lower() in str(item.get("name", "")).lower()
             ), None)
         selected = selected or versions[0]
-        details = await _ctx().integrations.civitai.model_version(selected["id"])
+        details = await _ctx().integrations.call("civitai", "model_version", model_version_id=selected["id"])
         for file_info in details.get("files", []):
             hashes = file_info.get("hashes", {})
             value = hashes.get("AutoV3") if isinstance(hashes, dict) else None

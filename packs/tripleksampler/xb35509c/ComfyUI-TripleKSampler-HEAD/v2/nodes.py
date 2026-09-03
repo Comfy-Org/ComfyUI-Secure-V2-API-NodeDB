@@ -1293,7 +1293,7 @@ async def _wanvideo_switch(
         "T2V boundary", "I2V boundary", "Manual boundary",
     }:
         transformer_dim = int(
-            await sdk.ctx().integrations.wanvideo.transformer_dim(model)
+            await sdk.ctx().integrations.call("wanvideo", "transformer_dim", model=model)
         )
         if not 1 <= transformer_dim <= 65536:
             raise RuntimeError(
