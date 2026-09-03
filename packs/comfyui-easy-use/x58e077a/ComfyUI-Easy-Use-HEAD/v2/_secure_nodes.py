@@ -27,6 +27,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from . import _ipadapter
+from . import _segformer
 from . import _transparent_vae
 from ._image_ops import common_upscale
 from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
@@ -2208,10 +2209,10 @@ async def _human_segmentation(
     if classes:
         weight, variant, num_labels = profile
         logical = await _download_declared_weight(weight)
-        segmenter = await _ctx().models.load_segformer(
-            logical, variant=variant, num_labels=num_labels)
-        mask = (await _raw(
-            await segmenter.mask(image, classes)
+        segmenter = await _segformer.load(
+            _ctx(), logical, variant=variant, num_labels=num_labels)
+        mask = (await _segformer.mask(
+            _ctx(), segmenter, image, classes
         )).detach().cpu().float().clamp(0, 1)
     else:
         mask = torch.zeros(pixels.shape[:3], dtype=torch.float32)
@@ -5383,7 +5384,8 @@ _permissions({"easy removeLocalImage"}, "assets", "assets.delete")
 _permissions({"easy loadImageBase64"}, "output", "raw", "ui")
 _permissions(
     {"easy imageRemBg"}, "assets", "models", "output", "raw", "ui")
-_permissions({"easy humanSegmentation"}, "models", "raw")
+_permissions(
+    {"easy humanSegmentation"}, "assets", "models.download", "raw")
 _permissions({"easy imageInterrogator"}, "models", "raw")
 _permissions({"easy joyCaption2API", "easy joyCaption3API"}, "models", "raw")
 _permissions({"easy imageChooser"}, "raw", "ui", "ui.interact")

@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as torch_functional
 from PIL import Image, ImageOps, ImageSequence
 
-from . import _vitmatte, _vqa
+from . import _segformer, _vitmatte, _vqa
 from ._secure_runtime import (
     SCHEMAS,
     bind_node,
@@ -363,7 +363,7 @@ async def _load_segformer_model(model_name="segformer_b3_clothes", device="cpu",
         raise ValueError(f"unknown LayerStyle SegFormer model {name!r}")
     variant, labels = _SEGFORMER_MODELS[name]
     logical = await _download_weight(_SEGFORMER_WEIGHTS[name])
-    model = await _ctx().models.load_segformer(logical, variant, labels)
+    model = await _segformer.load(_ctx(), logical, variant, labels)
     return ({"model": model, "device": str(device), "model_name": name},)
 
 
@@ -720,9 +720,8 @@ async def _segformer_foreground(image, model_name, labels_to_keep):
     if not labels or any(value < 0 or value >= count for value in labels):
         raise ValueError("SegFormer settings do not match the selected model")
     logical = await _download_weight(_SEGFORMER_WEIGHTS[model_name])
-    model = await _ctx().models.load_segformer(logical, variant, count)
-    union = await model.mask(image, labels)
-    value = await union.raw()
+    model = await _segformer.load(_ctx(), logical, variant, count)
+    value = await _segformer.mask(_ctx(), model, image, labels)
     return 1.0 - value.detach().cpu().float().clamp(0.0, 1.0)
 
 
@@ -732,8 +731,7 @@ async def _segformer_ref_foreground(image, model, labels_to_keep):
         value = int(value)
         if value not in labels:
             labels.append(value)
-    union = await model.mask(image, labels)
-    value = await union.raw()
+    value = await _segformer.mask(_ctx(), model, image, labels)
     return 1.0 - value.detach().cpu().float().clamp(0.0, 1.0)
 
 
@@ -829,8 +827,7 @@ async def _segformer_ultra_v3(
     if not isinstance(model_data, dict) or not isinstance(setting, dict):
         raise TypeError("SegformerUltraV3 requires secure model and settings")
     model = model_data.get("model")
-    if not isinstance(model, sdk.SemanticSegmentationRef):
-        raise TypeError("SegformerUltraV3 requires a secure SegFormer model")
+    _segformer.validated(model)
     model_name = str(model_data.get("model_name", ""))
     setting_name = str(setting.get("model_name", ""))
     if model_name.rsplit("_", 1)[-1] != setting_name.rsplit("_", 1)[-1]:
@@ -993,7 +990,7 @@ _PERMISSIONS.update({
     "LayerUtility: QueueStop": ("graph.block",),
     "LayerUtility: PurgeVRAM": ("models.manage",),
     "LayerUtility: PurgeVRAM V2": ("models.manage",),
-    "LayerMask: LoadSegformerModel": ("models", "models.download"),
+    "LayerMask: LoadSegformerModel": ("assets", "models.download"),
     "LayerUtility: LoadVQAModel": ("assets", "models.download"),
     "LayerUtility: VQAPrompt": ("assets", "raw"),
 })
@@ -1020,11 +1017,12 @@ _REQUIRED_WEIGHTS: dict[str, tuple[sdk.HuggingFaceWeight, ...]] = {
 }
 
 
-# ViTMatte is loaded inside this pack, so its nodes resolve the weight asset
-# themselves instead of asking the host to load a model for them.
-_VITMATTE_WEIGHT_IDS = {id(_w) for _w in _vitmatte.WEIGHTS.values()}
+_PACK_MODEL_WEIGHT_IDS = {
+    id(_weight)
+    for _weight in (*_vitmatte.WEIGHTS.values(), *_SEGFORMER_WEIGHTS.values())
+}
 for _node_id, _weights in _REQUIRED_WEIGHTS.items():
-    if any(id(_w) in _VITMATTE_WEIGHT_IDS for _w in _weights):
+    if any(id(_weight) in _PACK_MODEL_WEIGHT_IDS for _weight in _weights):
         _PERMISSIONS[_node_id] = tuple(dict.fromkeys(
             _PERMISSIONS.get(_node_id, ()) + ("assets",)))
 
