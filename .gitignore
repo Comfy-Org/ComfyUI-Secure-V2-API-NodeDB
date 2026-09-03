@@ -1,38 +1,29 @@
-# This repository vendors third-party pack sources verbatim, so an ignore rule
-# here can silently drop code the conversion is supposed to operate on. Only
-# patterns that are editor or tool droppings are listed — nothing that a pack
-# might legitimately ship.
+# This repository vendors third-party pack sources verbatim. A pack snapshot is
+# whatever upstream shipped, and the patch manifests count its files, so an
+# ignore rule that drops one changes a manifest and fails a pinned test.
+# Nothing under packs/ is safe to assume is junk.
 #
-# Deliberately NOT ignored, despite being usual entries elsewhere:
-#   dist/    two packs declare `WEB_DIRECTORY = "./dist"` and serve their
-#            frontend JS from it
-#   build/   absent today, and the same risk as dist/ if a pack adopts it
-#   scripts/ two packs declare `WEB_DIRECTORY = "./scripts"`
+# Deliberately NOT ignored, though they are usual entries elsewhere:
+#   dist/, scripts/  declared as `WEB_DIRECTORY` by four packs, which serve
+#                    their frontend JS from them
+#   .vscode/,        shipped by four packs; two of those live inside a `v2`
+#   .idea/           tree, so the patch manifests count them
+#   build/           absent today, and the same risk if a pack adopts it
+#
+# What remains is only what a machine writes locally and no pack ever ships.
+# Verified against the tracked file list: none of these ever appeared in one.
 
-# macOS
+# macOS / Windows
 .DS_Store
 ._*
-
-# Windows
 Thumbs.db
 desktop.ini
-
-# Editors — present in several vendored packs
-.vscode/
-.idea/
 *.swp
 
-# Python — packs are Python, and importing them during conversion or testing
-# writes caches straight into the pack tree
+# Written into the pack tree by importing it during conversion or testing
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
-*.egg-info/
-.venv/
-venv/
-
-# Node — packs that build their frontend assets
-node_modules/
 .eslintcache
 *.tsbuildinfo
