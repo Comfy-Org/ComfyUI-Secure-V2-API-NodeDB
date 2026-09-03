@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
-from . import _ipadapter, _onnx_detector
+from . import _image_classifier, _ipadapter, _onnx_detector
 from ._image_ops import common_upscale
 from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
 from ._wildcard_runtime import load_catalogue as _load_wildcard_catalogue
@@ -346,17 +346,15 @@ async def _hf_classifier_provider(
         revision=weight.revision,
         sha256=weight.sha256,
     )
-    classifier = await _ctx().models.load_image_classifier(
+    classifier = await _image_classifier.load(
+        _ctx(),
         logical,
         spec["architecture"],
         list(spec["labels"]),
+        device_mode != "CPU",
     )
-    return _one({
-        "secure_kind": "impact.image_classifier",
-        "model": classifier,
-        "use_accelerator": device_mode != "CPU",
-        "repo_id": str(preset_repo_id),
-    })
+    classifier["repo_id"] = str(preset_repo_id)
+    return _one(classifier)
 
 
 # ---------------------------------------------------------------------------
@@ -2092,13 +2090,7 @@ _SYMBOLIC_CLASSIFIER_LABELS = {
 
 
 def _classifier_recipe(value: Any) -> dict[str, Any]:
-    if (not isinstance(value, dict)
-            or value.get("secure_kind") != "impact.image_classifier"):
-        raise TypeError(
-            "TRANSFORMERS_CLASSIFIER must be a secure classifier recipe")
-    if not isinstance(value.get("model"), sdk.ImageClassifierRef):
-        raise TypeError("classifier recipe has no opaque classifier model")
-    return value
+    return _image_classifier.validated(value)
 
 
 def _classified_score(scores: list[dict[str, Any]], label: str):
@@ -2158,9 +2150,10 @@ async def _segs_classify(
         if image is None:
             remainder.append(item)
             continue
-        result = await recipe["model"].classify(
+        result = await _image_classifier.classify(
+            _ctx(),
+            recipe,
             image,
-            use_accelerator=bool(recipe["use_accelerator"]),
             top_k=5,
         )
         scores = result[0]
@@ -6822,10 +6815,15 @@ _set({"DetailerHookCombine"}, _combine_provider("detailer_hook_chain"))
 _set({"PixelKSampleHookCombine"}, _combine_provider("pixel_hook_chain"))
 
 
-_set({"ImpactHFTransformersClassifierProvider"}, _hf_classifier_provider, "models")
+_set(
+    {"ImpactHFTransformersClassifierProvider"},
+    _hf_classifier_provider,
+    "assets",
+    "models.download",
+)
 _REQUIRED_WEIGHTS["ImpactHFTransformersClassifierProvider"] = tuple(
     spec["weight"] for spec in _HF_CLASSIFIERS.values())
-_set({"ImpactSEGSClassify"}, _segs_classify, "raw")
+_set({"ImpactSEGSClassify"}, _segs_classify, "assets", "raw")
 _set({"CLIPSegDetectorProvider"}, _clipseg_detector_provider, "models")
 _REQUIRED_WEIGHTS["CLIPSegDetectorProvider"] = (_CLIPSEG_WEIGHT,)
 _set({"ONNXDetectorProvider"}, _onnx_detector_provider)

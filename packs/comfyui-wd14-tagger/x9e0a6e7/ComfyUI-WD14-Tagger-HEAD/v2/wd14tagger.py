@@ -1,9 +1,4 @@
-"""Secure Nodes V2 implementation of the WD14 tagger.
-
-Only the generic, bounded ONNX inference primitive is host-owned.  The three
-reviewed WD14 label catalogues, category semantics, thresholds, exclusions,
-ordering, escaping, and output formatting remain pack code.
-"""
+"""Secure Nodes V2 implementation of the WD14 tagger."""
 from __future__ import annotations
 
 import csv
@@ -15,7 +10,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
+import numpy as np
 from comfy_api.latest import io, sdk
+
+from . import _onnx_classifier
 
 
 DEFAULT_MODEL = "wd-v1-4-moat-tagger-v2"
@@ -37,7 +35,6 @@ _MAX_CLASSES = 16_384
 _MAX_EXCLUDE_CHARS = 65_536
 _MAX_OUTPUT_CHARS = 192_000
 _MAX_TOTAL_OUTPUT_CHARS = 768_000
-_SCORE_PAGE = 512
 
 
 @dataclass(frozen=True)
@@ -359,48 +356,17 @@ async def _select_indices(
     if bounds is None:
         return []
     start, end = bounds
-    offset = 0
-    result: list[int] = []
-    previous = start - 1
-    pages = 0
-    while True:
-        page = await scores.select_above(
-            int(batch_index),
-            start,
-            end,
-            float(threshold),
-            offset=offset,
-            limit=_SCORE_PAGE,
-        )
-        if not isinstance(page, dict):
-            raise TypeError("classifier score page must be a dictionary")
-        items = page.get("items")
-        if not isinstance(items, list) or len(items) > _SCORE_PAGE:
-            raise ValueError("classifier score page has an invalid item count")
-        for item in items:
-            if not isinstance(item, dict):
-                raise TypeError("classifier score item must be a dictionary")
-            index = item.get("index")
-            score = item.get("score")
-            if type(index) is not int or not start <= index < end:
-                raise ValueError("classifier returned an invalid class index")
-            if index <= previous:
-                raise ValueError("classifier score indices are not strictly ordered")
-            if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
-                raise ValueError("classifier returned a non-finite score")
-            if not float(score) > float(threshold):
-                raise ValueError("classifier returned a score below the threshold")
-            previous = index
-            result.append(index)
-        next_offset = page.get("next_offset")
-        if next_offset is None:
-            return result
-        if type(next_offset) is not int or not offset < next_offset <= end - start:
-            raise ValueError("classifier returned an invalid score-page offset")
-        offset = next_offset
-        pages += 1
-        if pages > math.ceil((end - start) / _SCORE_PAGE) + 1:
-            raise ValueError("classifier returned too many score pages")
+    matrix = np.asarray(scores)
+    if (
+        matrix.ndim != 2
+        or not 0 <= int(batch_index) < matrix.shape[0]
+        or not 0 <= start <= end <= matrix.shape[1]
+    ):
+        raise ValueError("classifier returned an invalid score matrix")
+    row = matrix[int(batch_index), start:end]
+    if not np.isfinite(row).all():
+        raise ValueError("classifier returned a non-finite score")
+    return (np.flatnonzero(row > float(threshold)) + start).tolist()
 
 
 async def _download_once(model: str, spec: ModelSpec) -> str:
@@ -421,7 +387,7 @@ async def _download_once(model: str, spec: ModelSpec) -> str:
 
 class WD14Tagger(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ("models",)
+    SDK_PERMISSIONS = ("assets", "models.download", "raw")
     SDK_REQUIRED_WEIGHTS = SDK_REQUIRED_WEIGHTS
 
     @classmethod
@@ -487,23 +453,8 @@ class WD14Tagger(io.ComfyNode):
         await sdk.ctx().progress.update(0, batch_size)
 
         logical = await _download_once(str(model), spec)
-        classifier = await sdk.ctx().models.load_onnx_image_classifier(
-            logical,
-            input_layout="NHWC",
-            channel_order="BGR",
-            resize_mode="fit_pad",
-            input_scale=255.0,
-            pad_color=(1.0, 1.0, 1.0),
-            mean=(0.0, 0.0, 0.0),
-            std=(1.0, 1.0, 1.0),
-            activation="identity",
-            resize_filter="lanczos",
-        )
-        scores = await classifier.predict_scores(image)
-        shape = await scores.shape()
-        if not isinstance(shape, (list, tuple)) or len(shape) != 2:
-            raise ValueError("classifier returned an invalid score-matrix shape")
-        score_batches, score_classes = int(shape[0]), int(shape[1])
+        scores = await _onnx_classifier.predict(sdk.ctx(), logical, image)
+        score_batches, score_classes = map(int, scores.shape)
         if score_batches != batch_size:
             raise ValueError(
                 f"model returned {score_batches} batches for {batch_size} images"
