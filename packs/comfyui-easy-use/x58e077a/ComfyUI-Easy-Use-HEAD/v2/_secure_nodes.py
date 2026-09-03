@@ -26,8 +26,9 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from ._image_ops import common_upscale
 from . import _ipadapter
+from . import _transparent_vae
+from ._image_ops import common_upscale
 from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
 from ._wildcard_runtime import load_catalogue as _load_wildcard_catalogue
 from ._wildcard_runtime import matrix as _wildcard_matrix_values
@@ -4182,10 +4183,12 @@ async def _layer_diffusion_sampler(
     if method in _LAYER_DIFFUSION_ALPHA_METHODS[family]:
         decoder_weight = _LAYER_DIFFUSION_DECODERS[family]
         decoder_name = await _download_declared_weight(decoder_weight)
-        decoder = await _ctx().models.load_transparent_vae_decoder(
-            decoder_name, family)
-        final_image, alpha = await decoder.decode(
-            result_pipe["samples"], regular_image, frames=frames)
+        decoder = await _transparent_vae.load(
+            _ctx(), decoder_name, family)
+        final_image, alpha = await _transparent_vae.decode(
+            _ctx(), decoder, result_pipe["samples"], regular_image,
+            frames=frames,
+        )
         alpha_outputs = [alpha]
 
     result_pipe.update({
@@ -5416,7 +5419,7 @@ _permissions(set(_SAMPLER_HANDLERS) & {
 _permissions({"easy unSampler"}, "sample")
 _permissions(
     {"easy kSamplerLayerDiffusion"},
-    "models", "output", "sample", "ui",
+    "assets", "models", "output", "raw", "sample", "ui",
 )
 _permissions(
     {"easy kSamplerInpainting"},
