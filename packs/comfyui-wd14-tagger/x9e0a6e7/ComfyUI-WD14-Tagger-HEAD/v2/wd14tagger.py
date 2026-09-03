@@ -10,7 +10,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
-import numpy as np
 from comfy_api.latest import io, sdk
 
 from . import _onnx_classifier
@@ -347,28 +346,6 @@ def format_tags(
     )
 
 
-async def _select_indices(
-    scores: Any,
-    batch_index: int,
-    bounds: tuple[int, int] | None,
-    threshold: float,
-) -> list[int]:
-    if bounds is None:
-        return []
-    start, end = bounds
-    matrix = np.asarray(scores)
-    if (
-        matrix.ndim != 2
-        or not 0 <= int(batch_index) < matrix.shape[0]
-        or not 0 <= start <= end <= matrix.shape[1]
-    ):
-        raise ValueError("classifier returned an invalid score matrix")
-    row = matrix[int(batch_index), start:end]
-    if not np.isfinite(row).all():
-        raise ValueError("classifier returned a non-finite score")
-    return (np.flatnonzero(row > float(threshold)) + start).tolist()
-
-
 async def _download_once(model: str, spec: ModelSpec) -> str:
     logical = _RESOLVED_MODELS.get(model)
     if logical is not None:
@@ -466,13 +443,13 @@ class WD14Tagger(io.ComfyNode):
 
         tags: list[str] = []
         for index in range(batch_size):
-            characters = await _select_indices(
+            characters = await _onnx_classifier.select_indices(
                 scores,
                 index,
                 character_range,
                 character_threshold,
             )
-            general = await _select_indices(
+            general = await _onnx_classifier.select_indices(
                 scores,
                 index,
                 general_range,

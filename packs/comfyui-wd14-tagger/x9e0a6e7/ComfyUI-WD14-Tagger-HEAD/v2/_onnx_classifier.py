@@ -16,6 +16,8 @@ _CACHE: "OrderedDict[str, _Entry]" = OrderedDict()
 _MAX_CACHED = 3
 _MAX_PIXELS = 268_435_456
 _MAX_BATCH = 64
+_MAX_WEIGHT_BYTES = 4 * 1024 * 1024 * 1024
+_READ_CHUNK_BYTES = 16 * 1024 * 1024
 
 
 @dataclass
@@ -92,7 +94,17 @@ async def _entry(ctx: Any, weight: str) -> _Entry:
         _CACHE[weight] = cached
         return cached
     asset = await ctx.assets.resolve("onnx", weight)
-    data = await ctx.assets.read_bytes(asset)
+    size = await ctx.assets.size(asset)
+    if not 1 <= size <= _MAX_WEIGHT_BYTES:
+        raise ValueError("WD14 classifier weight size is outside the safe range")
+    data = b"".join(
+        await ctx.assets.read_range(
+            asset,
+            offset=offset,
+            length=min(_READ_CHUNK_BYTES, size - offset),
+        )
+        for offset in range(0, size, _READ_CHUNK_BYTES)
+    )
     loaded = await asyncio.to_thread(_build, data)
     while len(_CACHE) >= _MAX_CACHED:
         _CACHE.popitem(last=False)
@@ -162,3 +174,25 @@ async def predict(ctx: Any, weight: str, images: Any) -> np.ndarray:
         return np.stack(rows, axis=0)
 
     return await asyncio.to_thread(infer)
+
+
+async def select_indices(
+    scores: Any,
+    batch_index: int,
+    bounds: tuple[int, int] | None,
+    threshold: float,
+) -> list[int]:
+    if bounds is None:
+        return []
+    start, end = bounds
+    matrix = np.asarray(scores)
+    if (
+        matrix.ndim != 2
+        or not 0 <= int(batch_index) < matrix.shape[0]
+        or not 0 <= start <= end <= matrix.shape[1]
+    ):
+        raise ValueError("classifier returned an invalid score matrix")
+    row = matrix[int(batch_index), start:end]
+    if not np.isfinite(row).all():
+        raise ValueError("classifier returned a non-finite score")
+    return (np.flatnonzero(row > float(threshold)) + start).tolist()

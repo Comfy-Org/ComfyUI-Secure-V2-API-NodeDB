@@ -41,6 +41,8 @@ class _Entry:
 
 _CACHE: "OrderedDict[str, _Entry]" = OrderedDict()
 _MAX_CACHED = 2
+_MAX_WEIGHT_BYTES = 4 * 1024 * 1024 * 1024
+_READ_CHUNK_BYTES = 16 * 1024 * 1024
 
 
 def recipe(weight: str) -> dict[str, str]:
@@ -82,9 +84,17 @@ async def _entry(ctx: Any, value: Any) -> _Entry:
         _CACHE[spec["weight"]] = cached
         return cached
     asset = await ctx.assets.resolve(ASSET_FOLDER, spec["weight"])
-    # The guest gets content, never a host path, so the graph is staged in this
-    # pack's own sandboxed scratch before OpenCV reads it.
-    data = await ctx.assets.read_bytes(asset)
+    size = await ctx.assets.size(asset)
+    if not 1 <= size <= _MAX_WEIGHT_BYTES:
+        raise ValueError("ONNX detector weight size is outside the safe range")
+    data = b"".join(
+        await ctx.assets.read_range(
+            asset,
+            offset=offset,
+            length=min(_READ_CHUNK_BYTES, size - offset),
+        )
+        for offset in range(0, size, _READ_CHUNK_BYTES)
+    )
     loaded = await asyncio.to_thread(_build, data)
     while len(_CACHE) >= _MAX_CACHED:
         _CACHE.popitem(last=False)
