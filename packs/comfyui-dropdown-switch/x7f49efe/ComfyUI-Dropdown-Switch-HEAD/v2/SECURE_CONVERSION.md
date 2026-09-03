@@ -4,8 +4,8 @@
 - Commit: `7f49efee32569cfd2ebca0637fba3767fd76894e`
 - Source tree: `dc70ef653275e4d25c13c7848a19a75df3659bc0`
 - Release key: `x7f49efe`
-- Frozen Python stub SHA-256: `e3d18332e216894bbd5f2116a3adb184efac273f235d91da6a20dff924d610f1`
-- Frozen TypeScript stub SHA-256: `e3d18332e216894bbd5f2116a3adb184efac273f235d91da6a20dff924d610f1`
+- Frozen Python stub SHA-256: `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142`
+- Frozen TypeScript stub SHA-256: `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142`
 
 The pinned pack has no backend node IDs. Its exact census is one frontend
 registration and one frontend-only virtual node intent, `DropdownSwitch`.

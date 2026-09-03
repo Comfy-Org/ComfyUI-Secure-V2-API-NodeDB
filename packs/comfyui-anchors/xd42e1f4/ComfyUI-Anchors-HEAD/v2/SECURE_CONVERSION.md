@@ -48,6 +48,6 @@ renderer styling and is not persisted into the workflow.
 This release is sealed against:
 
 - Python stub SHA-256:
-  `e3d18332e216894bbd5f2116a3adb184efac273f235d91da6a20dff924d610f1`
+  `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142`
 - TypeScript stub SHA-256:
   `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`

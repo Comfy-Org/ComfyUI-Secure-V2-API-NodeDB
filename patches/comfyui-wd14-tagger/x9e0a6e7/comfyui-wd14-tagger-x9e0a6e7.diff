@@ -66,6 +66,208 @@
 +    "WEB_DIRECTORY",
 +]
 --- /dev/null
++++ b/v2/_onnx_classifier.py
+@@ -0,0 +1,199 @@
++"""WD14 ONNX inference owned by the WD14 pack."""
++from __future__ import annotations
++
++import asyncio
++import threading
++from collections import OrderedDict
++from dataclasses import dataclass, field
++from typing import Any
++
++import numpy as np
++import torch
++from PIL import Image
++
++
++_CACHE: "OrderedDict[str, _Entry]" = OrderedDict()
++_MAX_CACHED = 3
++_MAX_PIXELS = 268_435_456
++_MAX_BATCH = 64
++_MAX_WEIGHT_BYTES = 4 * 1024 * 1024 * 1024
++_READ_CHUNK_BYTES = 16 * 1024 * 1024
++
++
++@dataclass
++class _Entry:
++    session: Any
++    input_name: str
++    output_name: str
++    input_height: int
++    input_width: int
++    class_count: int
++    lock: threading.Lock = field(default_factory=threading.Lock)
++
++
++def _build(data: bytes) -> _Entry:
++    try:
++        import onnxruntime as ort
++    except ImportError as exc:
++        raise RuntimeError("WD14 classification requires onnxruntime") from exc
++    options = ort.SessionOptions()
++    options.log_severity_level = 3
++    available = set(ort.get_available_providers())
++    providers = [
++        provider
++        for provider in ("CUDAExecutionProvider", "CPUExecutionProvider")
++        if provider in available
++    ]
++    if not providers:
++        raise RuntimeError("ONNX Runtime has no supported execution provider")
++    try:
++        session = ort.InferenceSession(data, sess_options=options, providers=providers)
++    except Exception as exc:
++        raise ValueError("WD14 ONNX classifier could not be loaded") from exc
++    inputs = session.get_inputs()
++    outputs = session.get_outputs()
++    if len(inputs) != 1 or len(outputs) != 1:
++        raise ValueError("WD14 classifier must have one input and output")
++    model_input = inputs[0]
++    model_output = outputs[0]
++    if model_input.type != "tensor(float)" or model_output.type not in {
++        "tensor(float)",
++        "tensor(float16)",
++        "tensor(double)",
++    }:
++        raise ValueError("WD14 classifier must use floating-point tensors")
++    input_shape = model_input.shape
++    output_shape = model_output.shape
++    if len(input_shape) != 4 or len(output_shape) != 2 or input_shape[3] != 3:
++        raise ValueError("WD14 classifier must use fixed NHWC image inputs")
++    height, width, class_count = input_shape[1], input_shape[2], output_shape[1]
++    if (
++        type(height) is not int
++        or type(width) is not int
++        or not 1 <= height <= 4096
++        or not 1 <= width <= 4096
++    ):
++        raise ValueError("WD14 classifier spatial dimensions must be fixed")
++    if type(class_count) is not int or not 1 <= class_count <= 16_384:
++        raise ValueError("WD14 classifier output count is outside the safe range")
++    return _Entry(
++        session,
++        model_input.name,
++        model_output.name,
++        height,
++        width,
++        class_count,
++    )
++
++
++async def _entry(ctx: Any, weight: str) -> _Entry:
++    if not isinstance(weight, str) or not weight.lower().endswith(".onnx"):
++        raise ValueError("WD14 classifiers must use .onnx files")
++    cached = _CACHE.pop(weight, None)
++    if cached is not None:
++        _CACHE[weight] = cached
++        return cached
++    asset = await ctx.assets.resolve("onnx", weight)
++    size = await ctx.assets.size(asset)
++    if not 1 <= size <= _MAX_WEIGHT_BYTES:
++        raise ValueError("WD14 classifier weight size is outside the safe range")
++    chunks = [
++        await ctx.assets.read_range(
++            asset,
++            offset=offset,
++            length=min(_READ_CHUNK_BYTES, size - offset),
++        )
++        for offset in range(0, size, _READ_CHUNK_BYTES)
++    ]
++    data = b"".join(chunks)
++    loaded = await asyncio.to_thread(_build, data)
++    while len(_CACHE) >= _MAX_CACHED:
++        _CACHE.popitem(last=False)
++    _CACHE[weight] = loaded
++    return loaded
++
++
++def _prepare(frame: torch.Tensor, height: int, width: int) -> np.ndarray:
++    source = Image.fromarray(
++        np.clip(frame.detach().cpu().numpy()[..., :3] * 255.0, 0, 255).astype(
++            np.uint8
++        )
++    )
++    ratio = min(width / source.width, height / source.height)
++    resized_size = (
++        max(1, int(source.width * ratio)),
++        max(1, int(source.height * ratio)),
++    )
++    resized = source.resize(resized_size, Image.Resampling.LANCZOS)
++    prepared = Image.new("RGB", (width, height), (255, 255, 255))
++    prepared.paste(
++        resized,
++        ((width - resized_size[0]) // 2, (height - resized_size[1]) // 2),
++    )
++    array = np.asarray(prepared, dtype=np.float32)[..., ::-1]
++    return np.ascontiguousarray(array[None, ...], dtype=np.float32)
++
++
++async def predict(ctx: Any, weight: str, images: Any) -> np.ndarray:
++    entry = await _entry(ctx, weight)
++    pixels = await images.raw()
++    if (
++        not isinstance(pixels, torch.Tensor)
++        or pixels.ndim != 4
++        or pixels.shape[-1] < 3
++        or not 1 <= len(pixels) <= _MAX_BATCH
++    ):
++        raise ValueError("WD14 images must be a 1-64 item BHWC RGB batch")
++    height, width = map(int, pixels.shape[1:3])
++    if (
++        height <= 0
++        or width <= 0
++        or height * width * len(pixels) > _MAX_PIXELS
++        or not bool(torch.isfinite(pixels[..., :3]).all())
++    ):
++        raise ValueError("WD14 image values are invalid")
++
++    def infer() -> np.ndarray:
++        rows = []
++        with entry.lock:
++            for frame in pixels:
++                output = entry.session.run(
++                    [entry.output_name],
++                    {
++                        entry.input_name: _prepare(
++                            frame, entry.input_height, entry.input_width
++                        )
++                    },
++                )[0]
++                output = np.asarray(output)
++                if output.shape != (1, entry.class_count):
++                    raise RuntimeError("WD14 classifier returned an invalid score shape")
++                row = output[0].astype(np.float32, copy=True)
++                if not np.isfinite(row).all():
++                    raise RuntimeError("WD14 classifier returned non-finite scores")
++                rows.append(row)
++        return np.stack(rows, axis=0)
++
++    return await asyncio.to_thread(infer)
++
++
++async def select_indices(
++    scores: Any,
++    batch_index: int,
++    bounds: tuple[int, int] | None,
++    threshold: float,
++) -> list[int]:
++    if bounds is None:
++        return []
++    start, end = bounds
++    matrix = np.asarray(scores)
++    if (
++        matrix.ndim != 2
++        or not 0 <= int(batch_index) < matrix.shape[0]
++        or not 0 <= start <= end <= matrix.shape[1]
++    ):
++        raise ValueError("classifier returned an invalid score matrix")
++    row = matrix[int(batch_index), start:end]
++    if not np.isfinite(row).all():
++        raise ValueError("classifier returned a non-finite score")
++    return (np.flatnonzero(row > float(threshold)) + start).tolist()
+--- /dev/null
 +++ b/v2/catalogs/v1-selected-tags.csv
 @@ -0,0 +1,6550 @@
 +tag_id,name,category,count
@@ -30123,7 +30325,7 @@
 +}
 --- /dev/null
 +++ b/v2/comfy-api.pyi
-@@ -0,0 +1,1027 @@
+@@ -0,0 +1,993 @@
 +"""The published ComfyUI V2 secure Python API — the complete surface.
 +
 +Generated by comfy_secure_nodes.apistubs from the live public modules.
@@ -30663,20 +30865,6 @@
 +    # Clone this image onto a named ComfyUI-managed device.
 +    async def to_device(self, device: str = 'auto') -> 'ImageRef': ...
 +
-+class ImageClassifierRef(_TypedRef):
-+    KIND: Any = ...
-+    # Classify a host-side image batch and return bounded label scores.
-+    async def classify(self, images: ImageRef, use_accelerator: bool = True, top_k: int = 5) -> list[list[dict[str, Any]]]: ...
-+    # Run a multi-label classifier and retain its score matrix host-side.
-+    async def predict_scores(self, images: ImageRef) -> 'ClassifierScoresRef': ...
-+
-+class ClassifierScoresRef(_TypedRef):
-+    """Opaque bounded batch-by-class scores from an image classifier."""
-+    KIND: Any = ...
-+    # Page score/index pairs above a threshold in one class range.
-+    async def select_above(self, batch_index: int, start: int, end: int, threshold: float, offset: int = 0, limit: int = 512) -> dict[str, Any]: ...
-+    async def shape(self) -> tuple[int, int]: ...
-+
 +class InpaintModelRef(_TypedRef):
 +    """Opaque prompt-free image inpainting model."""
 +    KIND: Any = ...
@@ -30819,12 +31007,6 @@
 +    # Propagate frame-zero boxes through a host-side SAM2 video batch.
 +    async def segment_video(self, frames: ImageRef, boxes: list[list[float]]) -> MaskRef: ...
 +
-+class SemanticSegmentationRef(_TypedRef):
-+    """Opaque fixed-architecture semantic segmentation model."""
-+    KIND: Any = ...
-+    # Return the union of selected semantic class IDs as a mask.
-+    async def mask(self, image: ImageRef, classes: list[int]) -> MaskRef: ...
-+
 +class HuggingFaceWeight:
 +    """A public Hugging Face weight file required by a node."""
 +    def __init__(self, repo_id: str, filename: str, folder: str, revision: str = 'main', sha256: Optional[str] = None, on_demand: bool = False) -> None: ...
@@ -30882,17 +31064,13 @@
 +    async def load_diffusion_model(self, name: str, extra_name: Optional[str] = None, weight_dtype: str = 'default', compute_dtype: str = 'default', cublas_linear: bool = False) -> ModelRef: ...
 +    async def load_gguf_model(self, name: str, extra_name: Optional[str] = None, dequant_dtype: str = 'default', patch_dtype: str = 'default', patch_on_device: bool = False) -> ModelRef: ...
 +    async def load_gguf_text_encoders(self, names: Sequence[str], clip_type: str) -> ClipRef: ...
-+    async def load_image_classifier(self, model: str, architecture: str, labels: list[str]) -> ImageClassifierRef: ...
 +    async def load_inpaint_model(self, model: str, architecture: str = 'big-lama') -> InpaintModelRef: ...
 +    async def load_ipadapter(self, model: str, clip_vision: ClipVisionRef) -> Ref: ...
 +    async def load_language_model(self, weights: list[str], family: str, device: str = 'default', cache: bool = True) -> ClipRef: ...
 +    async def load_object_detector(self, model: str) -> ObjectDetectorRef: ...
-+    async def load_onnx_image_classifier(self, model: str, input_layout: str = 'NHWC', channel_order: str = 'BGR', resize_mode: str = 'fit_pad', input_scale: float = 255.0, pad_color: tuple[float, float, float] = (1.0, 1.0, 1.0), mean: tuple[float, float, float] = (0.0, 0.0, 0.0), std: tuple[float, float, float] = (1.0, 1.0, 1.0), activation: str = 'identity', resize_filter: str = 'lanczos') -> ImageClassifierRef: ...
 +    async def load_powerpaint(self, model: str, base_clip: str, powerpaint_clip: str, dtype: str = 'float16') -> PowerPaintRef: ...
 +    async def load_sam(self, model: str, architecture: str = 'vit_b', device_mode: str = 'AUTO') -> SamModelRef: ...
-+    async def load_segformer(self, model: str, variant: str, num_labels: int) -> SemanticSegmentationRef: ...
 +    async def load_text_encoder(self, model: str, model_type: str, device: str = 'default') -> ClipRef: ...
-+    async def load_transparent_vae_decoder(self, model: str, family: str) -> TransparentVaeDecoderRef: ...
 +    async def load_upscale_model(self, name: str) -> UpscaleModelRef: ...
 +    async def load_vae(self, name: str, device: str = 'default', weight_dtype: str = 'default') -> VaeRef: ...
 +    async def memory_cleanup(self, empty_cache: bool = True, collect_cycles: bool = True, unload_all_models: bool = False) -> tuple[int, int]: ...
@@ -31023,12 +31201,6 @@
 +class TimestepKeyframeRef(_TypedRef):
 +    """Opaque Advanced-ControlNet timestep-keyframe schedule."""
 +    KIND: Any = ...
-+
-+class TransparentVaeDecoderRef(_TypedRef):
-+    """Opaque canonical decoder for Layer Diffusion transparency weights."""
-+    KIND: Any = ...
-+    # Return a consistent RGBA batch and decoded alpha masks.
-+    async def decode(self, latent: LatentRef, image: ImageRef, frames: int = 1, sub_batch_size: int = 16) -> tuple[ImageRef, MaskRef]: ...
 +
 +class WeightDiffCursorRef(_TypedRef):
 +    """Execution-scoped iterator over host-owned model weight differences."""
@@ -31249,23 +31421,20 @@
 +);
 --- a/pyproject.toml
 +++ b/v2/pyproject.toml
-@@ -2,8 +2,9 @@
+@@ -2,6 +2,7 @@
  name = "comfyui-wd14-tagger"
  description = "A ComfyUI extension allowing the interrogation of booru tags from images."
  version = "1.0.1"
 +requires-python = ">=3.13,<3.14"
  license = { file = "LICENSE" }
--dependencies = ["onnxruntime"]
-+dependencies = []
+ dependencies = ["onnxruntime"]
  
- [project.urls]
- Repository = "https://github.com/pythongosssss/ComfyUI-WD14-Tagger"
 --- a/requirements.txt
 +++ b/v2/requirements.txt
 @@ -1 +1 @@
 -onnxruntime
 \ No newline at end of file
-+# Inference and model caching are supplied by the Secure Nodes V2 host.
++onnxruntime
 --- /dev/null
 +++ b/v2/secure-nodes.json
 @@ -0,0 +1,314 @@
@@ -31772,19 +31941,14 @@
 +main().catch((error) => { console.error(error); process.exit(1); });
 --- a/wd14tagger.py
 +++ b/v2/wd14tagger.py
-@@ -1,210 +1,557 @@
+@@ -1,210 +1,485 @@
 -# https://huggingface.co/spaces/SmilingWolf/wd-v1-4-tags
 -
 -import comfy.utils
 -import asyncio
 -import aiohttp
 -import numpy as np
-+"""Secure Nodes V2 implementation of the WD14 tagger.
-+
-+Only the generic, bounded ONNX inference primitive is host-owned.  The three
-+reviewed WD14 label catalogues, category semantics, thresholds, exclusions,
-+ordering, escaping, and output formatting remain pack code.
-+"""
++"""Secure Nodes V2 implementation of the WD14 tagger."""
 +from __future__ import annotations
 +
  import csv
@@ -31820,6 +31984,8 @@
 +
 +from comfy_api.latest import io, sdk
 +
++from . import _onnx_classifier
++
 +
 +DEFAULT_MODEL = "wd-v1-4-moat-tagger-v2"
 +MODEL_NAMES = (
@@ -31840,7 +32006,6 @@
 +_MAX_EXCLUDE_CHARS = 65_536
 +_MAX_OUTPUT_CHARS = 192_000
 +_MAX_TOTAL_OUTPUT_CHARS = 768_000
-+_SCORE_PAGE = 512
 +
 +
 +@dataclass(frozen=True)
@@ -32292,59 +32457,6 @@
 +    )
 +
 +
-+async def _select_indices(
-+    scores: Any,
-+    batch_index: int,
-+    bounds: tuple[int, int] | None,
-+    threshold: float,
-+) -> list[int]:
-+    if bounds is None:
-+        return []
-+    start, end = bounds
-+    offset = 0
-+    result: list[int] = []
-+    previous = start - 1
-+    pages = 0
-+    while True:
-+        page = await scores.select_above(
-+            int(batch_index),
-+            start,
-+            end,
-+            float(threshold),
-+            offset=offset,
-+            limit=_SCORE_PAGE,
-+        )
-+        if not isinstance(page, dict):
-+            raise TypeError("classifier score page must be a dictionary")
-+        items = page.get("items")
-+        if not isinstance(items, list) or len(items) > _SCORE_PAGE:
-+            raise ValueError("classifier score page has an invalid item count")
-+        for item in items:
-+            if not isinstance(item, dict):
-+                raise TypeError("classifier score item must be a dictionary")
-+            index = item.get("index")
-+            score = item.get("score")
-+            if type(index) is not int or not start <= index < end:
-+                raise ValueError("classifier returned an invalid class index")
-+            if index <= previous:
-+                raise ValueError("classifier score indices are not strictly ordered")
-+            if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
-+                raise ValueError("classifier returned a non-finite score")
-+            if not float(score) > float(threshold):
-+                raise ValueError("classifier returned a score below the threshold")
-+            previous = index
-+            result.append(index)
-+        next_offset = page.get("next_offset")
-+        if next_offset is None:
-+            return result
-+        if type(next_offset) is not int or not offset < next_offset <= end - start:
-+            raise ValueError("classifier returned an invalid score-page offset")
-+        offset = next_offset
-+        pages += 1
-+        if pages > math.ceil((end - start) / _SCORE_PAGE) + 1:
-+            raise ValueError("classifier returned too many score pages")
-+
-+
 +async def _download_once(model: str, spec: ModelSpec) -> str:
 +    logical = _RESOLVED_MODELS.get(model)
 +    if logical is not None:
@@ -32363,7 +32475,7 @@
 +
 +class WD14Tagger(io.ComfyNode):
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ("models",)
++    SDK_PERMISSIONS = ("assets", "models.download", "raw")
 +    SDK_REQUIRED_WEIGHTS = SDK_REQUIRED_WEIGHTS
 +
      @classmethod
@@ -32468,23 +32580,8 @@
 +        await sdk.ctx().progress.update(0, batch_size)
 +
 +        logical = await _download_once(str(model), spec)
-+        classifier = await sdk.ctx().models.load_onnx_image_classifier(
-+            logical,
-+            input_layout="NHWC",
-+            channel_order="BGR",
-+            resize_mode="fit_pad",
-+            input_scale=255.0,
-+            pad_color=(1.0, 1.0, 1.0),
-+            mean=(0.0, 0.0, 0.0),
-+            std=(1.0, 1.0, 1.0),
-+            activation="identity",
-+            resize_filter="lanczos",
-+        )
-+        scores = await classifier.predict_scores(image)
-+        shape = await scores.shape()
-+        if not isinstance(shape, (list, tuple)) or len(shape) != 2:
-+            raise ValueError("classifier returned an invalid score-matrix shape")
-+        score_batches, score_classes = int(shape[0]), int(shape[1])
++        scores = await _onnx_classifier.predict(sdk.ctx(), logical, image)
++        score_batches, score_classes = map(int, scores.shape)
 +        if score_batches != batch_size:
 +            raise ValueError(
 +                f"model returned {score_batches} batches for {batch_size} images"
@@ -32496,13 +32593,13 @@
 +
 +        tags: list[str] = []
 +        for index in range(batch_size):
-+            characters = await _select_indices(
++            characters = await _onnx_classifier.select_indices(
 +                scores,
 +                index,
 +                character_range,
 +                character_threshold,
 +            )
-+            general = await _select_indices(
++            general = await _onnx_classifier.select_indices(
 +                scores,
 +                index,
 +                general_range,

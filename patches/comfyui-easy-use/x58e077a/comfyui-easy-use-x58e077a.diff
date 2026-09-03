@@ -52636,7 +52636,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,5514 @@
+@@ -0,0 +1,5519 @@
 +"""Secure Nodes 2.0 implementations for the pinned Easy Use snapshot.
 +
 +The original pack mixes useful tensor/value helpers with model loading,
@@ -52665,8 +52665,10 @@
 +import torch
 +from PIL import Image, ImageDraw, ImageFont
 +
-+from ._image_ops import common_upscale
 +from . import _ipadapter
++from . import _segformer
++from . import _transparent_vae
++from ._image_ops import common_upscale
 +from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
 +from ._wildcard_runtime import load_catalogue as _load_wildcard_catalogue
 +from ._wildcard_runtime import matrix as _wildcard_matrix_values
@@ -54846,10 +54848,10 @@
 +    if classes:
 +        weight, variant, num_labels = profile
 +        logical = await _download_declared_weight(weight)
-+        segmenter = await _ctx().models.load_segformer(
-+            logical, variant=variant, num_labels=num_labels)
-+        mask = (await _raw(
-+            await segmenter.mask(image, classes)
++        segmenter = await _segformer.load(
++            _ctx(), logical, variant=variant, num_labels=num_labels)
++        mask = (await _segformer.mask(
++            _ctx(), segmenter, image, classes
 +        )).detach().cpu().float().clamp(0, 1)
 +    else:
 +        mask = torch.zeros(pixels.shape[:3], dtype=torch.float32)
@@ -56821,10 +56823,12 @@
 +    if method in _LAYER_DIFFUSION_ALPHA_METHODS[family]:
 +        decoder_weight = _LAYER_DIFFUSION_DECODERS[family]
 +        decoder_name = await _download_declared_weight(decoder_weight)
-+        decoder = await _ctx().models.load_transparent_vae_decoder(
-+            decoder_name, family)
-+        final_image, alpha = await decoder.decode(
-+            result_pipe["samples"], regular_image, frames=frames)
++        decoder = await _transparent_vae.load(
++            _ctx(), decoder_name, family)
++        final_image, alpha = await _transparent_vae.decode(
++            _ctx(), decoder, result_pipe["samples"], regular_image,
++            frames=frames,
++        )
 +        alpha_outputs = [alpha]
 +
 +    result_pipe.update({
@@ -58019,7 +58023,8 @@
 +_permissions({"easy loadImageBase64"}, "output", "raw", "ui")
 +_permissions(
 +    {"easy imageRemBg"}, "assets", "models", "output", "raw", "ui")
-+_permissions({"easy humanSegmentation"}, "models", "raw")
++_permissions(
++    {"easy humanSegmentation"}, "assets", "models.download", "raw")
 +_permissions({"easy imageInterrogator"}, "models", "raw")
 +_permissions({"easy joyCaption2API", "easy joyCaption3API"}, "models", "raw")
 +_permissions({"easy imageChooser"}, "raw", "ui", "ui.interact")
@@ -58055,7 +58060,7 @@
 +_permissions({"easy unSampler"}, "sample")
 +_permissions(
 +    {"easy kSamplerLayerDiffusion"},
-+    "models", "output", "sample", "ui",
++    "assets", "models", "output", "raw", "sample", "ui",
 +)
 +_permissions(
 +    {"easy kSamplerInpainting"},
@@ -58405,6 +58410,563 @@
 +    "unsupported",
 +    "wrap_output",
 +]
+--- /dev/null
++++ b/v2/_segformer.py
+@@ -0,0 +1,222 @@
++"""SegFormer semantic segmentation owned by this pack."""
++from __future__ import annotations
++
++import asyncio
++import threading
++from collections import OrderedDict
++from dataclasses import dataclass, field
++from typing import Any
++
++import torch
++import torch.nn.functional as functional
++
++
++SECURE_KIND = "pack.segformer"
++_DEPTHS = {
++    "b2": [3, 4, 6, 3],
++    "b3": [3, 4, 18, 3],
++    "b5": [3, 6, 40, 3],
++}
++_CACHE: "OrderedDict[tuple[str, str, int], _Entry]" = OrderedDict()
++_MAX_CACHED = 2
++_MAX_PIXELS = 268_435_456
++
++
++@dataclass
++class _Entry:
++    model: Any
++    num_labels: int
++    lock: threading.Lock = field(default_factory=threading.Lock)
++
++
++def recipe(weight: str, variant: str, num_labels: int) -> dict[str, Any]:
++    if not isinstance(weight, str) or not weight.lower().endswith(
++        (".safetensors", ".sft")
++    ):
++        raise ValueError("SegFormer weights must use SafeTensors")
++    if variant not in _DEPTHS:
++        raise ValueError("SegFormer variant must be b2, b3, or b5")
++    if (
++        isinstance(num_labels, bool)
++        or not isinstance(num_labels, int)
++        or not 1 <= num_labels <= 1024
++    ):
++        raise ValueError("SegFormer num_labels must be in [1, 1024]")
++    return {
++        "secure_kind": SECURE_KIND,
++        "weight": weight,
++        "variant": variant,
++        "num_labels": num_labels,
++    }
++
++
++def validated(value: Any) -> dict[str, Any]:
++    if not isinstance(value, dict) or value.get("secure_kind") != SECURE_KIND:
++        raise TypeError("value is not a pack-owned SegFormer recipe")
++    return recipe(value.get("weight"), value.get("variant"), value.get("num_labels"))
++
++
++def _build_entry(
++    state: dict[str, torch.Tensor], variant: str, num_labels: int,
++) -> _Entry:
++    try:
++        from transformers import SegformerConfig, SegformerForSemanticSegmentation
++    except ImportError as exc:
++        raise RuntimeError("SegFormer requires Transformers") from exc
++    config = SegformerConfig(
++        num_labels=num_labels,
++        num_channels=3,
++        depths=_DEPTHS[variant],
++        hidden_sizes=[64, 128, 320, 512],
++        decoder_hidden_size=768,
++        patch_sizes=[7, 3, 3, 3],
++        strides=[4, 2, 2, 2],
++        num_attention_heads=[1, 2, 5, 8],
++        mlp_ratios=[4, 4, 4, 4],
++        sr_ratios=[8, 4, 2, 1],
++        hidden_act="gelu",
++        hidden_dropout_prob=0.0,
++        attention_probs_dropout_prob=0.0,
++        classifier_dropout_prob=0.1,
++        drop_path_rate=0.1,
++        reshape_last_stage=True,
++        semantic_loss_ignore_index=255,
++    )
++    model = SegformerForSemanticSegmentation(config)
++    model_state = model.state_dict()
++    if set(state) != set(model_state):
++        try:
++            from transformers.conversion_mapping import get_model_conversion_mapping
++            from transformers.core_model_loading import WeightRenaming, rename_source_key
++        except ImportError as exc:
++            raise ValueError(
++                "SegFormer weights do not match the installed Transformers version"
++            ) from exc
++        conversions = get_model_conversion_mapping(model, add_legacy=False)
++        if not conversions or any(
++            not isinstance(item, WeightRenaming) for item in conversions
++        ):
++            raise ValueError("SegFormer checkpoint conversion is not a pure key rename")
++        converted = {}
++        for key, tensor in state.items():
++            renamed, _pattern = rename_source_key(
++                key, conversions, [], model.base_model_prefix, model_state
++            )
++            if renamed in converted:
++                raise ValueError("SegFormer checkpoint produced duplicate keys")
++            converted[renamed] = tensor
++        state = converted
++    model.load_state_dict(state, strict=True)
++    model.eval().to("cpu")
++    return _Entry(model, num_labels)
++
++
++async def _entry(ctx: Any, value: Any) -> tuple[_Entry, dict[str, Any]]:
++    spec = validated(value)
++    key = (spec["weight"], spec["variant"], spec["num_labels"])
++    cached = _CACHE.pop(key, None)
++    if cached is not None:
++        _CACHE[key] = cached
++        return cached, spec
++    asset = await ctx.assets.resolve("semantic_segmentation", spec["weight"])
++    state = await ctx.assets.load_state_dict(asset)
++    if not isinstance(state, dict) or not state or any(
++        not isinstance(name, str) or not isinstance(tensor, torch.Tensor)
++        for name, tensor in state.items()
++    ):
++        raise ValueError("SegFormer weights must contain only tensors")
++    state = {name: tensor.detach().cpu() for name, tensor in state.items()}
++    loaded = await asyncio.to_thread(
++        _build_entry, state, spec["variant"], spec["num_labels"]
++    )
++    while len(_CACHE) >= _MAX_CACHED:
++        _unused_key, stale = _CACHE.popitem(last=False)
++        stale.model.to("cpu")
++    _CACHE[key] = loaded
++    return loaded, spec
++
++
++async def load(ctx: Any, weight: str, variant: str, num_labels: int) -> dict[str, Any]:
++    value = recipe(weight, variant, num_labels)
++    await _entry(ctx, value)
++    return value
++
++
++def _device() -> torch.device:
++    if torch.cuda.is_available():
++        return torch.device("cuda")
++    if getattr(torch.backends, "mps", None) is not None:
++        if torch.backends.mps.is_available():
++            return torch.device("mps")
++    return torch.device("cpu")
++
++
++async def mask(
++    ctx: Any, value: Any, image: Any, classes: list[int] | tuple[int, ...],
++) -> torch.Tensor:
++    entry, spec = await _entry(ctx, value)
++    if not isinstance(classes, (list, tuple)) or not 1 <= len(classes) <= 64:
++        raise ValueError("semantic segmentation needs between 1 and 64 classes")
++    selected = []
++    for class_id in classes:
++        if (
++            isinstance(class_id, bool)
++            or not isinstance(class_id, int)
++            or not 0 <= class_id < spec["num_labels"]
++        ):
++            raise ValueError("semantic segmentation class IDs must match the model")
++        if class_id not in selected:
++            selected.append(class_id)
++    pixels = await image.raw()
++    if (
++        not isinstance(pixels, torch.Tensor)
++        or pixels.ndim != 4
++        or pixels.shape[-1] < 3
++        or not 1 <= len(pixels) <= 64
++    ):
++        raise ValueError("semantic segmentation needs a non-empty BHWC RGB batch")
++    height, width = map(int, pixels.shape[1:3])
++    if (
++        height <= 0
++        or width <= 0
++        or height * width * len(pixels) > _MAX_PIXELS
++        or not bool(torch.isfinite(pixels[..., :3]).all())
++    ):
++        raise ValueError("semantic segmentation image values are invalid")
++    device = _device()
++    mean = torch.tensor(
++        (0.485, 0.456, 0.406), device=device, dtype=torch.float32
++    ).view(1, 3, 1, 1)
++    std = torch.tensor(
++        (0.229, 0.224, 0.225), device=device, dtype=torch.float32
++    ).view(1, 3, 1, 1)
++    masks = []
++    with entry.lock:
++        entry.model.to(device=device, dtype=torch.float32)
++        try:
++            for frame in pixels:
++                source = frame[..., :3].movedim(-1, 0).unsqueeze(0)
++                source = source.to(device=device, dtype=torch.float32)
++                source = functional.interpolate(
++                    source, size=(512, 512), mode="bilinear", align_corners=False
++                )
++                logits = entry.model(pixel_values=(source - mean) / std).logits
++                if (
++                    not isinstance(logits, torch.Tensor)
++                    or logits.ndim != 4
++                    or logits.shape[:2] != (1, spec["num_labels"])
++                ):
++                    raise RuntimeError("SegFormer returned an invalid logits shape")
++                logits = functional.interpolate(
++                    logits, size=(height, width), mode="bilinear", align_corners=False
++                )
++                labels = logits.argmax(dim=1)[0]
++                selected_mask = torch.zeros_like(labels, dtype=torch.bool)
++                for class_id in selected:
++                    selected_mask |= labels == class_id
++                masks.append(selected_mask.detach().cpu().float())
++        finally:
++            entry.model.to("cpu")
++    if device.type == "cuda":
++        torch.cuda.empty_cache()
++    return torch.stack(masks, dim=0)
+--- /dev/null
++++ b/v2/_transparent_vae.py
+@@ -0,0 +1,329 @@
++from __future__ import annotations
++
++import asyncio
++import math
++import threading
++from collections import OrderedDict
++from dataclasses import dataclass, field
++from typing import Any
++
++import torch
++from comfy_api.latest import sdk
++
++
++_EXPECTED_WEIGHTS = {
++    "sd1": "layer_sd15_vae_transparent_decoder.safetensors",
++    "sdxl": "vae_transparent_decoder.safetensors",
++}
++_MAX_BATCH = 64
++_MAX_PIXELS = 67_108_864
++
++
++@dataclass
++class _Entry:
++    decoder: Any
++    family: str
++    lock: threading.Lock = field(default_factory=threading.Lock)
++
++
++_CACHE: "OrderedDict[tuple[str, str], _Entry]" = OrderedDict()
++
++
++def _recipe(weight: str, family: str) -> dict[str, str]:
++    if family not in _EXPECTED_WEIGHTS:
++        raise ValueError("transparent VAE decoder family must be sd1 or sdxl")
++    if not isinstance(weight, str) or not weight:
++        raise ValueError("transparent VAE decoding requires a managed weight")
++    if weight.rsplit("/", 1)[-1].lower() != _EXPECTED_WEIGHTS[family].lower():
++        raise ValueError(
++            f"{family} transparent VAE decoding requires "
++            f"{_EXPECTED_WEIGHTS[family]!r}"
++        )
++    return {
++        "kind": "easy-use.transparent-vae-decoder",
++        "weight": weight,
++        "family": family,
++    }
++
++
++def _validated_recipe(value: Any) -> dict[str, str]:
++    if (
++        not isinstance(value, dict)
++        or set(value) != {"kind", "weight", "family"}
++        or value.get("kind") != "easy-use.transparent-vae-decoder"
++    ):
++        raise TypeError("Layer Diffusion requires its transparent VAE decoder")
++    return _recipe(value["weight"], value["family"])
++
++
++def _zero_module(module: Any) -> Any:
++    for parameter in module.parameters():
++        parameter.detach().zero_()
++    return module
++
++
++def _build_decoder(state: dict[str, torch.Tensor], device: torch.device) -> Any:
++    try:
++        from diffusers.configuration_utils import ConfigMixin, register_to_config
++        from diffusers.models.modeling_utils import ModelMixin
++        from diffusers.models.unets.unet_2d_blocks import (
++            UNetMidBlock2D,
++            get_down_block,
++            get_up_block,
++        )
++    except ImportError as error:
++        raise RuntimeError(
++            "transparent VAE decoding requires the pack's Diffusers dependency"
++        ) from error
++
++    class TransparentUNet(ModelMixin, ConfigMixin):
++        @register_to_config
++        def __init__(self):
++            super().__init__()
++            block_channels = (32, 32, 64, 128, 256, 512, 512)
++            down_types = (
++                "DownBlock2D",
++                "DownBlock2D",
++                "DownBlock2D",
++                "DownBlock2D",
++                "AttnDownBlock2D",
++                "AttnDownBlock2D",
++                "AttnDownBlock2D",
++            )
++            up_types = (
++                "AttnUpBlock2D",
++                "AttnUpBlock2D",
++                "AttnUpBlock2D",
++                "UpBlock2D",
++                "UpBlock2D",
++                "UpBlock2D",
++                "UpBlock2D",
++            )
++            self.conv_in = torch.nn.Conv2d(3, block_channels[0], 3, padding=1)
++            self.latent_conv_in = _zero_module(
++                torch.nn.Conv2d(4, block_channels[2], 1)
++            )
++            self.down_blocks = torch.nn.ModuleList()
++            output_channel = block_channels[0]
++            for index, block_type in enumerate(down_types):
++                input_channel = output_channel
++                output_channel = block_channels[index]
++                self.down_blocks.append(get_down_block(
++                    block_type,
++                    num_layers=2,
++                    in_channels=input_channel,
++                    out_channels=output_channel,
++                    temb_channels=None,
++                    add_downsample=index != len(block_channels) - 1,
++                    resnet_eps=1e-5,
++                    resnet_act_fn="silu",
++                    resnet_groups=4,
++                    attention_head_dim=8,
++                    downsample_padding=1,
++                    resnet_time_scale_shift="default",
++                    downsample_type="conv",
++                    dropout=0.0,
++                ))
++            self.mid_block = UNetMidBlock2D(
++                in_channels=block_channels[-1],
++                temb_channels=None,
++                dropout=0.0,
++                resnet_eps=1e-5,
++                resnet_act_fn="silu",
++                output_scale_factor=1,
++                resnet_time_scale_shift="default",
++                attention_head_dim=8,
++                resnet_groups=4,
++                attn_groups=None,
++                add_attention=True,
++            )
++            self.up_blocks = torch.nn.ModuleList()
++            reversed_channels = list(reversed(block_channels))
++            output_channel = reversed_channels[0]
++            for index, block_type in enumerate(up_types):
++                previous_output = output_channel
++                output_channel = reversed_channels[index]
++                input_channel = reversed_channels[
++                    min(index + 1, len(block_channels) - 1)
++                ]
++                self.up_blocks.append(get_up_block(
++                    block_type,
++                    num_layers=3,
++                    in_channels=input_channel,
++                    out_channels=output_channel,
++                    prev_output_channel=previous_output,
++                    temb_channels=None,
++                    add_upsample=index != len(block_channels) - 1,
++                    resnet_eps=1e-5,
++                    resnet_act_fn="silu",
++                    resnet_groups=4,
++                    attention_head_dim=8,
++                    resnet_time_scale_shift="default",
++                    upsample_type="conv",
++                    dropout=0.0,
++                ))
++            self.conv_norm_out = torch.nn.GroupNorm(
++                4, block_channels[0], eps=1e-5
++            )
++            self.conv_act = torch.nn.SiLU()
++            self.conv_out = torch.nn.Conv2d(
++                block_channels[0], 4, 3, padding=1
++            )
++
++        def forward(self, pixels: torch.Tensor, latent: torch.Tensor) -> torch.Tensor:
++            latent_sample = self.latent_conv_in(latent)
++            sample = self.conv_in(pixels)
++            residuals = (sample,)
++            for index, block in enumerate(self.down_blocks):
++                if index == 3:
++                    sample = sample + latent_sample
++                sample, block_residuals = block(hidden_states=sample, temb=None)
++                residuals += block_residuals
++            sample = self.mid_block(sample, None)
++            for block in self.up_blocks:
++                block_residuals = residuals[-len(block.resnets):]
++                residuals = residuals[:-len(block.resnets)]
++                sample = block(sample, block_residuals, None)
++            return self.conv_out(self.conv_act(self.conv_norm_out(sample)))
++
++    model = TransparentUNet()
++    model.load_state_dict(state, strict=True)
++    dtype = torch.float16 if device.type == "cuda" else torch.float32
++    model.eval().to(device=device, dtype=dtype)
++    return model
++
++
++async def _entry(ctx: Any, value: Any) -> tuple[_Entry, dict[str, str]]:
++    recipe = _validated_recipe(value)
++    key = (recipe["weight"], recipe["family"])
++    cached = _CACHE.pop(key, None)
++    if cached is not None:
++        _CACHE[key] = cached
++        return cached, recipe
++
++    asset = await ctx.assets.resolve("vae", recipe["weight"])
++    state = await ctx.assets.load_state_dict(asset)
++    if not isinstance(state, dict) or not state or any(
++        not isinstance(name, str) or not isinstance(tensor, torch.Tensor)
++        for name, tensor in state.items()
++    ):
++        raise ValueError("transparent VAE weights must contain only tensors")
++    state = {name: tensor.detach().cpu() for name, tensor in state.items()}
++    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++    loaded = _Entry(
++        decoder=await asyncio.to_thread(_build_decoder, state, device),
++        family=recipe["family"],
++    )
++    while len(_CACHE) >= 2:
++        _old_key, old = _CACHE.popitem(last=False)
++        old.decoder.to("cpu")
++    _CACHE[key] = loaded
++    return loaded, recipe
++
++
++async def load(ctx: Any, weight: str, family: str) -> dict[str, str]:
++    recipe = _recipe(weight, family)
++    await _entry(ctx, recipe)
++    return recipe
++
++
++def _checked_inputs(
++    latent_value: Any, pixels: Any, frames: int, sub_batch_size: int,
++) -> tuple[torch.Tensor, torch.Tensor]:
++    if isinstance(frames, bool) or not isinstance(frames, int) or not 1 <= frames <= 3:
++        raise ValueError("transparent decoder frames must be in [1, 3]")
++    if (
++        isinstance(sub_batch_size, bool)
++        or not isinstance(sub_batch_size, int)
++        or not 1 <= sub_batch_size <= 64
++    ):
++        raise ValueError("transparent decoder sub_batch_size must be in [1, 64]")
++    samples = latent_value.get("samples") if isinstance(latent_value, dict) else None
++    if (
++        not isinstance(samples, torch.Tensor)
++        or samples.ndim != 4
++        or not isinstance(pixels, torch.Tensor)
++        or pixels.ndim != 4
++        or pixels.shape[-1] < 3
++        or not 1 <= len(pixels) <= _MAX_BATCH
++        or len(samples) != len(pixels)
++    ):
++        raise ValueError(
++            "transparent decoding needs matching BCHW latent and BHWC image batches"
++        )
++    height, width = map(int, pixels.shape[1:3])
++    if (
++        height <= 0
++        or width <= 0
++        or height % 64
++        or width % 64
++        or len(pixels) * height * width > _MAX_PIXELS
++    ):
++        raise ValueError(
++            "transparent decoder image dimensions must be multiples of 64 "
++            "within the bounded batch limit"
++        )
++    if len(pixels) % frames:
++        raise ValueError("transparent decoder batch must be divisible by frames")
++    return samples, pixels
++
++
++async def decode(
++    ctx: Any,
++    value: Any,
++    latent: sdk.LatentRef,
++    image: sdk.ImageRef,
++    frames: int = 1,
++    sub_batch_size: int = 16,
++) -> tuple[sdk.ImageRef, sdk.MaskRef]:
++    entry, _used_recipe = await _entry(ctx, value)
++    samples, pixels = _checked_inputs(
++        await latent.value(), await image.raw(), frames, sub_batch_size
++    )
++    device = next(entry.decoder.parameters()).device
++    dtype = next(entry.decoder.parameters()).dtype
++
++    def run() -> tuple[torch.Tensor, torch.Tensor]:
++        selected_pixels = pixels[::frames, ..., :3].movedim(-1, 1)
++        selected_samples = samples[::frames]
++        decoded = []
++        with entry.lock, torch.no_grad():
++            for start in range(0, len(selected_samples), sub_batch_size):
++                source = selected_pixels[start:start + sub_batch_size]
++                source_latent = selected_samples[start:start + sub_batch_size]
++                predictions = []
++                for flip in (False, True):
++                    for rotations in range(4):
++                        current_pixels = source.flip(3) if flip else source
++                        current_latent = source_latent.flip(3) if flip else source_latent
++                        current_pixels = torch.rot90(
++                            current_pixels, rotations, (2, 3)
++                        ).to(device=device, dtype=dtype)
++                        current_latent = torch.rot90(
++                            current_latent, rotations, (2, 3)
++                        ).to(device=device, dtype=dtype)
++                        prediction = entry.decoder(
++                            current_pixels, current_latent
++                        ).clamp(0.0, 1.0)
++                        prediction = torch.rot90(prediction, -rotations, (2, 3))
++                        if flip:
++                            prediction = prediction.flip(3)
++                        predictions.append(prediction)
++                decoded.append(torch.stack(predictions).median(dim=0).values.cpu())
++        result = torch.cat(decoded).movedim(1, -1)
++        height, width = map(int, pixels.shape[1:3])
++        if result.ndim != 4 or result.shape[-1] < 4 or result.shape[1:3] != (height, width):
++            raise RuntimeError("transparent VAE decoder returned invalid pixels")
++        decoded_rgb = result[..., 1:4].float().clamp(0.0, 1.0)
++        alpha = (1.0 - result[..., 0]).float().clamp(0.0, 1.0)
++        full_rgb = pixels[..., :3].cpu().float().clone()
++        full_alpha = torch.ones((len(pixels), height, width), dtype=torch.float32)
++        full_rgb[::frames] = decoded_rgb
++        full_alpha[::frames] = alpha
++        return torch.cat((full_rgb, full_alpha.unsqueeze(-1)), dim=-1), alpha
++
++    rgba, alpha = await asyncio.to_thread(run)
++    return (
++        await sdk.ImageRef._from_raw(rgba),
++        await sdk.MaskRef._from_raw(alpha),
++    )
 --- /dev/null
 +++ b/v2/_wildcard_runtime.py
 @@ -0,0 +1,379 @@
@@ -62340,7 +62902,7 @@
 +}
 --- /dev/null
 +++ b/v2/comfy-api.pyi
-@@ -0,0 +1,1027 @@
+@@ -0,0 +1,993 @@
 +"""The published ComfyUI V2 secure Python API — the complete surface.
 +
 +Generated by comfy_secure_nodes.apistubs from the live public modules.
@@ -62880,20 +63442,6 @@
 +    # Clone this image onto a named ComfyUI-managed device.
 +    async def to_device(self, device: str = 'auto') -> 'ImageRef': ...
 +
-+class ImageClassifierRef(_TypedRef):
-+    KIND: Any = ...
-+    # Classify a host-side image batch and return bounded label scores.
-+    async def classify(self, images: ImageRef, use_accelerator: bool = True, top_k: int = 5) -> list[list[dict[str, Any]]]: ...
-+    # Run a multi-label classifier and retain its score matrix host-side.
-+    async def predict_scores(self, images: ImageRef) -> 'ClassifierScoresRef': ...
-+
-+class ClassifierScoresRef(_TypedRef):
-+    """Opaque bounded batch-by-class scores from an image classifier."""
-+    KIND: Any = ...
-+    # Page score/index pairs above a threshold in one class range.
-+    async def select_above(self, batch_index: int, start: int, end: int, threshold: float, offset: int = 0, limit: int = 512) -> dict[str, Any]: ...
-+    async def shape(self) -> tuple[int, int]: ...
-+
 +class InpaintModelRef(_TypedRef):
 +    """Opaque prompt-free image inpainting model."""
 +    KIND: Any = ...
@@ -63036,12 +63584,6 @@
 +    # Propagate frame-zero boxes through a host-side SAM2 video batch.
 +    async def segment_video(self, frames: ImageRef, boxes: list[list[float]]) -> MaskRef: ...
 +
-+class SemanticSegmentationRef(_TypedRef):
-+    """Opaque fixed-architecture semantic segmentation model."""
-+    KIND: Any = ...
-+    # Return the union of selected semantic class IDs as a mask.
-+    async def mask(self, image: ImageRef, classes: list[int]) -> MaskRef: ...
-+
 +class HuggingFaceWeight:
 +    """A public Hugging Face weight file required by a node."""
 +    def __init__(self, repo_id: str, filename: str, folder: str, revision: str = 'main', sha256: Optional[str] = None, on_demand: bool = False) -> None: ...
@@ -63099,17 +63641,13 @@
 +    async def load_diffusion_model(self, name: str, extra_name: Optional[str] = None, weight_dtype: str = 'default', compute_dtype: str = 'default', cublas_linear: bool = False) -> ModelRef: ...
 +    async def load_gguf_model(self, name: str, extra_name: Optional[str] = None, dequant_dtype: str = 'default', patch_dtype: str = 'default', patch_on_device: bool = False) -> ModelRef: ...
 +    async def load_gguf_text_encoders(self, names: Sequence[str], clip_type: str) -> ClipRef: ...
-+    async def load_image_classifier(self, model: str, architecture: str, labels: list[str]) -> ImageClassifierRef: ...
 +    async def load_inpaint_model(self, model: str, architecture: str = 'big-lama') -> InpaintModelRef: ...
 +    async def load_ipadapter(self, model: str, clip_vision: ClipVisionRef) -> Ref: ...
 +    async def load_language_model(self, weights: list[str], family: str, device: str = 'default', cache: bool = True) -> ClipRef: ...
 +    async def load_object_detector(self, model: str) -> ObjectDetectorRef: ...
-+    async def load_onnx_image_classifier(self, model: str, input_layout: str = 'NHWC', channel_order: str = 'BGR', resize_mode: str = 'fit_pad', input_scale: float = 255.0, pad_color: tuple[float, float, float] = (1.0, 1.0, 1.0), mean: tuple[float, float, float] = (0.0, 0.0, 0.0), std: tuple[float, float, float] = (1.0, 1.0, 1.0), activation: str = 'identity', resize_filter: str = 'lanczos') -> ImageClassifierRef: ...
 +    async def load_powerpaint(self, model: str, base_clip: str, powerpaint_clip: str, dtype: str = 'float16') -> PowerPaintRef: ...
 +    async def load_sam(self, model: str, architecture: str = 'vit_b', device_mode: str = 'AUTO') -> SamModelRef: ...
-+    async def load_segformer(self, model: str, variant: str, num_labels: int) -> SemanticSegmentationRef: ...
 +    async def load_text_encoder(self, model: str, model_type: str, device: str = 'default') -> ClipRef: ...
-+    async def load_transparent_vae_decoder(self, model: str, family: str) -> TransparentVaeDecoderRef: ...
 +    async def load_upscale_model(self, name: str) -> UpscaleModelRef: ...
 +    async def load_vae(self, name: str, device: str = 'default', weight_dtype: str = 'default') -> VaeRef: ...
 +    async def memory_cleanup(self, empty_cache: bool = True, collect_cycles: bool = True, unload_all_models: bool = False) -> tuple[int, int]: ...
@@ -63240,12 +63778,6 @@
 +class TimestepKeyframeRef(_TypedRef):
 +    """Opaque Advanced-ControlNet timestep-keyframe schedule."""
 +    KIND: Any = ...
-+
-+class TransparentVaeDecoderRef(_TypedRef):
-+    """Opaque canonical decoder for Layer Diffusion transparency weights."""
-+    KIND: Any = ...
-+    # Return a consistent RGBA batch and decoded alpha masks.
-+    async def decode(self, latent: LatentRef, image: ImageRef, frames: int = 1, sub_batch_size: int = 16) -> tuple[ImageRef, MaskRef]: ...
 +
 +class WeightDiffCursorRef(_TypedRef):
 +    """Execution-scoped iterator over host-owned model weight differences."""
@@ -128756,16 +129288,3 @@
 +  }
 +]
 \ No newline at end of file
---- /dev/null
-+++ b/v2/wildcards/example.txt
-@@ -0,0 +1,10 @@
-+blue
-+red
-+yellow
-+green
-+brown
-+pink
-+purple
-+orange
-+black
-+white

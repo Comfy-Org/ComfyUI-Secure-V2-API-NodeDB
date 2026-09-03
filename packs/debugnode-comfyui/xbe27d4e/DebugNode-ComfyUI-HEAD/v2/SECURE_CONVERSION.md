@@ -20,7 +20,7 @@
 
 ## Frozen public artifacts
 
-- `comfy-api.pyi`: SHA-256 `e3d18332e216894bbd5f2116a3adb184efac273f235d91da6a20dff924d610f1` (57,021 bytes; 1,040 lines).
+- `comfy-api.pyi`: SHA-256 `5c94bedf783e9e92971d0369fabc23b10d6f7169fc86fecdee64a3607d9f3142` (57,021 bytes; 1,040 lines).
 - `comfy-api.d.ts`: SHA-256 `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`.
 - The Python stub contains the frozen bounded `Ref.describe` contract used by this release.
 
