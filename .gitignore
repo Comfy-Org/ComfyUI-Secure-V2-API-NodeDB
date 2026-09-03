@@ -4,8 +4,8 @@
 # Nothing under packs/ is safe to assume is junk.
 #
 # Deliberately NOT ignored, though they are usual entries elsewhere:
-#   dist/, scripts/  declared as `WEB_DIRECTORY` by four packs, which serve
-#                    their frontend JS from them
+#   scripts/         declared as `WEB_DIRECTORY` by two packs, which serve
+#                    their frontend JS from it
 #   .vscode/,        shipped by four packs; two of those live inside a `v2`
 #   .idea/           tree, so the patch manifests count them
 #   build/           absent today, and the same risk if a pack adopts it
@@ -27,3 +27,13 @@ __pycache__/
 .ruff_cache/
 .eslintcache
 *.tsbuildinfo
+
+# Excluded when the manifests were generated, so the snapshots they enumerate
+# do not contain it. Two packs declare `WEB_DIRECTORY = "./dist"` and serve
+# frontend JS from it, but that JS is a build product of sources the snapshot
+# already has, and adding it changes the file counts the patch pairs pin.
+dist/
+node_modules/
+.venv/
+*.egg-info/
+out/
