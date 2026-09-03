@@ -87,14 +87,15 @@ async def _entry(ctx: Any, value: Any) -> _Entry:
     size = await ctx.assets.size(asset)
     if not 1 <= size <= _MAX_WEIGHT_BYTES:
         raise ValueError("ONNX detector weight size is outside the safe range")
-    data = b"".join(
+    chunks = [
         await ctx.assets.read_range(
             asset,
             offset=offset,
             length=min(_READ_CHUNK_BYTES, size - offset),
         )
         for offset in range(0, size, _READ_CHUNK_BYTES)
-    )
+    ]
+    data = b"".join(chunks)
     loaded = await asyncio.to_thread(_build, data)
     while len(_CACHE) >= _MAX_CACHED:
         _CACHE.popitem(last=False)
