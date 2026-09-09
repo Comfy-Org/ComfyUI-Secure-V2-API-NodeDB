@@ -6,14 +6,14 @@ let catalogue;
 async function wildcards() {
   if (catalogue) return catalogue;
   try {
-    const response = await comfy.backend.fetch('/impact/wildcards/list');
+    const response = await comfy.backend.ownFetch('/wildcards');
     const value = await response.json();
     const source = Array.isArray(value) ? value : value?.data ?? value?.list ?? [];
     catalogue = Array.isArray(source)
       ? source.map(String).filter((item) => item.length <= 1024).slice(0, 4096)
       : [];
   } catch (error) {
-    console.warn('[vsLinx] Impact wildcard catalogue is unavailable', error);
+    console.warn('[vsLinx] wildcard catalogue is unavailable', error);
     catalogue = [];
   }
   return catalogue;

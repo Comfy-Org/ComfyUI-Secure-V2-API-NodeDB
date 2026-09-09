@@ -62,7 +62,8 @@ comfy.defs.extend(/./, (b) => {
 						const url = new URL(src, location.href);
 						const model = loader.widgets.at(0).getValue();
 						comfy.backend
-							.fetch("/pysssss/save/" + encodeRFC3986URIComponent(`${getType(loader)}/${model}`), {
+							.ownFetch(`/preview?type=${encodeURIComponent(getType(loader))}` +
+								`&name=${encodeURIComponent(model)}`, {
 								method: "POST",
 								body: JSON.stringify({
 									filename: url.searchParams.get("filename"),
@@ -105,9 +106,10 @@ comfy.defs.extend([CHECKPOINT_LOADER, LORA_LOADER], (b) => {
 		node.widgets.get("prompt").setHidden(true);
 		let exampleEl;
 
-		const get = async (route, suffix) => {
-			const url = encodeRFC3986URIComponent(`${getType(node)}${suffix || ""}`);
-			return await comfy.backend.fetch(`/pysssss/${route}/${url}`);
+		const examplesFor = async (name) => {
+			const query = `type=${encodeURIComponent(getType(node))}` +
+				`&name=${encodeURIComponent(name || "")}`;
+			return await comfy.backend.ownFetch(`/examples?${query}`);
 		};
 
 		const getExample = async () => {
@@ -123,13 +125,7 @@ comfy.defs.extend([CHECKPOINT_LOADER, LORA_LOADER], (b) => {
 			const v = node.widgets.at(0).getValue();
 			const pos = v.lastIndexOf(".");
 			const name = v.substr(0, pos);
-			let exampleName = exampleList.getValue();
-			let viewPath = `/${name}`;
-			if (exampleName === "notes") {
-				viewPath += ".txt";
-			} else {
-				viewPath += `/${exampleName}`;
-			}
+			const exampleName = exampleList.getValue();
 			// Mounted before the fetch, not after: two overlapping selections would
 			// both find it missing and mount twice, which now throws on the name.
 			if (!exampleEl) {
@@ -143,7 +139,11 @@ comfy.defs.extend([CHECKPOINT_LOADER, LORA_LOADER], (b) => {
 					render: (container) => container.append(exampleEl),
 				});
 			}
-			const example = await (await get("view", viewPath)).text();
+			const saved = await (await examplesFor(name)).json();
+			const match = Array.isArray(saved)
+				? saved.find((item) => item && item.name === exampleName)
+				: null;
+			const example = match ? String(match.example ?? "") : "";
 			exampleEl.value = example;
 			// The old code added a SECOND widget also named "prompt", which won the
 			// name lookup while the prompt was built and so carried the example text
@@ -163,7 +163,10 @@ comfy.defs.extend([CHECKPOINT_LOADER, LORA_LOADER], (b) => {
 			let examples = [];
 			if (node.widgets.at(0).getValue()) {
 				try {
-					examples = await (await get("examples", `/${node.widgets.at(0).getValue()}`)).json();
+					const saved = await (await examplesFor(node.widgets.at(0).getValue())).json();
+					examples = Array.isArray(saved)
+						? saved.map((item) => item && item.name).filter(Boolean)
+						: [];
 				} catch (error) {}
 			}
 			const values = ["[none]", ...examples];

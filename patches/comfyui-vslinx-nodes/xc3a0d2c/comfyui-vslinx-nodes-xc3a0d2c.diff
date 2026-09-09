@@ -7277,6 +7277,34 @@
 +
 +__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 --- /dev/null
++++ b/v2/_secure_routes.py
+@@ -0,0 +1,25 @@
++"""The wildcard names this pack's multiline text widget offers.
++
++The legacy widget read Impact Pack's process-global catalogue over that pack's
++own HTTP route. One confined pack cannot reach into another, and should not:
++the picker is this pack's affordance, so the list it offers is this pack's
++record. Names live in this pack's storage and the node itself stays a
++passthrough — expansion remains whatever downstream node consumes the text.
++"""
++from comfy_api.latest import sdk
++
++KEY = "vslinx:wildcards"
++MAX_NAMES = 4096
++MAX_NAME_LENGTH = 1024
++
++
++async def list_wildcards(request):
++    import json
++
++    stored = await sdk.ctx().storage.get(KEY)
++    names = stored if isinstance(stored, list) else []
++    bounded = [
++        str(name) for name in names[:MAX_NAMES]
++        if isinstance(name, str) and 0 < len(name) <= MAX_NAME_LENGTH
++    ]
++    return {"body": json.dumps(bounded)}
+--- /dev/null
 +++ b/v2/_secure_runtime.py
 @@ -0,0 +1,207 @@
 +"""Frozen schemas and wire helpers for the pinned vsLinx conversion."""
@@ -12004,7 +12032,7 @@
 +opencv-python-headless
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,4850 @@
+@@ -0,0 +1,4861 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -16847,6 +16875,17 @@
 +      "sdk_refs": true
 +    }
 +  },
++  "routes": [
++    {
++      "handler": "list_wildcards",
++      "method": "get",
++      "module": "_secure_routes",
++      "path": "/wildcards",
++      "permissions": [
++        "storage"
++      ]
++    }
++  ],
 +  "runtime": {
 +    "python": {
 +      "requires": ">=3.13,<3.14",
@@ -16857,7 +16896,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/vslinx_frontend_harness.mjs
-@@ -0,0 +1,394 @@
+@@ -0,0 +1,399 @@
 +import assert from 'node:assert/strict';
 +import fs from 'node:fs';
 +import path from 'node:path';
@@ -17078,11 +17117,16 @@
 +  backend: {
 +    url(value) { return `managed:${value}`; },
 +    on(name, fn) { backendEvents.set(name, fn); return () => backendEvents.delete(name); },
-+    async fetch(route, options = {}) {
-+      backendCalls.push([route, options]);
-+      if (route === '/impact/wildcards/list') {
++    ownUrl(value) { return `managed:own${value}`; },
++    async ownFetch(route, options = {}) {
++      backendCalls.push([`own:${route}`, options]);
++      if (route.startsWith('/wildcards')) {
 +        return { ok: true, async json() { return ['__animal__', '__style__']; } };
 +      }
++      return { ok: true, async json() { return {}; } };
++    },
++    async fetch(route, options = {}) {
++      backendCalls.push([route, options]);
 +      if (route.startsWith('/secure-nodes/assets/output')) {
 +        return { ok: true, async json() { return ['folder/last.png', 'old.png']; } };
 +      }
@@ -19799,14 +19843,14 @@
 +async function wildcards() {
 +  if (catalogue) return catalogue;
 +  try {
-+    const response = await comfy.backend.fetch('/impact/wildcards/list');
++    const response = await comfy.backend.ownFetch('/wildcards');
 +    const value = await response.json();
 +    const source = Array.isArray(value) ? value : value?.data ?? value?.list ?? [];
 +    catalogue = Array.isArray(source)
 +      ? source.map(String).filter((item) => item.length <= 1024).slice(0, 4096)
 +      : [];
 +  } catch (error) {
-+    console.warn('[vsLinx] Impact wildcard catalogue is unavailable', error);
++    console.warn('[vsLinx] wildcard catalogue is unavailable', error);
 +    catalogue = [];
 +  }
 +  return catalogue;

@@ -218,11 +218,16 @@ const comfy = {
   backend: {
     url(value) { return `managed:${value}`; },
     on(name, fn) { backendEvents.set(name, fn); return () => backendEvents.delete(name); },
-    async fetch(route, options = {}) {
-      backendCalls.push([route, options]);
-      if (route === '/impact/wildcards/list') {
+    ownUrl(value) { return `managed:own${value}`; },
+    async ownFetch(route, options = {}) {
+      backendCalls.push([`own:${route}`, options]);
+      if (route.startsWith('/wildcards')) {
         return { ok: true, async json() { return ['__animal__', '__style__']; } };
       }
+      return { ok: true, async json() { return {}; } };
+    },
+    async fetch(route, options = {}) {
+      backendCalls.push([route, options]);
       if (route.startsWith('/secure-nodes/assets/output')) {
         return { ok: true, async json() { return ['folder/last.png', 'old.png']; } };
       }

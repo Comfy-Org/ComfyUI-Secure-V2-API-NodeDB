@@ -203,7 +203,8 @@ export class LoraInfoDialog extends ModelInfoDialog {
 			name = prompt("Enter example name", name);
 			if (!name) return;
 
-			await comfy.backend.fetch("/pysssss/examples/" + encodeURIComponent(`${this.type}/${this.name}`), {
+			await comfy.backend.ownFetch(
+				`/examples?type=${encodeURIComponent(this.type)}&name=${encodeURIComponent(this.name)}`, {
 				method: "POST",
 				body: JSON.stringify({
 					name,

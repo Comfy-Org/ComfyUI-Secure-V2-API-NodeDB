@@ -85,7 +85,8 @@ export class ModelInfoDialog extends Dialog {
 	async show(type, value) {
 		this.type = type;
 
-		const req = comfy.backend.fetch("/pysssss/metadata/" + encodeURIComponent(`${type}/${value}`));
+		const req = comfy.backend.ownFetch(
+			`/metadata?type=${encodeURIComponent(type)}&name=${encodeURIComponent(value)}`);
 		this.info = $el("div", { style: { flex: "auto" } });
 		this.img = $el("img", { style: { display: "none" } });
 		this.imgWrapper = $el("div.pysssss-preview", [this.img]);
@@ -186,7 +187,8 @@ export class ModelInfoDialog extends Dialog {
 				if (textarea) {
 					this.customNotes = textarea.value;
 
-					const resp = await comfy.backend.fetch("/pysssss/metadata/notes/" + encodeURIComponent(`${this.type}/${this.name}`), {
+					const resp = await comfy.backend.ownFetch(
+						`/notes?type=${encodeURIComponent(this.type)}&name=${encodeURIComponent(this.name)}`, {
 						method: "POST",
 						body: this.customNotes,
 					});
@@ -336,7 +338,8 @@ export class ModelInfoDialog extends Dialog {
 							}
 
 							// Use as preview
-							await comfy.backend.fetch("/pysssss/save/" + encodeURIComponent(`${this.type}/${this.name}`), {
+							await comfy.backend.ownFetch(
+								`/preview?type=${encodeURIComponent(this.type)}&name=${encodeURIComponent(this.name)}`, {
 								method: "POST",
 								body: JSON.stringify({
 									filename: name,
