@@ -75,7 +75,7 @@ event, and its bounded response route.
 
 ## Frozen API pair
 
-- `comfy-api.pyi`: `9fa75d099086e25a456aad642306fd8d12a5d8f3d1a090b45393018a5b8258a8`
+- `comfy-api.pyi`: `14f884a012bd0faed6bf244352939b2fcaf19be05eb04f235aad4363d28b9ae5`
 - `comfy-api.d.ts`: `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
 
 The TypeScript contract includes D28's `onPromptSerialize` declaration and
