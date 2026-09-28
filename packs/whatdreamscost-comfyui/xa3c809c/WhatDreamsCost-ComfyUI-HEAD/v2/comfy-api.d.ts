@@ -128,32 +128,27 @@ export interface PickedFileData {
   readonly bytes: Uint8Array
 }
 
-export interface FileUploadOptions {
-  /** Optional managed input subfolder; path traversal is rejected. */
-  readonly subfolder?: string
-  readonly signal?: AbortSignal
-  readonly onProgress?: (progress: {
-    readonly loaded: number
-    readonly total: number
-  }) => void
-}
-
-export interface ManagedUpload {
-  readonly name: string
-  readonly subfolder: string
-  /** Managed path relative to the input directory. */
-  readonly path: string
-  readonly type: 'input'
-  readonly mime_type: string
-  readonly size: number
-}
-
 export interface FileDownloadOptions {
   /** Safe basename only. */
   readonly name: string
   readonly mimeType: string
   /** At most 16 MiB. */
   readonly bytes: Uint8Array
+}
+
+export interface FileUploadOptions {
+  readonly subfolder?: string
+  readonly signal?: AbortSignal
+  readonly onProgress?: (progress: { readonly loaded: number; readonly total: number }) => void
+}
+
+export interface ManagedUpload {
+  readonly name: string
+  readonly subfolder: string
+  readonly path: string
+  readonly type: 'input'
+  readonly mime_type: string
+  readonly size: number
 }
 
 export interface FilesHandle {
@@ -163,11 +158,6 @@ export interface FilesHandle {
   pickMany(options: FilePickManyOptions): Promise<PickedFileData[]>
   /** Asks the host to download one bounded in-memory file. */
   download(options: FileDownloadOptions): Promise<void>
-  /**
-   * Uploads a browser-selected file into managed input storage. The host
-   * chunks, retries/cancels, reports progress, and publishes only the complete
-   * file; the pack never receives a filesystem path.
-   */
   upload(file: File, options?: FileUploadOptions): Promise<ManagedUpload>
 }
 
@@ -179,39 +169,30 @@ export interface VideoFrameSample {
   readonly bytes: Uint8Array
 }
 
-export interface SampleVideoFramesOptions {
-  /** Managed input path returned by `files.upload`. */
-  readonly path: string
-  /** 1–120 timestamps, in seconds. */
-  readonly times: readonly number[]
-  readonly maxWidth?: number
-  readonly maxHeight?: number
-  readonly quality?: number
-}
-
-export interface SampledVideo {
-  readonly path: string
-  readonly duration: number
-  readonly width: number
-  readonly height: number
-  readonly frames: readonly VideoFrameSample[]
-}
-
-export interface PreparedAudio {
-  /** Opaque, pack-scoped host handle. */
-  readonly id: string
-  readonly duration: number
-  readonly sampleRate: number
-  readonly channels: number
-  readonly peaks: readonly number[]
-}
-
 export interface MediaHandle {
   readonly video: {
-    sampleFrames(options: SampleVideoFramesOptions): Promise<SampledVideo>
+    sampleFrames(options: {
+      readonly path: string
+      readonly times: readonly number[]
+      readonly maxWidth?: number
+      readonly maxHeight?: number
+      readonly quality?: number
+    }): Promise<{
+      readonly path: string
+      readonly duration: number
+      readonly width: number
+      readonly height: number
+      readonly frames: readonly VideoFrameSample[]
+    }>
   }
   readonly audio: {
-    prepare(options: { readonly path: string; readonly peaks?: number }): Promise<PreparedAudio>
+    prepare(options: { readonly path: string; readonly peaks?: number }): Promise<{
+      readonly id: string
+      readonly duration: number
+      readonly sampleRate: number
+      readonly channels: number
+      readonly peaks: readonly number[]
+    }>
     play(options: {
       readonly id: string
       readonly delay?: number
@@ -223,20 +204,18 @@ export interface MediaHandle {
   }
 }
 
-export interface ClipboardImage {
-  readonly name: string
-  readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
-  readonly bytes: Uint8Array
-}
-
 export interface ClipboardHandle {
-  /** Reads require the `clipboard.read` permission and a recent pack gesture. */
   readText(): Promise<string>
-  readImage(): Promise<ClipboardImage | undefined>
-  /** Writes require the `clipboard.write` permission and a recent pack gesture. */
+  readImage(): Promise<{
+    readonly name: string
+    readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
+    readonly bytes: Uint8Array
+  } | undefined>
   writeText(value: string): Promise<void>
-  writeImage(value: Omit<ClipboardImage, 'name'>): Promise<void>
-  /** Copies a managed input image without exposing or retransmitting its bytes. */
+  writeImage(value: {
+    readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
+    readonly bytes: Uint8Array
+  }): Promise<void>
   writeManagedImage(path: string): Promise<void>
 }
 
@@ -411,9 +390,7 @@ export interface Comfy {
   readonly workflow: WorkflowHandle
   /** Explicit, bounded host file selection, upload, and download. */
   readonly files: FilesHandle
-  /** Host-owned bounded media decode, sampling, and playback. */
   readonly media: MediaHandle
-  /** User-gesture-scoped clipboard access. */
   readonly clipboard: ClipboardHandle
   /** Fixed host cryptographic primitives available to opaque-origin workers. */
   readonly crypto: CryptoHandle
@@ -2865,11 +2842,6 @@ export interface UiHandle {
   addActionBarButton(
     button: ButtonContribution
   ): ChromeItemHandle<ButtonContribution>
-  /**
-   * Mounts a sandbox-rendered interactive panel over the graph viewport.
-   * The host owns placement, focus, stacking and teardown; `render` receives
-   * the same isolated mounted surface as an in-node mounted widget.
-   */
   mountViewportPanel(def: ViewportPanelDef): { remove(): void }
   /**
    * Opens a modal dialog. Returns a handle that closes it again.

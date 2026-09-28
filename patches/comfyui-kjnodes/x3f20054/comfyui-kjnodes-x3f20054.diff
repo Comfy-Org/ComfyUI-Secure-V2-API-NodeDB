@@ -470,7 +470,7 @@
 +]
 --- /dev/null
 +++ b/v2/comfy-api.d.ts
-@@ -0,0 +1,3548 @@
+@@ -0,0 +1,3665 @@
 +/**
 + * The published ComfyUI custom-node API — the complete surface.
 + *
@@ -601,6 +601,26 @@
 +  readonly bytes: Uint8Array
 +}
 +
++export interface FileUploadOptions {
++  /** Optional managed input subfolder; path traversal is rejected. */
++  readonly subfolder?: string
++  readonly signal?: AbortSignal
++  readonly onProgress?: (progress: {
++    readonly loaded: number
++    readonly total: number
++  }) => void
++}
++
++export interface ManagedUpload {
++  readonly name: string
++  readonly subfolder: string
++  /** Managed path relative to the input directory. */
++  readonly path: string
++  readonly type: 'input'
++  readonly mime_type: string
++  readonly size: number
++}
++
 +export interface FileDownloadOptions {
 +  /** Safe basename only. */
 +  readonly name: string
@@ -616,6 +636,81 @@
 +  pickMany(options: FilePickManyOptions): Promise<PickedFileData[]>
 +  /** Asks the host to download one bounded in-memory file. */
 +  download(options: FileDownloadOptions): Promise<void>
++  /**
++   * Uploads a browser-selected file into managed input storage. The host
++   * chunks, retries/cancels, reports progress, and publishes only the complete
++   * file; the pack never receives a filesystem path.
++   */
++  upload(file: File, options?: FileUploadOptions): Promise<ManagedUpload>
++}
++
++export interface VideoFrameSample {
++  readonly time: number
++  readonly type: 'image/jpeg'
++  readonly width: number
++  readonly height: number
++  readonly bytes: Uint8Array
++}
++
++export interface SampleVideoFramesOptions {
++  /** Managed input path returned by `files.upload`. */
++  readonly path: string
++  /** 1–120 timestamps, in seconds. */
++  readonly times: readonly number[]
++  readonly maxWidth?: number
++  readonly maxHeight?: number
++  readonly quality?: number
++}
++
++export interface SampledVideo {
++  readonly path: string
++  readonly duration: number
++  readonly width: number
++  readonly height: number
++  readonly frames: readonly VideoFrameSample[]
++}
++
++export interface PreparedAudio {
++  /** Opaque, pack-scoped host handle. */
++  readonly id: string
++  readonly duration: number
++  readonly sampleRate: number
++  readonly channels: number
++  readonly peaks: readonly number[]
++}
++
++export interface MediaHandle {
++  readonly video: {
++    sampleFrames(options: SampleVideoFramesOptions): Promise<SampledVideo>
++  }
++  readonly audio: {
++    prepare(options: { readonly path: string; readonly peaks?: number }): Promise<PreparedAudio>
++    play(options: {
++      readonly id: string
++      readonly delay?: number
++      readonly offset?: number
++      readonly duration?: number
++    }): Promise<{ readonly id: string }>
++    stop(options?: { readonly id?: string }): Promise<void>
++    release(options: { readonly id: string }): Promise<void>
++  }
++}
++
++export interface ClipboardImage {
++  readonly name: string
++  readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
++  readonly bytes: Uint8Array
++}
++
++export interface ClipboardHandle {
++  /** Reads require the `clipboard.read` permission and a recent pack gesture. */
++  readText(): Promise<string>
++  readImage(): Promise<ClipboardImage | undefined>
++  /** Writes require the `clipboard.write` permission and a recent pack gesture. */
++  writeText(value: string): Promise<void>
++  writeImage(value: Omit<ClipboardImage, 'name'>): Promise<void>
++  /** Copies a managed input image without exposing or retransmitting its bytes. */
++  writeManagedImage(path: string): Promise<void>
 +}
 +
 +// ─── cryptoHandle.ts ─────────────────────────────────────────────
@@ -787,8 +882,12 @@
 +  readonly backend: BackendHandle
 +  /** Loading a parsed workflow into a new active document. */
 +  readonly workflow: WorkflowHandle
-+  /** Explicit, bounded host file selection and download. */
++  /** Explicit, bounded host file selection, upload, and download. */
 +  readonly files: FilesHandle
++  /** Host-owned bounded media decode, sampling, and playback. */
++  readonly media: MediaHandle
++  /** User-gesture-scoped clipboard access. */
++  readonly clipboard: ClipboardHandle
 +  /** Fixed host cryptographic primitives available to opaque-origin workers. */
 +  readonly crypto: CryptoHandle
 +  /** Bounded vendor-specific facilities. */
@@ -3240,6 +3339,12 @@
 +    button: ButtonContribution
 +  ): ChromeItemHandle<ButtonContribution>
 +  /**
++   * Mounts a sandbox-rendered interactive panel over the graph viewport.
++   * The host owns placement, focus, stacking and teardown; `render` receives
++   * the same isolated mounted surface as an in-node mounted widget.
++   */
++  mountViewportPanel(def: ViewportPanelDef): { remove(): void }
++  /**
 +   * Opens a modal dialog. Returns a handle that closes it again.
 +   *
 +   * Replaces `app.ui.dialog` and the `new app.ui.dialog.constructor()` idiom.
@@ -3271,6 +3376,18 @@
 +   * host does use, so a pack keeps the capability and loses only the placement.
 +   */
 +  prompt(def: PromptDef): Promise<string | undefined>
++}
++
++export interface ViewportPanelDef {
++  readonly id: string
++  readonly anchor?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
++  readonly offsetX?: number
++  readonly offsetY?: number
++  readonly width?: number
++  readonly maxHeight?: number
++  readonly ariaLabel?: string
++  render(container: HTMLElement): void
++  destroy?(): void
 +}
 +
 +/** @knipIgnoreUnusedButUsedByCustomNodes */
@@ -4021,7 +4138,7 @@
 +}
 --- /dev/null
 +++ b/v2/comfy-api.pyi
-@@ -0,0 +1,936 @@
+@@ -0,0 +1,945 @@
 +"""The published ComfyUI V2 secure Python API — the complete surface.
 +
 +Generated by comfy_secure_nodes.apistubs from the live public modules.
@@ -4224,12 +4341,13 @@
 +    auth_token_comfy_org: Any = ...
 +    comfy_usage_source: Any = ...
 +    dynprompt: Any = ...
++    execution_list: Any = ...
 +    extra_pnginfo: Any = ...
 +    prompt: Any = ...
 +    unique_id: Any = ...
 +
 +class HiddenHolder:
-+    def __init__(self, unique_id: str, prompt: Any, extra_pnginfo: Any, dynprompt: Any, auth_token_comfy_org: str, api_key_comfy_org: str, comfy_usage_source: str = None, **kwargs): ...
++    def __init__(self, unique_id: str, prompt: Any, extra_pnginfo: Any, dynprompt: Any, auth_token_comfy_org: str, api_key_comfy_org: str, comfy_usage_source: str = None, execution_list: Any = None, **kwargs): ...
 +    @classmethod
 +    def from_dict(cls, d: dict | None): ...
 +    @classmethod
@@ -4395,6 +4513,9 @@
 +class RemoteOptions:
 +    def __init__(self, route: str, refresh_button: bool, control_after_refresh: Literal['first', 'last'] = 'first', timeout: int = None, max_retries: int = None, refresh: int = None): ...
 +    def as_dict(self): ...
++
++class ResolutionPreview(ComfyTypeIO):
++    io_type: Any = ...
 +
 +class SEGS(ComfyTypeIO):
 +    io_type: Any = ...
@@ -4822,8 +4943,12 @@
 +    # Decode image/video latents and flatten video batches to frames.
 +    async def decode_video(self, latent: 'LatentRef', *, tiled: bool = False, tile_size: int = 512, overlap: int = 64, temporal_size: int = 4096, temporal_overlap: int = 16) -> 'ImageRef': ...
 +    async def downscale_index_formula(self) -> Optional[tuple[int, int, int]]: ...
++    # Create the empty audio latent aligned with a video duration.
++    async def empty_audio_latent(self, video_frames: int, frame_rate: float) -> 'LatentRef': ...
 +    # Mirrors ``vae.encode`` exactly. The caller owns any channel slicing.
 +    async def encode(self, image: 'ImageRef') -> 'LatentRef': ...
++    # Encode canonical AUDIO with an audio-capable VAE.
++    async def encode_audio(self, audio: 'AudioRef') -> 'LatentRef': ...
 +    # Run core VAEEncodeForInpaint with a bounded mask grow amount.
 +    async def encode_for_inpaint(self, image: 'ImageRef', mask: 'MaskRef', grow_mask_by: int = 6) -> 'LatentRef': ...
 +    # Run core InpaintModelConditioning without exposing model tensors.
@@ -4880,6 +5005,7 @@
 +    async def load_image(self, ref: AssetRef) -> ImageRef: ...
 +    async def load_latent(self, ref: AssetRef) -> LatentRef: ...
 +    async def load_state_dict(self, ref: AssetRef, return_metadata: bool = False) -> Any: ...
++    async def metadata(self, ref: AssetRef) -> dict[str, str]: ...
 +    async def path(self, ref: AssetRef) -> str: ...
 +    async def read_bytes(self, ref: AssetRef) -> bytes: ...
 +    async def read_range(self, ref: AssetRef, offset: int = 0, length: int = 8388608) -> bytes: ...
