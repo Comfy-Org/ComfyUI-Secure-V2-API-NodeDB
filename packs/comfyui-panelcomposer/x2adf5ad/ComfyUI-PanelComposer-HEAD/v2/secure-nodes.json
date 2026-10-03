@@ -1,0 +1,937 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ListGetItem": {
+      "class": "ListGetItem",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes.list_utils",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "utils/list",
+          "description": "",
+          "display_name": "List Get Item",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ListGetItem",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "list_or_tuple",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "index",
+              "lazy": null,
+              "max": 1000000,
+              "min": -1000000,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "item",
+              "id": "item",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "PanelCompositor": {
+      "class": "PanelCompositor",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes.panel_compositor",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "PanelComposer/Compositing",
+          "description": "",
+          "display_name": "Panel Compositor (PanelComposer)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": true,
+          "is_output_node": false,
+          "node_id": "PanelCompositor",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "layout_json",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "canvas_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "fixed_preset",
+                "fixed_custom",
+                "scale_to_input"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "aspect_ratio",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "1:1 (Square)",
+                "9:7",
+                "4:3 (Standard)",
+                "A4",
+                "19:13",
+                "3:2 (Classic Photo)",
+                "7:4",
+                "16:9 (Widescreen)",
+                "21:9 (Ultrawide)",
+                "12:5 (Cinemascope)"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "fixed_preset_size",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "1080p",
+                "2K",
+                "4K"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "fixed_custom_megapixels",
+              "lazy": null,
+              "max": 64.0,
+              "min": 0.1,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "page_orientation",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "portrait",
+                "landscape"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scale_to_input_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "largest",
+                "smallest"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "fit_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "cover",
+                "contain",
+                "stretch",
+                "fit_to_shape"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "cover: fill panel, crop overflow. contain: fit inside panel, pad the rest. stretch: fill panel exactly, ignore aspect ratio. fit_to_shape: warp image to match non-rectangular panels (EXPERIMENTAL \u2014 only the built-in presets are verified; check the result on custom/drawn shapes).",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "lanczos",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scale_algo",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "nearest",
+                "bilinear",
+                "bicubic",
+                "lanczos"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 6,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "gutter_px",
+              "lazy": null,
+              "max": 256,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "#000000",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "gutter_color",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "page_image",
+              "id": "page_image",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "PanelLayoutProvider": {
+      "class": "PanelLayoutProvider",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "nodes.panel_layout_provider",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "PanelComposer/Layout",
+          "description": "",
+          "display_name": "Panel Layout Provider (PanelComposer)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "PanelLayoutProvider",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "layout_preset",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Single / Full Page",
+                "Splits / Two Panels (Stacked)",
+                "Splits / Two Panels (Side by Side)",
+                "Splits / Two on Top + One Below",
+                "Grids / 2x2 Grid",
+                "Diagonal / Two Panel Diagonal",
+                "Diagonal / Three Panel Cascade",
+                "Wedge & Notch / Wedge Top + Notched Bottom",
+                "Inset & Concave / L-Shape + Corner Inset",
+                "Floating / Two Floating Panels",
+                "Floating / Three Floating Panels",
+                "Grids / 6-Panel Grid (3x2)",
+                "Grids / 6-Panel Grid (2x3)",
+                "Grids / 9-Panel Grid (3x3)",
+                "Grids / 8-Panel Grid (4x2)",
+                "Strips / 4 Vertical Strips",
+                "Strips / 5 Vertical Strips",
+                "Strips / 3 Horizontal Strips",
+                "Strips / 4 Horizontal Strips",
+                "Splits / Tall Left + Two Stacked Right",
+                "Splits / Tall Right + Two Stacked Left",
+                "Splits / Large Top-Left + 3 Small",
+                "Splits / Wide Top + 2x2 Below",
+                "Splits / Wide Top + Wide Bottom (uneven)",
+                "Splits / One on Top + Two Below (v2)",
+                "Diagonal / Steep Diagonal Split",
+                "Diagonal / Shallow Diagonal Split",
+                "Diagonal / Four-Panel Slanted Cascade",
+                "Diagonal / Corner-Sliced Panel Pair",
+                "Wedge / Full Top + Converging Wedge Below",
+                "Wedge / Tapering Wedge Bottom, One Above",
+                "Wedge / Wedge Intruding From Side",
+                "Floating / 4 Floating Panels (Webtoon)",
+                "Floating / 5 Floating Panels Zigzag",
+                "Floating / Floating Diagonal Stack",
+                "Concave / Reverse L Wrapping Inset",
+                "Concave / T-Shape (Wide Top + Center Column)",
+                "Concave / Plus-Shape Center Inset",
+                "Concave / Full Page With Two Corner Insets",
+                "Cascade / 4-Panel Descending Cascade",
+                "Cascade / 5-Panel Action Cascade",
+                "Cascade / Staircase 4-Panel Descent",
+                "Splash / Full Splash + Corner Notch",
+                "Splash / Splash Top + Thin Strip Bottom",
+                "Grids / 7-Panel Mosaic"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "reading_order",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "left_to_right",
+                "right_to_left"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "canvas_rotation",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "0",
+                "90",
+                "180",
+                "270"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "aspect_ratio",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "1:1 (Square)",
+                "9:7",
+                "4:3 (Standard)",
+                "A4",
+                "19:13",
+                "3:2 (Classic Photo)",
+                "7:4",
+                "16:9 (Widescreen)",
+                "21:9 (Ultrawide)",
+                "12:5 (Cinemascope)"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "page_orientation",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "portrait",
+                "landscape"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "canvas_size_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "fixed_preset",
+                "fixed_custom"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "fixed_preset_size",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "1080p",
+                "2K",
+                "4K"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 2.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "fixed_custom_megapixels",
+              "lazy": null,
+              "max": 64.0,
+              "min": 0.1,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "megapixels",
+              "lazy": null,
+              "max": 16.0,
+              "min": 0.01,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "multiple",
+              "lazy": null,
+              "max": 256,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "layout_json",
+              "id": "layout_json",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "panel_dimensions",
+              "id": "panel_dimensions",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "PANEL_DIMENSIONS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "area_image",
+              "id": "area_image",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "area_colors",
+              "id": "area_colors",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "COLOR_LIST",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "TupleUnpack": {
+      "class": "TupleUnpack",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes.list_utils",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "utils/list",
+          "description": "",
+          "display_name": "Tuple Unpack",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "TupleUnpack",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "tuple_or_list",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "item_0",
+              "id": "item_0",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "item_1",
+              "id": "item_1",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "item_2",
+              "id": "item_2",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "item_3",
+              "id": "item_3",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web"
+}
