@@ -1,0 +1,179 @@
+// Minimal, self-contained Markdown -> HTML renderer with built-in
+// sanitization. Supports headings, bold/italic, inline code, code blocks,
+// lists, links, blockquotes, and simple tables. Raw HTML, scripts, inline
+// event handlers, and unsafe link schemes are stripped/escaped.
+
+const ESCAPE_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
+}
+
+const SAFE_URL_RE = /^(https?:\/\/|mailto:|#|\.\/|\.\.\/|\/(?!\/))/i;
+
+function safeUrl(url) {
+  const trimmed = (url || "").trim();
+  if (!trimmed) return null;
+  if (SAFE_URL_RE.test(trimmed)) return trimmed;
+  return null;
+}
+
+/** Apply inline formatting (code spans, links, bold, italic) to escaped text. */
+function renderInline(rawText) {
+  // NUL delimits the stash placeholders below. It cannot be typed into a note,
+  // but strip it anyway so nothing can forge a placeholder.
+  let text = escapeHtml(String(rawText).replace(/\u0000/g, ""));
+
+  // Markup that is already finished gets parked here and restored at the very
+  // end, so the emphasis passes below can never re-parse it. Code spans need
+  // that to stay literal; link tags need it because an href containing "_" or
+  // "*" (very common) would otherwise be rewritten into <em> tags.
+  const stashed = [];
+  const stash = (html) => `\u0000${stashed.push(html) - 1}\u0000`;
+
+  // Code spans first, so a [link](x) written inside backticks stays literal.
+  text = text.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${code}</code>`));
+
+  // Links: [text](url). Only the opening tag is stashed — the label stays in the
+  // stream so **bold** and _italic_ still work inside link text.
+  text = text.replace(/\[([^\[\]]+)\]\(([^()\s]+)\)/g, (whole, label, url) => {
+    const href = safeUrl(url);
+    if (!href) return label;
+    const external = /^https?:\/\//i.test(href);
+    const extraAttrs = external ? ' target="_blank" rel="noopener noreferrer"' : "";
+    return `${stash(`<a href="${href}"${extraAttrs}>`)}${label}</a>`;
+  });
+
+  // Bold: **text** or __text__
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+
+  // Italic: *text* or _text_
+  text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  text = text.replace(/_([^_]+)_/g, "<em>$1</em>");
+
+  // Stashed markup holds no placeholders of its own, so one pass restores all.
+  return text.replace(/\u0000(\d+)\u0000/g, (_, idx) => stashed[Number(idx)]);
+}
+
+const HEADING_RE = /^(#{1,6})\s+(.*)$/;
+const UL_RE = /^\s*[-*+]\s+(.*)$/;
+const OL_RE = /^\s*\d+[.)]\s+(.*)$/;
+const QUOTE_RE = /^\s*>\s?(.*)$/;
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
+
+function splitTableRow(line) {
+  let trimmed = line.trim();
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+export function renderMarkdown(source) {
+  const lines = (source || "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // Fenced code blocks
+    const fenceMatch = line.match(/^\s*```/);
+    if (fenceMatch) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].match(/^\s*```/)) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing fence
+      html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    // Headings
+    const headingMatch = line.match(HEADING_RE);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderInline(headingMatch[2])}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    // Tables: a row line followed by a separator row
+    if (line.includes("|") && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1])) {
+      const headerCells = splitTableRow(line);
+      i += 2;
+      const bodyRows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        bodyRows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      let table = "<table><thead><tr>";
+      table += headerCells.map((c) => `<th>${renderInline(c)}</th>`).join("");
+      table += "</tr></thead><tbody>";
+      for (const row of bodyRows) {
+        table += "<tr>" + row.map((c) => `<td>${renderInline(c)}</td>`).join("") + "</tr>";
+      }
+      table += "</tbody></table>";
+      html.push(table);
+      continue;
+    }
+
+    // Blockquotes
+    if (QUOTE_RE.test(line)) {
+      const quoteLines = [];
+      while (i < lines.length && QUOTE_RE.test(lines[i])) {
+        quoteLines.push(lines[i].match(QUOTE_RE)[1]);
+        i++;
+      }
+      html.push(`<blockquote><p>${renderInline(quoteLines.join(" "))}</p></blockquote>`);
+      continue;
+    }
+
+    // Unordered lists
+    if (UL_RE.test(line)) {
+      const items = [];
+      while (i < lines.length && UL_RE.test(lines[i])) {
+        items.push(`<li>${renderInline(lines[i].match(UL_RE)[1])}</li>`);
+        i++;
+      }
+      html.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    // Ordered lists
+    if (OL_RE.test(line)) {
+      const items = [];
+      while (i < lines.length && OL_RE.test(lines[i])) {
+        items.push(`<li>${renderInline(lines[i].match(OL_RE)[1])}</li>`);
+        i++;
+      }
+      html.push(`<ol>${items.join("")}</ol>`);
+      continue;
+    }
+
+    // Paragraph: collect consecutive non-blank, non-special lines
+    const paraLines = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !lines[i].match(/^\s*```/) &&
+      !HEADING_RE.test(lines[i]) &&
+      !UL_RE.test(lines[i]) &&
+      !OL_RE.test(lines[i]) &&
+      !QUOTE_RE.test(lines[i])
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    html.push(`<p>${renderInline(paraLines.join(" "))}</p>`);
+  }
+
+  return html.join("\n");
+}

@@ -1,0 +1,500 @@
+// Top-level controller for the Workflow Vault modal: owns state, view
+// routing, and the unsaved-changes guard. Views render themselves via
+// controller.render() and call back into controller methods for navigation.
+
+import { VaultAPI } from "./vault_api.js";
+import { el, clear, confirmDialog, saveDiscardCancelDialog, showToast, applyAccentColor, closeMenu } from "./vault_dom.js";
+import { renderLoading, renderInitView, renderTopbar, renderGridBody } from "./vault_modal.js";
+import { renderDetailView, openCurrentVersion } from "./vault_detail.js";
+import { renderWizard } from "./vault_wizard.js";
+import { renderGlobalSettings } from "./vault_global_settings.js";
+import { readWindowSizeHint, saveWindowSizeHint, isWindowSize } from "./vault_window_size.js";
+import { isTypingTarget, showShortcutsDialog } from "./vault_shortcuts.js";
+
+const DEFAULT_FILTERS = () => ({ search: "", status: null, favoritesOnly: false, showArchived: undefined, generationType: null, tags: [] });
+
+export class VaultApp {
+  constructor() {
+    this.overlay = null;
+    this.state = null;
+    this.view = "grid"; // grid | detail | wizard | settings
+    this.selectedEntryId = null;
+    this.selectedTab = "overview";
+    this.settingsSection = "info"; // remembered tab within Vault Settings
+    this.filters = DEFAULT_FILTERS();
+    this.ui = {}; // transient view state that isn't a filter (e.g. tag-search query)
+    this.isDirty = false;
+    this.dirtySaveHandler = null;
+    this.dirtyDiscardHandler = null;
+    this.dirtyDialogOptions = null;
+    this.wizardOptions = null;
+    this.windowSize = readWindowSizeHint(); // replaced by the vault's own setting once loaded
+    this.resumePlace = null; // where to land on the next open() (set by close({ keepPlace }))
+    this._onKeyDown = this._onKeyDown.bind(this);
+  }
+
+  async open(options = {}) {
+    if (!this.overlay) {
+      this.overlay = el("div", { className: "wv-overlay wv-overlay-main" });
+      this.overlay.addEventListener("mousedown", (e) => {
+        if (e.target === this.overlay) this.requestClose();
+      });
+      document.addEventListener("keydown", this._onKeyDown);
+      document.body.appendChild(this.overlay);
+    }
+    this.render();
+    await this.loadState();
+    this.ui.animateEnter = true;
+    if (options.openWizard) {
+      this.wizardOptions = options.wizardOptions || {};
+      this.view = "wizard";
+    } else if (this.resumePlace && this.getEntry(this.resumePlace.entryId)) {
+      this.selectedEntryId = this.resumePlace.entryId;
+      this.selectedTab = this.resumePlace.tab;
+      this.view = "detail";
+    }
+    this.resumePlace = null;
+    this.render();
+    // Move focus into the dialog unless a view already claimed it (the init
+    // screen and the search box focus themselves).
+    if (this.overlay && !this.overlay.contains(document.activeElement)) {
+      this.overlay.querySelector(".wv-modal")?.focus();
+    }
+  }
+
+  _onKeyDown(e) {
+    // The vault sits on top of ComfyUI, whose own single-key shortcuts (n opens
+    // the node library, m the models, w the workflows, ...) would otherwise fire
+    // behind the overlay. Listeners on this same document still run, and ComfyUI's
+    // window-level listener never sees the event.
+    e.stopPropagation();
+    if (document.querySelector(".wv-overlay-dialog")) return;
+    if (e.key === "Escape") {
+      this.requestClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      this._trapFocus(e);
+      return;
+    }
+    this._onShortcut(e);
+  }
+
+  // Single-key shortcuts. Never while typing, never with a modifier (those belong
+  // to the browser and to paste/copy handlers), and never while a menu is open.
+  _onShortcut(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+    if (document.querySelector(".wv-menu")) return;
+    const typing = isTypingTarget(e.target);
+
+    // From the search box, Down hops into the results.
+    if (typing && e.key === "ArrowDown" && e.target.classList.contains("wv-search")) {
+      if (this._focusCard(0)) e.preventDefault();
+      return;
+    }
+    if (typing) return;
+
+    // "?" is Shift+/ — some keyboard layouts and input tools report the slash.
+    if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+      e.preventDefault();
+      showShortcutsDialog();
+      return;
+    }
+    if (this.view !== "grid" || !this.state?.initialized) return;
+
+    switch (e.key) {
+      case "/":
+        e.preventDefault();
+        this.overlay?.querySelector(".wv-search")?.focus();
+        break;
+      case "n":
+      case "N":
+        e.preventDefault();
+        this.openWizard({ mode: "full" });
+        break;
+      case "o":
+      case "O": {
+        const entry = this.getEntry(document.activeElement?.closest?.(".wv-card")?.dataset.entryId);
+        if (entry) {
+          e.preventDefault();
+          openCurrentVersion(this, entry);
+        }
+        break;
+      }
+      case "ArrowLeft":
+      case "ArrowRight":
+      case "ArrowUp":
+      case "ArrowDown":
+      case "Home":
+      case "End":
+        if (this._moveCardFocus(e.key)) e.preventDefault();
+        break;
+    }
+  }
+
+  _cards() {
+    return [...(this.overlay?.querySelectorAll(".wv-card") || [])];
+  }
+
+  _focusCard(index) {
+    const cards = this._cards();
+    const card = cards[Math.max(0, Math.min(index, cards.length - 1))];
+    if (!card) return false;
+    card.focus();
+    card.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+
+  // Arrow keys walk the grid. The column count comes from the layout itself (how
+  // many cards share the first row), so it follows the window width and card size.
+  _moveCardFocus(key) {
+    const cards = this._cards();
+    if (!cards.length) return false;
+    const current = cards.indexOf(document.activeElement?.closest?.(".wv-card"));
+    if (current < 0) return this._focusCard(0); // nothing focused yet: start at the first card
+    const columns = Math.max(1, cards.filter((c) => c.offsetTop === cards[0].offsetTop).length);
+    const target =
+      {
+        ArrowLeft: current - 1,
+        ArrowRight: current + 1,
+        ArrowUp: current - columns,
+        ArrowDown: current + columns,
+        Home: 0,
+        End: cards.length - 1,
+      }[key];
+    // Stay put at the edges rather than wrapping.
+    if (target < 0 || target >= cards.length) return true;
+    return this._focusCard(target);
+  }
+
+  // Keep Tab inside the overlay. Without this the tab order walks straight out
+  // of the modal and into the ComfyUI canvas behind it — controls the user
+  // can't see and shouldn't reach while the vault is open.
+  _trapFocus(e) {
+    if (!this.overlay) return;
+    const candidates = this.overlay.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    // getClientRects() rather than offsetParent: the modal is positioned, and
+    // offsetParent is null for fixed elements even when they're visible.
+    const focusable = [...candidates].filter((node) => node.getClientRects().length > 0);
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!this.overlay.contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  async requestClose() {
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.close();
+  }
+
+  // keepPlace: remember the open entry so the next open() returns to it. Used
+  // after "Open workflow" closes the vault; a plain close starts at the grid.
+  close({ keepPlace = false } = {}) {
+    this.resumePlace =
+      keepPlace && this.view === "detail" && this.selectedEntryId
+        ? { entryId: this.selectedEntryId, tab: this.selectedTab }
+        : null;
+    if (this.overlay) {
+      this.overlay.remove();
+      this.overlay = null;
+    }
+    document.removeEventListener("keydown", this._onKeyDown);
+    closeMenu();
+    this.view = "grid";
+    this.selectedEntryId = null;
+    this.selectedTab = "overview";
+    this.settingsSection = "info";
+    this.ui.sidebarOpen = false;
+    this.isDirty = false;
+    this.dirtySaveHandler = null;
+    this.dirtyDiscardHandler = null;
+    this.dirtyDialogOptions = null;
+    this.wizardOptions = null;
+  }
+
+  async loadState() {
+    try {
+      this.state = await VaultAPI.getState();
+      applyAccentColor(this.state.settings?.accent_color);
+      const savedSize = this.state.settings?.window_size;
+      if (isWindowSize(savedSize)) {
+        this.windowSize = savedSize;
+        saveWindowSizeHint(savedSize);
+      }
+      if (this.state.initialized && this.filters.showArchived === undefined) {
+        this.filters.showArchived = !!this.state.settings?.show_archived;
+      }
+    } catch (e) {
+      showToast(e.message, "error");
+      this.state = {
+        initialized: false,
+        vault_root: null,
+        settings: {},
+        folders: [],
+        entries: [],
+        tags: [],
+      };
+    }
+  }
+
+  async refresh() {
+    await this.loadState();
+    if (this.selectedEntryId && !this.getEntry(this.selectedEntryId)) {
+      this.selectedEntryId = null;
+      this.view = "grid";
+    }
+    this.render();
+  }
+
+  getEntry(entryId) {
+    return (this.state?.entries || []).find((e) => e.id === entryId) || null;
+  }
+
+  async checkDirty() {
+    if (!this.isDirty) return true;
+    const clearDirtyState = () => {
+      this.isDirty = false;
+      this.dirtySaveHandler = null;
+      this.dirtyDiscardHandler = null;
+      this.dirtyDialogOptions = null;
+    };
+    if (this.dirtySaveHandler) {
+      const dialog = this.dirtyDialogOptions || {};
+      const choice = await saveDiscardCancelDialog({
+        title: dialog.title || "Save changes before leaving?",
+        message: dialog.message || "You have unsaved changes.",
+        saveText: dialog.saveText || "Save",
+        discardText: dialog.discardText || "Discard",
+      });
+      if (choice === "cancel") return false;
+      if (choice === "discard") {
+        this.dirtyDiscardHandler?.();
+        clearDirtyState();
+        return true;
+      }
+      try {
+        const saved = await this.dirtySaveHandler();
+        if (saved === false) return false;
+        clearDirtyState();
+        return true;
+      } catch (e) {
+        showToast(e.message, "error");
+        return false;
+      }
+    }
+    const ok = await confirmDialog({
+      title: "Discard unsaved changes?",
+      message: "You have unsaved changes that will be lost if you continue.",
+      confirmText: "Discard changes",
+      danger: true,
+    });
+    if (ok) {
+      this.dirtyDiscardHandler?.();
+      clearDirtyState();
+    }
+    return ok;
+  }
+
+  setDirty(value, options = {}) {
+    this.isDirty = value;
+    if (options.saveHandler !== undefined) {
+      this.dirtySaveHandler = options.saveHandler;
+    }
+    if (options.discardHandler !== undefined) {
+      this.dirtyDiscardHandler = options.discardHandler;
+    }
+    if (options.dialog !== undefined) {
+      this.dirtyDialogOptions = options.dialog;
+    }
+    if (!value) {
+      this.dirtySaveHandler = null;
+      this.dirtyDiscardHandler = null;
+      this.dirtyDialogOptions = null;
+    }
+  }
+
+  async setView(view) {
+    if (this.view === view) return;
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.view = view;
+    this.render();
+  }
+
+  async openEntry(entryId, tab = "overview") {
+    if (this.view === "detail" && this.selectedEntryId === entryId) {
+      this.selectedTab = tab;
+      this.render();
+      return;
+    }
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.selectedEntryId = entryId;
+    this.selectedTab = tab;
+    this.settingsSection = "info";
+    this.ui.sidebarOpen = false;
+    this.view = "detail";
+    this.render();
+  }
+
+  async setTab(tab) {
+    if (this.selectedTab === tab) return;
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.selectedTab = tab;
+    this.render();
+  }
+
+  async backToGrid() {
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.view = "grid";
+    this.selectedEntryId = null;
+    this.render();
+  }
+
+  async openWizard(options = {}) {
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    this.wizardOptions = options;
+    this.view = "wizard";
+    this.render();
+  }
+
+  async openSettings(section) {
+    const proceed = await this.checkDirty();
+    if (!proceed) return;
+    if (section) this.settingsSection = section;
+    this.view = "settings";
+    this.render();
+  }
+
+  _paintWindowSize(size) {
+    const modal = this.overlay?.querySelector(".wv-modal");
+    if (!modal) return;
+    if (size === "auto") delete modal.dataset.size;
+    else modal.dataset.size = size;
+  }
+
+  // Applies instantly and is saved with the vault (no Save button), like the
+  // sort order and card size. Rolls back if the save fails.
+  async setWindowSize(size) {
+    if (!isWindowSize(size) || size === this.windowSize) return;
+    const previous = this.windowSize;
+    this.windowSize = size;
+    this._paintWindowSize(size);
+    try {
+      await VaultAPI.postSettings({ window_size: size });
+      saveWindowSizeHint(size);
+      if (this.state?.settings) this.state.settings.window_size = size;
+    } catch (e) {
+      this.windowSize = previous;
+      this._paintWindowSize(previous);
+      showToast(e.message, "error");
+    }
+  }
+
+  setSidebarOpen(open) {
+    this.ui.sidebarOpen = !!open;
+    this.render();
+  }
+
+  // Drop everything tied to the vault that was showing (filters, selected entry,
+  // a half-built wizard) so nothing from one vault leaks into another. The
+  // caller reloads state afterwards; showArchived is re-read from that
+  // vault's own settings.
+  resetForNewVault() {
+    this.filters = DEFAULT_FILTERS();
+    this.ui = {};
+    this.selectedEntryId = null;
+    this.selectedTab = "overview";
+    this.wizardOptions = null;
+    if (this.view !== "settings") this.view = "grid";
+  }
+
+  async switchProfile(profileId) {
+    if (!profileId || profileId === this.state?.active_profile) return;
+    const proceed = await this.checkDirty();
+    if (!proceed) {
+      this.render(); // put the switcher back on the vault that is still active
+      return;
+    }
+    try {
+      const res = await VaultAPI.activateProfile(profileId);
+      this.resetForNewVault();
+      this.ui.animateEnter = true;
+      await this.refresh();
+      showToast(`Switched to ${res.profile?.name || "vault"}.`, "success");
+    } catch (e) {
+      showToast(e.message, "error");
+      this.render();
+    }
+  }
+
+  render() {
+    if (!this.overlay) return;
+    closeMenu(); // a popover can't outlive the DOM it was anchored to
+
+    const active = document.activeElement;
+    let restoreFocus = null;
+    if (active && active.classList && active.classList.contains("wv-search") && this.overlay.contains(active)) {
+      restoreFocus = { selStart: active.selectionStart, selEnd: active.selectionEnd };
+    }
+
+    clear(this.overlay);
+    // Announced as a modal dialog, and focusable so open() can move focus into
+    // it (aria-modal without that leaves a screen reader outside the dialog).
+    const modal = el("div", {
+      className: "wv-modal",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": "Workflow Vault",
+      tabindex: "-1",
+    });
+    if (this.windowSize !== "auto") modal.dataset.size = this.windowSize;
+
+    if (!this.state) {
+      modal.appendChild(renderLoading());
+    } else if (!this.state.initialized) {
+      modal.appendChild(renderInitView(this));
+    } else if (this.view === "detail" && this.getEntry(this.selectedEntryId)) {
+      modal.appendChild(renderDetailView(this));
+    } else if (this.view === "wizard") {
+      modal.appendChild(renderWizard(this));
+    } else if (this.view === "settings") {
+      modal.appendChild(renderGlobalSettings(this));
+    } else {
+      modal.appendChild(renderTopbar(this));
+      modal.appendChild(renderGridBody(this));
+    }
+
+    this.overlay.appendChild(modal);
+
+    if (restoreFocus) {
+      const input = this.overlay.querySelector(".wv-search");
+      if (input) {
+        input.focus();
+        try {
+          input.setSelectionRange(restoreFocus.selStart, restoreFocus.selEnd);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+
+export const vaultApp = new VaultApp();
