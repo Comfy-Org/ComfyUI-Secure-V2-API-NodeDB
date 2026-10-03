@@ -470,7 +470,7 @@
 +]
 --- /dev/null
 +++ b/v2/comfy-api.d.ts
-@@ -0,0 +1,3665 @@
+@@ -0,0 +1,3752 @@
 +/**
 + * The published ComfyUI custom-node API — the complete surface.
 + *
@@ -3345,6 +3345,15 @@
 +   */
 +  mountViewportPanel(def: ViewportPanelDef): { remove(): void }
 +  /**
++   * Mounts a host-owned canvas over the graph viewport.
++   *
++   * Drawing and pointer callbacks run in the pack sandbox. Coordinates are
++   * supplied in both viewport and graph space, so annotations remain attached
++   * to the workflow while the user pans and zooms. The surface passes all
++   * input through until the pack explicitly enables interaction.
++   */
++  mountGraphOverlay(def: GraphOverlayDef): GraphOverlayHandle
++  /**
 +   * Opens a modal dialog. Returns a handle that closes it again.
 +   *
 +   * Replaces `app.ui.dialog` and the `new app.ui.dialog.constructor()` idiom.
@@ -3380,7 +3389,13 @@
 +
 +export interface ViewportPanelDef {
 +  readonly id: string
-+  readonly anchor?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
++  readonly anchor?:
++    | 'top-left'
++    | 'top-center'
++    | 'top-right'
++    | 'bottom-left'
++    | 'bottom-center'
++    | 'bottom-right'
 +  readonly offsetX?: number
 +  readonly offsetY?: number
 +  readonly width?: number
@@ -3388,6 +3403,74 @@
 +  readonly ariaLabel?: string
 +  render(container: HTMLElement): void
 +  destroy?(): void
++}
++
++/** @knipIgnoreUnusedButUsedByCustomNodes */
++export interface GraphOverlayViewport {
++  readonly width: number
++  readonly height: number
++  readonly scale: number
++  readonly offset: Point
++  graphToViewport(point: Point): Point
++  viewportToGraph(point: Point): Point
++}
++
++/** @knipIgnoreUnusedButUsedByCustomNodes */
++export interface GraphOverlayPointerEvent {
++  readonly type: string
++  readonly viewport: Point
++  readonly graph: Point
++  readonly button: number
++  readonly buttons: number
++  readonly pointerId: number
++  readonly pointerType: string
++  readonly altKey: boolean
++  readonly ctrlKey: boolean
++  readonly metaKey: boolean
++  readonly shiftKey: boolean
++  preventDefault(): void
++  stopPropagation(): void
++}
++
++/** @knipIgnoreUnusedButUsedByCustomNodes */
++export interface GraphOverlayKeyEvent {
++  readonly key: string
++  readonly code: string
++  readonly repeat: boolean
++  readonly altKey: boolean
++  readonly ctrlKey: boolean
++  readonly metaKey: boolean
++  readonly shiftKey: boolean
++  preventDefault(): void
++  stopPropagation(): void
++}
++
++export interface GraphOverlayDef {
++  readonly id: string
++  readonly ariaLabel?: string
++  readonly visible?: boolean
++  readonly interactive?: boolean
++  draw(
++    context: CanvasRenderingContext2D,
++    size: readonly [number, number],
++    viewport: GraphOverlayViewport
++  ): void
++  onPointerDown?(event: GraphOverlayPointerEvent): void | Promise<void>
++  onPointerMove?(event: GraphOverlayPointerEvent): void | Promise<void>
++  onPointerUp?(event: GraphOverlayPointerEvent): void | Promise<void>
++  onPointerCancel?(event: GraphOverlayPointerEvent): void | Promise<void>
++  /**
++   * Receives keys while an interactive overlay owns focus. The host prevents
++   * those keys from also reaching global canvas shortcuts.
++   */
++  onKeyDown?(event: GraphOverlayKeyEvent): void | Promise<void>
++}
++
++export interface GraphOverlayHandle {
++  redraw(): void
++  setInteractive(interactive: boolean): void
++  setVisible(visible: boolean): void
++  remove(): void
 +}
 +
 +/** @knipIgnoreUnusedButUsedByCustomNodes */
@@ -4104,6 +4187,10 @@
 +  snapshot(): Promise<WorkflowData>
 +  /** Registers a bounded worker-side parser for host-opened or dropped files. */
 +  registerImporter(importer: WorkflowImporter): Unsubscribe
++  /** Returns pack-owned data stored in the active workflow's `extra` object. */
++  getExtra<T = unknown>(key: string): Promise<T | undefined>
++  /** Writes pack-owned workflow data. Passing `undefined` removes the key. */
++  setExtra(key: string, value: unknown): Promise<void>
 +  /** Expands the active document's `%date:...%` and `%Node.widget%` tokens. */
 +  applyTextReplacements(value: string): string
 +  /**
