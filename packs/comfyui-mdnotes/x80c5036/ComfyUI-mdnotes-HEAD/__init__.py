@@ -1,0 +1,246 @@
+import mimetypes
+import pathlib
+from difflib import SequenceMatcher
+from typing import List, Iterable
+
+import folder_paths
+from aiohttp import ClientSession, web
+from comfy_api.v0_0_2 import ComfyExtension, io
+from server import PromptServer
+
+from .message_types import ContentNPath, ModelInfo
+
+BASE_DIR = pathlib.Path(__file__).parent
+model_base_dir = pathlib.Path(folder_paths.models_dir)
+ckpt_base_dir = model_base_dir / "checkpoints"
+lora_base_dir = model_base_dir / "loras"
+dfm_base_dir = model_base_dir / "diffusion_models"
+unet_base_dir = model_base_dir / "unet"
+
+current_cdn: str = ""
+similarity_threshold: float = 0.5
+
+
+def get_seq_ratios(target: str, candidates: Iterable[str]) -> List[float]:
+    res: List[float] = []
+    matcher = SequenceMatcher(None, target)
+    for candidate in candidates:
+        matcher.set_seq2(candidate)
+        matcher.real_quick_ratio()  # Boost matcher.ratio()
+        res.append(matcher.ratio())
+    return res
+
+
+@PromptServer.instance.routes.post("/mdnotes/current_model")
+async def get_note_by_current_model(request: web.Request) -> web.Response:
+    """
+    负责接收前端传来的当前选择的模型的名称，根据模型类型和路径，
+    查找模型目录下最可能的Markdown文件，返回其内容和相对路径。
+    """
+    print("Current similarity threshold is {}".format(similarity_threshold))
+    data: ModelInfo = await request.json()
+    model_path = data["model_path"]
+    if data["model_type"] == "ckpt":
+        model_paths = [ckpt_base_dir / model_path]
+    elif data["model_type"] == "lora":
+        model_paths = [lora_base_dir / model_path]
+    elif data["model_type"] in "unet":
+        model_paths = [unet_base_dir / model_path, dfm_base_dir / model_path]
+    else:
+        return web.json_response(None, status=400)
+    # 计算模型名称与Markdown文件名的序列相似度
+    for model_path in model_paths:
+        if not model_path.exists():
+            continue
+        model_name = model_path.stem
+        model_dir = model_path.parent
+
+        print("[mdnotes] Finding note for model {}".format(model_name))
+        # similarities 中的元素是一个元组，结构为(相似度, Markdown文件路径)
+        candidates = [x for x in model_dir.iterdir() if x.suffix == ".md"]
+        seq_ratios = get_seq_ratios(model_name, map(lambda x: x.stem, candidates))
+        similarities = zip(seq_ratios, candidates)
+        resp_json: ContentNPath = {"content": "", "rel_file_path": ""}
+        if (
+            len(candidates) == 0
+            or (max_similarity_item := max(similarities, key=lambda x: x[0]))[0]
+            < similarity_threshold
+        ):
+            # 若模型目录下无Markdown文件或现有文件相似度太低，则返回201，表示需要创建
+            print("[mdnotes] No note found for model {}".format(model_name))
+            status_code = 201  # Created
+            resp_json["rel_file_path"] = str(
+                model_dir.relative_to(model_base_dir) / (model_name + ".md")
+            )
+        else:
+            _, most_likely_md_path = max_similarity_item
+            status_code: int = 200
+            rel_file_path_str = str(most_likely_md_path.relative_to(model_base_dir))
+            print("[mdnotes] Found note: {}".format(rel_file_path_str))
+            with open(most_likely_md_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                resp_json["content"] = content
+                resp_json["rel_file_path"] = rel_file_path_str
+        return web.json_response(resp_json, status=status_code)
+    # 遍历所有可能目录仍无法找到笔记，返回404
+    return web.json_response(None, status=404)
+
+
+@PromptServer.instance.routes.post("/mdnotes/save")
+async def save_note(req: web.Request) -> web.Response:
+    """
+    负责接收前端传来的Markdown内容和相对路径，将其保存到模型目录下。
+    """
+    data: ContentNPath = await req.json()
+    content = data["content"]
+    note_path = model_base_dir / data["rel_file_path"]
+    if not note_path.parent.exists():
+        note_path.parent.mkdir(parents=True)
+    with open(note_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return web.json_response({"status": "ok"}, status=200)
+
+
+def get_mime_type(thing: str) -> str:
+    return (mimetypes.guess_type(thing)[0] or "application/octet-stream").split(";", 1)[
+        0
+    ]
+
+
+@PromptServer.instance.routes.get("/mdnotes/dist/{thing:.+}")
+async def get_dist(req: web.Request) -> web.Response:
+    """
+    Vditor专用，从本地或网络上返回其需要的资源文件，以实现带缓存的本地CDN。
+    """
+    global current_cdn
+    thing = req.match_info.get("thing")
+    if not thing:
+        return web.json_response("No `thing` specified", status=404)
+
+    if not (filepath := BASE_DIR / "dist" / thing).exists():
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        print("Downloading {}".format(thing))
+
+        async with ClientSession() as sess:
+            async with sess.get("{}/dist/{}".format(current_cdn, thing)) as r:
+                if r.status != 200:
+                    return web.json_response(None, status=r.status)
+                with open(filepath, "wb") as f:
+                    f.write(await r.content.read())
+
+    with open(filepath, "rb") as f:
+        return web.Response(
+            body=f.read(),
+            content_type=get_mime_type(thing),
+        )
+
+
+@PromptServer.instance.routes.post("/mdnotes/setCDN")
+async def set_cdn(req: web.Request) -> web.Response:
+    """
+    负责接收前端传来的当前选择的CDN地址，将其保存到全局变量中。
+    """
+    global current_cdn
+    cdn_url: str = await req.text()
+    if current_cdn != cdn_url:
+        current_cdn = cdn_url
+        print("Current CDN is {}".format(current_cdn))
+    return web.Response(body="ok".encode("utf-8"))
+
+
+@PromptServer.instance.routes.post("/mdnotes/setSimilarityThreshold")
+async def set_similarity_threshold(req: web.Request) -> web.Response:
+    """
+    负责接收前端传来的当前选择的相似度阈值，将其保存到全局变量中。
+    """
+    global similarity_threshold
+    threshold: float = float(await req.text())
+    if similarity_threshold != threshold:
+        similarity_threshold = threshold
+    return web.Response(body="ok".encode("utf-8"))
+
+
+class CheckpointNameList(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            "mdnotes_ckpt_name_list",
+            "Checkpoint Name List",
+            "mdnotes",
+            [
+                io.Combo.Input(
+                    "ckpt_name",
+                    folder_paths.get_filename_list(ckpt_base_dir.stem),
+                    "Checkpoint Names",
+                    default=0,
+                )
+            ],
+            [io.AnyType.Output("name_of_selected_model", "Checkpoint Name")],
+        )
+
+    @classmethod
+    def execute(cls, **kwargs) -> io.NodeOutput:
+        return io.NodeOutput(kwargs["ckpt_name"])
+
+
+class LoraNameList(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            "mdnotes_lora_name_list",
+            "Lora Name List",
+            "mdnotes",
+            [
+                io.Combo.Input(
+                    "lora_name",
+                    folder_paths.get_filename_list(lora_base_dir.stem),
+                    "Lora Names",
+                    default=0,
+                )
+            ],
+            [io.AnyType.Output("name_of_selected_model", "Lora Name")],
+        )
+
+    @classmethod
+    def execute(cls, **kwargs) -> io.NodeOutput:
+        return io.NodeOutput(kwargs["lora_name"])
+
+
+class DfmNameList(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            "mdnotes_dfm_name_list",
+            "Diffusion Model Name List",
+            "mdnotes",
+            [
+                io.Combo.Input(
+                    "dfm_name",
+                    folder_paths.get_filename_list(dfm_base_dir.stem),
+                    "Diffusion Model Names",
+                    default=0,
+                )
+            ],
+            [io.AnyType.Output("name_of_selected_model", "Diffusion Model Name")],
+        )
+
+    @classmethod
+    def execute(cls, **kwargs) -> io.NodeOutput:
+        return io.NodeOutput(kwargs["dfm_name"])
+
+
+class MdNotesExtension(ComfyExtension):
+
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [CheckpointNameList, LoraNameList, DfmNameList]
+
+
+async def comfy_entrypoint() -> ComfyExtension:
+    return MdNotesExtension()
+
+
+__all__ = ["WEB_DIRECTORY"]
+# __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+# NODE_CLASS_MAPPINGS = dict()
+# NODE_DISPLAY_NAME_MAPPINGS = dict()
+WEB_DIRECTORY = "web"

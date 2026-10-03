@@ -1,0 +1,168 @@
+// vue
+import { createApp } from "vue"
+// primevue
+import PrimeVue from "primevue/config";
+import { definePreset } from "@primeuix/themes"
+import Aura from "@primeuix/themes/aura";
+// shared data types
+import { CDNs, ROUTES, EVENTS, MODEL_TYPES, DetailMessage, postJsonData, comfyApp, OPTIONS, MD_EDITOR_NAMES, postTextData } from "./constants.js";
+import App from "./App.vue"
+import license from "./license.json"
+
+// // extensions/comfyui-mdnotes是固定的，后续内容和/web目录有关
+// const CSS_PATH = "extensions/comfyui-mdnotes/assets/style.css";
+// utils.addStylesheet(CSS_PATH);
+
+// Copied from comfy-frontend-package
+const ComfyUIPreset = definePreset(Aura, {
+    semantic: {
+        /* @ts-ignore */
+        primary: Aura.primitive?.blue || "blue"
+    }
+})
+
+comfyApp.registerExtension({
+    name: "endericedragon.comfyui-mdnotes",
+    settings: [
+        {
+            // @ts-ignore
+            id: OPTIONS.saveOnClose,
+            name: "Save after closing the markdown editor?",
+            type: "boolean",
+            defaultValue: false
+        },
+        {
+            // @ts-ignore
+            id: OPTIONS.editorSwitch,
+            name: "Which markdown editor to use?",
+            type: "combo",
+            defaultValue: MD_EDITOR_NAMES.vditor,
+            options: [
+                { text: "vditor", value: MD_EDITOR_NAMES.vditor },
+            ]
+        },
+        {
+            // @ts-ignore
+            id: OPTIONS.cdnSwitch,
+            name: "Which CDN to use for vditor resources?",
+            type: "combo",
+            defaultValue: CDNs.unpkg,
+            options: [
+                { text: "unpkg", value: CDNs.unpkg },
+                { text: "jsDelivr", value: CDNs.jsDelivr },
+                { text: "npmmirror", value: CDNs.npmmirror },
+            ],
+            tooltip: "Set the CDN used for fetching resources of vditor."
+        },
+        {
+            // @ts-ignore
+            id: OPTIONS.useLocalCDN,
+            name: "Cache vditor resources locally?",
+            type: "boolean",
+            defaultValue: false,
+            tooltip: (
+                "Store resources of vditor locally." +
+                "This is recommended since editor could be loaded much faster."
+            )
+        },
+        {
+            // @ts-ignore
+            id: OPTIONS.similarityThreshold,
+            name: "Similarity threshold for searching markdown file?",
+            type: "slider",
+            attrs: {
+                min: 0.1,
+                max: 1.0,
+                step: 0.1,
+            },
+            defaultValue: 0.5,
+            tooltip: "The threshold to determine whether the name of markdown file and the model are similar.",
+            onChange: (nv, _ov) => {
+                postTextData(comfyApp, ROUTES.setSimilarityThreshold, nv as string);
+            }
+        }
+    ],
+    getNodeMenuItems(node) {
+        // 对于不包含widget的节点，直接忽略
+        if (node.widgets?.length === 0) {
+            return [];
+        }
+        const candidates = node.widgets?.filter(w => !w.hidden && w.value !== "None" && w.name.includes("name"));
+        const nodeWithCkpt = candidates?.find(w => w.name.includes("ckpt"));    // For checkpoints
+        const nodesWithUnet = candidates?.find(w => w.name.includes("unet") || w.name.includes("dfm"));   // For Unet such as Z-Image 
+        const nodesWithLora = candidates?.filter(w => w.name.includes("lora")); // For Loras For Loras
+        let newMenuOptions = [];
+
+        function genCallback(modelPath: string, modelType: MODEL_TYPES) {
+            // 发送当前选中的模型
+            postJsonData(comfyApp, ROUTES.sendCurrentModel, { model_type: modelType, model_path: modelPath })
+                .then(webJsonData => {
+                    if (webJsonData.status_code === 201) {
+                        comfyApp.extensionManager.toast.add({
+                            severity: "warn",
+                            life: 3000,
+                            summary: "MDNotes Warning",
+                            detail: "Found no note, ready to create one",
+                        });
+                    }
+                    const data = webJsonData.data;
+                    const content = data.content;
+                    const relFilePath = data.rel_file_path;
+                    // 触发自定义事件，展示Markdown编辑器窗口并设置内容
+                    window.dispatchEvent(new CustomEvent(EVENTS.showEditor, {
+                        detail: new DetailMessage(content, relFilePath)
+                    }));
+                });
+        }
+
+        // 若组件包含ckpt_name，添加自定义菜单项
+        if (nodeWithCkpt) {
+            // 获取当前选中的模型名称
+            const ckptName = nodeWithCkpt.value as string;
+            // 添加自定义菜单项
+            newMenuOptions.push({
+                content: "✒️Show note of checkpoint",
+                callback: () => {
+                    genCallback(ckptName, MODEL_TYPES.CKPT);
+                }
+            });
+        }
+        // 若组件包含unet_name，添加自定义菜单项
+        if (nodesWithUnet) {
+            // 获取当前选中的模型名称
+            const unetName = nodesWithUnet.value as string;
+            // 添加自定义菜单项
+            newMenuOptions.push({
+                content: "✒️Show note of unet",
+                callback: () => {
+                    genCallback(unetName, MODEL_TYPES.UNET);
+                }
+            });
+        }
+        // 若组件包含lora_name，添加自定义菜单项
+        for (let [idx, each] of nodesWithLora?.entries() || []) {
+            // 获取当前选中的模型名称
+            const loraName = each.value as string;
+            newMenuOptions.push({
+                content: `✒️Show note of lora${idx + 1}`,
+                callback: () => {
+                    genCallback(loraName, MODEL_TYPES.LORA);
+                }
+            });
+        }
+        return newMenuOptions.length ? [null, ...newMenuOptions] : [];
+    },
+    async setup() {
+        let mountPoint = document.createElement("div");
+        mountPoint.id = "mdnotes-ui";
+        document.body.appendChild(mountPoint);
+        createApp(App)
+            .use(PrimeVue, {
+                theme: {
+                    preset: ComfyUIPreset
+                },
+                license: license.myLicense
+            })
+            .mount(mountPoint);
+    }
+});
