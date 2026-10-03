@@ -1,0 +1,716 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ConvertVideoFFmpeg_san4itos": {
+      "class": "ConvertVideoFFmpeg",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "San4itos",
+          "description": "Transcodes an opaque video with the managed server media service.",
+          "display_name": "Convert Video (FFmpeg)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "node_id": "ConvertVideoFFmpeg_san4itos",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "video",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "VIDEO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "VID_conv",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "libx264",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "codec",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "libx264",
+                "libx265",
+                "libvpx-vp9",
+                "libsvtav1",
+                "copy"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "yuv420p",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "pixel_format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "yuv420p",
+                "yuv422p",
+                "yuv444p",
+                "yuv420p10le",
+                "yuv422p10le",
+                "rgb24",
+                "copy"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 23,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crf",
+              "lazy": null,
+              "max": 63,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "mp4",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "mp4",
+                "webm",
+                "mov",
+                "avi",
+                "mkv"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "copy original",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "audio_handling",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "copy original",
+                "replace with new",
+                "remove audio"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "audio",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "AUDIO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "aac",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "audio_codec",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "aac",
+                "mp3",
+                "libopus"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "192k",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "audio_bitrate",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "96k",
+                "128k",
+                "160k",
+                "192k",
+                "256k",
+                "320k"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "-preset medium",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_file_opt",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Secure mode accepts the bounded '-preset <name>' option.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true
+    },
+    "LoadVideoByPath_san4itos": {
+      "class": "LoadVideoByPathSan4itos",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "assets"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "San4itos",
+          "description": "Loads an uploaded video by logical input name. Host filesystem paths are never exposed to the node.",
+          "display_name": "Load Video by Path",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "LoadVideoByPath_san4itos",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "video_file",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "control_after_refresh": "first",
+                  "max_retries": null,
+                  "refresh": null,
+                  "refresh_button": true,
+                  "route": "/secure-nodes/assets/input?kind=video",
+                  "timeout": null
+                }
+              },
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_VIDEO_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "VIDEO",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "SaveFramesToVideoFFmpeg_san4itos": {
+      "class": "SaveFramesToVideoFFmpeg",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "San4itos",
+          "description": "Encodes an image batch with the managed server media service. Secure nodes never receive an FFmpeg executable or output path.",
+          "display_name": "Save Images to Video (FFmpeg)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "node_id": "SaveFramesToVideoFFmpeg_san4itos",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "VID",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 24.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "fps",
+              "lazy": null,
+              "max": 120.0,
+              "min": 1.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 1.0,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "libx264",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "codec",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "libx264",
+                "libx265",
+                "libvpx-vp9",
+                "libsvtav1"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "yuv420p",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "pixel_format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "yuv420p",
+                "yuv422p",
+                "yuv444p",
+                "yuv420p10le",
+                "yuv422p10le",
+                "yuv444p10le",
+                "rgb24"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 23,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crf",
+              "lazy": null,
+              "max": 63,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "mp4",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "mp4",
+                "webm",
+                "mov",
+                "avi",
+                "mkv"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "audio",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "AUDIO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "aac",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "audio_codec",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "aac",
+                "mp3",
+                "libopus",
+                "copy"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "192k",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "audio_bitrate",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "96k",
+                "128k",
+                "160k",
+                "192k",
+                "256k",
+                "320k"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "-preset medium",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_file_opt",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Secure mode accepts the bounded '-preset <name>' option.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
