@@ -34,6 +34,16 @@ export interface BackendHandle {
    */
   assetUrl(route: string): string
   /**
+   * Builds the private URL for a route declared by this Secure Nodes pack.
+   * The route is pack-relative and must start with `/`.
+   */
+  ownUrl(route: string): string
+  /**
+   * Calls a route declared by this Secure Nodes pack with host credentials.
+   * The route is pack-relative and must start with `/`.
+   */
+  ownFetch(route: string, init?: RequestInit): Promise<Response>
+  /**
    * Identifies this frontend connection to a pack's own backend route.
    * Undefined until the backend establishes the connection; do not persist it.
    */
@@ -395,6 +405,8 @@ export interface Comfy {
    * between machines.
    */
   readonly storage: StorageHandle
+  /** Registered model names and bounded adjacent text metadata. */
+  readonly models: ModelsHandle
   /** Bounded, host-sampled hardware metrics. */
   readonly system: SystemHandle
   /** The sanctioned slice of app chrome — sidebar tabs. */
@@ -1604,6 +1616,33 @@ export type NodeMoveSource = (
 export type NodeDragEndSource = (
   onDragEnd: (nodeIds: readonly string[]) => void
 ) => Unsubscribe
+
+// ─── modelsHandle.ts ───────────────────────────────────────────
+
+export type ModelFolder =
+  | 'checkpoints'
+  | 'clip'
+  | 'clip_vision'
+  | 'controlnet'
+  | 'diffusion_models'
+  | 'loras'
+  | 'text_encoders'
+  | 'unet'
+  | 'upscale_models'
+  | 'vae'
+
+export type ModelSidecarSuffix = '.md' | '.txt'
+
+export interface ModelsHandle {
+  /** Lists registered logical names without exposing model paths. */
+  list(folder: ModelFolder): Promise<string[]>
+  /** Reads a bounded UTF-8 sidecar next to a registered model. */
+  readSidecar(
+    folder: ModelFolder,
+    modelName: string,
+    suffix: ModelSidecarSuffix
+  ): Promise<string | undefined>
+}
 
 // ─── nodeChanges.ts ──────────────────────────────────────────────
 
@@ -3715,9 +3754,16 @@ export interface WorkflowImporter {
     | Promise<WorkflowImportResult | null | undefined>
 }
 
+export interface WorkflowOpenOptions {
+  /** Replace the active document, or open a separate workflow tab. */
+  readonly mode?: 'replace' | 'new'
+  /** Display name for a new workflow. It is not a filesystem path. */
+  readonly name?: string
+}
+
 export interface WorkflowHandle {
-  /** Replaces the active document with parsed ComfyUI workflow JSON. */
-  open(data: WorkflowData): Promise<void>
+  /** Opens parsed ComfyUI workflow JSON, replacing the active document by default. */
+  open(data: WorkflowData, options?: WorkflowOpenOptions): Promise<void>
   /** Returns the current saved-format workflow, bounded to 8 MiB. */
   snapshot(): Promise<WorkflowData>
   /** Registers a bounded worker-side parser for host-opened or dropped files. */
