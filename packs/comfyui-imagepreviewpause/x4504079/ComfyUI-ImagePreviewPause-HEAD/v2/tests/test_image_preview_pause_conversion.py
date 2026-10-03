@@ -31,10 +31,10 @@ CORE = pathlib.Path(os.environ.get(
 COMMIT = "450407917c79ea03c80e5ae030d2fcedfa87b501"
 TREE = "14f07d08c8cb01123e203e7b4e7c4bd8191a6fa5"
 COMFY_API_DTS_SHA256 = (
-    "73837d21322bf597dc40a0c9b1b9b0a10ab46bf1849fb4a935380a226b9fc96d"
+    "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
 )
 COMFY_API_PYI_SHA256 = (
-    "7deb60a3226572754969eab9777ad2c2b990285f3a3fb922ad610fdbf1040d38"
+    "aaac189f0c2d52d812d3d637d2a86caa1a2cb3c88f0dee040394cbe443ab210d"
 )
 NODE_IDS = {"ImagePreviewPause"}
 PRISTINE_FILES = {
