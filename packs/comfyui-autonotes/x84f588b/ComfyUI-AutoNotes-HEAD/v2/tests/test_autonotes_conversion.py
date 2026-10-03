@@ -23,7 +23,7 @@ CORE = pathlib.Path(os.environ.get(
     "COMFY_CORE_ROOT", "~/comfy/ComfyUI-secure-nodes"
 )).expanduser().resolve()
 COMMIT = "84f588b3ffd96f299d92b20e94ec66d9eec194ef"
-DTS_SHA256 = "9b66bc80783e3c27e0df35187fed90a1d456e3865061b3289c320077c9004f9b"
+DTS_SHA256 = "dff4f4f47edb41207946fabf117c7a83c84721499b835217832a441cea4b2993"
 PYI_SHA256 = "aaac189f0c2d52d812d3d637d2a86caa1a2cb3c88f0dee040394cbe443ab210d"
 
 for path in (str(REPO), str(BACKEND), str(CORE)):
@@ -137,7 +137,7 @@ def test_manifest_contract_and_static_boundary_are_exact():
     frontend = (V2 / "web" / "autonotes.js").read_text()
     for required in (
         "comfy.storage", "comfy.onSelectionChanged", "comfy.onNodeChanged",
-        "comfy.workflow.name", "comfy.ui.addSidebarTab", "comfy.ui.showDialog",
+        "comfy.workflow.current", "comfy.ui.addSidebarTab", "comfy.ui.showDialog",
     ):
         assert required in frontend
     for forbidden in (

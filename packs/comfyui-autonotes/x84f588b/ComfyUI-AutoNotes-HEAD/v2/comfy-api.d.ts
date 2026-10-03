@@ -10,7 +10,7 @@
 
 // ─── backendHandle.ts ────────────────────────────────────────────
 
-interface BackendHandle {
+export interface BackendHandle {
   /**
    * Absolute URL for a backend route, honouring however the host is served —
    * a base path, a different port, a proxy.
@@ -49,6 +49,22 @@ interface BackendHandle {
    */
   sessionId(): string | undefined
   /**
+   * Fires when {@link sessionId} becomes a different value.
+   *
+   * A pack that keys ephemeral server-side work by session — a scratch
+   * directory, a warmed model, a subscription — needs to know its old key is
+   * dead. The id changes on the first connection and again whenever the socket
+   * reconnects under a new identity, and the work filed under the previous one
+   * is no longer addressable.
+   *
+   * The session is not the user, the workflow or the node. It does not survive
+   * a reload, and storing it in any of those is how a pack ends up reading
+   * another tab's scratch state.
+   */
+  onSessionChanged(
+    listener: (sessionId: string | undefined) => void
+  ): Unsubscribe
+  /**
    * Subscribes to a backend message. The name is whatever the backend emits;
    * `detail` is its payload, unparsed.
    */
@@ -68,7 +84,7 @@ interface BackendHandle {
 
 // ─── chromeContributions.ts ──────────────────────────────────────
 
-interface BadgeContribution {
+export interface BadgeContribution {
   /** Namespaced, e.g. `Crystools.monitor`. Registering the same id twice throws. */
   readonly id: string
   readonly text: string
@@ -80,13 +96,13 @@ interface BadgeContribution {
 }
 
 /** What a pack keeps after contributing something to the chrome. */
-interface ChromeItemHandle<T> {
+export interface ChromeItemHandle<T> {
   /** Changes what is shown. Only the fields given are replaced. */
   update(changes: Partial<Omit<T, 'id'>>): void
   remove(): void
 }
 
-interface ButtonContribution {
+export interface ButtonContribution {
   readonly id: string
   readonly icon: string
   readonly label?: string
@@ -94,22 +110,241 @@ interface ButtonContribution {
   /**
    * The click. The event is passed because packs branch on modifiers — one
    * opens its panel in a sized window on shift-click — and without it that
-   * behaviour has nothing to read. It is absent when something invokes the
-   * button directly rather than by click.
+   * behaviour has nothing to read.
    */
-  run(event?: MouseEvent): void
+  run(event: MouseEvent): void
+}
+
+// ─── boundedFiles.ts ─────────────────────────────────────────────
+
+export interface FilePickOptions {
+  readonly extensions?: readonly string[]
+  readonly mimeTypes?: readonly string[]
+  /** Maximum accepted file size. The host-wide ceiling is 16 MiB. */
+  readonly maxBytes: number
+}
+
+export interface FilePickManyOptions extends FilePickOptions {
+  /** Maximum number of selected files. The host-wide ceiling is 50. */
+  readonly maxFiles: number
+  /** Maximum aggregate payload. The host-wide ceiling is 256 MiB. */
+  readonly maxTotalBytes: number
+}
+
+export interface PickedFileData {
+  /** Basename only; no host path is exposed. */
+  readonly name: string
+  readonly type: string
+  readonly bytes: Uint8Array
+}
+
+export interface FileUploadOptions {
+  /** Optional managed input subfolder; path traversal is rejected. */
+  readonly subfolder?: string
+  readonly signal?: AbortSignal
+  readonly onProgress?: (progress: {
+    readonly loaded: number
+    readonly total: number
+  }) => void
+}
+
+export interface ManagedUpload {
+  readonly name: string
+  readonly subfolder: string
+  /** Managed path relative to the input directory. */
+  readonly path: string
+  readonly type: 'input'
+  readonly mime_type: string
+  readonly size: number
+}
+
+export interface FileDownloadOptions {
+  /** Safe basename only. */
+  readonly name: string
+  readonly mimeType: string
+  /** At most 16 MiB. */
+  readonly bytes: Uint8Array
+}
+
+export interface FilesHandle {
+  /** Opens one explicit host file picker; cancellation resolves undefined. */
+  pick(options: FilePickOptions): Promise<PickedFileData | undefined>
+  /** Opens one bounded multi-file picker; cancellation resolves an empty list. */
+  pickMany(options: FilePickManyOptions): Promise<PickedFileData[]>
+  /** Asks the host to download one bounded in-memory file. */
+  download(options: FileDownloadOptions): Promise<void>
+  /**
+   * Uploads a browser-selected file into managed input storage. The host
+   * chunks, retries/cancels, reports progress, and publishes only the complete
+   * file; the pack never receives a filesystem path.
+   */
+  upload(file: File, options?: FileUploadOptions): Promise<ManagedUpload>
+}
+
+export interface VideoFrameSample {
+  readonly time: number
+  readonly type: 'image/jpeg'
+  readonly width: number
+  readonly height: number
+  readonly bytes: Uint8Array
+}
+
+export interface SampleVideoFramesOptions {
+  /** Managed input path returned by `files.upload`. */
+  readonly path: string
+  /** 1–120 timestamps, in seconds. */
+  readonly times: readonly number[]
+  readonly maxWidth?: number
+  readonly maxHeight?: number
+  readonly quality?: number
+}
+
+export interface SampledVideo {
+  readonly path: string
+  readonly duration: number
+  readonly width: number
+  readonly height: number
+  readonly frames: readonly VideoFrameSample[]
+}
+
+export interface PreparedAudio {
+  /** Opaque, pack-scoped host handle. */
+  readonly id: string
+  readonly duration: number
+  readonly sampleRate: number
+  readonly channels: number
+  readonly peaks: readonly number[]
+}
+
+export interface MediaHandle {
+  readonly video: {
+    sampleFrames(options: SampleVideoFramesOptions): Promise<SampledVideo>
+  }
+  readonly audio: {
+    prepare(options: { readonly path: string; readonly peaks?: number }): Promise<PreparedAudio>
+    play(options: {
+      readonly id: string
+      readonly delay?: number
+      readonly offset?: number
+      readonly duration?: number
+    }): Promise<{ readonly id: string }>
+    stop(options?: { readonly id?: string }): Promise<void>
+    release(options: { readonly id: string }): Promise<void>
+  }
+}
+
+export interface ClipboardImage {
+  readonly name: string
+  readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
+  readonly bytes: Uint8Array
+}
+
+export interface ClipboardHandle {
+  /** Reads require the `clipboard.read` permission and a recent pack gesture. */
+  readText(): Promise<string>
+  readImage(): Promise<ClipboardImage | undefined>
+  /** Writes require the `clipboard.write` permission and a recent pack gesture. */
+  writeText(value: string): Promise<void>
+  writeImage(value: Omit<ClipboardImage, 'name'>): Promise<void>
+  /** Copies a managed input image without exposing or retransmitting its bytes. */
+  writeManagedImage(path: string): Promise<void>
+}
+
+// ─── cryptoHandle.ts ─────────────────────────────────────────────
+
+export interface AesCbcEncryptOptions {
+  readonly key: Uint8Array
+  readonly iv: Uint8Array
+  readonly plaintext: Uint8Array
+}
+
+export interface AesCbcDecryptOptions {
+  readonly key: Uint8Array
+  readonly iv: Uint8Array
+  readonly ciphertext: Uint8Array
+}
+
+export interface HmacSha256Options {
+  readonly key: Uint8Array
+  readonly data: Uint8Array
+}
+
+export interface VerifyHmacSha256Options extends HmacSha256Options {
+  readonly signature: Uint8Array
+}
+
+/** Fixed canonical primitives; no caller-selected algorithms or retained keys. */
+export interface CryptoHandle {
+  aesCbcEncrypt(options: AesCbcEncryptOptions): Promise<Uint8Array>
+  aesCbcDecrypt(options: AesCbcDecryptOptions): Promise<Uint8Array>
+  hmacSha256(options: HmacSha256Options): Promise<Uint8Array>
+  verifyHmacSha256(options: VerifyHmacSha256Options): Promise<boolean>
+}
+
+// ─── integrationsHandle.ts ───────────────────────────────────────
+
+export interface OllamaListModelsOptions {
+  /** Exact loopback Ollama origin or an `ollama://name` admin profile. */
+  readonly endpoint: string
+}
+
+export interface OllamaIntegrationHandle {
+  listModels(options: OllamaListModelsOptions): Promise<string[]>
+}
+
+/** Vendor pass-throughs have a weaker stability promise than generic APIs. */
+export interface IntegrationsHandle {
+  readonly ollama: OllamaIntegrationHandle
 }
 
 // ─── closedProxy.ts ──────────────────────────────────────────────
 
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface PropSpec<TTarget> {
+  get(target: TTarget): unknown
+  set?(target: TTarget, value: unknown): void
+  /** Appended to the error when a pack assigns to a read-only property. */
+  readonlyHint?: string
+}
+
+export interface HandleSpec<TTarget> {
+  /** Used in errors and `Symbol.toStringTag`, e.g. 'node'. */
+  readonly kind: string
+  readonly props: Readonly<Record<string, PropSpec<TTarget>>>
+  readonly methods?: Readonly<
+    Record<string, (target: TTarget, ...args: never[]) => unknown>
+  >
+  /**
+   * Methods that also need the handle's own id.
+   *
+   * A widget target is just the widget: it holds no reference back to its
+   * node, by design, so a method that has to name a sibling cannot find one
+   * from the target alone. Separate from `methods` so the common signature
+   * stays two arguments.
+   */
+  readonly idMethods?: Readonly<
+    Record<string, (target: TTarget, id: string, ...args: never[]) => unknown>
+  >
+  /**
+   * Props that remain readable after deletion. Identity only — an id or type is
+   * still useful for logging and cleanup once the entity is gone.
+   */
+  readonly identityProps?: readonly string[]
+}
+
 /** Present on every handle. Never throws, even when the entity is gone. */
-interface HandleCommon {
+export interface HandleCommon {
   readonly isDeleted: boolean
+}
+
+export interface HandleToken {
+  readonly kind: string
+  readonly id: string
 }
 
 // ─── comfyApi.ts ─────────────────────────────────────────────────
 
-interface Comfy {
+export interface Comfy {
   /**
    * `major.minor`. Prefer `supports()` over comparing this — a capability
    * survives being backported or reordered across minors; a version comparison
@@ -118,20 +353,24 @@ interface Comfy {
   readonly version: string
   /** Breaking-change generation. Incremented only when something is removed. */
   readonly major: number
-  /** Cheap, never throws. The supported way to branch. */
+  /**
+   * Cheap, never throws. The supported way to branch.
+   *
+   * Answers whether this host can do something, under the grant it is running
+   * with. It is not a permission request: asking does not obtain authority, and
+   * a pack never enumerates capabilities to be allowed to run.
+   */
   supports(capability: string): boolean
   /** Asserts a capability, with an actionable error naming it. */
   require(capability: string): void
   /** Every capability this host provides. */
   capabilities(): readonly string[]
   /**
-   * Pins to a specific major, so a pack written against one is not moved onto
-   * the next by a host upgrade.
+   * Pins to a specific major.
    *
-   * A pinned major stays available for as long as it is supported — see
-   * {@link SUPPORTED_MAJORS} — not indefinitely. Withdrawal follows ComfyUI's
-   * phased deprecation, so a pin buys a stable contract across releases rather
-   * than a permanent one.
+   * A major stays available until it is announced for removal and withdrawn
+   * through the normal phased deprecation process, so a pack written against
+   * one keeps working across that period rather than breaking on a release.
    */
   forMajor(major: number): Comfy
 
@@ -172,12 +411,26 @@ interface Comfy {
   readonly system: SystemHandle
   /** The sanctioned slice of app chrome — sidebar tabs. */
   readonly ui: UiHandle
+  /** Host-owned facilities shared by widget implementations. */
+  readonly widgets: WidgetsHandle
+  /** Bounded declarative locale catalogs rendered by host-native i18n. */
+  readonly localization: LocalizationHandle
   /** Commands, their keybindings, and notifications. */
   readonly commands: CommandsHandle
   /** Backend URLs and messages, including a pack's own events. */
   readonly backend: BackendHandle
   /** Loading a parsed workflow into a new active document. */
   readonly workflow: WorkflowHandle
+  /** Explicit, bounded host file selection, upload, and download. */
+  readonly files: FilesHandle
+  /** Host-owned bounded media decode, sampling, and playback. */
+  readonly media: MediaHandle
+  /** User-gesture-scoped clipboard access. */
+  readonly clipboard: ClipboardHandle
+  /** Fixed host cryptographic primitives available to opaque-origin workers. */
+  readonly crypto: CryptoHandle
+  /** Bounded vendor-specific facilities. */
+  readonly integrations: IntegrationsHandle
   /**
    * The editor is already mid-gesture — dragging a link, resizing a node,
    * dragging a widget. A pack running its own pointer gesture must stand down
@@ -259,7 +512,7 @@ interface Comfy {
    */
   onReady(listener: () => void): Unsubscribe
   /** Starting a run, and knowing when one starts. */
-  readonly queue: QueueHandle
+  queue: QueueHandle
   /**
    * The node the backend is executing, or `undefined` between runs.
    *
@@ -279,14 +532,57 @@ interface Comfy {
    * This is `afterConfigureGraph`. Unlike {@link onReady} it fires again for
    * every workflow the user opens, which is what a pack re-attaching itself to
    * the document needs — `onReady` fires once and misses every later open.
+   *
+   * It also fires for undo, redo and a reload of the same document, because a
+   * pack rebuilding state from the graph needs those too. The handle says
+   * which of them happened: an id equal to the one from last time means this
+   * document was rebuilt, not replaced. `undefined` when the host cannot name
+   * a document, as when raw workflow data is loaded with no file behind it.
    */
-  onWorkflowLoaded(listener: () => void): Unsubscribe
+  onWorkflowLoaded(
+    listener: (document: DocumentHandle | undefined) => void
+  ): Unsubscribe
+  /**
+   * A document's editing session began.
+   *
+   * Where per-document state belongs. Fires for a tab opened in the
+   * background too, so a pack that allocates here and releases in
+   * {@link onDocumentClosed} stays balanced however the user moves around.
+   */
+  onDocumentOpened(listener: (document: DocumentHandle) => void): Unsubscribe
+  /**
+   * A document became the one on screen.
+   *
+   * Distinct from opening: the user returning to a tab activates a document
+   * that was already open, and its state is still valid. Anything tied to
+   * *being visible* — a panel, a canvas overlay — belongs here.
+   */
+  onDocumentActivated(listener: (document: DocumentHandle) => void): Unsubscribe
+  /**
+   * A document stopped being the one on screen, but is still open.
+   *
+   * Fires before the next document is activated, so a pack moving something
+   * between them never sees two claiming the screen at once.
+   */
+  onDocumentDeactivated(
+    listener: (document: DocumentHandle) => void
+  ): Unsubscribe
+  /**
+   * A document's editing session ended, however it ended — the user closing
+   * the tab, a temporary workflow being deleted, or the host discarding a
+   * background tab whose file changed on disk.
+   *
+   * Release everything keyed to it. The handle already reports `isDeleted`,
+   * and carries the id so a pack can find what it stored; it will not describe
+   * the document, because there is no longer one to describe.
+   */
+  onDocumentClosed(listener: (document: DocumentHandle) => void): Unsubscribe
 }
 
 // ─── commandsHandle.ts ───────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface KeyCombo {
+export interface KeyCombo {
   readonly key: string
   readonly ctrl?: boolean
   readonly alt?: boolean
@@ -295,7 +591,7 @@ interface KeyCombo {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface CommandDef {
+export interface CommandDef {
   /** Namespaced, e.g. `MyPack.doTheThing`. Shared with core and every pack. */
   readonly id: string
   /**
@@ -320,7 +616,7 @@ interface CommandDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface NotifyDef {
+export interface NotifyDef {
   readonly severity?: 'success' | 'info' | 'warn' | 'error'
   readonly summary: string
   readonly detail?: string
@@ -328,20 +624,9 @@ interface NotifyDef {
   readonly life?: number
 }
 
-/** @knipIgnoreUnusedButUsedByCustomNodes */
-interface PlaySoundDef {
-  /**
-   * A browser-readable audio asset. Sandboxed hosts restrict this to pack files.
-   */
-  readonly src: string
-  /** Range 0–1. Defaults to 1. */
-  readonly volume?: number
-}
-
-interface CommandsHandle {
+export interface CommandsHandle {
   register(def: CommandDef): void
   notify(def: NotifyDef): void
-  playSound(def: PlaySoundDef): Promise<void>
   /**
    * Runs a command the host or another pack registered, by id.
    *
@@ -363,8 +648,10 @@ interface CommandsHandle {
 
 /**
  * The read view of a node definition. Frozen and inert, like every read here.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface NodeDef {
+export interface NodeDef {
   readonly type: string
   readonly title: string
   readonly category: string
@@ -386,7 +673,11 @@ interface NodeDef {
      */
     options: Readonly<Record<string, unknown>>
   }>[]
-  readonly outputs: readonly Readonly<{ name: string; type: string }>[]
+  readonly outputs: readonly Readonly<{
+    name: string
+    type: string
+    tooltip?: string
+  }>[]
   readonly isOutputNode: boolean
   /**
    * The node's `hidden` input declarations, verbatim.
@@ -414,11 +705,13 @@ interface NodeDef {
 /**
  * Node output as it arrives from the backend.
  *
- * `raw` carries everything else verbatim — ADR-NODE-OUTPUTS-0007's passthrough schema
+ * `raw` carries everything else verbatim — ADR 0007's passthrough schema
  * guarantees custom output keys survive, so a pack reading a bespoke key keeps
  * working.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface ExecutionResult {
+export interface ExecutionResult {
   readonly images: readonly Readonly<Record<string, unknown>>[]
   readonly text: readonly string[]
   readonly raw: Readonly<Record<string, unknown>>
@@ -434,13 +727,14 @@ interface ExecutionResult {
  * trust — all to answer "is this frame mine?". Answering it once here removes
  * the global, and with it the mis-attribution when two nodes preview at once.
  */
-interface PreviewFrame {
+export interface PreviewFrame {
   readonly blob: Blob
   /** Object URL for the blob, revoked when the next frame arrives. */
   readonly url: string
 }
 
-interface ConnectionChangeEvent {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface ConnectionChangeEvent {
   readonly side: 'input' | 'output'
   readonly index: number
   readonly connected: boolean
@@ -462,16 +756,19 @@ interface ConnectionChangeEvent {
  * Inputs are named from that node type's own backend declaration. The saved
  * workflow is untouched; the prompt builder removes these names only from the
  * executable payload it is assembling now.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface PromptInputProjection {
+export interface PromptInputProjection {
   readonly omitInputs: readonly string[]
 }
 
-type PromptInputProjector = (
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export type PromptInputProjector = (
   node: NodeHandle
 ) => PromptInputProjection | Promise<PromptInputProjection>
 
-interface NodeDefBuilder {
+export interface NodeDefBuilder {
   /** Current state of the definition, after any earlier extensions ran. */
   readonly def: NodeDef
 
@@ -637,7 +934,7 @@ interface NodeDefBuilder {
   addMenuItem(item: NodeMenuItem): void
 }
 
-interface NodeCreatedEvent {
+export interface NodeCreatedEvent {
   /**
    * The node arrived carrying saved state — pasted, duplicated, or loaded from
    * a workflow — rather than being made fresh.
@@ -661,7 +958,7 @@ interface NodeCreatedEvent {
   readonly loading: boolean
 }
 
-interface UnplacedLinkEvent {
+export interface UnplacedLinkEvent {
   /** Which of this node's slots the link would land on. */
   readonly side: 'input' | 'output'
   /** The node at the other end of the drag. */
@@ -678,7 +975,8 @@ interface UnplacedLinkEvent {
   readonly replaceExisting: boolean
 }
 
-interface BeforeConnectEvent {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface BeforeConnectEvent {
   readonly side: 'input' | 'output'
   readonly index: number
   /** The node at the other end, when one is known. */
@@ -689,7 +987,8 @@ interface BeforeConnectEvent {
 }
 
 /** One entry inside a menu item's submenu. */
-interface NodeSubMenuItem {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface NodeSubMenuItem {
   readonly label: string
   run(node: NodeHandle): void
 }
@@ -697,14 +996,17 @@ interface NodeSubMenuItem {
 /**
  * One entry of ComfyUI's node palette: the title bar, the body, and the shade
  * a group of that colour is filled with.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface NodeColor {
+export interface NodeColor {
   readonly color: string
   readonly bgColor: string
   readonly groupColor: string
 }
 
-interface NodeMenuItem {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface NodeMenuItem {
   /**
    * A function when the text depends on the node — packs label entries with
    * the current state ("Unmute 3 nodes"), which a string fixed at
@@ -748,7 +1050,7 @@ interface NodeMenuItem {
  * Indexed rather than run-and-return: this predicate is almost always the guard
  * clause the pack already had at the top of its hook.
  */
-type DefSelector =
+export type DefSelector =
   | string
   | readonly string[]
   | RegExp
@@ -777,8 +1079,10 @@ type DefSelector =
  * `LiteGraph.registerNodeType`, which is OOP entity modelling — the thing ADR
  * 0008 rules out. Here the definition is plain data; the class behind it is an
  * internal detail of this layer, never the pack's.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface NodeDefinition {
+export interface NodeDefinition {
   readonly type: string
   readonly title?: string
   readonly category?: string
@@ -825,7 +1129,7 @@ interface NodeDefinition {
   onPromptSerialize?: PromptInputProjector
 }
 
-interface DefRegistry {
+export interface DefRegistry {
   /**
    * Declares how an input *type* is presented — the replacement for
    * `getCustomWidgets`.
@@ -915,7 +1219,8 @@ interface DefRegistry {
   onRefreshed(listener: () => void): Unsubscribe
 }
 
-interface PropertyChangeEvent {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface PropertyChangeEvent {
   readonly name: string
   readonly value: unknown
   readonly previous: unknown
@@ -925,19 +1230,143 @@ interface PropertyChangeEvent {
   reject(): void
 }
 
+// ─── documentHandle.ts ───────────────────────────────────────────
+
+export interface DocumentHandle extends HandleCommon {
+  /**
+   * Identity of this editing session. Stable for as long as the document is
+   * open — including across undo, redo and tab switches — and never reused.
+   *
+   * Not the id inside the workflow JSON, which travels with the file, so two
+   * opens of it and any copy made outside the app all share one value. Not the
+   * path either, which is a storage address and changes on rename. Do not
+   * persist this: it means nothing in the next page load.
+   */
+  readonly id: string
+  /** Display name, without the directory or extension. */
+  readonly name: string | undefined
+  /**
+   * Storage path, for addressing the file. Undefined for a document with no
+   * file behind it yet. Changes when the user renames, so key pack state on
+   * {@link id} instead.
+   */
+  readonly path: string | undefined
+  /** Whether there are edits the user has not saved. */
+  readonly isModified: boolean
+  /**
+   * True once this editing session has ended.
+   *
+   * A handle is a snapshot of a session, and a pack may hold one across a tab
+   * close or a background unload. Check before acting on stored state rather
+   * than trusting a captured handle, exactly as for a node or a widget.
+   */
+  readonly isDeleted: boolean
+}
+
+/** What the host must supply to describe one open document. */
+export interface DocumentSource {
+  readonly sessionId: string | null
+  readonly filename?: string
+  readonly path?: string
+  readonly isModified?: boolean
+  /** Whether this is the document the editor is showing. */
+  readonly isActive?: boolean
+}
+
+/**
+ * Every document currently open, including background tabs.
+ *
+ * One reader rather than one per question: a handle has to answer for a
+ * document that is open but not on screen, and a lookup that only knew the
+ * active one would report every background tab as closed.
+ */
+export type DocumentReader = () => readonly DocumentSource[]
+
+// ─── documentLifecycle.ts ────────────────────────────────────────
+
+/**
+ * The transitions a document makes.
+ *
+ * `opened` and `closed` bracket the session's existence; `activated` and
+ * `deactivated` bracket its time on screen. A document opened in the
+ * background is `opened` without being `activated`, which is why they are
+ * separate: a pack that allocates on `opened` and releases on `closed` stays
+ * balanced no matter how the user moves between tabs.
+
+ */
+export type DocumentPhase = 'opened' | 'activated' | 'deactivated' | 'closed'
+
 // ─── graphHandle.ts ──────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface NodeInit {
+export interface NodeInit {
   title?: string
   position?: { x: number; y: number }
 }
 
-interface GraphHandle {
+/**
+ * How far {@link GraphHandle.queryNodes} looks.
+ *
+ * `'visible'` is the graph on screen and the default, matching `nodes()`.
+ * `'root-and-subgraphs'` is the root graph and every subgraph *definition* —
+ * the same set `onNodeChanged`'s `'document'` scope reports over. A subgraph
+ * placed three times contributes its nodes once, which is what a pack acting
+ * on "each of my nodes" means.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
+ */
+export type NodeQueryScope = 'visible' | 'root-and-subgraphs'
+
+/**
+ * Which nodes {@link GraphHandle.queryNodes} should return.
+ *
+ * Every field narrows; omitting all of them returns the whole scope. They
+ * compose as AND, because the cases packs actually hand-rolled — "my nodes,
+ * anywhere in the document", "everything in this group" — are intersections.
+ *
+ * @knipIgnoreUnusedButUsedByCustomNodes
+ */
+export interface NodeQuery {
+  readonly scope?: NodeQueryScope
+  /**
+   * Node type. A string matches exactly, an array matches any of them, and a
+   * regular expression matches by pattern — which is how a pack asks for its
+   * own nodes without listing every type it ships.
+   */
+  readonly type?: string | RegExp | readonly string[]
+  /**
+   * Restrict to nodes in the graph the user is looking at.
+   *
+   * Only meaningful under `'root-and-subgraphs'`: it is the difference between
+   * "every node in the document" and "the ones the user can currently see".
+   * This is *not* a viewport test — a node scrolled off the edge of a graph
+   * the user is in is still rendered by this definition. Culling belongs to
+   * the renderer and differs between the two of them.
+   */
+  readonly rendered?: boolean
+  /** Restrict to nodes the group currently contains. */
+  readonly group?: GroupHandle
+}
+
+export interface GraphHandle {
   readonly id: string
   node(id: string): NodeHandle | undefined
   nodes(): readonly NodeHandle[]
   nodesOfType(type: string): readonly NodeHandle[]
+  /**
+   * One flat query over graph-scoped nodes.
+   *
+   * `nodes()` and `nodesOfType()` address the graph on screen, so a pack that
+   * wanted "every node of mine in this document" had to walk `root()` and each
+   * `subgraphs()` entry itself and concatenate the results — and the ones that
+   * did not simply stopped working the moment a user nested anything.
+   *
+   * Handles come from the scope that owns each node, so a node reached here
+   * under `'root-and-subgraphs'` is not `===` the one `graph.node()` returns
+   * for it. That is the same scope rule `sameEntity()` exists for; compare
+   * with `comfy.sameEntity()` rather than `===`.
+   */
+  queryNodes(query?: NodeQuery): readonly NodeHandle[]
   add(type: string, init?: NodeInit): NodeHandle
   remove(id: string): boolean
   links(): readonly LinkInfo[]
@@ -1124,6 +1553,7 @@ interface GraphHandle {
    */
   readonly version: number
   /** Diagnostics: live handle-cache slots across all kinds. */
+  readonly cacheSize: number
 }
 
 /**
@@ -1134,7 +1564,7 @@ interface GraphHandle {
  * definition is not that. This is for reading and reaching nodes.
  */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface GraphScopeHandle {
+export interface GraphScopeHandle {
   /** Stable across every instance of this subgraph. */
   readonly id: string
   readonly name: string | undefined
@@ -1153,7 +1583,7 @@ interface GraphScopeHandle {
 
 // ─── groupHandle.ts ──────────────────────────────────────────────
 
-interface GroupHandle {
+export interface GroupHandle {
   readonly id: string
   getTitle(): string
   setTitle(title: string): void
@@ -1175,14 +1605,30 @@ interface GroupHandle {
 
 // ─── interaction.ts ──────────────────────────────────────────────
 
-interface NodeMoveEvent {
+export interface NodeMoveEvent {
   readonly node: NodeHandle
   readonly position: { readonly x: number; readonly y: number }
 }
 
-// ─── modelsHandle.ts ─────────────────────────────────────────────
+/**
+ * Where movement comes from, supplied by the renderer.
+ *
+ * `platform/` cannot import `renderer/`, and the layout store lives there. This
+ * is the same seam `registerBadgeRowsProvider` uses so litegraph never reaches
+ * into the store: the upper layer pushes the source down at boot.
+ */
+export type NodeMoveSource = (
+  onMove: (nodeId: string, position: { x: number; y: number }) => void
+) => Unsubscribe
 
-type ModelFolder =
+/** Reports a completed drag with the ids of every node it moved. */
+export type NodeDragEndSource = (
+  onDragEnd: (nodeIds: readonly string[]) => void
+) => Unsubscribe
+
+// ─── modelsHandle.ts ───────────────────────────────────────────
+
+export type ModelFolder =
   | 'checkpoints'
   | 'clip'
   | 'clip_vision'
@@ -1194,9 +1640,9 @@ type ModelFolder =
   | 'upscale_models'
   | 'vae'
 
-type ModelSidecarSuffix = '.md' | '.txt'
+export type ModelSidecarSuffix = '.md' | '.txt'
 
-interface ModelsHandle {
+export interface ModelsHandle {
   /** Lists registered logical names without exposing model paths. */
   list(folder: ModelFolder): Promise<string[]>
   /** Reads a bounded UTF-8 sidecar next to a registered model. */
@@ -1210,7 +1656,7 @@ interface ModelsHandle {
 // ─── nodeChanges.ts ──────────────────────────────────────────────
 
 /** A field the host tracks and reports. Not every property is one. */
-type TrackedProperty =
+export type TrackedProperty =
   | 'title'
   | 'mode'
   | 'color'
@@ -1231,13 +1677,13 @@ type TrackedProperty =
  * it stopped recomputing while still asserting its last answer — so a group
  * stayed muted against its inputs, intermittently, and healed on navigation.
  */
-type NodeChangeScope = 'visible' | 'document'
+export type NodeChangeScope = 'visible' | 'document'
 
-interface NodeChangeOptions {
+export interface NodeChangeOptions {
   scope?: NodeChangeScope
 }
 
-interface NodeChangeEvent {
+export interface NodeChangeEvent {
   /** The node that changed. It may belong to another pack, or to none. */
   readonly node: NodeHandle
   /**
@@ -1246,6 +1692,16 @@ interface NodeChangeEvent {
    * its own records under `'document'` must key on both.
    */
   readonly graphId: string
+  /**
+   * The editing session the change happened in, or `undefined` when the host
+   * cannot name one.
+   *
+   * `graphId` is restored from the saved workflow and round-trips through
+   * `serialize()`, so it identifies the graph on disk, not the document open
+   * in front of the user — two opens of one file report the same value. A pack
+   * holding records across a document swap needs this to know they are stale.
+   */
+  readonly documentId: string | undefined
   readonly property: TrackedProperty
   readonly from: unknown
   readonly to: unknown
@@ -1254,12 +1710,12 @@ interface NodeChangeEvent {
 // ─── nodeHandle.ts ───────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type NodeMode = 'always' | 'never' | 'bypass' | 'on-event' | 'on-trigger'
+export type NodeMode = 'always' | 'never' | 'bypass' | 'on-event' | 'on-trigger'
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type NodeShape = 'default' | 'box' | 'round' | 'circle' | 'card'
+export type NodeShape = 'default' | 'box' | 'round' | 'circle' | 'card'
 
-interface BadgeDef {
+export interface BadgeDef {
   readonly text: string
   /** Text colour. Defaults to core's badge foreground. */
   readonly color?: string
@@ -1274,25 +1730,25 @@ interface BadgeDef {
   onClick?(): void
 }
 
-interface Point {
+export interface Point {
   readonly x: number
   readonly y: number
 }
 
-interface Size {
+export interface Size {
   readonly width: number
   readonly height: number
 }
 
 /** A rectangle in graph space. */
-interface Bounds {
+export interface Bounds {
   readonly x: number
   readonly y: number
   readonly width: number
   readonly height: number
 }
 
-interface NodeSnapshot {
+export interface NodeSnapshot {
   readonly id: string
   readonly type: string
   readonly title: string
@@ -1307,11 +1763,11 @@ interface NodeSnapshot {
 }
 
 /**
- * Shapes follow `docs/node-api/reference.md`, the published contract:
+ * Shapes follow `src/types/extensionV2.ts`, the agreed extension contract:
  * accessor methods rather than properties, so a read can be a store query and
  * a write can dispatch a command.
  */
-interface SizeConstraints {
+export interface SizeConstraints {
   minWidth?: number
   minHeight?: number
   maxWidth?: number
@@ -1320,7 +1776,7 @@ interface SizeConstraints {
   autoHeight?: boolean
 }
 
-interface NodeHandle extends HandleCommon {
+export interface NodeHandle extends HandleCommon {
   readonly id: string
   readonly type: string
   readonly comfyClass: string
@@ -1339,7 +1795,7 @@ interface NodeHandle extends HandleCommon {
   setBgColor(color: string | undefined): void
   getShape(): NodeShape
   setShape(shape: NodeShape): void
-  getProperty(key: string): unknown
+  getProperty<T = unknown>(key: string): T | undefined
   getProperties(): Readonly<Record<string, unknown>>
   setProperty(key: string, value: WidgetValue): void
   /**
@@ -1458,10 +1914,17 @@ interface NodeHandle extends HandleCommon {
   remove(): void
 }
 
+/** Per-node collections, supplied by the graph layer that owns their caches. */
+export interface NodeCollections {
+  inputs(nodeId: string): SlotCollection<InputSlotHandle>
+  outputs(nodeId: string): SlotCollection<OutputSlotHandle>
+  widgets(nodeId: string): WidgetCollection
+}
+
 // ─── queueHandle.ts ──────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface RunOptions {
+export interface RunOptions {
   /**
    * Run only these nodes and whatever feeds them, instead of the whole
    * workflow. Empty is rejected rather than treated as "everything": a filter
@@ -1473,7 +1936,7 @@ interface RunOptions {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface RunSubmittedEvent {
+export interface RunSubmittedEvent {
   /** Ids the backend accepted, in submission order. */
   readonly promptIds: readonly string[]
   /** The accepted prompts and how many backend nodes each will execute. */
@@ -1483,13 +1946,13 @@ interface RunSubmittedEvent {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface RunSubmission {
+export interface RunSubmission {
   readonly promptId: string
   readonly nodeCount: number
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface RunRejectionError {
+export interface RunRejectionError {
   readonly type: string
   readonly message: string
   readonly details: string
@@ -1497,22 +1960,23 @@ interface RunRejectionError {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface RunRejectedNode {
+export interface RunRejectedNode {
   readonly nodeId: string
   readonly nodeType: string
   readonly errors: readonly RunRejectionError[]
 }
 
-interface RunRejectedEvent {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface RunRejectedEvent {
   readonly status?: number
   readonly error: RunRejectionError
   readonly nodeErrors: readonly RunRejectedNode[]
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type AutoQueueMode = 'disabled' | 'change' | 'instant'
+export type AutoQueueMode = 'disabled' | 'change' | 'instant'
 
-interface QueueHandle {
+export interface QueueHandle {
   /**
    * Queues the current workflow, exactly as pressing Run does.
    *
@@ -1621,12 +2085,12 @@ interface QueueHandle {
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface InputRef {
+export interface InputRef {
   readonly nodeId: string
   readonly input: number
 }
 
-type OutputResolution =
+export type OutputResolution =
   | { readonly omit: true }
   | { readonly forwardTo: InputRef }
   | { readonly literal: WidgetValue }
@@ -1636,7 +2100,7 @@ type OutputResolution =
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface ResolvedNodeView {
+export interface ResolvedNodeView {
   readonly id: string
   readonly type: string
   /**
@@ -1674,9 +2138,8 @@ interface ResolvedNodeView {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface ResolveView {
+export interface ResolveView {
   readonly self: ResolvedNodeView
-  readonly signal: AbortSignal
   nodesOfType(type: string): readonly ResolvedNodeView[]
 }
 
@@ -1686,14 +2149,14 @@ interface ResolveView {
  * synchronous entry points (`input.resolvedSource()`, `resolvedSupplies()`)
  * treat a promise as unresolved and say so — see `resolution.async.test.ts`.
  */
-type Resolver = (
+export type Resolver = (
   view: ResolveView
 ) =>
   | Record<string, OutputResolution>
   | Promise<Record<string, OutputResolution>>
 
 /** Where an output ends up after every frontend node in the chain resolves. */
-type ResolvedSource =
+export type ResolvedSource =
   | {
       readonly kind: 'output'
       readonly nodeId: string
@@ -1705,7 +2168,7 @@ type ResolvedSource =
 /** An input in the graph that no link feeds. */
 /** One of a node's own inputs, as its supplier sees it. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface OwnInput {
+export interface OwnInput {
   readonly index: number
   readonly name: string
   /** What the user sees — `label`, else `localized_name`, else `name`. */
@@ -1720,7 +2183,7 @@ interface OwnInput {
 
 /** One of a node's own outputs, as its supplier sees it. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface OwnOutput {
+export interface OwnOutput {
   readonly index: number
   readonly name: string
   /** What the user sees — `label`, else `localized_name`, else `name`. */
@@ -1730,12 +2193,12 @@ interface OwnOutput {
 
 /** A group a node sits inside. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface GroupMembership {
+export interface GroupMembership {
   readonly id: string
   readonly title: string
 }
 
-interface UnconnectedInput {
+export interface UnconnectedInput {
   readonly nodeId: string
   readonly nodeType: string
   readonly input: number
@@ -1780,7 +2243,7 @@ interface UnconnectedInput {
  * not an arbitrary node reference: a node may only offer what it itself has,
  * so one pack cannot rewire two other nodes to each other.
  */
-interface SuppliedEdge {
+export interface SuppliedEdge {
   readonly to: InputRef
   /**
    * Which claim wins when several suppliers name the same input. Higher wins;
@@ -1809,9 +2272,8 @@ interface SuppliedEdge {
     | { readonly forwardInput: number }
 }
 
-interface SupplyView {
+export interface SupplyView {
   readonly self: ResolvedNodeView
-  readonly signal: AbortSignal
   nodesOfType(type: string): readonly ResolvedNodeView[]
   /**
    * Every unfed input in the graph — what a broadcaster matches against by
@@ -1831,14 +2293,14 @@ interface SupplyView {
  *
  */
 /** May answer asynchronously, under the same rules as {@link Resolver}. */
-type Supplier = (
+export type Supplier = (
   view: SupplyView
 ) => readonly SuppliedEdge[] | Promise<readonly SuppliedEdge[]>
 
 /**
  * One winning supply after priority arbitration and source resolution.
  */
-interface ResolvedSupply {
+export interface ResolvedSupply {
   /** The node whose supplier offered this edge. */
   readonly supplierNodeId: string
   /** The unconnected input the supplier won. */
@@ -1850,10 +2312,10 @@ interface ResolvedSupply {
 // ─── settingsHandle.ts ───────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type SettingValue = string | number | boolean | readonly string[]
+export type SettingValue = string | number | boolean | readonly string[]
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SettingDef {
+export interface SettingDef {
   /**
    * Namespaced, by convention `<Pack>.<name>` — it shares one space with core
    * and every other pack, and it is what the value is stored under forever.
@@ -1906,24 +2368,24 @@ interface SettingDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type SettingOption =
+export type SettingOption =
   | string
   | { readonly value: string | number; readonly label: string }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SettingAttrs {
+export interface SettingAttrs {
   readonly min?: number
   readonly max?: number
   readonly step?: number
 }
 
-interface SettingsHandle {
+export interface SettingsHandle {
   /**
    * Registers a setting. Call once, at extension load: a value already stored
    * for this id survives, so re-declaring cannot reset a user's choice.
    */
   declare(def: SettingDef): void
-  get(id: string): SettingValue | undefined
+  get<T extends SettingValue = SettingValue>(id: string): T | undefined
   set(id: string, value: SettingValue): Promise<void>
   /**
    * Watches a setting, including one the pack did not declare.
@@ -1943,7 +2405,7 @@ interface SettingsHandle {
 
 // ─── slotHandle.ts ───────────────────────────────────────────────
 
-interface LinkInfo {
+export interface LinkInfo {
   readonly id: string
   readonly sourceNodeId: string
   readonly sourceSlotId: SlotId
@@ -1983,19 +2445,19 @@ interface LinkInfo {
  * Reads stay `string` for the same reason.
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-type SlotType = string | string[]
+export type SlotType = string | string[]
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type SlotDirection = 'none' | 'up' | 'down' | 'left' | 'right' | 'center'
+export type SlotDirection = 'none' | 'up' | 'down' | 'left' | 'right' | 'center'
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SlotPosition {
+export interface SlotPosition {
   readonly x: number
   readonly y: number
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SlotPatch {
+export interface SlotPatch {
   name?: string
   label?: string | undefined
   /** The backend-provided translated caption. Null clears it. */
@@ -2028,7 +2490,7 @@ interface SlotPatch {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface InputSlotPatch extends SlotPatch {
+export interface InputSlotPatch extends SlotPatch {
   /** Retargets the widget this input is the socket form of. Null clears it. */
   widget?: string | null
   /** Replaces the input declaration used by connected Primitive nodes. */
@@ -2036,14 +2498,14 @@ interface InputSlotPatch extends SlotPatch {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface InputWidgetConfig {
+export interface InputWidgetConfig {
   /** Backend input type, or the choices for a COMBO input. */
   readonly type: string | readonly (string | number)[]
   readonly options?: Readonly<Record<string, unknown>>
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SlotSnapshot {
+export interface SlotSnapshot {
   readonly id: SlotId
   readonly index: number
   readonly name: string
@@ -2057,7 +2519,7 @@ interface SlotSnapshot {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type ResolvedInputSource =
+export type ResolvedInputSource =
   | {
       readonly kind: 'output'
       readonly graphId: string
@@ -2067,7 +2529,7 @@ type ResolvedInputSource =
   | { readonly kind: 'literal'; readonly value: WidgetValue }
   | { readonly kind: 'omitted'; readonly reason: string }
 
-interface InputSlotHandle {
+export interface InputSlotHandle {
   readonly id: SlotId
   /** Volatile — shifts when other slots are added or removed. */
   readonly index: number
@@ -2102,7 +2564,7 @@ interface InputSlotHandle {
   snapshot(): Readonly<SlotSnapshot>
 }
 
-interface OutputSlotHandle {
+export interface OutputSlotHandle {
   readonly id: SlotId
   readonly index: number
   readonly name: string
@@ -2131,7 +2593,7 @@ interface OutputSlotHandle {
   snapshot(): Readonly<SlotSnapshot>
 }
 
-interface SlotCollection<THandle> {
+export interface SlotCollection<THandle> {
   readonly length: number
   get(ref: SlotRef): THandle | undefined
   byId(id: SlotId): THandle | undefined
@@ -2181,10 +2643,10 @@ interface SlotCollection<THandle> {
  * Named rather than numbered: packs wrote `{ shape: 7 }`, and 7 is meaningless
  * without litegraph's RenderShape enum in front of you.
  */
-type SlotShape = 'default' | 'optional' | 'list' | 'directional'
+export type SlotShape = 'default' | 'optional' | 'list' | 'directional'
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SlotOptions {
+export interface SlotOptions {
   /**
    * `'optional'` is the hollow circle for an input that need not be connected,
    * `'list'` the grid ComfyUI draws for an output that yields many values, and
@@ -2211,7 +2673,7 @@ interface SlotOptions {
 
 // ─── slotRef.ts ──────────────────────────────────────────────────
 
-type SlotId = string & { readonly __brand: 'SlotId' }
+export type SlotId = string & { readonly __brand: 'SlotId' }
 
 /**
  * A slot reference: a string (id or name), or an explicit `{ index }`.
@@ -2222,11 +2684,41 @@ type SlotId = string & { readonly __brand: 'SlotId' }
  *     output.connectTo(node, 'image')       // by name — preferred
  *     output.connectTo(node, { index: 0 })  // by position — explicit
  */
-type SlotRef = SlotId | string | { readonly index: number }
+export type SlotRef = SlotId | string | { readonly index: number }
+
+export interface ResolveOptions {
+  /**
+   * Whether the backend supplies slot names yet. While false, a canonical
+   * integer string resolves positionally, so `'0'` addresses slot 0 and call
+   * sites need no rewrite once names arrive.
+   *
+   * Retire this together with the release that ships names — until then a pack
+   * passing `'2'` meaning a name would silently bind slot 2.
+   */
+  readonly namedSlotsAvailable: boolean
+}
 
 // ─── storageHandle.ts ────────────────────────────────────────────
 
-interface StorageHandle {
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface StorageUsage {
+  /** Total bytes stored under the namespace. */
+  readonly usedBytes: number
+  /** How many entries make up {@link usedBytes}. */
+  readonly entryCount: number
+  /**
+   * The ceiling this host enforces, or `undefined` where it enforces none.
+   *
+   * Undefined is the honest answer for a local install with the user's own
+   * disk behind it, and it is deliberately not reported as `Infinity`: a pack
+   * dividing by it to draw a gauge would get a meaningless bar rather than the
+   * chance to skip drawing one. Do not treat a present number as a promise
+   * that a write below it succeeds — another namespace shares the same store.
+   */
+  readonly quotaBytes?: number
+}
+
+export interface StorageHandle {
   /**
    * Names stored under a namespace, which must be one this pack owns.
    *
@@ -2237,29 +2729,37 @@ interface StorageHandle {
   get(name: string): Promise<string | undefined>
   set(name: string, value: string): Promise<void>
   remove(name: string): Promise<void>
+  /**
+   * What a namespace currently occupies.
+   *
+   * For a pack that stores things a user accumulates — presets, captions,
+   * saved prompts — so it can show what it is holding and offer to prune it,
+   * rather than growing without bound until someone else's write fails.
+   */
+  usage(namespace: string): Promise<StorageUsage>
 }
 
 // ─── systemHandle.ts ─────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SystemMonitorCpu {
+export interface SystemMonitorCpu {
   readonly utilization_percent: number | null
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SystemMonitorMemory {
+export interface SystemMonitorMemory {
   readonly total: number
   readonly available: number
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SystemMonitorVolume extends SystemMonitorMemory {
+export interface SystemMonitorVolume extends SystemMonitorMemory {
   readonly id: string
   readonly label: string
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SystemMonitorAccelerator {
+export interface SystemMonitorAccelerator {
   readonly id: string
   readonly name: string
   readonly memory_total: number
@@ -2269,14 +2769,14 @@ interface SystemMonitorAccelerator {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SystemMonitorSnapshot {
+export interface SystemMonitorSnapshot {
   readonly cpu: SystemMonitorCpu
   readonly memory: SystemMonitorMemory
   readonly volumes: readonly SystemMonitorVolume[]
   readonly accelerators: readonly SystemMonitorAccelerator[]
 }
 
-interface SystemHandle {
+export interface SystemHandle {
   /**
    * Returns one host-sampled hardware snapshot. Volume ids are opaque and
    * unsupported utilization or temperature sensors are null.
@@ -2287,7 +2787,7 @@ interface SystemHandle {
 // ─── uiHandle.ts ─────────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface SidebarTabBase {
+export interface SidebarTabBase {
   /**
    * Unique across every pack, so namespace it — `'mtb.assets'`, not
    * `'assets'`. Registering an id twice throws rather than silently replacing
@@ -2309,7 +2809,7 @@ interface SidebarTabBase {
  * hand-written ES modules with no build step — which is most of them.
  */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface MountedSidebarTab extends SidebarTabBase {
+export interface MountedSidebarTab extends SidebarTabBase {
   /**
    * Fills the tab's panel. Called each time the tab becomes visible, so treat
    * it as mount rather than as one-time setup, and put teardown in `destroy`.
@@ -2325,26 +2825,26 @@ interface MountedSidebarTab extends SidebarTabBase {
  * The preferred form where a pack can build. It keeps reactivity, scoped
  * styles and `onUnmounted`, and the host mounts and unmounts it.
  *
- * Per ADR-EXTENSIONS-PUBLIC-API-0005 the pack bundles its own Vue (~30KB gzipped) — there is no
+ * Per ADR 0005 the pack bundles its own Vue (~30KB gzipped) — there is no
  * import map, so `import { defineComponent } from 'vue'` resolves at the
  * pack's build time, not ours. That is a second Vue instance on the page,
  * which the ADR weighed and accepted; nothing is shared across the boundary,
  * so the two runtimes never touch.
  */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface VueSidebarTab extends SidebarTabBase {
+export interface VueSidebarTab extends SidebarTabBase {
   readonly component: VueComponent
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type SidebarTabDef = MountedSidebarTab | VueSidebarTab
+export type SidebarTabDef = MountedSidebarTab | VueSidebarTab
 
 /** A Vue component bundled by the pack. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type VueComponent = object
+export type VueComponent = object
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface DialogBase {
+export interface DialogBase {
   /**
    * Unique across every pack, so namespace it. The host prefixes it with
    * `extension-`, which keeps packs out of the internal dialog keyspace.
@@ -2353,29 +2853,45 @@ interface DialogBase {
   readonly title?: string
 }
 
+/** A bounded keyboard event captured while a mounted dialog owns focus. */
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface DialogKeyEvent {
+  readonly key: string
+  readonly code: string
+  readonly repeat: boolean
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  /** True for an input, textarea, select, or editable content target. */
+  readonly editableTarget: boolean
+}
+
 /** A dialog the pack draws into a container itself. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface MountedDialog extends DialogBase {
+export interface MountedDialog extends DialogBase {
   render(container: HTMLElement): void
+  /** Receives dialog-scoped key events even before a child takes focus. */
+  onKeyDown?(event: DialogKeyEvent): void | Promise<void>
   destroy?(): void
 }
 
 /** A dialog that is a Vue component, mounted and torn down by the host. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface VueDialog extends DialogBase {
+export interface VueDialog extends DialogBase {
   readonly component: VueComponent
   readonly props?: Readonly<Record<string, unknown>>
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-type DialogDef = MountedDialog | VueDialog
+export type DialogDef = MountedDialog | VueDialog
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface DialogHandle {
+export interface DialogHandle {
   close(): void
 }
 
-interface UiHandle {
+export interface UiHandle {
   /**
    * Adds a tab to the sidebar. Returns a function that removes it again.
    */
@@ -2405,6 +2921,21 @@ interface UiHandle {
   addActionBarButton(
     button: ButtonContribution
   ): ChromeItemHandle<ButtonContribution>
+  /**
+   * Mounts a sandbox-rendered interactive panel over the graph viewport.
+   * The host owns placement, focus, stacking and teardown; `render` receives
+   * the same isolated mounted surface as an in-node mounted widget.
+   */
+  mountViewportPanel(def: ViewportPanelDef): { remove(): void }
+  /**
+   * Mounts a host-owned canvas over the graph viewport.
+   *
+   * Drawing and pointer callbacks run in the pack sandbox. Coordinates are
+   * supplied in both viewport and graph space, so annotations remain attached
+   * to the workflow while the user pans and zooms. The surface passes all
+   * input through until the pack explicitly enables interaction.
+   */
+  mountGraphOverlay(def: GraphOverlayDef): GraphOverlayHandle
   /**
    * Opens a modal dialog. Returns a handle that closes it again.
    *
@@ -2439,8 +2970,94 @@ interface UiHandle {
   prompt(def: PromptDef): Promise<string | undefined>
 }
 
+export interface ViewportPanelDef {
+  readonly id: string
+  readonly anchor?:
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right'
+  readonly offsetX?: number
+  readonly offsetY?: number
+  readonly width?: number
+  readonly maxHeight?: number
+  readonly ariaLabel?: string
+  render(container: HTMLElement): void
+  destroy?(): void
+}
+
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface PromptDef {
+export interface GraphOverlayViewport {
+  readonly width: number
+  readonly height: number
+  readonly scale: number
+  readonly offset: Point
+  graphToViewport(point: Point): Point
+  viewportToGraph(point: Point): Point
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface GraphOverlayPointerEvent {
+  readonly type: string
+  readonly viewport: Point
+  readonly graph: Point
+  readonly button: number
+  readonly buttons: number
+  readonly pointerId: number
+  readonly pointerType: string
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  preventDefault(): void
+  stopPropagation(): void
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface GraphOverlayKeyEvent {
+  readonly key: string
+  readonly code: string
+  readonly repeat: boolean
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  preventDefault(): void
+  stopPropagation(): void
+}
+
+export interface GraphOverlayDef {
+  readonly id: string
+  readonly ariaLabel?: string
+  readonly visible?: boolean
+  readonly interactive?: boolean
+  draw(
+    context: CanvasRenderingContext2D,
+    size: readonly [number, number],
+    viewport: GraphOverlayViewport
+  ): void
+  onPointerDown?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerMove?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerUp?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerCancel?(event: GraphOverlayPointerEvent): void | Promise<void>
+  /**
+   * Receives keys while an interactive overlay owns focus. The host prevents
+   * those keys from also reaching global canvas shortcuts.
+   */
+  onKeyDown?(event: GraphOverlayKeyEvent): void | Promise<void>
+}
+
+export interface GraphOverlayHandle {
+  redraw(): void
+  setInteractive(interactive: boolean): void
+  setVisible(visible: boolean): void
+  remove(): void
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface PromptDef {
   /** What is being asked for — "Strength", "Label". */
   readonly label: string
   readonly value?: string
@@ -2448,7 +3065,7 @@ interface PromptDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface MenuItemDef {
+export interface MenuItemDef {
   readonly label: string
   /** Shown but not selectable. */
   readonly disabled?: boolean
@@ -2458,7 +3075,7 @@ interface MenuItemDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface MenuDef {
+export interface MenuDef {
   readonly items: readonly MenuItemDef[]
   /** Shown above the items. */
   readonly title?: string
@@ -2467,7 +3084,7 @@ interface MenuDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface MenuHandle {
+export interface MenuHandle {
   close(): void
 }
 
@@ -2477,11 +3094,11 @@ interface MenuHandle {
 // `addWidget('button', name, null, cb)` produced exactly that. Omitting it made
 // a null value inexpressible through the published API, so a converted button's
 // `widgets_values` entry changed and the saved workflow differed.
-type WidgetValue = string | number | boolean | object | undefined | null
+export type WidgetValue = string | number | boolean | object | undefined | null
 
 /** Options understood by core or by a widget type declared by the pack. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetOptions {
+export interface WidgetOptions {
   readonly [key: string]: unknown
   readonly on?: string
   readonly off?: string
@@ -2509,16 +3126,16 @@ interface WidgetOptions {
 }
 
 /**
- * Shapes follow `docs/node-api/reference.md`, the published contract.
+ * Shapes follow `src/types/extensionV2.ts`, the agreed extension contract.
  *
  * Accessor methods rather than properties, so a read can be a store query and
  * a write can dispatch a command.
  */
-interface WidgetHandle extends HandleCommon {
+export interface WidgetHandle extends HandleCommon {
   readonly name: string
   readonly widgetType: string
 
-  getValue(): WidgetValue
+  getValue<T = WidgetValue>(): T
   /**
    * Commits a value exactly as a user edit does: the value is written, a
    * widget bound to a node property syncs it, the widget's callback chain and
@@ -2657,21 +3274,21 @@ interface WidgetHandle extends HandleCommon {
 }
 
 /** Where a value is being written, and the chance to change it. */
-interface WidgetSerializeEvent {
+export interface WidgetSerializeEvent {
   readonly context: 'workflow' | 'prompt' | 'embedded'
   /** What would be written if no handler intervened. */
   readonly value: WidgetValue
   setSerializedValue(value: WidgetValue): void
 }
 
-type Unsubscribe = () => void
+export type Unsubscribe = () => void
 
 /**
  * A widget whose body the pack renders itself.
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface MountDef {
+export interface MountDef {
   readonly name: string
   /**
    * Fills the mounted container. Called once, with an element already attached
@@ -2723,14 +3340,14 @@ interface MountDef {
 }
 
 /** What a mounted control can hold. @knipIgnoreUnusedButUsedByCustomNodes */
-type MountedData = string | number | boolean | object | null
+export type MountedData = string | number | boolean | object | null
 
 /**
  * Reading and writing a mounted widget's value.
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface MountedValue {
+export interface MountedValue {
   get(): MountedData
   set(value: MountedData): void
   /** Notified when the value changed elsewhere — a workflow load. */
@@ -2742,7 +3359,7 @@ interface MountedValue {
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface CanvasPointerEvent {
+export interface CanvasPointerEvent {
   /** Distance from the canvas's left edge, in CSS pixels. */
   readonly x: number
   /** Distance from its top edge, in CSS pixels. */
@@ -2767,7 +3384,7 @@ interface CanvasPointerEvent {
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface CanvasTheme {
+export interface CanvasTheme {
   /** A control's background. */
   readonly surface: string
   /** The same under the pointer. */
@@ -2781,7 +3398,7 @@ interface CanvasTheme {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface CanvasDef {
+export interface CanvasDef {
   readonly name: string
   /** Reserved height in pixels. Omit to size to the node's width. */
   readonly height?: number
@@ -2844,14 +3461,14 @@ interface CanvasDef {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface CanvasHandle {
+export interface CanvasHandle {
   readonly widget: WidgetHandle
   /** Redraws now. Call when the data behind the drawing changed. */
   redraw(): void
 }
 
 /** Everything needed to create a widget. */
-interface WidgetDef {
+export interface WidgetDef {
   readonly type: string
   readonly name: string
   readonly value?: WidgetValue
@@ -2868,7 +3485,7 @@ interface WidgetDef {
   readonly serialize?: boolean
 }
 
-interface WidgetCollection {
+export interface WidgetCollection {
   readonly length: number
   get(name: string): WidgetHandle | undefined
   at(index: number): WidgetHandle | undefined
@@ -2920,16 +3537,92 @@ interface WidgetCollection {
   [Symbol.iterator](): Iterator<WidgetHandle>
 }
 
+export interface ComboPreviewRegistration {
+  /** Namespaced registration id. */
+  readonly id: string
+  /** Managed model catalogues searched in order. */
+  readonly modelCategories: readonly (
+    | 'loras'
+    | 'checkpoints'
+    | 'unet'
+    | 'diffusion_models'
+  )[]
+  /** Model filename suffixes that activate this policy. */
+  readonly extensions: readonly (
+    | 'safetensors'
+    | 'sft'
+    | 'pt'
+    | 'ckpt'
+    | 'gguf'
+  )[]
+  /** Host-owned adjacent-preview lookup policy. */
+  readonly candidatePolicy: 'adjacent-model-preview-v1'
+  /** Preview media types the host may display. */
+  readonly media: readonly (
+    | 'image/png'
+    | 'image/webp'
+    | 'image/jpeg'
+    | 'video/mp4'
+    | 'video/webm'
+  )[]
+}
+
+export interface ComboPreviewAssignment {
+  /** Managed model catalogue containing `modelValue`. */
+  readonly category: 'loras' | 'checkpoints' | 'unet' | 'diffusion_models'
+  /** Logical model filename from the managed combo; never a host path. */
+  readonly modelValue: string
+  /** Graph node whose host-owned output image is used as the preview. */
+  readonly sourceNodeId: string
+  /** Exact image in that node's current host-owned output list. */
+  readonly imageIndex: number
+  readonly policy: 'adjacent-model-preview-v1'
+}
+
+export interface WidgetsHandle {
+  /**
+   * Adds a declarative preview policy to host-owned combo option menus.
+   * The host resolves managed assets and renders the hover surface; the pack
+   * receives neither filesystem paths nor media URLs.
+   */
+  registerComboPreview(definition: ComboPreviewRegistration): Unsubscribe
+  /**
+   * Re-encodes one managed graph output as an adjacent managed-model preview.
+   * The host resolves both resources; the pack receives no path or image bytes.
+   */
+  assignComboPreview(assignment: ComboPreviewAssignment): Promise<void>
+}
+
+export type LocalizationMessage =
+  | string
+  | null
+  | { readonly [key: string]: LocalizationMessage }
+
+export interface LocalizationCatalog {
+  /** Native vue-i18n-shaped messages such as main/nodeDefs/nodeCategories. */
+  readonly messages: Readonly<Record<string, LocalizationMessage>>
+  /** Exact-source fallback translations used only at host-owned render points. */
+  readonly phrases?: Readonly<Record<string, string>>
+}
+
+export interface LocalizationHandle {
+  /**
+   * Contributes one bounded catalog for a host-supported locale. The host
+   * owns merging, rendering, precedence, and cleanup; no DOM access is given.
+   */
+  registerCatalog(locale: string, catalog: LocalizationCatalog): Unsubscribe
+}
+
 // ─── widgetTextInteraction.ts ────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetTextSelection {
+export interface WidgetTextSelection {
   readonly start: number
   readonly end: number
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetTextEventBase {
+export interface WidgetTextEventBase {
   readonly value: string
   readonly selection: WidgetTextSelection
   /** Positions a host menu at the text editor without exposing its element. */
@@ -2940,12 +3633,12 @@ interface WidgetTextEventBase {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetTextInputEvent extends WidgetTextEventBase {
+export interface WidgetTextInputEvent extends WidgetTextEventBase {
   readonly kind: 'input' | 'selection'
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetTextWheelEvent extends WidgetTextEventBase {
+export interface WidgetTextWheelEvent extends WidgetTextEventBase {
   readonly kind: 'wheel'
   readonly deltaY: number
   readonly ctrlKey: boolean
@@ -2954,7 +3647,7 @@ interface WidgetTextWheelEvent extends WidgetTextEventBase {
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
-interface WidgetTextKeyEvent extends WidgetTextEventBase {
+export interface WidgetTextKeyEvent extends WidgetTextEventBase {
   readonly kind: 'keydown'
   readonly key: string
   readonly ctrlKey: boolean
@@ -2974,7 +3667,7 @@ interface WidgetTextKeyEvent extends WidgetTextEventBase {
  * `menuEvent`, replace text, and implement selection-based wheel edits without
  * receiving the host's element or markup.
  */
-type WidgetTextInteractionEvent =
+export type WidgetTextInteractionEvent =
   | WidgetTextInputEvent
   | WidgetTextWheelEvent
   | WidgetTextKeyEvent
@@ -2982,21 +3675,21 @@ type WidgetTextInteractionEvent =
 // ─── widgetTypes.ts ──────────────────────────────────────────────
 
 /** What a pack-declared widget can hold. */
-type WidgetTypeData = string | number | boolean | object | null
+export type WidgetTypeData = string | number | boolean | object | null
 
 /**
  * Reading and writing the widget's value, for the renderer to bind to.
  *
  * @knipIgnoreUnusedButUsedByCustomNodes
  */
-interface WidgetTypeValue {
+export interface WidgetTypeValue {
   get(): WidgetTypeData
   set(value: WidgetTypeData): void
   /** Notified when the value changes for any other reason — a workflow load. */
   onChange(listener: (value: WidgetTypeData) => void): Unsubscribe
 }
 
-interface WidgetTypeContext {
+export interface WidgetTypeContext {
   /** A frozen snapshot of the input declaration's current options. */
   getOptions(): Readonly<Record<string, unknown>>
   /**
@@ -3009,7 +3702,7 @@ interface WidgetTypeContext {
   onNodeReady(listener: (node: NodeHandle) => Unsubscribe | void): Unsubscribe
 }
 
-interface WidgetTypeDef {
+export interface WidgetTypeDef {
   /** Used when the definition supplies none. */
   readonly defaultValue?: WidgetTypeData
   /** Height in pixels. Omit to size to content. */
@@ -3041,18 +3734,53 @@ interface WidgetTypeDef {
 // ─── workflowHandle.ts ───────────────────────────────────────────
 
 /** Parsed ComfyUI workflow JSON. */
-type WorkflowData = Readonly<Record<string, unknown>>
+export type WorkflowData = Readonly<Record<string, unknown>>
 
-interface WorkflowOpenOptions {
+export interface WorkflowImportContext {
+  readonly name: string
+  readonly type: string
+}
+
+export type WorkflowImportResult =
+  | { readonly workflow: WorkflowData | string }
+  | { readonly prompt: Readonly<Record<string, unknown>> | string }
+
+export interface WorkflowImporter {
+  /** Namespaced and unique within the pack. */
+  readonly id: string
+  readonly mimeTypes?: readonly string[]
+  readonly extensions?: readonly string[]
+  /** Per-file limit; the host-wide ceiling is 16 MiB. */
+  readonly maxBytes: number
+  enabled?(): boolean | Promise<boolean>
+  parse(
+    bytes: Uint8Array,
+    context: WorkflowImportContext
+  ):
+    | WorkflowImportResult
+    | null
+    | undefined
+    | Promise<WorkflowImportResult | null | undefined>
+}
+
+export interface WorkflowOpenOptions {
   /** Replace the active document, or open a separate workflow tab. */
   readonly mode?: 'replace' | 'new'
   /** Display name for a new workflow. It is not a filesystem path. */
   readonly name?: string
 }
 
-interface WorkflowHandle {
+export interface WorkflowHandle {
   /** Opens parsed ComfyUI workflow JSON, replacing the active document by default. */
   open(data: WorkflowData, options?: WorkflowOpenOptions): Promise<void>
+  /** Returns the current saved-format workflow, bounded to 8 MiB. */
+  snapshot(): Promise<WorkflowData>
+  /** Registers a bounded worker-side parser for host-opened or dropped files. */
+  registerImporter(importer: WorkflowImporter): Unsubscribe
+  /** Returns pack-owned data stored in the active workflow's `extra` object. */
+  getExtra<T = unknown>(key: string): Promise<T | undefined>
+  /** Writes pack-owned workflow data. Passing `undefined` removes the key. */
+  setExtra(key: string, value: unknown): Promise<void>
   /** Expands the active document's `%date:...%` and `%Node.widget%` tokens. */
   applyTextReplacements(value: string): string
   /**
@@ -3068,17 +3796,20 @@ interface WorkflowHandle {
    * replaced" from "the document I was looking at got edited", which
    * comparing graph contents cannot do, since editing IS mutating the graph
    * contents of the very document that is still current.
+   *
+   * Equivalent to `current()?.id`, and kept because reading the id is the
+   * common case and does not need a handle.
    */
   documentId(): string | undefined
   /**
-   * The active workflow's display filename, without exposing its user-data
-   * path. Undefined before a workflow document is active.
+   * The document on screen, or `undefined` before one is open.
+   *
+   * A handle rather than the bare id when a pack needs to know what it is
+   * looking at — the name to label its own UI, whether there are unsaved
+   * edits, and whether a document it stored state for is still open.
+   *
+   * Read-only: opening has its own explicit call, and saving, closing and
+   * renaming belong to the user.
    */
-  name(): string | undefined
-}
-
-// ─── the published entry point ───────────────────────────────
-
-declare module '*/comfy/api/v2.js' {
-  export const comfy: Comfy
+  current(): DocumentHandle | undefined
 }

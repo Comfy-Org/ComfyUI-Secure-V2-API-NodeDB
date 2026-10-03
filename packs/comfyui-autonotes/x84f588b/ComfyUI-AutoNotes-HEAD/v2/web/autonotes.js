@@ -133,7 +133,7 @@ function context() {
   return {
     selectedType: selected?.type,
     selectedAttributes: selected ? nodeAttributes(selected) : Object.create(null),
-    workflowName: comfy.workflow.name?.(),
+    workflowName: comfy.workflow.current()?.name,
     workflowNodes,
   }
 }

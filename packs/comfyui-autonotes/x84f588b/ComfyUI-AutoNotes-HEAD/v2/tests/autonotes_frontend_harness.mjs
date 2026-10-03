@@ -124,7 +124,7 @@ const comfy = {
     async list() { return [...storage.keys()] },
   },
   graph: { nodes: () => [sampler, checkpoint] },
-  workflow: { name: () => 'portrait-study.json' },
+  workflow: { current: () => ({ name: 'portrait-study.json' }) },
   onSelectionChanged(listener) { selectionListener = listener; return () => { selectionListener = undefined } },
   onNodeChanged(listener) { nodeChangeListener = listener; return () => { nodeChangeListener = undefined } },
   onWorkflowLoaded(listener) { workflowListener = listener; return () => { workflowListener = undefined } },
