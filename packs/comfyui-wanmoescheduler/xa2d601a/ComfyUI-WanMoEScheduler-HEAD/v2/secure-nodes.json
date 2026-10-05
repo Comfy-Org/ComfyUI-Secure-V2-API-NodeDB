@@ -1,0 +1,280 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "WanMoEScheduler": {
+      "module": "nodes",
+      "class": "WanMoEScheduler",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "WanMoEScheduler",
+          "display_name": "WanMoEScheduler",
+          "category": "sampling/custom_sampling/schedulers",
+          "description": "Finds an optimal sigma shift value and calculates sigmas for two-stage sampling.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "MODEL",
+            "attrs": {
+              "id": "model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "The model used for calculating sigmas.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "scheduler",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "The scheduler to use for sigma calculation.\n\nNOTE: If you do not use sigmas for sampling don't forget to match the scheduler values.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "ddim_uniform",
+                "beta",
+                "normal"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps_high",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Number of steps for high noise sampling.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 4,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 99,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps_low",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Number of steps for the low noise sampling.\n\nNOTE: Higher steps require lower speed lora strength.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 4,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 99,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "boundary",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "The target sigma value for the boundary between high and low steps. Usually 0.930-0.875.\n\nOffical WAN values are 0.90 (I2V) and 0.875 (T2V).",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.875,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 0.999,
+              "step": 0.001,
+              "round": 0.001,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "interval",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "The step size to increment the shift while searching for the optimal value. Lower is more precise.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.01,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.01,
+              "max": 1.0,
+              "step": 0.01,
+              "round": 0.01,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "denoise",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "The amount of noise to remove. A value of 1.0 is full denoising (default).",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "shift",
+              "display_name": "shift",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps",
+              "display_name": "steps",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps_high",
+              "display_name": "steps_high",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps_low",
+              "display_name": "steps_low",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "SIGMAS",
+            "attrs": {
+              "id": "sigmas",
+              "display_name": "sigmas",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "SIGMAS",
+            "attrs": {
+              "id": "sigmas_high",
+              "display_name": "sigmas_high",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "SIGMAS",
+            "attrs": {
+              "id": "sigmas_low",
+              "display_name": "sigmas_low",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
