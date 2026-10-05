@@ -1,0 +1,282 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "VisualAreaPrompt": {
+      "class": "VisualAreaPrompt",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes.visual_area_prompt",
+      "permissions": [
+        "graph.expand",
+        "graph.expand.external:ConditioningCombine",
+        "graph.expand.external:ConditioningConcat",
+        "graph.expand.external:ConditioningSetAreaPercentage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "RegionalPrompt",
+          "description": "",
+          "display_name": "Visual Area Prompt",
+          "enable_expand": true,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "VisualAreaPrompt",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "extra_pnginfo",
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image_width",
+              "lazy": null,
+              "max": 16384,
+              "min": 16,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The width of the canvas. (only affects looks).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image_height",
+              "lazy": null,
+              "max": 16384,
+              "min": 16,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The height of the canvas. (only affects looks).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "area_conditioning",
+              "id": "area_conditioning",
+              "is_output_list": false,
+              "tooltip": "Area conditioning"
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "combined_conditioning",
+              "id": "combined_conditioning",
+              "is_output_list": false,
+              "tooltip": "Combined conditioning"
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "VisualAreaPromptAdvanced": {
+      "class": "VisualAreaPromptAdvanced",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes.visual_area_prompt_advanced",
+      "permissions": [
+        "graph.expand",
+        "graph.expand.external:ConditioningCombine",
+        "graph.expand.external:ConditioningConcat",
+        "graph.expand.external:ConditioningSetAreaPercentage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "RegionalPrompt",
+          "description": "",
+          "display_name": "Visual Area Prompt \"Advanced\"",
+          "enable_expand": true,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "VisualAreaPromptAdvanced",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "extra_pnginfo",
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "all_area_conditioning",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Base conditioning. Will be concatenated to all other conditionings, including global."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "global_conditioning",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Will be applied to the whole image once."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "merge_global",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Turning this on will make it so that the global conditioning will be concatenated to all other conditionings before being applied. (will not affect combined_conditioning output).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image_width",
+              "lazy": null,
+              "max": 16384,
+              "min": 16,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The width of the canvas. (only affects looks).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image_height",
+              "lazy": null,
+              "max": 16384,
+              "min": 16,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The height of the canvas. (only affects looks).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "area_conditioning",
+              "id": "area_conditioning",
+              "is_output_list": false,
+              "tooltip": "Area conditioning"
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "combined_conditioning",
+              "id": "combined_conditioning",
+              "is_output_list": false,
+              "tooltip": "Combined conditioning"
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web"
+}
