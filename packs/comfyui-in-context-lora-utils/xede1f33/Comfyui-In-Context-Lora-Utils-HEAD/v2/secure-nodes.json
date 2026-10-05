@@ -1,0 +1,874 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "AddMaskForICLora": {
+      "class": "AddMaskForICLora",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "InContextLoraUtils",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "ICLoraUtils/AddMaskForICLora",
+          "description": "",
+          "display_name": "Add Mask For IC Lora",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "node_id": "AddMaskForICLora",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "first_image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "auto",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "patch_right",
+                "patch_bottom"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1536,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_length",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "#FF0000",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_color",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "#FF0000",
+                "#00FF00",
+                "#0000FF",
+                "#FFFFFF"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "first_mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "second_image",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "second_mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "MASK",
+              "id": "_1_MASK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "x_offset",
+              "id": "_2_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "y_offset",
+              "id": "_3_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "target_width",
+              "id": "_4_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "target_height",
+              "id": "_5_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "total_width",
+              "id": "_6_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "total_height",
+              "id": "_7_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "AutoPatch": {
+      "class": "AutoPatch",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "InContextUtils",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "InContextUtils/AutoPatch",
+          "description": "",
+          "display_name": "Auto Patch",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "AutoPatch",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image2",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "mask2",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "patch_mode",
+              "id": "_0_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "patch_type",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "ConcatContextWindow": {
+      "class": "ConcatContextWindow",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "InContextUtils",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "InContextUtils/ConcatContextWindow",
+          "description": "",
+          "display_name": "Concatenate Context Window",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ConcatContextWindow",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "first_image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "auto",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "patch_right",
+                "patch_bottom"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "3:4",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "3:4",
+                "1:1",
+                "9:16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1536,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_length",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "#FF0000",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_color",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "#FF0000",
+                "#00FF00",
+                "#0000FF",
+                "#FFFFFF"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "second_image",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "second_mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "IMAGE",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "MASK",
+              "id": "_1_MASK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "target_width",
+              "id": "_2_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "target_height",
+              "id": "_3_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "x_offset",
+              "id": "_4_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "y_offset",
+              "id": "_5_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "total_width",
+              "id": "_6_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "total_height",
+              "id": "_7_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "CreateContextWindow": {
+      "class": "CreateContextWindow",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "InContextUtils",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "InContextUtils/CreateContextWindow",
+          "description": "",
+          "display_name": "Create Context Window",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "CreateContextWindow",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "input_image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "input_mask",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "auto",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "auto",
+                "patch_right",
+                "patch_bottom"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "3:4",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "patch_type",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "3:4",
+                "1:1",
+                "9:16"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1536,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "output_length",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "pixel_buffer",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "prepared_image",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "prepared_mask",
+              "id": "_1_MASK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "patch_mode",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "x_offset_of_ori",
+              "id": "_3_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "y_offset_of_ori",
+              "id": "_4_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "scale",
+              "id": "_5_FLOAT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "crop_area",
+              "id": "_6_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "crop_mask",
+              "id": "_7_MASK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
