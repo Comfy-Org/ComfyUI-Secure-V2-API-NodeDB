@@ -1,0 +1,308 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "Krea2SystemPrompt": {
+      "class": "Krea2SystemPrompt",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "model/conditioning/krea2",
+          "description": "Text node preloaded with an instruct-style system prompt for Text Encode (Krea2). Wire its output into the encoder's system_prompt input.",
+          "display_name": "Krea2 System Prompt",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "Krea2SystemPrompt",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "Describe the key features of the reference image (color, shape, size, texture, objects, background), then explain how the user's instruction should combine with or alter it, and generate a new image meeting the instruction while staying consistent with the reference where appropriate:",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "text",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "System instruction for Krea2's VLM. Defaults to an instruct/edit-style framing that fuses your prompt with the reference image. Edit as needed; paste the plain descriptor to fall back to default behavior.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "system_prompt",
+              "id": "_0_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "TextEncodeKrea2": {
+      "class": "TextEncodeKrea2",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "model/conditioning/krea2",
+          "description": "Krea2 (K2) text conditioning with optional vision prompting. Reference images are fed through the Qwen3-VL vision path; an optional per-image mask crops the image to the masked region. No VAE is used (Krea2 has no reference-latent pathway).",
+          "display_name": "Text Encode (Krea2)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "TextEncodeKrea2",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": true,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "prompt",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "system_prompt",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Optional system-instruction input. Wire a text node to override how the VLM frames the reference + your prompt; leave unconnected to use Krea2's trained descriptor (in-distribution). Use an instruct/edit-style instruction (see README) to fuse the prompt with the image. The node adds the chat-template scaffolding; provide just the instruction text.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image1",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "mask1",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "vision_megapixels",
+              "lazy": null,
+              "max": 8.0,
+              "min": 0.1,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.1,
+              "tooltip": "Maximum size (in megapixels) for each reference before the Qwen3-VL vision encoder. References larger than this are downscaled; smaller ones (e.g. a tight mask crop) are kept at native size, never upscaled.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "mask_padding",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.02,
+              "tooltip": "Context kept around the mask before cropping, as a fraction of the image size added on EACH side. 0 = tight crop to the mask; 0.1 = ~10% margin of surroundings. Only applies when a mask is connected.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "before prompt",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "vision_position",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "before prompt",
+                "after prompt"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Where the image (vision) tokens sit in the user turn relative to your text. 'before prompt' = image then text (default); 'after prompt' = text then image. No effect without an image. Experimental.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "print_prompt",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Print the full assembled prompt sent to the Qwen3-VL encoder (system instruction + vision placeholders + your text) to the ComfyUI console.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "CONDITIONING",
+              "id": "_0_CONDITIONING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web"
+}
