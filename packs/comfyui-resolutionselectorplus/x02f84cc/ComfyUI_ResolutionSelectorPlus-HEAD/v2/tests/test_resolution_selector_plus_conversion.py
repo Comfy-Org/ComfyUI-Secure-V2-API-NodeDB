@@ -24,7 +24,7 @@ BACKEND = pathlib.Path("/Users/ben/comfy/ComfyUI_secure_nodes/backend")
 CORE = pathlib.Path("/Users/ben/comfy/ComfyUI-secure-nodes")
 COMFYUI = pathlib.Path("/Users/ben/comfy/ComfyUI")
 COMMIT = "02f84ccb230a3dcbe1215556780799fd7484f847"
-DTS_SHA = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
+DTS_SHA = "4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3"
 PYI_SHA = "f2d067f03a2f80f942ba0d5c777daa1148562e44e836b72cb27129b36ba3855f"
 PAIR = PACK_DB / "patches/comfyui-resolutionselectorplus/x02f84cc/" \
     "comfyui-resolutionselectorplus-x02f84cc"

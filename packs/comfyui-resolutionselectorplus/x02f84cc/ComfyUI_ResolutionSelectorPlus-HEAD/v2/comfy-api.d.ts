@@ -1387,6 +1387,8 @@ export interface GraphHandle {
    * Selection is a property of the document, so it is asked of the graph.
    */
   selection(): readonly NodeHandle[]
+  /** The groups selected in the current visible graph. */
+  groupSelection(): readonly GroupHandle[]
   /**
    * Replaces the selection with these nodes. An empty list clears it.
    *
@@ -1599,6 +1601,8 @@ export interface GroupHandle {
   nodes(): readonly NodeHandle[]
   /** The group's rectangle in graph space, title bar included. */
   getBounds(): Bounds
+  /** Moves and resizes the group as one undoable graph mutation. */
+  setBounds(bounds: Bounds): void
   /** Pans the view so this group is in the middle of it. Zoom is unchanged. */
   centerOn(): void
 }
@@ -1812,7 +1816,12 @@ export interface NodeHandle extends HandleCommon {
   getPosition(): Point
   setPosition(pos: Point): void
   getSize(): Size
-  /** Changes size through the host's resize protocol, including `onResized`. */
+  /** The renderer's current intrinsic and declared minimum size. */
+  getMinimumSize(): Size
+  /**
+   * Changes size through the host's resize protocol, including `onResized`.
+   * Requested dimensions are clamped to {@link getMinimumSize}.
+   */
   setSize(size: Size): void
   /**
    * The node's rectangle in graph space, title bar included.
@@ -3050,10 +3059,38 @@ export interface GraphOverlayDef {
   onKeyDown?(event: GraphOverlayKeyEvent): void | Promise<void>
 }
 
+/** A bounded viewport-space circle that may begin an owned pointer stream. */
+export interface GraphOverlayCircleHitRegion {
+  readonly kind: 'circle'
+  readonly x: number
+  readonly y: number
+  readonly radius: number
+}
+
+/** A bounded viewport-space rectangle that may begin an owned pointer stream. */
+export interface GraphOverlayRectHitRegion {
+  readonly kind: 'rect'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export type GraphOverlayHitRegion =
+  | GraphOverlayCircleHitRegion
+  | GraphOverlayRectHitRegion
+
 export interface GraphOverlayHandle {
   redraw(): void
   setInteractive(interactive: boolean): void
   setVisible(visible: boolean): void
+  /**
+   * Limits pointer ownership to bounded viewport-space regions. Pointer misses
+   * continue to the normal graph canvas. An empty list makes the overlay fully
+   * pass-through. An owned pointer stays owned through move, up, or cancel.
+   */
+  setHitRegions(regions: readonly GraphOverlayHitRegion[]): void
   remove(): void
 }
 
