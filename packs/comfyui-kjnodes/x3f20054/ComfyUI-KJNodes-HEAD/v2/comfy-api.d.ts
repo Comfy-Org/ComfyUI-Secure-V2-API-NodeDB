@@ -1816,7 +1816,12 @@ export interface NodeHandle extends HandleCommon {
   getPosition(): Point
   setPosition(pos: Point): void
   getSize(): Size
-  /** Changes size through the host's resize protocol, including `onResized`. */
+  /** The renderer's current intrinsic and declared minimum size. */
+  getMinimumSize(): Size
+  /**
+   * Changes size through the host's resize protocol, including `onResized`.
+   * Requested dimensions are clamped to {@link getMinimumSize}.
+   */
   setSize(size: Size): void
   /**
    * The node's rectangle in graph space, title bar included.
