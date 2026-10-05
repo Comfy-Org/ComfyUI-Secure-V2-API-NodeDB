@@ -1,0 +1,181 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "SigmoidOffsetScheduler": {
+      "module": "nodes",
+      "class": "SigmoidOffsetScheduler",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "SigmoidOffsetScheduler",
+          "display_name": "SigmoidOffsetScheduler",
+          "category": "sampling/custom_sampling/schedulers",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "MODEL",
+            "attrs": {
+              "id": "model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 30,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 10000,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "square_k",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Sigmoid steepness. Higher = steeper transition.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "base_c",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Shifts sigmoid curve. <0.5: More steps at high sigmas (early denoising); >0.5: More steps at low sigmas (late denoising).",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.5,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": -5.0,
+              "max": 5.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "start_sigma",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Rescales the sigma to enable softer start. Set to 0.983 for old behaviour. 1.0 = no rescaling.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.001,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "SIGMAS",
+            "attrs": {
+              "id": "_0_SIGMAS_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "scheduler_providers": [
+    {
+      "name": "sigmoid_offset",
+      "module": "scheduler_program",
+      "function": "provide",
+      "projection": "model_sigmas",
+      "min_steps": 1,
+      "max_steps": 10000,
+      "config": {
+        "square_k": 1.0,
+        "base_c": 0.5
+      }
+    }
+  ]
+}
