@@ -30,7 +30,7 @@ CORE = pathlib.Path(os.environ.get(
 )).expanduser().resolve()
 COMMIT = "47d29099fbe96f9fd5a9a5a97ea68877c66199a9"
 DTS_SHA256 = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
-PYI_SHA256 = "5c85bd4742059f3206d98c22aa79f44e445330a405cad1d7056bf33728ffca1b"
+PYI_SHA256 = "f2d067f03a2f80f942ba0d5c777daa1148562e44e836b72cb27129b36ba3855f"
 NODE_IDS = {
     "CLIPTextEncodeFormatter",
     "TextOnlyFormatter",
