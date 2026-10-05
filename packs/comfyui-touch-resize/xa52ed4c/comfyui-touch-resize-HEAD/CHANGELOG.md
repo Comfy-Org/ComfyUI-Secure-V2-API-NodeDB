@@ -1,0 +1,147 @@
+# Changelog
+
+## [0.2.1](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.2.0...comfyui-touch-resize-v0.2.1) (2026-08-16)
+
+
+### Miscellaneous
+
+* **ci:** guard registry-health against closing on Pending; drop duplicate Renovate runner ([#61](https://github.com/laurigates/comfyui-touch-resize/issues/61)) ([21f39d0](https://github.com/laurigates/comfyui-touch-resize/commit/21f39d0bce26595eb10df5059a2adfd341a8774e))
+
+## [0.2.0](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.16...comfyui-touch-resize-v0.2.0) (2026-08-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* replace the pinch gesture with corner grab-handles ([#58](https://github.com/laurigates/comfyui-touch-resize/issues/58))
+
+### Features
+
+* replace the pinch gesture with corner grab-handles ([#58](https://github.com/laurigates/comfyui-touch-resize/issues/58)) ([2a8a897](https://github.com/laurigates/comfyui-touch-resize/commit/2a8a89784d2cde169afe2343ccff43d9a31b0894)), closes [#5](https://github.com/laurigates/comfyui-touch-resize/issues/5)
+
+## [0.1.16](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.15...comfyui-touch-resize-v0.1.16) (2026-07-30)
+
+
+### Features
+
+* **assets:** restyle the banner to the vector family ([#56](https://github.com/laurigates/comfyui-touch-resize/issues/56)) ([0d5bcfb](https://github.com/laurigates/comfyui-touch-resize/commit/0d5bcfbc13c5309aad2972ce20d3b321e61a79f3))
+
+## [0.1.15](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.14...comfyui-touch-resize-v0.1.15) (2026-07-17)
+
+
+### Bug Fixes
+
+* **registry:** shrink registry tarball scan surface + hygiene guard ([#51](https://github.com/laurigates/comfyui-touch-resize/issues/51)) ([99ebb6c](https://github.com/laurigates/comfyui-touch-resize/commit/99ebb6c960a73ff82b4e2dfa3d530554e2d9f987))
+
+## [0.1.14](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.13...comfyui-touch-resize-v0.1.14) (2026-07-04)
+
+
+### Bug Fixes
+
+* clear LiteGraph canvas drag flags on resize release ([#44](https://github.com/laurigates/comfyui-touch-resize/issues/44)) ([e0259aa](https://github.com/laurigates/comfyui-touch-resize/commit/e0259aac715b37fe02e63fc497015df2601a4ee5))
+
+
+### Documentation
+
+* **readme:** replace What-it-does TODO stub with real gesture description ([#48](https://github.com/laurigates/comfyui-touch-resize/issues/48)) ([66d273c](https://github.com/laurigates/comfyui-touch-resize/commit/66d273c7e1087b813b6f6625237d86d89c6da4b5))
+
+## [0.1.13](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.12...comfyui-touch-resize-v0.1.13) (2026-07-02)
+
+
+### Features
+
+* adopt kit pointer-claim protocol (isModalActive veto + claimPointer) ([#45](https://github.com/laurigates/comfyui-touch-resize/issues/45)) ([9fa2eca](https://github.com/laurigates/comfyui-touch-resize/commit/9fa2eca62651931db20da85bf7ee47a372ee91a2))
+
+## [0.1.12](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.11...comfyui-touch-resize-v0.1.12) (2026-06-28)
+
+
+### Miscellaneous
+
+* sync uv.lock and auto-bump it via release-please ([#40](https://github.com/laurigates/comfyui-touch-resize/issues/40)) ([790c33d](https://github.com/laurigates/comfyui-touch-resize/commit/790c33d2494fb5f47db849f91e75d959448516f0))
+
+## [0.1.11](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.10...comfyui-touch-resize-v0.1.11) (2026-06-26)
+
+
+### Bug Fixes
+
+* **dist:** commit web/dist so git-based updates carry the built frontend ([#37](https://github.com/laurigates/comfyui-touch-resize/issues/37)) ([30ce1b5](https://github.com/laurigates/comfyui-touch-resize/commit/30ce1b5f0697466a74e333f8344c8563edf194c4))
+
+## [0.1.10](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.9...comfyui-touch-resize-v0.1.10) (2026-06-20)
+
+
+### Bug Fixes
+
+* pin comfyui-frontend-package to 3-part version (&gt;=1.40.0) ([#31](https://github.com/laurigates/comfyui-touch-resize/issues/31)) ([ea5ab7b](https://github.com/laurigates/comfyui-touch-resize/commit/ea5ab7b547a44b8b7f6de74e812589d1e4208d2a))
+
+
+### Miscellaneous
+
+* **deps:** remove Dependabot config, consolidate on Renovate ([#30](https://github.com/laurigates/comfyui-touch-resize/issues/30)) ([f8559dd](https://github.com/laurigates/comfyui-touch-resize/commit/f8559dd240e06f780bc9ac9e3bd7e3ebb0d36ddf))
+
+## [0.1.9](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.8...comfyui-touch-resize-v0.1.9) (2026-06-09)
+
+
+### Bug Fixes
+
+* **registry:** ship runtime-only files in the Comfy Registry tarball ([#26](https://github.com/laurigates/comfyui-touch-resize/issues/26)) ([273a5f1](https://github.com/laurigates/comfyui-touch-resize/commit/273a5f151342f1d656923db685afd52eeb48e96f))
+
+## [0.1.8](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.7...comfyui-touch-resize-v0.1.8) (2026-06-08)
+
+
+### Bug Fixes
+
+* ship web/dist in registry tarball (pin publish-node-action skip_checkout) ([#23](https://github.com/laurigates/comfyui-touch-resize/issues/23)) ([1be16fc](https://github.com/laurigates/comfyui-touch-resize/commit/1be16fc4c07e2504564887c75d9882b72a0fbe2b))
+
+## [0.1.7](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.6...comfyui-touch-resize-v0.1.7) (2026-06-08)
+
+
+### Bug Fixes
+
+* add Comfy Registry icon/banner and publish on release event ([#20](https://github.com/laurigates/comfyui-touch-resize/issues/20)) ([141d52a](https://github.com/laurigates/comfyui-touch-resize/commit/141d52a3c6b1719d37ce7248e4b65cfef4a3dd25))
+
+## [0.1.6](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.5...comfyui-touch-resize-v0.1.6) (2026-06-07)
+
+
+### Bug Fixes
+
+* **ci:** set skip_checkout so the built web/dist reaches the registry ([#16](https://github.com/laurigates/comfyui-touch-resize/issues/16)) ([e5b32e3](https://github.com/laurigates/comfyui-touch-resize/commit/e5b32e31e56c5ae89531d6651c317f79ddba074a))
+
+## [0.1.5](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.4...comfyui-touch-resize-v0.1.5) (2026-06-06)
+
+
+### Features
+
+* **build:** migrate to TypeScript + bun build ([#14](https://github.com/laurigates/comfyui-touch-resize/issues/14)) ([02ddfa5](https://github.com/laurigates/comfyui-touch-resize/commit/02ddfa51d85a26f4e8e811711563f2d1260c27f3))
+
+## [0.1.4](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.3...comfyui-touch-resize-v0.1.4) (2026-06-05)
+
+
+### Bug Fixes
+
+* **resize:** hand pointers back to LiteGraph so the canvas isn't stuck after a resize ([#11](https://github.com/laurigates/comfyui-touch-resize/issues/11)) ([bc44a72](https://github.com/laurigates/comfyui-touch-resize/commit/bc44a727a7ee640ef2caeaf4ab35dba1d500c277))
+
+## [0.1.3](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.2...comfyui-touch-resize-v0.1.3) (2026-06-05)
+
+
+### Bug Fixes
+
+* **resize:** make the pinch-resize gesture reliably exitable ([#9](https://github.com/laurigates/comfyui-touch-resize/issues/9)) ([21ee53b](https://github.com/laurigates/comfyui-touch-resize/commit/21ee53b7c3570fcf3d4985792aec22d5bcd45b1c))
+
+## [0.1.2](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.1...comfyui-touch-resize-v0.1.2) (2026-06-04)
+
+
+### Features
+
+* pinch-to-resize for nodes and groups, with affordance and anisotropic mode ([#4](https://github.com/laurigates/comfyui-touch-resize/issues/4)) ([2ad0b13](https://github.com/laurigates/comfyui-touch-resize/commit/2ad0b13a79845c8a253b854ceadb38919c87153e))
+
+
+### Bug Fixes
+
+* **resize:** high-visibility corner-hint affordance + screenshot pipeline ([#7](https://github.com/laurigates/comfyui-touch-resize/issues/7)) ([4f1321f](https://github.com/laurigates/comfyui-touch-resize/commit/4f1321f0a4f480b55c016ea0ff1e9dcb6cebbe23))
+* **resize:** suppress native zoom/drag during pinch-resize ([#8](https://github.com/laurigates/comfyui-touch-resize/issues/8)) ([c09142f](https://github.com/laurigates/comfyui-touch-resize/commit/c09142f77336e6e5b867404c2b5c36ad96cdbd58))
+
+## [0.1.1](https://github.com/laurigates/comfyui-touch-resize/compare/comfyui-touch-resize-v0.1.0...comfyui-touch-resize-v0.1.1) (2026-06-03)
+
+
+### Features
+
+* scaffold comfyui-touch-resize (gesture pack) ([1646707](https://github.com/laurigates/comfyui-touch-resize/commit/1646707031dcea8b69d5589593ba633917470813))
