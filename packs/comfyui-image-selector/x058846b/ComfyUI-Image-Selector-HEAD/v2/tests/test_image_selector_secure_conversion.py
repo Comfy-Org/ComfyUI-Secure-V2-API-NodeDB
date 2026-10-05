@@ -26,7 +26,7 @@ CORE = pathlib.Path(os.environ.get(
 )).expanduser().resolve()
 COMMIT = "058846b177626a226590d355a342ae8f364591ac"
 COMFY_API_SHA256 = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
-COMFY_API_PYI_SHA256 = "beb4d0f61b31d65df706ebfa5b4bc3f901cba061d32ba36a468d50dd92da244e"
+COMFY_API_PYI_SHA256 = "82dea265a0ae3918ece66547a6e413558c419fbcb0a4cc19d52b3fd74057cc49"
 PAIR = PACK_DB / "patches" / "comfyui-image-selector" / "x058846b" / (
     "comfyui-image-selector-x058846b"
 )
