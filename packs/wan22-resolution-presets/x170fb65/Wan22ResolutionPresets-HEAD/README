@@ -1,0 +1,178 @@
+# Wan2.2 Resolution Presets for ComfyUI
+
+A ComfyUI custom node providing curated resolution presets optimized for the Wan2.2 video model family. Features intelligent dynamic filtering based on model type (14B vs 5B) and aspect ratio, ensuring you always select technically correct resolutions.
+
+## 🎯 Purpose
+
+This node eliminates guesswork when selecting resolutions for Wan2.2 models by providing a curated list of presets that automatically respect the "Rule of 16" (14B models) and "Rule of 32" (5B models). The interface dynamically adapts to show only compatible resolutions for your selected model and aspect ratio.
+
+## 📋 Features
+
+- **Intelligent Dynamic Filtering**: Only shows resolutions compatible with your selected model (14B or 5B)
+- **Curated Presets**: Comprehensive collection of ~90 verified resolutions across 8 standard aspect ratios
+- **Aspect Ratio Focused**: 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 1:1 Square, and 21:9 Cinematic
+- **Smart Defaults**: Automatically selects common resolutions (720p, 1280p) when switching modes
+- **Critical Tooltips**: Displays VAE requirements and divisibility rules for each model
+- **Simple Interface**: Three dropdowns - Model, Aspect Ratio, Resolution
+- **Standard Output**: Returns width and height as INT values for seamless integration
+
+## 🚀 Installation
+
+1. Navigate to your ComfyUI custom nodes directory:
+   ```
+   ComfyUI/custom_nodes/
+   ```
+
+2. Clone or place this repository inside your `custom_nodes` directory:
+   ```
+   git clone https://github.com/opj161/ComfyUI-Wan22ResolutionPresets.git
+   ```
+
+3. Restart ComfyUI.
+
+4. The nodes will appear in: `ImpactFrames💥🎞️/utils`
+   - **Wan2.2 Resolution Presets 🎬✨** (New, recommended)
+   - **Resolution Selector (Legacy)** (For backward compatibility)
+
+## 📊 Supported Models & Resolutions
+
+### Wan2.2 - 14B Models (I2V/T2V)
+**VAE Requirement**: Wan2.1 VAE  
+**Rule**: Resolutions must be divisible by 16
+
+**Available Aspect Ratios:**
+- **16:9 Landscape**: 512×288 to 1600×896 (9 options)
+- **9:16 Portrait**: 288×512 to 896×1600 (9 options)
+- **4:3 Landscape**: 512×384 to 1600×1200 (9 options)
+- **3:4 Portrait**: 384×512 to 1200×1600 (9 options)
+- **3:2 Landscape**: 480×320 to 1536×1024 (8 options)
+- **2:3 Portrait**: 320×480 to 1024×1536 (8 options)
+- **1:1 Square**: 480×480 to 1440×1440 (7 options)
+- **21:9 Cinematic**: 1024×432 to 2048×880 (5 options)
+
+### Wan2.2 - 5B Model (TI2V)
+**VAE Requirement**: Wan2.2 VAE  
+**Rule**: Resolutions must be divisible by 32
+
+**Available Aspect Ratios:**
+- **16:9 Landscape**: 512×288 to 1600×896 (7 options)
+- **9:16 Portrait**: 288×512 to 896×1600 (7 options)
+- **4:3 Landscape**: 512×384 to 1600×1200 (8 options)
+- **3:4 Portrait**: 384×512 to 1200×1600 (8 options)
+- **3:2 Landscape**: 480×320 to 1536×1024 (7 options)
+- **2:3 Portrait**: 320×480 to 1024×1536 (7 options)
+- **1:1 Square**: 480×480 to 1440×1440 (7 options)
+- **21:9 Cinematic**: 1792×768 (1 option)
+
+## 🎮 Usage
+
+### Basic Workflow
+
+1. **Add the Node**: 
+   - Right-click in ComfyUI
+   - Navigate to `ImpactFrames💥🎞️/utils`
+   - Select `Wan2.2 Resolution Presets 🎬✨`
+
+2. **Configure Settings**:
+   - **mode**: Choose between 14B Models (I2V/T2V) or 5B Model (TI2V)
+   - **aspect_ratio**: Select your desired aspect ratio (dynamically filtered)
+   - **resolution**: Pick from available resolutions (shown as "WIDTHxHEIGHT")
+
+3. **Connect Outputs**:
+   - `width` → Connect to width input of your target node
+   - `height` → Connect to height input of your target node
+
+### Example Workflow
+
+```
+[Wan2.2 Resolution Presets] → [EmptyLatentVideo] → [Wan2.2 Model]
+         ↓         ↓
+      width    height
+```
+
+## 🔧 Node Details
+
+### Wan2.2 Resolution Presets 🎬✨
+
+**Inputs:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| mode | Dropdown | Model family: 14B (I2V/T2V) or 5B (TI2V) |
+| aspect_ratio | Dropdown | Dynamically filtered based on mode |
+| resolution | Dropdown | Available resolutions in "WIDTHxHEIGHT" format |
+
+**Outputs:**
+| Output | Type | Description |
+|--------|------|-------------|
+| width | INT | Width in pixels |
+| height | INT | Height in pixels |
+
+**Features:**
+- Dynamic filtering ensures only compatible resolutions appear
+- Intelligent defaults select 720p/1280p when available
+- Tooltips display critical VAE and rule information
+- All resolutions verified for architectural compatibility
+
+### Resolution Selector (Legacy)
+
+Includes support for legacy presets (I2V720p, I2V480p, T2V14B, T2V1.3B, IMG, KONTEXT, QWEN) with additional radial attention compatibility options. Preserved for backward compatibility with existing workflows.
+
+## 💡 Tips
+
+- **Hover over the Mode dropdown** to see critical VAE requirements and divisibility rules
+- **For 14B models**: Use Wan2.1 VAE and ensure resolutions are divisible by 16
+- **For 5B model**: Use Wan2.2 VAE and ensure resolutions are divisible by 32
+- **Common resolutions** (720p, 1280p) are automatically selected when switching modes
+- **Cinematic aspect ratio** (21:9) has fewer options due to stricter divisibility requirements
+- **All resolutions are sorted** by pixel area (smallest to largest) for easy selection
+
+## 🤝 Compatibility
+
+- Works with any ComfyUI node that accepts INT width/height inputs
+- Optimized for Wan2.2 video generation models
+- Compatible with image preprocessing nodes (resize, crop, etc.)
+- Integrates seamlessly with latent generation nodes
+- Backward compatible with legacy workflows via the Legacy node
+
+## 🐛 Troubleshooting
+
+**Node not appearing in menu:**
+- Ensure the folder is in `ComfyUI/custom_nodes/`
+- Restart ComfyUI completely
+- Check the console for any Python errors during startup
+
+**Resolution dropdown is empty:**
+- This is normal when switching modes - the list updates dynamically
+- Try selecting a different aspect ratio
+- The 5B model has fewer options for certain aspect ratios (this is correct behavior)
+
+**Wrong VAE being used:**
+- Hover over the Mode dropdown to see VAE requirements
+- 14B models require Wan2.1 VAE
+- 5B model requires Wan2.2 VAE
+
+**Aspect ratio missing:**
+- Some aspect ratios may not appear for certain models due to divisibility constraints
+- The 5B model has stricter requirements (divisible by 32) and fewer options
+
+## 🔄 Migration from Legacy Node
+
+If you're using the old "Resolution Selector (Legacy)" node:
+1. The new node uses different parameter names but provides better guidance
+2. Old workflows will continue to work unchanged
+3. New workflows should use "Wan2.2 Resolution Presets 🎬✨"
+4. The new node focuses on Wan2.2 models specifically
+5. Legacy presets (IMG, KONTEXT, QWEN) remain available in the Legacy node
+
+## 📝 License
+
+This node is provided as-is for use with ComfyUI. Feel free to modify and distribute as needed.
+
+## 🙏 Credits
+
+Developed for the ComfyUI community to simplify working with Wan2.2 video generation models. Special thanks to the ImpactFrames ecosystem for workflow integration patterns.
+
+---
+
+**Repository**: https://github.com/opj161/ComfyUI-Wan22ResolutionPresets  
+**Category**: `ImpactFrames💥🎞️/utils`

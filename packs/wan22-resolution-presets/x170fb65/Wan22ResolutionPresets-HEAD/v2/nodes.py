@@ -1,0 +1,459 @@
+import math
+
+from comfy_api.latest import io
+
+# MASTER RESOLUTIONS LIST - Must be kept in sync with web/resolution_selector.js
+# This is the source of truth for backend validation
+MASTER_RESOLUTIONS_LIST = [
+    {"w": 480, "h": 480, "aspect_ratio": "1:1 Square"},
+    {"w": 512, "h": 512, "aspect_ratio": "1:1 Square"},
+    {"w": 768, "h": 768, "aspect_ratio": "1:1 Square"},
+    {"w": 896, "h": 896, "aspect_ratio": "1:1 Square"},
+    {"w": 1024, "h": 1024, "aspect_ratio": "1:1 Square"},
+    {"w": 1280, "h": 1280, "aspect_ratio": "1:1 Square"},
+    {"w": 1440, "h": 1440, "aspect_ratio": "1:1 Square"},
+    {"w": 512, "h": 288, "aspect_ratio": "16:9 Landscape"},
+    {"w": 768, "h": 432, "aspect_ratio": "16:9 Landscape"},
+    {"w": 896, "h": 512, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1024, "h": 576, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1280, "h": 704, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1280, "h": 720, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1344, "h": 768, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1536, "h": 864, "aspect_ratio": "16:9 Landscape"},
+    {"w": 1600, "h": 896, "aspect_ratio": "16:9 Landscape"},
+    {"w": 288, "h": 512, "aspect_ratio": "9:16 Portrait"},
+    {"w": 432, "h": 768, "aspect_ratio": "9:16 Portrait"},
+    {"w": 512, "h": 896, "aspect_ratio": "9:16 Portrait"},
+    {"w": 576, "h": 1024, "aspect_ratio": "9:16 Portrait"},
+    {"w": 704, "h": 1280, "aspect_ratio": "9:16 Portrait"},
+    {"w": 720, "h": 1280, "aspect_ratio": "9:16 Portrait"},
+    {"w": 768, "h": 1344, "aspect_ratio": "9:16 Portrait"},
+    {"w": 864, "h": 1536, "aspect_ratio": "9:16 Portrait"},
+    {"w": 896, "h": 1600, "aspect_ratio": "9:16 Portrait"},
+    {"w": 512, "h": 384, "aspect_ratio": "4:3 Landscape"},
+    {"w": 640, "h": 480, "aspect_ratio": "4:3 Landscape"},
+    {"w": 768, "h": 576, "aspect_ratio": "4:3 Landscape"},
+    {"w": 960, "h": 720, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1024, "h": 768, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1152, "h": 864, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1280, "h": 960, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1408, "h": 1056, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1536, "h": 1152, "aspect_ratio": "4:3 Landscape"},
+    {"w": 1600, "h": 1200, "aspect_ratio": "4:3 Landscape"},
+    {"w": 384, "h": 512, "aspect_ratio": "3:4 Portrait"},
+    {"w": 480, "h": 640, "aspect_ratio": "3:4 Portrait"},
+    {"w": 576, "h": 768, "aspect_ratio": "3:4 Portrait"},
+    {"w": 720, "h": 960, "aspect_ratio": "3:4 Portrait"},
+    {"w": 768, "h": 1024, "aspect_ratio": "3:4 Portrait"},
+    {"w": 864, "h": 1152, "aspect_ratio": "3:4 Portrait"},
+    {"w": 960, "h": 1280, "aspect_ratio": "3:4 Portrait"},
+    {"w": 1056, "h": 1408, "aspect_ratio": "3:4 Portrait"},
+    {"w": 1152, "h": 1536, "aspect_ratio": "3:4 Portrait"},
+    {"w": 1200, "h": 1600, "aspect_ratio": "3:4 Portrait"},
+    {"w": 480, "h": 320, "aspect_ratio": "3:2 Landscape"},
+    {"w": 720, "h": 480, "aspect_ratio": "3:2 Landscape"},
+    {"w": 768, "h": 512, "aspect_ratio": "3:2 Landscape"},
+    {"w": 960, "h": 640, "aspect_ratio": "3:2 Landscape"},
+    {"w": 1152, "h": 768, "aspect_ratio": "3:2 Landscape"},
+    {"w": 1200, "h": 800, "aspect_ratio": "3:2 Landscape"},
+    {"w": 1344, "h": 896, "aspect_ratio": "3:2 Landscape"},
+    {"w": 1440, "h": 960, "aspect_ratio": "3:2 Landscape"},
+    {"w": 1536, "h": 1024, "aspect_ratio": "3:2 Landscape"},
+    {"w": 320, "h": 480, "aspect_ratio": "2:3 Portrait"},
+    {"w": 480, "h": 720, "aspect_ratio": "2:3 Portrait"},
+    {"w": 512, "h": 768, "aspect_ratio": "2:3 Portrait"},
+    {"w": 640, "h": 960, "aspect_ratio": "2:3 Portrait"},
+    {"w": 768, "h": 1152, "aspect_ratio": "2:3 Portrait"},
+    {"w": 800, "h": 1200, "aspect_ratio": "2:3 Portrait"},
+    {"w": 896, "h": 1344, "aspect_ratio": "2:3 Portrait"},
+    {"w": 960, "h": 1440, "aspect_ratio": "2:3 Portrait"},
+    {"w": 1024, "h": 1536, "aspect_ratio": "2:3 Portrait"},
+    {"w": 1024, "h": 432, "aspect_ratio": "21:9 Cinematic"},
+    {"w": 1280, "h": 544, "aspect_ratio": "21:9 Cinematic"},
+    {"w": 1536, "h": 656, "aspect_ratio": "21:9 Cinematic"},
+    {"w": 1792, "h": 768, "aspect_ratio": "21:9 Cinematic"},
+    {"w": 2048, "h": 880, "aspect_ratio": "21:9 Cinematic"},
+]
+
+VAE_STRIDE = (4, 8, 8)
+PATCH_SIZE = (1, 2, 2)
+RADIAL_ALIGNMENT = VAE_STRIDE[1] * PATCH_SIZE[1]  # 16 for height/width
+
+PREFERED_KONTEXT_RESOLUTIONS = [
+    (672, 1568),
+    (688, 1504),
+    (720, 1456),
+    (752, 1392),
+    (800, 1328),
+    (832, 1248),
+    (880, 1184),
+    (944, 1104),
+    (1024, 1024),
+    (1104, 944),
+    (1184, 880),
+    (1248, 832),
+    (1328, 800),
+    (1392, 752),
+    (1456, 720),
+    (1504, 688),
+    (1568, 672),
+]
+
+def calculate_radial_compatible_resolution(width, height, mode="closest", block_size=64):
+    """
+    Calculate radial attention compatible resolution.
+
+    For radial attention to work, patches_per_frame must be divisible by block_size:
+    patches_per_frame = (height//8) * (width//8) // 4
+
+    Args:
+        width (int): Original width
+        height (int): Original height
+        mode (str): "upscale", "downscale", or "closest"
+        block_size (int): Radial attention block size (64 or 128)
+
+    Returns:
+        tuple: (compatible_width, compatible_height)
+    """
+
+    def find_compatible_dimension(target_size, mode, block_size):
+        # Start with VAE-aligned size
+        base_size = (target_size // VAE_STRIDE[1]) * VAE_STRIDE[1]
+
+        # Search for a size where patches_per_frame % block_size == 0
+        search_range = range(max(VAE_STRIDE[1], base_size - 64), base_size + 80, VAE_STRIDE[1])
+
+        candidates = []
+        for test_size in search_range:
+            lat_dim = test_size // VAE_STRIDE[1]
+            patches_per_frame = (lat_dim * lat_dim) // (PATCH_SIZE[1] * PATCH_SIZE[2])
+
+            if patches_per_frame % block_size == 0:
+                distance = abs(test_size - target_size)
+                candidates.append((distance, test_size))
+
+        if not candidates:
+            # Fallback: just ensure VAE alignment
+            return base_size if base_size >= VAE_STRIDE[1] else VAE_STRIDE[1]
+
+        candidates.sort()  # Sort by distance
+
+        if mode == "upscale":
+            valid_candidates = [size for dist, size in candidates if size >= target_size]
+            return valid_candidates[0] if valid_candidates else candidates[-1][1]
+        elif mode == "downscale":
+            valid_candidates = [size for dist, size in candidates if size <= target_size]
+            return valid_candidates[0] if valid_candidates else candidates[0][1]
+        else:  # closest
+            return candidates[0][1]
+
+    # Handle square resolutions specially (both dimensions must work together)
+    if width == height:
+        # For square resolutions, find size where lat_dim^2 // 4 % block_size == 0
+        target_lat = width // VAE_STRIDE[1]
+
+        for offset in range(-8, 9):  # Search around target
+            test_lat = target_lat + offset
+            if test_lat <= 0:
+                continue
+
+            patches_per_frame = (test_lat * test_lat) // (PATCH_SIZE[1] * PATCH_SIZE[2])
+            if patches_per_frame % block_size == 0:
+                test_size = test_lat * VAE_STRIDE[1]
+                distance = abs(test_size - width)
+
+                if mode == "upscale" and test_size >= width:
+                    return test_size, test_size
+                elif mode == "downscale" and test_size <= width:
+                    return test_size, test_size
+                elif mode == "closest":
+                    # Check if this is closer than the original
+                    orig_lat = width // VAE_STRIDE[1]
+                    orig_patches = (orig_lat * orig_lat) // 4
+                    if orig_patches % block_size != 0 or distance == 0:
+                        return test_size, test_size
+
+        # If no perfect match found, use the original if it's already compatible
+        orig_lat = width // VAE_STRIDE[1]
+        orig_patches = (orig_lat * orig_lat) // 4
+        if orig_patches % block_size == 0:
+            return width, height
+
+    # For non-square or fallback, handle dimensions independently
+    compatible_width = find_compatible_dimension(width, mode, block_size)
+    compatible_height = find_compatible_dimension(height, mode, block_size)
+
+    return compatible_width, compatible_height
+
+def update_resolutions_for_radial_attention(resolutions_dict, mode="closest", block_size=64):
+    """
+    Update resolution dictionary to make all resolutions radial attention compatible.
+
+    Args:
+        resolutions_dict (dict): Original resolutions dictionary
+        mode (str): "upscale", "downscale", or "closest"
+        block_size (int): Radial attention block size (64 or 128)
+
+    Returns:
+        dict: Updated resolutions dictionary
+    """
+    updated_resolutions = {}
+
+    for model_type, orientations in resolutions_dict.items():
+        updated_resolutions[model_type] = {}
+
+        for orientation, qualities in orientations.items():
+            updated_resolutions[model_type][orientation] = {}
+
+            for quality, (width, height) in qualities.items():
+                new_width, new_height = calculate_radial_compatible_resolution(width, height, mode, block_size)
+                updated_resolutions[model_type][orientation][quality] = (new_width, new_height)
+
+                # Log changes if resolution was modified
+                if new_width != width or new_height != height:
+                    print(f"Radial Attention (block_size={block_size}): {model_type}-{orientation}-{quality}: {width}x{height} -> {new_width}x{new_height}")
+
+    return updated_resolutions
+
+class Wan22ResolutionPresets(io.ComfyNode):
+    """
+    Provides curated resolution presets optimized for the Wan2.2 video model family,
+    adhering to architectural divisibility constraints (Rule of 16/32).
+
+    This node uses a dynamic frontend that filters a master resolution list based on
+    the selected mode (14B vs 5B) and aspect ratio. The resolution widget displays
+    options in "WIDTHxHEIGHT" format (e.g., "1280x720").
+    """
+
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def _input_values(cls):
+        # Generate the full list of all possible values for backend validation
+        # The frontend will filter these dynamically, but the backend needs to accept all valid options
+        all_aspect_ratios = sorted(list(set(r["aspect_ratio"] for r in MASTER_RESOLUTIONS_LIST)))
+        # Preserve source-table order for equal-area entries. The legacy node
+        # built a set first, so portrait/landscape ties changed with Python's
+        # hash seed even though the intended sort key was pixel area.
+        all_resolutions = sorted(
+            dict.fromkeys(f"{r['w']}x{r['h']}" for r in MASTER_RESOLUTIONS_LIST),
+            key=lambda x: int(x.split('x')[0]) * int(x.split('x')[1])  # Sort by total pixel area
+        )
+
+        return all_aspect_ratios, all_resolutions
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        all_aspect_ratios, all_resolutions = cls._input_values()
+        return io.Schema(
+            node_id="Wan22ResolutionPresets",
+            display_name="Wan2.2 Resolution Presets 🎬✨",
+            category="ImpactFrames💥🎞️/utils",
+            inputs=[
+                io.Combo.Input(
+                    "mode",
+                    options=[
+                        "Wan2.2 - 14B Models (I2V/T2V)",
+                        "Wan2.2 - 5B Model (TI2V)",
+                    ],
+                    default="Wan2.2 - 14B Models (I2V/T2V)",
+                ),
+                io.Combo.Input(
+                    "aspect_ratio", options=all_aspect_ratios,
+                    default="16:9 Landscape",
+                ),
+                io.Combo.Input(
+                    "resolution", options=all_resolutions,
+                    default="1280x720",
+                ),
+            ],
+            outputs=[
+                io.Int.Output("width", display_name="width"),
+                io.Int.Output("height", display_name="height"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, mode: str, aspect_ratio: str, resolution: str) -> io.NodeOutput:
+        del cls, mode, aspect_ratio
+        try:
+            # Parse the resolution string, e.g., "1280x720"
+            width_str, height_str = resolution.split('x')
+            width = int(width_str)
+            height = int(height_str)
+            return io.NodeOutput(width, height)
+        except Exception as e:
+            print(f"Error parsing resolution string: '{resolution}'. Error: {e}. Defaulting to 1280x720.")
+            return io.NodeOutput(1280, 720)  # Fallback
+
+
+class VideoResolutionSelector(io.ComfyNode):
+    """
+    Selects appropriate video resolution based on mode, aspect ratio, and quality settings.
+    Compatible with KJNodes image resize nodes.
+    LEGACY VERSION - Use Wan22ResolutionPresets for new workflows.
+    """
+
+    # Resolution mappings based on mode, aspect ratio, and quality
+    RESOLUTIONS = {
+        "I2V720p": {
+            "Horizontal": {"HQ": (1280, 720), "MQ": (832, 480), "LQ": (704, 544)},
+            "Vertical":   {"HQ": (720, 1280), "MQ": (480, 832), "LQ": (544, 704)},
+            "Squarish":   {"HQ": (624, 624),  "MQ": (624, 624),  "LQ": (624, 624)},
+        },
+        "I2V480p": {
+            "Horizontal": {"HQ": (832, 480), "MQ": (704, 544), "LQ": (704, 544)},
+            "Vertical":   {"HQ": (480, 832), "MQ": (544, 704), "LQ": (544, 704)},
+            "Squarish":   {"HQ": (624, 624),  "MQ": (624, 624),  "LQ": (624, 624)},
+        },
+        "T2V14B": {
+            "Horizontal": {"HQ": (1280, 720), "MQ": (1088, 832), "LQ": (832, 480)},
+            "Vertical":   {"HQ": (720, 1280), "MQ": (832, 1088), "LQ": (480, 832)},
+            "Squarish":   {"HQ": (960, 960),  "MQ": (624, 624),  "LQ": (544, 704)},
+        },
+        "T2V1.3B": {
+            "Horizontal": {"HQ": (832, 480), "MQ": (704, 544), "LQ": (704, 544)},
+            "Vertical":   {"HQ": (480, 832), "MQ": (544, 704), "LQ": (544, 704)},
+            "Squarish":   {"HQ": (624, 624),  "MQ": (624, 624),  "LQ": (624, 624)},
+        },
+        "IMG": {
+            "Horizontal": {"HQ": (1600, 900), "MQ": (1280, 720), "LQ": (1024, 576)},
+            "Vertical":   {"HQ": (900, 1600), "MQ": (720, 1280), "LQ": (576, 1024)},
+            "Squarish":   {"HQ": (1600, 1600), "MQ": (1024, 1024), "LQ": (512, 512)},
+            "Cinematic":  {"HQ": (1600, 688), "MQ": (1280, 550), "LQ": (1024, 440)},  # ≈2.35:1
+        },
+        "KONTEXT": {
+            "Vertical":   {"HQ": (672, 1568), "MQ": (720, 1456), "LQ": (832, 1248)},
+            "Horizontal": {"HQ": (1568, 672), "MQ": (1456, 720), "LQ": (1248, 832)},
+            "Squarish":   {"HQ": (1024, 1024), "MQ": (944, 1104), "LQ": (880, 1184)},
+        },
+        "QWEN": {
+            "Square":     {"HQ": (1024, 1024), "MQ": (768, 768), "LQ": (512, 512)},
+            "Landscape":  {"HQ": (1280, 720), "MQ": (1024, 768), "LQ": (832, 624)},
+            "Portrait":   {"HQ": (720, 1280), "MQ": (768, 1024), "LQ": (624, 832)},
+            "Wide":       {"HQ": (1536, 768), "MQ": (1280, 640), "LQ": (1024, 512)},
+            "Tall":       {"HQ": (768, 1536), "MQ": (640, 1280), "LQ": (512, 1024)},
+            "UltraWide":  {"HQ": (1792, 768), "MQ": (1536, 640), "LQ": (1280, 544)},
+            "UltraTall":  {"HQ": (768, 1792), "MQ": (640, 1536), "LQ": (544, 1280)},
+        },
+    }
+
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def _input_values(cls):
+        modes = list(cls.RESOLUTIONS.keys())
+        # Get all possible aspect ratios but organize them better
+        all_aspect_ratios = set()
+        for mode_resolutions in cls.RESOLUTIONS.values():
+            all_aspect_ratios.update(mode_resolutions.keys())
+
+        # Sort aspect ratios in a logical order
+        aspect_order = ["Horizontal", "Vertical", "Squarish", "Square", "Cinematic",
+                       "Landscape", "Portrait", "Wide", "Tall", "UltraWide", "UltraTall"]
+        sorted_aspects = [ar for ar in aspect_order if ar in all_aspect_ratios]
+        # Add any remaining aspects not in our predefined order
+        sorted_aspects.extend(sorted([ar for ar in all_aspect_ratios if ar not in aspect_order]))
+
+        return modes, sorted_aspects
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        modes, sorted_aspects = cls._input_values()
+        return io.Schema(
+            node_id="VideoResolutionSelector",
+            display_name="Resolution Selector (Legacy)",
+            category="ImpactFrames💥🎞️/utils",
+            inputs=[
+                io.Combo.Input(
+                    "mode", options=modes, default=modes[0],
+                    tooltip="Generation mode",
+                ),
+                io.Combo.Input(
+                    "aspect_ratio", options=sorted_aspects, default="Horizontal",
+                    tooltip="Aspect ratio (some options may not be available for all modes)",
+                ),
+                io.Combo.Input("quality", options=["HQ", "MQ", "LQ"], default="HQ"),
+                io.Boolean.Input(
+                    "enable_radial_attention", default=False, optional=True,
+                    tooltip="Enable radial attention compatibility",
+                ),
+                io.Combo.Input(
+                    "radial_mode", options=["upscale", "downscale", "closest"],
+                    default="upscale", optional=True,
+                    tooltip="How to adjust resolutions for radial attention",
+                ),
+                io.Combo.Input(
+                    "block_size", options=[64, 128], default=128, optional=True,
+                    tooltip="Radial attention block size",
+                ),
+            ],
+            outputs=[
+                io.Int.Output("width", display_name="width"),
+                io.Int.Output("height", display_name="height"),
+            ],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        mode: str,
+        aspect_ratio: str,
+        quality: str,
+        enable_radial_attention: bool = False,
+        radial_mode: str = "upscale",
+        block_size: int = 128,
+    ) -> io.NodeOutput:
+        try:
+            # Check if aspect ratio is valid for the selected mode
+            if aspect_ratio not in cls.RESOLUTIONS[mode]:
+                available_aspects = list(cls.RESOLUTIONS[mode].keys())
+                if available_aspects:
+                    # Try to find a sensible fallback
+                    fallback_mapping = {
+                        "Cinematic": "Horizontal",
+                        "Square": "Squarish",
+                        "Landscape": "Horizontal",
+                        "Portrait": "Vertical",
+                        "Wide": "Horizontal",
+                        "Tall": "Vertical",
+                        "UltraWide": "Horizontal",
+                        "UltraTall": "Vertical"
+                    }
+
+                    # Try the mapped fallback first
+                    fallback = fallback_mapping.get(aspect_ratio)
+                    if fallback and fallback in available_aspects:
+                        aspect_ratio = fallback
+                    else:
+                        # Use first available
+                        aspect_ratio = available_aspects[0]
+
+                    print(f"Warning: '{aspect_ratio}' aspect ratio not available for '{mode}' mode. Available options: {', '.join(available_aspects)}. Using '{aspect_ratio}' instead.")
+                else:
+                    print(f"Error: No aspect ratios available for mode '{mode}'")
+                    return io.NodeOutput(832, 480)
+
+            w, h = cls.RESOLUTIONS[mode][aspect_ratio][quality]
+
+            # Apply radial attention compatibility if enabled
+            if enable_radial_attention:
+                w, h = calculate_radial_compatible_resolution(w, h, radial_mode, block_size)
+
+            return io.NodeOutput(w, h)
+        except KeyError as e:
+            print(f"Error getting resolution for {mode}-{aspect_ratio}-{quality}: {e}")
+            return io.NodeOutput(832, 480)
+
+
+# --- Node Registration ---
+NODE_CLASS_MAPPINGS = {
+    "Wan22ResolutionPresets": Wan22ResolutionPresets,
+    "VideoResolutionSelector": VideoResolutionSelector,
+}
+
+def get_radial_resolutions(mode="closest", block_size=64):
+    """Get radial attention compatible resolutions."""
+    return update_resolutions_for_radial_attention(VideoResolutionSelector.RESOLUTIONS, mode, block_size)
