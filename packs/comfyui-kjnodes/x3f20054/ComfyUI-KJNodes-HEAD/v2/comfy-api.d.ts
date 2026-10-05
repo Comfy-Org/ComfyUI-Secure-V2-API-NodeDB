@@ -1387,6 +1387,8 @@ export interface GraphHandle {
    * Selection is a property of the document, so it is asked of the graph.
    */
   selection(): readonly NodeHandle[]
+  /** The groups selected in the current visible graph. */
+  groupSelection(): readonly GroupHandle[]
   /**
    * Replaces the selection with these nodes. An empty list clears it.
    *
@@ -1599,6 +1601,8 @@ export interface GroupHandle {
   nodes(): readonly NodeHandle[]
   /** The group's rectangle in graph space, title bar included. */
   getBounds(): Bounds
+  /** Moves and resizes the group as one undoable graph mutation. */
+  setBounds(bounds: Bounds): void
   /** Pans the view so this group is in the middle of it. Zoom is unchanged. */
   centerOn(): void
 }
