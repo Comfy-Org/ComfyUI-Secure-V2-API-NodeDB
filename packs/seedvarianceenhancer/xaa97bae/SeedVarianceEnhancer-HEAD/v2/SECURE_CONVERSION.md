@@ -18,3 +18,7 @@ The node declares only `raw`, required to transform conditioning tensors in its
 isolated guest. Conditioning rows, tensor sizes, tensor rank, metadata size,
 numeric inputs, enums, and seeds are bounded. It has no file, network, model,
 UI, subprocess, or host-process authority.
+
+The legacy implementation resets Torch's process-global RNG. The conversion
+uses a device-local generator, preserving its seeded tensor results without
+changing random state observed by concurrent nodes.

@@ -205,6 +205,24 @@ def test_legacy_v21_seed_mode_and_metadata_ranges_match():
     _assert_same(actual, expected)
 
 
+def test_seeded_execution_does_not_mutate_process_rng_state():
+    source = _conditioning(2)
+    args = (
+        65.0, 4.5, "noise on ending steps", 72.0, 777,
+        "end", 20.0, False,
+    )
+    torch.manual_seed(987654321)
+    before = torch.random.get_rng_state().clone()
+    first = _secure().SeedVarianceEnhancer()._randomize_value(
+        copy.deepcopy(source), *args)[0]
+    after = torch.random.get_rng_state().clone()
+    second = _secure().SeedVarianceEnhancer()._randomize_value(
+        copy.deepcopy(source), *args)[0]
+    assert torch.equal(before, after)
+    assert torch.equal(after, torch.random.get_rng_state())
+    _assert_same(first, second)
+
+
 def test_real_isolated_guest_matches_upstream_and_enforces_raw_capability():
     secure = _secure()
     source = _conditioning(2)

@@ -194,11 +194,24 @@ class SeedVarianceEnhancer(io.ComfyNode):
             if log_to_console:
                 self.log_tensor_statistics(t[0]) # print statistical analysis of tensor to console
 
-            torch.manual_seed(seed)
-            noise = torch.rand_like(t[0]) * 2 * strength - strength
+            # Upstream resets Torch's process-global RNG twice. A local
+            # generator preserves its exact seeded draws without letting one
+            # workflow perturb concurrent nodes in this guest process.
+            generator = torch.Generator(device=t[0].device)
+            generator.manual_seed(seed)
+            noise = torch.rand(
+                t[0].shape,
+                dtype=t[0].dtype,
+                layout=t[0].layout,
+                device=t[0].device,
+                generator=generator,
+            ) * 2 * strength - strength
             if reset_seed:
-                torch.manual_seed(seed+1)
-            noise_mask = torch.bernoulli(torch.ones_like(t[0]) * randomize_percent).bool() # Randomly select a percentage of values.
+                generator.manual_seed(seed + 1)
+            noise_mask = torch.bernoulli(
+                torch.ones_like(t[0]) * randomize_percent,
+                generator=generator,
+            ).bool() # Randomly select a percentage of values.
 
             #check for null sequences
             first_null, last_nonnull, null_sequences = self.tensor_first_null_sequence(t[0])
