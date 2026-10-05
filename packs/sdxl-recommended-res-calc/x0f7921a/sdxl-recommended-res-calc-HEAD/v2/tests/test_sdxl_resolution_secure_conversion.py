@@ -25,7 +25,7 @@ CORE = pathlib.Path(os.environ.get(
 )).expanduser().resolve()
 COMMIT = "0f7921a4e70e8288c027302472dc9a5d70804c12"
 DTS_SHA = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
-PYI_SHA = "82dea265a0ae3918ece66547a6e413558c419fbcb0a4cc19d52b3fd74057cc49"
+PYI_SHA = "5c85bd4742059f3206d98c22aa79f44e445330a405cad1d7056bf33728ffca1b"
 PAIR = PACK_DB / "patches" / "sdxl-recommended-res-calc" / "x0f7921a" / (
     "sdxl-recommended-res-calc-x0f7921a"
 )
