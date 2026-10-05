@@ -1,0 +1,594 @@
+import logging
+import math
+from enum import Enum
+
+import torch
+import torch.nn.functional as F
+from comfy_api.latest import ComfyExtension, io
+
+logger = logging.getLogger(__name__)
+
+# "Prioritize Min Resolution" has no natural upper bound: holding both sides at
+# or above min_res on an extreme aspect ratio scales the long side without
+# limit. A 1x690 input at the default settings asks for 704x485760 — over 4 GB
+# per batch item, enough to OOM the whole ComfyUI process. Refuse to allocate
+# more than this many max_res-sized boxes and tell the user to switch modes.
+MAX_OUTPUT_PIXEL_BUDGET_FACTOR = 16
+
+# The relative budget above is a multiplier, so it grows with the square of
+# max_res: at max_res=8192 it would permit a 1-gigapixel output (~12 GB per
+# batch item), which is the very thing it exists to prevent. Cap it in absolute
+# terms too. 64 MP is ~768 MB per batch item at float32 RGB.
+MAX_OUTPUT_PIXELS = 64 * 1024 * 1024
+
+# Upscales beyond this factor are legal but worth flagging in the log.
+UPSCALE_WARN_FACTOR = 4
+
+# Bounds shared by define_schema() and validate_inputs(). ComfyUI applies a
+# node's declared min/max only to inputs that validate_inputs does NOT name
+# (execution.py: `if x not in validate_function_inputs`), so every input named
+# there must have its range re-checked by hand or it goes unvalidated.
+MIN_RESOLUTION = 1
+MAX_RESOLUTION = 65536
+MIN_MULTIPLE_OF = 1
+MAX_MULTIPLE_OF = 256
+
+
+# (str, Enum) instead of StrEnum keeps the pack importable on Python 3.10,
+# which ComfyUI still supports.
+class ConstraintMode(str, Enum):
+    """Constraint mode for handling extreme aspect ratios"""
+    MIN_RES = "Prioritize Min Resolution"
+    MAX_RES_STRICT = "Prioritize Max Resolution (Strict)"
+
+
+class CropPosition(str, Enum):
+    """Position for cropping when aspect ratios don't match"""
+    CENTER = "center"
+    TOP = "top"
+    BOTTOM = "bottom"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class ResizeMethod(str, Enum):
+    """Interpolation method used for resizing"""
+    BILINEAR = "bilinear"
+    BICUBIC = "bicubic"
+    LANCZOS = "lanczos"
+    NEAREST_EXACT = "nearest-exact"
+    AREA = "area"
+
+
+class ConstrainResolution(io.ComfyNode):
+    """
+    A ComfyUI node that analyzes and resizes images to optimal dimensions
+    while preserving or constraining aspect ratio based on resolution limits.
+    """
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        """Define the node schema with inputs and outputs"""
+        return io.Schema(
+            node_id="ConstrainResolution",
+            display_name="Constrain Resolution",
+            category="image/resolution",
+            description=(
+                "Intelligently resizes images to fit within resolution constraints while preserving aspect ratio. "
+                "Perfect for preparing images for AI models with specific dimension requirements. "
+                "\n\n"
+                "💡 USAGE TIPS:\n"
+                "• Use 'Prioritize Min Resolution' to ensure images are never too small (may exceed max on one dimension)\n"
+                "• Use 'Prioritize Max Resolution (Strict)' for hard VRAM limits (may go below min on one dimension)\n"
+                "• Set 'Multiple Of' to 2 for most models, or higher values (8, 16, 32, 64) for optimal performance\n"
+                "• 'lanczos' or 'bicubic' resize methods give the sharpest results; 'bilinear' is the fastest\n"
+                "• 'Crop as Required' is enabled by default for immediate compatibility with strict dimension requirements\n"
+                "• The node outputs both the resized image and the original for workflow flexibility"
+            ),
+            inputs=[
+                # Image input
+                io.Image.Input(
+                    "image",
+                    tooltip="Input image to analyze and resize"
+                ),
+
+                # Resolution constraints
+                io.Int.Input(
+                    "min_res",
+                    default=704,
+                    min=MIN_RESOLUTION,
+                    max=MAX_RESOLUTION,
+                    tooltip=(
+                        "Minimum resolution in pixels for width and height. "
+                        "Neither output dimension will fall below this."
+                    )
+                ),
+                io.Int.Input(
+                    "max_res",
+                    default=1280,
+                    min=MIN_RESOLUTION,
+                    max=MAX_RESOLUTION,
+                    tooltip=(
+                        "Maximum resolution in pixels. Every image is rescaled so its longest side "
+                        "lands here, so images already in range are resized too. In "
+                        "'Prioritize Min Resolution' mode the long side may exceed this on extreme "
+                        "aspect ratios."
+                    )
+                ),
+                io.Int.Input(
+                    "multiple_of",
+                    default=2,
+                    min=MIN_MULTIPLE_OF,
+                    max=MAX_MULTIPLE_OF,
+                    tooltip=(
+                        "Ensures output dimensions are multiples of this number. "
+                        "Common values: 2 (most models), 8, 16, 32, or 64 (optimal performance). "
+                        "Set to 1 to disable rounding."
+                    )
+                ),
+                io.Combo.Input(
+                    "resize_method",
+                    options=[e.value for e in ResizeMethod],
+                    default=ResizeMethod.LANCZOS.value,
+                    tooltip=(
+                        "Interpolation method used when resizing.\n"
+                        "• lanczos: Sharpest results, best overall quality (default)\n"
+                        "• bicubic: High quality, slightly softer than lanczos\n"
+                        "• bilinear: Fast, slightly soft\n"
+                        "• nearest-exact: No interpolation — for pixel art or masks\n"
+                        "• area: Good for large downscales"
+                    )
+                ),
+
+                # Constraint behavior
+                io.Combo.Input(
+                    "constraint_mode",
+                    options=[e.value for e in ConstraintMode],
+                    default=ConstraintMode.MIN_RES.value,
+                    tooltip=(
+                        "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
+                        "• Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n"
+                        "• Prioritize Max Resolution (Strict): Strictly enforces max_res limit (may go below min_res)"
+                    )
+                ),
+
+                # Crop options
+                io.Boolean.Input(
+                    "crop_as_required",
+                    default=True,
+                    tooltip=(
+                        "Enable cropping to achieve exact target dimensions when rounding causes aspect ratio changes. "
+                        "Disable if preserving the entire image is more important than exact dimensions."
+                    )
+                ),
+                io.Combo.Input(
+                    "crop_position",
+                    options=[e.value for e in CropPosition],
+                    default=CropPosition.CENTER.value,
+                    tooltip=(
+                        "Where to crop from when 'Crop as Required' is enabled.\n"
+                        "• center: Crop equally from all sides\n"
+                        "• top: Keep top portion, crop from bottom\n"
+                        "• bottom: Keep bottom portion, crop from top\n"
+                        "• left: Keep left portion, crop from right\n"
+                        "• right: Keep right portion, crop from left"
+                    )
+                ),
+            ],
+            outputs=[
+                io.Image.Output(
+                    display_name="resized_image",
+                    tooltip="Image resized to the constrained dimensions"
+                ),
+                io.Image.Output(
+                    display_name="original_image",
+                    tooltip="Original image passed through unchanged for workflow flexibility"
+                ),
+                io.Int.Output(
+                    display_name="width",
+                    tooltip="Final width after constraints and rounding"
+                ),
+                io.Int.Output(
+                    display_name="height",
+                    tooltip="Final height after constraints and rounding"
+                ),
+                io.Float.Output(
+                    display_name="final_aspect_ratio",
+                    tooltip="Aspect ratio of the output image (width/height)"
+                ),
+                io.Float.Output(
+                    display_name="original_aspect_ratio",
+                    tooltip="Aspect ratio of the input image for comparison"
+                ),
+            ],
+            is_output_node=False,
+            is_deprecated=False,
+            is_experimental=False
+        )
+
+    @classmethod
+    def validate_inputs(cls, min_res, max_res, multiple_of, constraint_mode):
+        """Validate input parameters.
+
+        The signature deliberately declares only the values checked here and
+        takes no **kwargs: ComfyUI skips its own range and combo-option
+        validation for every input once this function accepts **kwargs
+        (see ``validate_inputs`` in ComfyUI's execution.py). Listing just these
+        four leaves the other inputs to ComfyUI's built-in checks.
+
+        The flip side is that ComfyUI also skips its checks for the four names
+        listed here, so their schema bounds are re-asserted below. The widgets
+        already clamp in the UI; a hand-written or generated API workflow does
+        not, and an unbounded max_res is what makes the pixel budget in
+        ``calculate_optimal_dimensions`` meaningless.
+        """
+        for name, value in (("min_res", min_res), ("max_res", max_res)):
+            if not MIN_RESOLUTION <= value <= MAX_RESOLUTION:
+                return (
+                    f"{name} must be between {MIN_RESOLUTION} and {MAX_RESOLUTION}, got {value}"
+                )
+
+        if not MIN_MULTIPLE_OF <= multiple_of <= MAX_MULTIPLE_OF:
+            return (
+                f"multiple_of must be between {MIN_MULTIPLE_OF} and {MAX_MULTIPLE_OF}, "
+                f"got {multiple_of}"
+            )
+
+        valid_modes = [mode.value for mode in ConstraintMode]
+        if constraint_mode not in valid_modes:
+            return f"constraint_mode must be one of {valid_modes}, got {constraint_mode!r}"
+
+        if max_res < min_res:
+            return f"max_res ({max_res}) must be greater than or equal to min_res ({min_res})"
+
+        if (
+            constraint_mode == ConstraintMode.MAX_RES_STRICT.value
+            and multiple_of > max_res
+        ):
+            # Same failure calculate_optimal_dimensions raises at execution time;
+            # catching it here rejects the workflow at queue time instead.
+            return (
+                f"multiple_of ({multiple_of}) is larger than max_res ({max_res}), so no valid "
+                f"output size exists in '{ConstraintMode.MAX_RES_STRICT.value}' mode. "
+                f"Lower multiple_of or raise max_res."
+            )
+
+        return True
+
+    @staticmethod
+    def calculate_aspect_ratio(width: int, height: int) -> float:
+        """Calculate aspect ratio from width and height"""
+        if height == 0:
+            return 0.0
+        return round(width / height, 4)
+
+    @staticmethod
+    def round_to_multiple(value: int, multiple: int) -> int:
+        """Round a value to the nearest multiple, never dropping below one pixel"""
+        if multiple < 1:
+            raise ValueError(f"multiple_of must be at least 1, got {multiple}")
+        if multiple == 1:
+            return max(1, value)
+        return max(multiple, multiple * round(value / multiple))
+
+    @staticmethod
+    def calculate_optimal_dimensions(
+        width: int,
+        height: int,
+        min_res: int,
+        max_res: int,
+        multiple_of: int,
+        constraint_mode: str
+    ) -> tuple[int, int]:
+        """Calculate optimal dimensions based on constraints"""
+        if multiple_of < 1:
+            raise ValueError(f"multiple_of must be at least 1, got {multiple_of}")
+        if constraint_mode not in (ConstraintMode.MIN_RES.value, ConstraintMode.MAX_RES_STRICT.value):
+            # Silently falling through would apply neither the min_res floor nor
+            # the max_res clamp, quietly violating both limits.
+            raise ValueError(f"Unknown constraint_mode: {constraint_mode!r}")
+        if height == 0 or width == 0:
+            return 0, 0
+
+        aspect_ratio = width / height
+
+        # 1. Initial scaling to fit the longest side to max_res
+        if aspect_ratio >= 1:  # Landscape or square
+            new_width = max_res
+            new_height = new_width / aspect_ratio
+        else:  # Portrait
+            new_height = max_res
+            new_width = new_height * aspect_ratio
+
+        # 2. Apply constraint logic based on user's choice
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            # If a dimension is below min_res, scale the entire image up to meet it
+            scale_factor = 1.0
+            if new_width < min_res:
+                scale_factor = max(scale_factor, min_res / new_width)
+            if new_height < min_res:
+                scale_factor = max(scale_factor, min_res / new_height)
+
+            new_width *= scale_factor
+            new_height *= scale_factor
+
+        # If mode is "Prioritize Max Resolution (Strict)", we do nothing here.
+        # The initial scaling keeps us within max_res before rounding, but rounding
+        # can push a dimension above max_res — the clamp below handles that.
+
+        # 3. Round final dimensions to the nearest multiple
+        final_width = ConstrainResolution.round_to_multiple(int(new_width), multiple_of)
+        final_height = ConstrainResolution.round_to_multiple(int(new_height), multiple_of)
+
+        # Nearest-multiple rounding can drop a dimension back below min_res
+        # (e.g. min_res=1100, multiple_of=256 -> 1024). In min-res mode, bump
+        # such a dimension up to the next multiple so the guarantee holds.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            if final_width < min_res:
+                final_width = math.ceil(min_res / multiple_of) * multiple_of
+            if final_height < min_res:
+                final_height = math.ceil(min_res / multiple_of) * multiple_of
+
+        # 4. In strict mode, rounding can exceed max_res (e.g. round_to_multiple(2160, 32) = 2176).
+        #    Clamp to the largest valid multiple of multiple_of that is <= max_res.
+        if constraint_mode == ConstraintMode.MAX_RES_STRICT.value:
+            max_allowed = (max_res // multiple_of) * multiple_of
+            if max_allowed == 0:
+                # No positive multiple of multiple_of fits inside max_res, so the
+                # request is unsatisfiable. Clamping anyway would return 0 and
+                # silently pass the image through untouched.
+                raise ValueError(
+                    f"multiple_of ({multiple_of}) is larger than max_res ({max_res}), so no valid "
+                    f"output size exists in '{ConstraintMode.MAX_RES_STRICT.value}' mode. "
+                    f"Lower multiple_of or raise max_res."
+                )
+            final_width = min(final_width, max_allowed)
+            final_height = min(final_height, max_allowed)
+
+        # 5. Refuse absurd allocations rather than letting the resize OOM the
+        #    process. Only reachable in min-res mode, which is the only mode
+        #    without an upper bound.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            # Allow the user's own max_res box unconditionally, a multiple of it
+            # for moderately extreme ratios, and never more than the absolute
+            # ceiling — so the guard stays meaningful at every max_res.
+            box = max(min_res, max_res) ** 2
+            budget = max(box, min(box * MAX_OUTPUT_PIXEL_BUDGET_FACTOR, MAX_OUTPUT_PIXELS))
+            if final_width * final_height > budget:
+                raise ValueError(
+                    f"'{ConstraintMode.MIN_RES.value}' needs {final_width}x{final_height} "
+                    f"({final_width * final_height / 1e6:.1f} MP) to hold both sides at or above "
+                    f"min_res ({min_res}) for a {width}x{height} input. That exceeds the "
+                    f"{budget / 1e6:.1f} MP safety limit and would likely exhaust memory. "
+                    f"Switch to '{ConstraintMode.MAX_RES_STRICT.value}' to cap the output size, "
+                    f"or lower min_res."
+                )
+
+        return final_width, final_height
+
+    @staticmethod
+    def resize_image(
+        image: torch.Tensor,
+        target_width: int,
+        target_height: int,
+        method: str = ResizeMethod.LANCZOS.value
+    ) -> torch.Tensor:
+        """
+        Resize image tensor to target dimensions.
+
+        Args:
+            image: Input tensor in format [batch, height, width, channels]
+            target_width: Target width in pixels
+            target_height: Target height in pixels
+            method: Interpolation method (see ResizeMethod)
+
+        Returns:
+            Resized tensor in same format as input
+        """
+        # ComfyUI images are [batch, height, width, channels];
+        # resizing needs [batch, channels, height, width]
+        image_permuted = image.permute(0, 3, 1, 2)
+
+        try:
+            # Prefer ComfyUI's resizer (adds lanczos, matches core node behavior)
+            from comfy.utils import common_upscale
+            resized = common_upscale(image_permuted, target_width, target_height, method, "disabled")
+        except ImportError:
+            # Outside ComfyUI (e.g. tests): torch has no lanczos, use bicubic
+            if method == ResizeMethod.LANCZOS.value:
+                method = ResizeMethod.BICUBIC.value
+            kwargs = {"align_corners": False} if method in ("bilinear", "bicubic") else {}
+            resized = F.interpolate(
+                image_permuted,
+                size=(target_height, target_width),
+                mode=method,
+                **kwargs
+            )
+
+        # bicubic/lanczos kernels can overshoot the valid [0, 1] range
+        if method in (ResizeMethod.BICUBIC.value, ResizeMethod.LANCZOS.value):
+            resized = resized.clamp(0.0, 1.0)
+
+        return resized.permute(0, 2, 3, 1)
+
+    @staticmethod
+    def crop_image(
+        image: torch.Tensor,
+        target_width: int,
+        target_height: int,
+        position: str
+    ) -> torch.Tensor:
+        """
+        Crop image to exact target dimensions from specified position.
+
+        Args:
+            image: Input tensor in format [batch, height, width, channels]
+            target_width: Target width in pixels
+            target_height: Target height in pixels
+            position: One of "center", "top", "bottom", "left", "right"
+
+        Returns:
+            Cropped tensor
+        """
+        batch, height, width, channels = image.shape
+
+        if target_width > width or target_height > height:
+            # Slicing past the end silently yields a smaller tensor than the
+            # width/height this node reports, so refuse instead.
+            raise ValueError(
+                f"crop target {target_width}x{target_height} is larger than the source "
+                f"image {width}x{height}; crop_image cannot grow an image."
+            )
+
+        # Calculate crop amounts
+        width_diff = width - target_width
+        height_diff = height - target_height
+
+        # No crop needed if dimensions match
+        if width_diff == 0 and height_diff == 0:
+            return image
+
+        # Calculate crop coordinates based on position
+        if position == CropPosition.CENTER.value:
+            left = width_diff // 2
+            top = height_diff // 2
+        elif position == CropPosition.TOP.value:
+            left = width_diff // 2
+            top = 0
+        elif position == CropPosition.BOTTOM.value:
+            left = width_diff // 2
+            top = height_diff
+        elif position == CropPosition.LEFT.value:
+            left = 0
+            top = height_diff // 2
+        elif position == CropPosition.RIGHT.value:
+            left = width_diff
+            top = height_diff // 2
+        else:
+            # Default to center
+            left = width_diff // 2
+            top = height_diff // 2
+
+        # Ensure we don't go out of bounds
+        left = max(0, min(left, width_diff))
+        top = max(0, min(top, height_diff))
+
+        # Crop the image
+        right = left + target_width
+        bottom = top + target_height
+
+        cropped = image[:, top:bottom, left:right, :]
+
+        return cropped
+
+    @classmethod
+    def execute(
+        cls,
+        image,
+        min_res,
+        max_res,
+        multiple_of,
+        resize_method,
+        constraint_mode,
+        crop_as_required,
+        crop_position
+    ) -> io.NodeOutput:
+        """Execute the node logic"""
+        # Get original dimensions
+        batch, height, width, channels = image.shape
+
+        original_aspect_ratio = cls.calculate_aspect_ratio(width, height)
+
+        # Calculate optimal dimensions
+        target_width, target_height = cls.calculate_optimal_dimensions(
+            width, height, min_res, max_res, multiple_of, constraint_mode
+        )
+
+        # Degenerate input (empty/malformed tensor) collapses to a 0 target,
+        # which would crash the resizer. Pass the image through untouched instead.
+        if target_width == 0 or target_height == 0:
+            logger.warning(
+                "Input has a zero dimension (%dx%d); passing image through unchanged.",
+                width, height
+            )
+            return io.NodeOutput(
+                image, image, width, height,
+                original_aspect_ratio, original_aspect_ratio
+            )
+
+        # Warn when a resize forces a large upscale (>4x): legal, but tiny sources
+        # produce visibly soft results, and min-res mode can also blow up memory
+        # on extreme aspect ratios. Fires in both modes — strict mode bounds the
+        # size, not the blur.
+        upscale_factor = max(target_width / width, target_height / height)
+        if upscale_factor > UPSCALE_WARN_FACTOR:
+            if constraint_mode == ConstraintMode.MIN_RES.value:
+                logger.warning(
+                    "Upscaling by %.1fx to %dx%d to satisfy min_res on an extreme aspect ratio. "
+                    "Use 'Prioritize Max Resolution (Strict)' to cap output size and avoid large upscales.",
+                    upscale_factor, target_width, target_height
+                )
+            else:
+                logger.warning(
+                    "Upscaling by %.1fx to %dx%d from a %dx%d source; the result will look soft. "
+                    "A larger source image will give better quality.",
+                    upscale_factor, target_width, target_height, width, height
+                )
+
+        final_aspect_ratio = cls.calculate_aspect_ratio(target_width, target_height)
+
+        # Decide on cropping before resizing, so only one resize is ever done.
+        # Compare exact ratios rather than the 4-decimal rounded outputs: a very
+        # tall image rounds to 0.0, which would skip the crop and distort it.
+        exact_original_ratio = width / height
+        exact_final_ratio = target_width / target_height
+        aspect_ratio_deviation = abs(
+            (exact_final_ratio - exact_original_ratio) / exact_original_ratio * 100
+        )
+
+        if crop_as_required and aspect_ratio_deviation > 0.1:
+            # Resize preserving aspect ratio so one side overshoots, then crop back.
+            # ceil + max keep the intermediate dimension at or above the target,
+            # so the crop below never has to grow the image.
+            if exact_original_ratio > exact_final_ratio:
+                # Original is wider: match height, overshoot and crop width
+                intermediate_width = max(target_width, math.ceil(target_height * width / height))
+                resized_image = cls.resize_image(image, intermediate_width, target_height, resize_method)
+            else:
+                # Original is taller: match width, overshoot and crop height
+                intermediate_height = max(target_height, math.ceil(target_width * height / width))
+                resized_image = cls.resize_image(image, target_width, intermediate_height, resize_method)
+
+            resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
+            logger.debug("Image cropped to achieve exact dimensions %dx%d", target_width, target_height)
+        else:
+            resized_image = cls.resize_image(image, target_width, target_height, resize_method)
+
+            if not crop_as_required and aspect_ratio_deviation > 1:  # 1% tolerance for rounding
+                logger.info(
+                    "Aspect ratio changed by %.2f%% due to rounding. "
+                    "Enable 'Crop as Required' to preserve exact aspect ratio.",
+                    aspect_ratio_deviation
+                )
+
+        return io.NodeOutput(
+            resized_image,      # resized image
+            image,              # original image passthrough
+            target_width,       # final width
+            target_height,      # final height
+            final_aspect_ratio, # final aspect ratio
+            original_aspect_ratio  # original aspect ratio
+        )
+
+
+class ConstrainResolutionExtension(ComfyExtension):
+    """Extension class for registering nodes"""
+
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        """Return list of nodes provided by this extension"""
+        return [ConstrainResolution]
+
+
+async def comfy_entrypoint() -> ComfyExtension:
+    """Entry point for ComfyUI v3"""
+    return ConstrainResolutionExtension()

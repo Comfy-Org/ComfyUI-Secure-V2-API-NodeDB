@@ -1,0 +1,300 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ConstrainResolution": {
+      "class": "ConstrainResolution",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image/resolution",
+          "description": "Intelligently resizes images to fit within resolution constraints while preserving aspect ratio. Perfect for preparing images for AI models with specific dimension requirements. \n\n\ud83d\udca1 USAGE TIPS:\n\u2022 Use 'Prioritize Min Resolution' to ensure images are never too small (may exceed max on one dimension)\n\u2022 Use 'Prioritize Max Resolution (Strict)' for hard VRAM limits (may go below min on one dimension)\n\u2022 Set 'Multiple Of' to 2 for most models, or higher values (8, 16, 32, 64) for optimal performance\n\u2022 'lanczos' or 'bicubic' resize methods give the sharpest results; 'bilinear' is the fastest\n\u2022 'Crop as Required' is enabled by default for immediate compatibility with strict dimension requirements\n\u2022 The node outputs both the resized image and the original for workflow flexibility",
+          "display_name": "Constrain Resolution",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ConstrainResolution",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Input image to analyze and resize"
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 704,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "min_res",
+              "lazy": null,
+              "max": 65536,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Minimum resolution in pixels for width and height. Neither output dimension will fall below this.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1280,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_res",
+              "lazy": null,
+              "max": 65536,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Maximum resolution in pixels. Every image is rescaled so its longest side lands here, so images already in range are resized too. In 'Prioritize Min Resolution' mode the long side may exceed this on extreme aspect ratios.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "multiple_of",
+              "lazy": null,
+              "max": 256,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Ensures output dimensions are multiples of this number. Common values: 2 (most models), 8, 16, 32, or 64 (optimal performance). Set to 1 to disable rounding.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "lanczos",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "resize_method",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "bilinear",
+                "bicubic",
+                "lanczos",
+                "nearest-exact",
+                "area"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Interpolation method used when resizing.\n\u2022 lanczos: Sharpest results, best overall quality (default)\n\u2022 bicubic: High quality, slightly softer than lanczos\n\u2022 bilinear: Fast, slightly soft\n\u2022 nearest-exact: No interpolation \u2014 for pixel art or masks\n\u2022 area: Good for large downscales",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Prioritize Min Resolution",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "constraint_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Prioritize Min Resolution",
+                "Prioritize Max Resolution (Strict)"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n\u2022 Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n\u2022 Prioritize Max Resolution (Strict): Strictly enforces max_res limit (may go below min_res)",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_as_required",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Enable cropping to achieve exact target dimensions when rounding causes aspect ratio changes. Disable if preserving the entire image is more important than exact dimensions.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "center",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_position",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "center",
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Where to crop from when 'Crop as Required' is enabled.\n\u2022 center: Crop equally from all sides\n\u2022 top: Keep top portion, crop from bottom\n\u2022 bottom: Keep bottom portion, crop from top\n\u2022 left: Keep left portion, crop from right\n\u2022 right: Keep right portion, crop from left",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "resized_image",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": "Image resized to the constrained dimensions"
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "original_image",
+              "id": "_1_IMAGE_",
+              "is_output_list": false,
+              "tooltip": "Original image passed through unchanged for workflow flexibility"
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "width",
+              "id": "_2_INT_",
+              "is_output_list": false,
+              "tooltip": "Final width after constraints and rounding"
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "height",
+              "id": "_3_INT_",
+              "is_output_list": false,
+              "tooltip": "Final height after constraints and rounding"
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "final_aspect_ratio",
+              "id": "_4_FLOAT_",
+              "is_output_list": false,
+              "tooltip": "Aspect ratio of the output image (width/height)"
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "original_aspect_ratio",
+              "id": "_5_FLOAT_",
+              "is_output_list": false,
+              "tooltip": "Aspect ratio of the input image for comparison"
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
