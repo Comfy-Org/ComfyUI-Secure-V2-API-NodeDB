@@ -26,7 +26,7 @@ CORE = pathlib.Path(os.environ.get(
 COMFYUI = pathlib.Path("/Users/ben/comfy/ComfyUI")
 COMMIT = "5dd91d71bff801e5cb1daa56ca5f85d08490e089"
 DTS_SHA = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
-PYI_SHA = "5c85bd4742059f3206d98c22aa79f44e445330a405cad1d7056bf33728ffca1b"
+PYI_SHA = "f2d067f03a2f80f942ba0d5c777daa1148562e44e836b72cb27129b36ba3855f"
 PAIR = PACK_DB / "patches" / "comfyui-zimagelatent" / "x5dd91d7" / (
     "comfyui-zimagelatent-x5dd91d7"
 )
