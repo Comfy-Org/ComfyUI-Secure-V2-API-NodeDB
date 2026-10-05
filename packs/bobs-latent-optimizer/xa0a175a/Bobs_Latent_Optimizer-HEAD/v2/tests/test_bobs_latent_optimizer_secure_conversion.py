@@ -24,7 +24,7 @@ COMFYUI = pathlib.Path("/Users/ben/comfy/ComfyUI")
 COMMIT = "a0a175aed20bc9e42bdd03f99b9f6dcfd1ecbf40"
 TREE = "74647bca3d873d95a7401d10ad4dfe60a5a3a399"
 DTS_SHA = "4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3"
-PYI_SHA = "f2d067f03a2f80f942ba0d5c777daa1148562e44e836b72cb27129b36ba3855f"
+PYI_SHA = "50848a56eaf4f798de1a4f11faa7e3bd9b6254c2c61a94b5a9907aaa2b0cac78"
 NODE_IDS = ("BobsLatentNode", "BobsLatentNodeAdvanced")
 PRISTINE_FILES = {
     ".github/workflows/publish.yml",
