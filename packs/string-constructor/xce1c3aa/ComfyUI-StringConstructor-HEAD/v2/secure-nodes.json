@@ -1,0 +1,429 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "StringConstructorFormatter": {
+      "module": "node_formatter",
+      "class": "StringFormatterOld1",
+      "sdk_refs": false,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "StringConstructorFormatter",
+          "display_name": "String Formatter [OLD]",
+          "category": "String Constructor/_old",
+          "description": "Construct the formatted string from template and format-dictionary.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": true,
+          "is_experimental": false,
+          "is_dev_only": true,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "template",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Type the text template. To reference named substrings from format-dictionary, use this syntax: {substring_name}. For example:\n\nscore_9, score_8_up, score_7_up, {char1_short}, standing next to {char2_short},\n{char1_long}\n{char2_long}",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "recursive_format",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Do recursive format - i.e., allow the chunks from the dictionary to reference other chunks.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "\u2757 yes",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "safe_format",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "If template contains an invalid {text pattern} which can't be formatted - leave it as-is (instead of throwing an error).\nSafe mode is recommended for templates with JSON, CSS, or other literal curly brackets.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "yes",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "show_status",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Show the final string constructed from the text-template and format-dictionary?",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "formatted string",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "dict",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "The dictionary to take named sub-strings from. It could be left unconnected, if the pattern doesn't reference any sub-strings - then, this node acts exactly the same as a regular string-primitive node.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "string",
+              "display_name": "string",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "StringConstructorValidateKeys": {
+      "module": "node_validate",
+      "class": "ValidateKeysOld1",
+      "sdk_refs": false,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "StringConstructorValidateKeys",
+          "display_name": "Validate Dict [OLD]",
+          "category": "String Constructor/_old",
+          "description": "Verify the dict to have string-formatting-compatible keys. No need to add it before \"String Formatter\" node, but it might be handy to verify the dict in the very beginning of the graph - right after the keys are set.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": true,
+          "is_experimental": false,
+          "is_dev_only": true,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "dict",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "An (optional) Format-Dictionary to work with.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "DICT",
+              "display_name": "dict",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "StringFormatter [String Constructor]": {
+      "module": "node_formatter",
+      "class": "StringFormatter",
+      "sdk_refs": false,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "StringFormatter [String Constructor]",
+          "display_name": "String Formatter",
+          "category": "String Constructor",
+          "description": "Construct the formatted string from template and format-dictionary.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "template",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Type the text template. To reference named substrings from format-dictionary, use this syntax: {substring_name}. For example:\n\nscore_9, score_8_up, score_7_up, {char1_short}, standing next to {char2_short},\n{char1_long}\n{char2_long}",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "recursive_format",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Do recursive format - i.e., allow the chunks from the dictionary to reference other chunks.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "\u2757 yes",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "safe_format",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "If template contains an invalid {text pattern} which can't be formatted - leave it as-is (instead of throwing an error).\nSafe mode is recommended for templates with JSON, CSS, or other literal curly brackets.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "yes",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "show_status",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Show the final string constructed from the text-template and format-dictionary?",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": true,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": "formatted string",
+              "label_off": "no"
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "dict",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "The dictionary to take named sub-strings from. It could be left unconnected, if the pattern doesn't reference any sub-strings - then, this node acts exactly the same as a regular string-primitive node.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "string",
+              "display_name": "string",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "ValidateKeys [String Constructor]": {
+      "module": "node_validate",
+      "class": "ValidateKeys",
+      "sdk_refs": false,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ValidateKeys [String Constructor]",
+          "display_name": "Validate Dict",
+          "category": "String Constructor",
+          "description": "Verify the dict to have string-formatting-compatible keys. No need to add it before \"String Formatter\" node, but it might be handy to verify the dict in the very beginning of the graph - right after the keys are set.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "dict",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "An (optional) Format-Dictionary to work with.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "DICT",
+            "attrs": {
+              "id": "DICT",
+              "display_name": "dict",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
