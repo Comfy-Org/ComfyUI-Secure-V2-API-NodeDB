@@ -1,0 +1,562 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "frontend_permissions": [],
+  "nodes": {
+    "LTXResolutions": {
+      "class": "LTXResolutions",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "node_id": "LTXResolutions",
+          "display_name": "LTXResolutions",
+          "category": "LTX",
+          "description": "LTX 2.3 video resolution presets.\n- Uses dimensions divisible by 32.\n- Keeps the same aspect-ratio selection workflow as WanResolutions.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "aspect_ratio",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "1:1",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "1:1",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "resolution",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Stage 1 Preview — 320×320",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Stage 1 Preview — 320×320",
+                "Fast Iteration — 640×640",
+                "Balanced — 768×768",
+                "HD Output — 960×960",
+                "High Detail — 1184×1184",
+                "Full HD Output — 1440×1440"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "image_bypass",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "upscaler_power",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "none",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "none",
+                "x1.5",
+                "x2"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      },
+      "sdk_refs": true
+    },
+    "LTXUpscalerPower": {
+      "class": "LTXUpscalerPower",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "node_id": "LTXUpscalerPower",
+          "display_name": "LTX Upscaler Power",
+          "category": "LTX",
+          "description": "Connectable LTX upscaler-power value for the LTXResolutions combo.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "upscaler_power",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "none",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "none",
+                "x1.5",
+                "x2"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "upscaler_power",
+              "display_name": "upscaler_power",
+              "tooltip": null,
+              "is_output_list": false,
+              "options": [
+                "none",
+                "x1.5",
+                "x2"
+              ]
+            }
+          }
+        ],
+        "hidden": []
+      },
+      "sdk_refs": false
+    },
+    "MiniMaxH3Resolutions": {
+      "class": "MiniMaxH3Resolutions",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "node_id": "MiniMaxH3Resolutions",
+          "display_name": "MiniMax H3 Resolutions",
+          "category": "MINIMAX",
+          "description": "MiniMax H3 resolution presets.\n\nText-to-video uses MiniMax's six official aspect-ratio choices. Connecting\nan image switches to adaptive image-to-video sizing: the selected tier's\npixel area is retained while the source image's aspect ratio is preserved.\nEvery output is aligned to H3's 32-pixel transformer grid.",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "aspect_ratio",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "16:9",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "1:1",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "21:9"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "resolution",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Draft (0.25 MP) — 672×384",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Draft (0.25 MP) — 672×384",
+                "Preview (0.40 MP) — 864×480",
+                "1K (0.56 MP) — 1024×576",
+                "720P Class (0.90 MP) — 1280×736",
+                "High Detail (1.00 MP) — 1344×768",
+                "1.5K (1.27 MP) — 1536×864",
+                "1080P Class (2.00 MP) — 1920×1088",
+                "2K (2.25 MP) — 2048×1152"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      },
+      "sdk_refs": true
+    },
+    "WanResolutions": {
+      "class": "WanResolutions",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "node_id": "WanResolutions",
+          "display_name": "WanResolutions",
+          "category": "WAN",
+          "description": "Wan 2.2 (A14B) resolution presets. Every size is divisible by 16 — the real\nalignment requirement for the A14B T2V/I2V models (8x VAE stride x 2x DiT\npatch). The lower tiers are faster, lower-area conveniences; \"Wan 2.2 Native\"\nmatches what the model actually targets. Enable `official_only` to snap output\nto one of Wan's four CLI buckets (1280x720 / 720x1280 / 832x480 / 480x832).",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "aspect_ratio",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "1:1",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "1:1",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "resolution",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Fast Draft — 480×480",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Fast Draft — 480×480",
+                "Preview — 640×640",
+                "High Detail — 832×832",
+                "Wan 2.2 Native — 960×960"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "official_only",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web"
+}
