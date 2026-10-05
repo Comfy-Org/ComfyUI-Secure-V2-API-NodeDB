@@ -29,7 +29,7 @@ CORE = (
 )
 COMFYUI = pathlib.Path("/Users/ben/comfy/ComfyUI")
 COMMIT = "b0a204d910a0025d8ba4b53b01df831861cf8241"
-DTS_SHA = "bb40d8a1b50dc1c8cdf7db8f042f9e79de80b1d88ff2ddc56c41fde04a7ec09f"
+DTS_SHA = "4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3"
 PYI_SHA = "f2d067f03a2f80f942ba0d5c777daa1148562e44e836b72cb27129b36ba3855f"
 PAIR = (
     PACK_DB
