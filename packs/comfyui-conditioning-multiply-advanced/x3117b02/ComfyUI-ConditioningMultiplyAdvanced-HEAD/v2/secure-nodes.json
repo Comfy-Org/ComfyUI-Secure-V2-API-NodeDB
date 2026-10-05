@@ -1,0 +1,354 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ConditioningMultiplyAdvanced": {
+      "class": "ConditioningMultiplyAdvanced",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "advanced/conditioning",
+          "description": "Multiply selected floating conditioning tensors while preserving integer token-id tensors such as Anima t5xxl_ids.",
+          "display_name": "Conditioning Multiply Advanced",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ConditioningMultiplyAdvanced",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": [
+            "multiply conditioning",
+            "scale conditioning",
+            "conditioning strength",
+            "prompt strength"
+          ]
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "conditioning",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Conditioning payload to scale."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "start_multiplier",
+              "lazy": null,
+              "max": 1000000000.0,
+              "min": -1000000000.0,
+              "optional": false,
+              "rawLink": null,
+              "round": false,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Multiplier used at start_percent and before the window when outside_window is hold.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "end_multiplier",
+              "lazy": null,
+              "max": 1000000000.0,
+              "min": -1000000000.0,
+              "optional": false,
+              "rawLink": null,
+              "round": false,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "Multiplier used at end_percent and after the window when outside_window is hold.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "start_percent",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Denoise progress where the multiplier transition window starts.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 1.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "end_percent",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Denoise progress where the multiplier transition window ends.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "linear",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "curve",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "linear",
+                "cosine",
+                "smoothstep",
+                "ease_in",
+                "ease_out",
+                "sigmoid"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Curve used to interpolate from start_multiplier to end_multiplier inside the timestep window.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "hold",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "outside_window",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "hold",
+                "baseline",
+                "linear_extrapolate"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "hold uses start_multiplier before the window and end_multiplier after it. baseline uses 1.0 outside the window. linear_extrapolate continues a linear multiplier trend outside the window.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 16,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "segments",
+              "lazy": null,
+              "max": 256,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Number of conditioning ranges used to approximate the multiplier curve inside the window.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "main_conditioning_and_float_metadata",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tensor_scope",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "main_conditioning_and_float_metadata",
+                "main_conditioning_only",
+                "float_metadata_only",
+                "all_float_tensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Controls which floating tensors are multiplied. The default scales the main conditioning tensor plus selected float metadata such as pooled_output and t5xxl_weights.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "preserve",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "non_float_behavior",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "preserve",
+                "error"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "preserve leaves integer/bool tensors unchanged. error raises when a non-floating tensor is encountered.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "pooled_output,t5xxl_weights",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "metadata_keys",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Comma-separated metadata tensor keys to scale when tensor_scope includes metadata. Integer token ids such as t5xxl_ids should not be listed.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "log_summary",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Print how many tensors were multiplied or preserved.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "conditioning",
+              "id": "conditioning",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
