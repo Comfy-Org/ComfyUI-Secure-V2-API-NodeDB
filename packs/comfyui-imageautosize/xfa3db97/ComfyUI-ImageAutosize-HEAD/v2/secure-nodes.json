@@ -1,0 +1,555 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "ImageAutosize": {
+      "class": "ImageAutosize",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image",
+          "description": "Automatically resizes an image or mask for diffusion workflows.",
+          "display_name": "Image/Mask Autosize",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ImageAutosize",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": [
+            "autosize",
+            "image mask autosize",
+            "auto resize",
+            "resize to multiple",
+            "resize image",
+            "resize mask"
+          ]
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": "The image or mask to resize."
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1280,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_size",
+              "lazy": null,
+              "max": 8192,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Longer-dimension target used to calculate one candidate resize scale.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 512,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "min_size",
+              "lazy": null,
+              "max": 4096,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Shorter-dimension target used to calculate one candidate resize scale.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 32,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "divisible_by",
+              "lazy": null,
+              "max": 8192,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Rounds both output dimensions to the nearest multiple of this value.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "lanczos",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "interpolation_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "nearest-exact",
+                "bilinear",
+                "area",
+                "bicubic",
+                "lanczos"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Interpolation algorithm used for resizing.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "center",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "none",
+                "pad",
+                "center",
+                "top",
+                "bottom",
+                "left",
+                "right",
+                "top_left",
+                "top_right",
+                "bottom_left",
+                "bottom_right"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Anchored modes preserve aspect ratio by cropping. Pad preserves aspect ratio with reversible padding. None stretches to the output dimensions.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "min_size",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "constraint_priority",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "min_size",
+                "max_size"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Chooses the candidate scale. min_size uses the larger scale; max_size uses the smaller scale. Divisibility rounding runs afterward.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "resized",
+              "id": "_0_COMFY_MATCHTYPE_V3_",
+              "is_output_list": false,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": null
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          },
+          {
+            "attrs": {
+              "display_name": "width",
+              "id": "_1_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "height",
+              "id": "_2_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "scale_x",
+              "id": "_3_FLOAT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "scale_y",
+              "id": "_4_FLOAT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "transform",
+              "id": "_5_AUTOSIZE_TRANSFORM_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "AUTOSIZE_TRANSFORM",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "ImageAutosizeApplyTransform": {
+      "class": "ImageAutosizeApplyTransform",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image",
+          "description": "",
+          "display_name": "Apply Autosize Transform",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ImageAutosizeApplyTransform",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": null
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "transform",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "AUTOSIZE_TRANSFORM",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "nearest-exact",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "interpolation_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "nearest-exact",
+                "bilinear",
+                "area",
+                "bicubic",
+                "lanczos"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "resized",
+              "id": "_0_COMFY_MATCHTYPE_V3_",
+              "is_output_list": false,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": null
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "ImageAutosizeRestore": {
+      "class": "ImageAutosizeRestore",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "image",
+          "description": "",
+          "display_name": "Restore Autosized Image/Mask",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "node_id": "ImageAutosizeRestore",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": null
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "transform",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "AUTOSIZE_TRANSFORM",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "lanczos",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "interpolation_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "nearest-exact",
+                "bilinear",
+                "area",
+                "bicubic",
+                "lanczos"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "restored",
+              "id": "_0_COMFY_MATCHTYPE_V3_",
+              "is_output_list": false,
+              "template": {
+                "$type": "match-template",
+                "allowed_types": [
+                  "IMAGE",
+                  "MASK"
+                ],
+                "template_id": "image_type"
+              },
+              "tooltip": null
+            },
+            "io_type": "COMFY_MATCHTYPE_V3",
+            "kind": "match-type"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
