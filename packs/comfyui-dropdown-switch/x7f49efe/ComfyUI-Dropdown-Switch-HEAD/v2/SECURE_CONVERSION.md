@@ -4,7 +4,7 @@
 - Commit: `7f49efee32569cfd2ebca0637fba3767fd76894e`
 - Source tree: `dc70ef653275e4d25c13c7848a19a75df3659bc0`
 - Release key: `x7f49efe`
-- Frozen Python stub SHA-256: `9fa75d099086e25a456aad642306fd8d12a5d8f3d1a090b45393018a5b8258a8`
+- Frozen Python stub SHA-256: `14f884a012bd0faed6bf244352939b2fcaf19be05eb04f235aad4363d28b9ae5`
 - Frozen TypeScript stub SHA-256: `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
 
 The pinned pack has no backend node IDs. Its exact census is one frontend
