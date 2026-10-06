@@ -52,16 +52,17 @@
  	def define_schema(cls) -> _io.Schema:
 --- a/_validate_funcs.py
 +++ b/v2/_validate_funcs.py
-@@ -5,14 +5,16 @@
+@@ -5,14 +5,13 @@
  
  import re as _re
  
 -from frozendict import frozendict as _frozendict
 -
- try:
- 	from enum import StrEnum as _StrEnum
- except ImportError:
- 	from comfy.comfy_types.node_typing import StrEnum as _StrEnum
+-try:
+-	from enum import StrEnum as _StrEnum
+-except ImportError:
+-	from comfy.comfy_types.node_typing import StrEnum as _StrEnum
++from enum import StrEnum as _StrEnum
  
  from .__typing import _t, T as _T, _A, _O, _U, DictMap as _DictMap
 +
@@ -71,7 +72,7 @@
  
  
  _re_valid_key_match = _re.compile("[a-zA-Z_][a-zA-Z_0-9]*$", flags=_re.IGNORECASE).match
-@@ -53,8 +55,14 @@
+@@ -53,8 +52,14 @@
  		Verify all the keys from the input dictionary to match the criteria of proper argument names for ``str.format()``.
  		The returned dict contains all the wrong keys, grouped by the error type.
  		"""
@@ -86,7 +87,7 @@
  			error_type = cls.check_key(key)
  			if error_type is None:
  				continue
-@@ -135,7 +143,7 @@
+@@ -135,7 +140,7 @@
  
  	# In py3.10, frozendict isn't a dict, but is a `typing.Mapping`.
  	# So, this many types to check against:

@@ -5,10 +5,7 @@ Shared code to verify the input dict.
 
 import re as _re
 
-try:
-	from enum import StrEnum as _StrEnum
-except ImportError:
-	from comfy.comfy_types.node_typing import StrEnum as _StrEnum
+from enum import StrEnum as _StrEnum
 
 from .__typing import _t, T as _T, _A, _O, _U, DictMap as _DictMap
 
