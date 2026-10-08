@@ -4,13 +4,16 @@ Run actual converted pack consumers against supplied provider sources. This is
 test-only tooling; it adds no API and changes no runtime, pristine snapshot,
 converted release, patch pair, or conversion count.
 
-The test branch contains tooling, not the four frozen converted pack snapshots.
-`inputs.json` binds the separate source-only corpus archive by SHA256/size and
-manifest identity. Verify that archive, safely extract its regular members into
-a new directory, then pass `<extracted root>/corpus` as `--corpus`. This closure
-contains every pinned pack file and external pair needed by the runner, including
-the historical pre-owner Metadata snapshot. Its four-entry `packs/packs.json`
-is a fixture index, not the central catalogue. Missing inputs fail acceptance.
+The `codex/v2-author-story-pipeline` branch includes the four frozen snapshots
+and their patch pairs. Pass the checkout itself as `--corpus`; `inputs.json`
+records the immutable fixture commit. These are previously converted inputs,
+not new conversions or a deployment. The central working catalogue is untouched.
+
+The earlier tooling-only branch needs the separate source-only archive bound
+by SHA256/size and manifest identity in `inputs.json`. Verify and safely extract
+it into a new directory, then pass `<extracted root>/corpus` as `--corpus`. Its
+four-entry `packs/packs.json` is a fixture index, not the central catalogue.
+Both forms preserve the pre-owner Metadata snapshot. Missing inputs fail.
 
 `pins.json` binds the full upstream commits, every pristine/V2 file byte and mode,
 and the manifests/patch pairs for Comfyroll, My-Mask, InversedNoise and Metadata.
