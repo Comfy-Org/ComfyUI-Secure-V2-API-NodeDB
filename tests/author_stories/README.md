@@ -4,6 +4,14 @@ Run actual converted pack consumers against supplied provider sources. This is
 test-only tooling; it adds no API and changes no runtime, pristine snapshot,
 converted release, patch pair, or conversion count.
 
+The test branch contains tooling, not the four frozen converted pack snapshots.
+`inputs.json` binds the separate source-only corpus archive by SHA256/size and
+manifest identity. Verify that archive, safely extract its regular members into
+a new directory, then pass `<extracted root>/corpus` as `--corpus`. This closure
+contains every pinned pack file and external pair needed by the runner, including
+the historical pre-owner Metadata snapshot. Its four-entry `packs/packs.json`
+is a fixture index, not the central catalogue. Missing inputs fail acceptance.
+
 `pins.json` binds the full upstream commits, every pristine/V2 file byte and mode,
 and the manifests/patch pairs for Comfyroll, My-Mask, InversedNoise and Metadata.
 The runner resolves those sources from `--corpus`, refuses drift, then makes new
