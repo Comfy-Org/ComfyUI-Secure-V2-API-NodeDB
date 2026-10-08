@@ -73,6 +73,9 @@ def provider_sources(core, overlay, frontend):
                                "storage_values.py", "packstorage_routes.py", "packroutes.py"]] +
                              ["frontend/src/" + name for name in ["host-entry.mjs", "guest.mjs", "ui-renderer.mjs"]]),
     }
+    identity_source = overlay / "backend/comfy_secure_nodes/request_identity.py"
+    if identity_source.exists() or identity_source.is_symlink():
+        groups["overlay"][1].append("backend/comfy_secure_nodes/request_identity.py")
     if frontend:
         groups["frontend"] = (frontend, ["src/" + name for name in
             ["platform/nodeApi/asyncWidgetSerialization.ts", "platform/nodeApi/widgetHandle.ts",

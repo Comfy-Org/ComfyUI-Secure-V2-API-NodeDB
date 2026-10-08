@@ -51,6 +51,37 @@ def test_missing_source_is_not_an_acceptance_skip(tmp_path):
         RUNNER.corpus_sources(tmp_path, pins)
 
 
+def test_extracted_account_resolver_is_bound_and_drift_or_removal_changes_inventory(tmp_path):
+    core, overlay = tmp_path / 'core', tmp_path / 'overlay'
+    paths = {
+        core: ['comfy_api/latest/' + name for name in
+               ['_sdk.py', '_io.py', '_sdk_public.pyi', 'api-spec.json']] + ['execution.py'],
+        overlay: ['backend/comfy_secure_nodes/' + name for name in
+                  ['transport/host.py', 'transport/wire.py', 'guest/__init__.py',
+                   'transport/sandbox.py', 'execution.py', 'packruntime.py', 'storage.py',
+                   'storage_values.py', 'packstorage_routes.py', 'packroutes.py']] +
+                 ['frontend/src/' + name for name in ['host-entry.mjs', 'guest.mjs', 'ui-renderer.mjs']],
+    }
+    for root, names in paths.items():
+        for name in names:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(name.encode())
+    old = RUNNER.provider_sources(core, overlay, None)
+    path = overlay / 'backend/comfy_secure_nodes/request_identity.py'
+    path.write_text('trusted account resolver')
+    key = 'overlay/backend/comfy_secure_nodes/request_identity.py'
+    first = RUNNER.provider_sources(core, overlay, None)
+    assert first[key] == RUNNER.digest(path) and key not in old
+    path.write_text('changed account resolver')
+    assert RUNNER.provider_sources(core, overlay, None) != first
+    path.unlink()
+    assert RUNNER.provider_sources(core, overlay, None) != first
+    path.symlink_to(path.with_name('absent.py'))
+    with pytest.raises(RuntimeError, match='Missing regular file'):
+        RUNNER.provider_sources(core, overlay, None)
+
+
 @pytest.mark.parametrize("failure", ["launch", "exit", "timeout"])
 def test_failed_stage_retains_reviewable_receipt(tmp_path, monkeypatch, failure):
     command = [sys.executable, "-c", "raise SystemExit(7)"]
