@@ -1,0 +1,2981 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "js",
+  "nodes": {
+    "Loader": {
+      "module": "_secure_nodes",
+      "class": "Loader",
+      "sdk_refs": true,
+      "permissions": [
+        "models",
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "Loader",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "Checkpoint",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/models/checkpoints",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null,
+                  "static_options": []
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "Vae",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Included"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/models/vae",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null,
+                  "static_options": [
+                    "Included"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "stop_at_clip_layer",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": -1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": -24,
+              "max": -1,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 512,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 16,
+              "max": 32768,
+              "step": 8,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 512,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 16,
+              "max": 32768,
+              "step": 8,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "batch_size",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 4096,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "MODEL",
+            "attrs": {
+              "id": "_0_MODEL_",
+              "display_name": "MODEL",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "VAE",
+            "attrs": {
+              "id": "_1_VAE_",
+              "display_name": "VAE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "_2_CLIP_",
+              "display_name": "CLIP",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_3_LATENT_",
+              "display_name": "LATENT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "SimpleSampler": {
+      "module": "_secure_nodes",
+      "class": "SimpleSampler",
+      "sdk_refs": true,
+      "permissions": [
+        "sample",
+        "models"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "SimpleSampler",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "MODEL",
+            "attrs": {
+              "id": "model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "sampler",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Normal - euler",
+                "Normal - uni_pc",
+                "LCM Lora - lcm",
+                "SDXL Turbo - dpmpp_sde karras"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "positive",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "negative",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "latents",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "mode",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "txt2img",
+                "img2img"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "seed",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "min": null,
+              "max": null,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_0_LATENT_",
+              "display_name": "LATENT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "Prompts": {
+      "module": "_secure_nodes",
+      "class": "Prompts",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "Prompts",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "Positive",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Positive Prompt",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "Negative",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Negative Prompt",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_0_CONDITIONING_",
+              "display_name": "Positive CONDITIONING",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_1_CONDITIONING_",
+              "display_name": "Negative CONDITIONING",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "_2_CLIP_",
+              "display_name": "CLIP",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_3_STRING_",
+              "display_name": "Positive text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_4_STRING_",
+              "display_name": "Negative text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ImageTool": {
+      "module": "_secure_nodes",
+      "class": "ImageTool",
+      "sdk_refs": true,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ImageTool",
+          "display_name": null,
+          "category": "Chibi-Nodes/Image",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1920,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 16,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1080,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 16,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "crop",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                false,
+                true
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "rotate",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 360,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "mirror",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                false,
+                true
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "flip",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                false,
+                true
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "bgcolor",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "black",
+                "white"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "Wildcards": {
+      "module": "_secure_nodes",
+      "class": "Wildcards",
+      "sdk_refs": true,
+      "permissions": [
+        "assets"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "Wildcards",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "textfile",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "animals.txt",
+                "art-styles.txt",
+                "clothes.txt",
+                "colours.txt",
+                "descriptors.txt",
+                "fabrics.txt",
+                "foods.txt",
+                "household-objects.txt",
+                "landscapes.txt",
+                "poses.txt"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/text-files/input?prefix=chibi-wildcards/&suffix=.txt",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null,
+                  "static_options": [
+                    "animals.txt",
+                    "art-styles.txt",
+                    "clothes.txt",
+                    "colours.txt",
+                    "descriptors.txt",
+                    "fabrics.txt",
+                    "foods.txt",
+                    "household-objects.txt",
+                    "landscapes.txt",
+                    "poses.txt"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "keyword",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "__wildcard__",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "entries_returned",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 10,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "seed",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "min": null,
+              "max": null,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_0_CONDITIONING_",
+              "display_name": "CONDITIONING",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_1_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "LoadEmbedding": {
+      "module": "_secure_nodes",
+      "class": "LoadEmbedding",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "LoadEmbedding",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "embedding",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/models/embeddings",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "weight",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "round": 0.01
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": -2,
+              "max": 2,
+              "step": 0.1,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_0_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ConditionText": {
+      "module": "_secure_nodes",
+      "class": "ConditionText",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ConditionText",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "_0_CLIP_",
+              "display_name": "CLIP",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_1_CONDITIONING_",
+              "display_name": "CONDITIONING",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ConditionTextPrompts": {
+      "module": "_secure_nodes",
+      "class": "ConditionTextPrompts",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ConditionTextPrompts",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "positive",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "negative",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "_0_CLIP_",
+              "display_name": "CLIP",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_1_CONDITIONING_",
+              "display_name": "positive",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_2_CONDITIONING_",
+              "display_name": "negative",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ConditionTextMulti": {
+      "module": "_secure_nodes",
+      "class": "ConditionTextMulti",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ConditionTextMulti",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "clip",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "first",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "second",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "third",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "fourth",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CLIP",
+            "attrs": {
+              "id": "_0_CLIP_",
+              "display_name": "CLIP",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_1_CONDITIONING_",
+              "display_name": "first",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_2_CONDITIONING_",
+              "display_name": "second",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_3_CONDITIONING_",
+              "display_name": "third",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_4_CONDITIONING_",
+              "display_name": "fourth",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "Textbox": {
+      "module": "_secure_nodes",
+      "class": "Textbox",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "Textbox",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "print_to_screen": true
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": false,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "passthrough",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_0_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "ImageSizeInfo": {
+      "module": "_secure_nodes",
+      "class": "ImageSizeInfo",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ImageSizeInfo",
+          "display_name": null,
+          "category": "Chibi-Nodes/Image",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_1_INT_",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_2_INT_",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "ImageSimpleResize": {
+      "module": "_secure_nodes",
+      "class": "ImageSimpleResize",
+      "sdk_refs": true,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ImageSimpleResize",
+          "display_name": null,
+          "category": "Chibi-Nodes/Image",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "size",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 512,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 16,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "edge",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "largest",
+                "smallest",
+                "all",
+                "width",
+                "height"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "size_override",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "min": null,
+              "max": null,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "VAE",
+            "attrs": {
+              "id": "vae",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_1_LATENT_",
+              "display_name": "LATENT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ImageAddText": {
+      "module": "_secure_nodes",
+      "class": "ImageAddText",
+      "sdk_refs": true,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ImageAddText",
+          "display_name": null,
+          "category": "Chibi-Nodes/Image",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "Chibi-Nodes",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "font",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Ubuntu-Bold.ttf",
+                "Ubuntu-BoldItalic.ttf",
+                "Ubuntu-Italic.ttf",
+                "Ubuntu-Light.ttf",
+                "Ubuntu-LightItalic.ttf",
+                "Ubuntu-Medium.ttf",
+                "Ubuntu-MediumItalic.ttf",
+                "Ubuntu-Regular.ttf",
+                "UbuntuCondensed-Regular.ttf",
+                "UbuntuMono-Bold.ttf",
+                "UbuntuMono-BoldItalic.ttf",
+                "UbuntuMono-Italic.ttf",
+                "UbuntuMono-Regular.ttf"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "font_size",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 24,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 200,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "font_colour",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "black",
+                "white",
+                "red",
+                "green",
+                "blue"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "invert_mask",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                false,
+                true
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "position_x",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "position_y",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "width",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 512,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "height",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 512,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 32768,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "MASK",
+            "attrs": {
+              "id": "_1_MASK_",
+              "display_name": "MASK",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_2_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "Int2String": {
+      "module": "_secure_nodes",
+      "class": "Int2String",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "Int2String",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "Int",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "min": null,
+              "max": null,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_0_STRING_",
+              "display_name": "STRING",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "LoadImageExtended": {
+      "module": "_secure_nodes",
+      "class": "LoadImageExtended",
+      "sdk_refs": true,
+      "permissions": [
+        "assets",
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": true,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "LoadImageExtended",
+          "display_name": null,
+          "category": "Chibi-Nodes/Image",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "image_upload": true
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/assets/input?kind=image",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "VAE",
+            "attrs": {
+              "id": "vae",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "MASK",
+            "attrs": {
+              "id": "_1_MASK_",
+              "display_name": "MASK",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_2_LATENT_",
+              "display_name": "LATENT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_3_STRING_",
+              "display_name": "filename",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_4_STRING_",
+              "display_name": "image Info",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_5_INT_",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_6_INT_",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "SeedGenerator": {
+      "module": "_secure_nodes",
+      "class": "SeedGenerator",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "SeedGenerator",
+          "display_name": null,
+          "category": "Chibi-Nodes/Numbers",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "mode",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Random",
+                "Fixed"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "fixed_seed",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 8008135,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 18446744073709551615,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_0_INT_",
+              "display_name": "seed",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_1_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "SaveImages": {
+      "module": "_secure_nodes",
+      "class": "SaveImages",
+      "sdk_refs": true,
+      "permissions": [
+        "assets",
+        "output",
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "SaveImages",
+          "display_name": null,
+          "category": "Chibi-Nodes",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "filename_type",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Timestamp",
+                "Fixed",
+                "Fixed Single"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "fixed_filename",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "output",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "images",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "latents",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "VAE",
+            "attrs": {
+              "id": "vae",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "fixed_filename_override",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "images",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_1_STRING_",
+              "display_name": "filename_list",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "TextSplit": {
+      "module": "_secure_nodes",
+      "class": "TextSplit",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "TextSplit",
+          "display_name": null,
+          "category": "Chibi-Nodes/Text",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": true,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "separator",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": ".",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": false,
+              "placeholder": null,
+              "dynamic_prompts": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "reverse",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                false,
+                true
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "return_half",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "First Half",
+                "Second Half"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "_0_STRING_",
+              "display_name": "text",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    },
+    "RandomResolutionLatent": {
+      "module": "_secure_nodes",
+      "class": "RandomResolutionLatent",
+      "sdk_refs": true,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": true,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "RandomResolutionLatent",
+          "display_name": null,
+          "category": "Chibi-Nodes/Numbers",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": true,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "batch_size",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 4096,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_0_LATENT_",
+              "display_name": "LATENT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_1_INT_",
+              "display_name": "width",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "_2_INT_",
+              "display_name": "height",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ]
+      }
+    }
+  }
+}

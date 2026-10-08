@@ -1,0 +1,847 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web",
+  "nodes": {
+    "ReduxFineTune": {
+      "module": "_secure_nodes",
+      "class": "ReduxFineTune",
+      "sdk_refs": true,
+      "permissions": [
+        "raw",
+        "inspect"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ReduxFineTune",
+          "display_name": "Flux Redux Style Fine Tune (Simple)",
+          "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "conditioning",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STYLE_MODEL",
+            "attrs": {
+              "id": "style_model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP_VISION_OUTPUT",
+            "attrs": {
+              "id": "clip_vision_output",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "fusion_mode",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "default": "Mix",
+                "tooltip": "Mix - Linear blend, mainly uses the reference image, suitable for style transfer and light style fusion.\nEnhance - Feature enhancement, improves details and realism, suitable for stronger style influence.\nSharpen - Frequency enhancement, highlights high-frequency details, makes the image sharper.\nAdaIN - Adaptive Instance Normalization, automatically matches the mean and variance of style and content features, suitable for style transfer.\nResidual - Residual blend, fuses the difference between style and content, suitable for balancing both.\nMax - Element-wise maximum, keeps the stronger part of style and content features, suitable for highlighting prominent features.\nMin - Element-wise minimum, keeps the weaker part of style and content features, suitable for soft fusion.\nRandom - Random blend, randomly selects style or content features, suitable for generating diverse effects.\nFrequencyMix - Frequency domain blend, low frequency from image, high frequency from text, suitable for structure and detail separation fusion.\nMultiply - Directly multiplies the style feature by the strength, similar to StyleModelApply's multiply.\nAttnBias - Adds a log(strength) bias to the style feature, similar to StyleModelApply's attn_bias."
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Mix",
+                "Enhance",
+                "Sharpen",
+                "AdaIN",
+                "Residual",
+                "Max",
+                "Min",
+                "Random",
+                "FrequencyMix",
+                "Multiply",
+                "AttnBias"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "fusion_strength",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Fusion strength, higher values apply more style from reference image. 0.1-0.5: subtle effect, 1.0: balanced, 1.5-2.0: strong effect.",
+              "lazy": null,
+              "extra_dict": {
+                "display": "slider"
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.1,
+              "max": 2.0,
+              "step": 0.1,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "SUPER_REDUX",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "Enable Super Redux mode for extra enhancement.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_0_CONDITIONING_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STYLE_MODEL",
+            "attrs": {
+              "id": "_1_STYLE_MODEL_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP_VISION_OUTPUT",
+            "attrs": {
+              "id": "_2_CLIP_VISION_OUTPUT_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ReduxFineTuneAdvanced": {
+      "module": "_secure_nodes",
+      "class": "ReduxFineTuneAdvanced",
+      "sdk_refs": true,
+      "permissions": [
+        "raw",
+        "inspect"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ReduxFineTuneAdvanced",
+          "display_name": "Flux Redux Style Fine Tune (Advanced)",
+          "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "conditioning",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STYLE_MODEL",
+            "attrs": {
+              "id": "style_model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP_VISION",
+            "attrs": {
+              "id": "clip_vision",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "crop",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "default": "none",
+                "tooltip": "Crop mode: center - center crop, mask_area - crop to mask, none - no crop."
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "center",
+                "mask_area",
+                "none"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "fusion_mode",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "default": "Mix",
+                "tooltip": "Mix - Linear blend, mainly uses the reference image, suitable for style transfer and light style fusion.\nEnhance - Feature enhancement, improves details and realism, suitable for stronger style influence.\nSharpen - Frequency enhancement, highlights high-frequency details, makes the image sharper.\nAdaIN - Adaptive Instance Normalization, automatically matches the mean and variance of style and content features, suitable for style transfer.\nResidual - Residual blend, fuses the difference between style and content, suitable for balancing both.\nMax - Element-wise maximum, keeps the stronger part of style and content features, suitable for highlighting prominent features.\nMin - Element-wise minimum, keeps the weaker part of style and content features, suitable for soft fusion.\nRandom - Random blend, randomly selects style or content features, suitable for generating diverse effects.\nFrequencyMix - Frequency domain blend, low frequency from image, high frequency from text, suitable for structure and detail separation fusion.\nMultiply - Directly multiplies the style feature by the strength, similar to StyleModelApply's multiply.\nAttnBias - Adds a log(strength) bias to the style feature, similar to StyleModelApply's attn_bias."
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "Mix",
+                "Enhance",
+                "Sharpen",
+                "AdaIN",
+                "Residual",
+                "Max",
+                "Min",
+                "Random",
+                "FrequencyMix",
+                "Multiply",
+                "AttnBias"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "MASK",
+            "attrs": {
+              "id": "mask",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "style_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Overall style strength, higher means more like reference image.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 2.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "color_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Color transfer strength. 0 means off, >0 means on with intensity.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "content_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Content transfer strength. 0 means off, >0 means on with intensity.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "structure_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Structure transfer strength. 0 means off, >0 means on with intensity.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "texture_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Texture transfer strength. 0 means off, >0 means on with intensity.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "prompt_strength",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Prompt (text) feature strength. Higher means more text influence.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 2.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "feature_noise",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Random noise strength for feature fusion. Can help fix or vary details.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "feature_resolution",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Feature resolution for fusion. Higher means finer spatial detail.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 16,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 64,
+              "step": 1,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "BOOLEAN",
+            "attrs": {
+              "id": "SUPER_REDUX",
+              "display_name": null,
+              "optional": true,
+              "tooltip": "Enable Super Redux mode for extra enhancement and quality.",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": false,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "label_on": null,
+              "label_off": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "_0_CONDITIONING_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STYLE_MODEL",
+            "attrs": {
+              "id": "_1_STYLE_MODEL_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP_VISION_OUTPUT",
+            "attrs": {
+              "id": "_2_CLIP_VISION_OUTPUT_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_3_IMAGE_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "MASK",
+            "attrs": {
+              "id": "_4_MASK_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ClipVisionStyleLoader": {
+      "module": "_secure_nodes",
+      "class": "ClipVisionStyleLoader",
+      "sdk_refs": true,
+      "permissions": [
+        "models",
+        "raw",
+        "inspect"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ClipVisionStyleLoader",
+          "display_name": "CLIP Vision + Style Loader",
+          "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "clip_vision",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/models/clip_vision",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "style_model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "route": "/secure-nodes/models/style_models",
+                  "refresh_button": true,
+                  "control_after_refresh": "first",
+                  "timeout": null,
+                  "max_retries": null,
+                  "refresh": null
+                }
+              }
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "crop_method",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {
+                "default": "none"
+              },
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "none",
+                "center",
+                "mask"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "MASK",
+            "attrs": {
+              "id": "mask",
+              "display_name": null,
+              "optional": true,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": "IMAGE",
+              "tooltip": null,
+              "is_output_list": true
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STYLE_MODEL",
+            "attrs": {
+              "id": "_1_STYLE_MODEL_",
+              "display_name": "STYLE_MODEL",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CLIP_VISION_OUTPUT",
+            "attrs": {
+              "id": "_2_CLIP_VISION_OUTPUT_",
+              "display_name": "CLIP_VISION_OUTPUT",
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    }
+  }
+}
