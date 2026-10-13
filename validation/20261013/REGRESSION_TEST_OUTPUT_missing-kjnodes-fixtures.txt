@@ -1,0 +1,28 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+_______________________ test_kjnodes_manifest_is_current _______________________
+
+    def test_kjnodes_manifest_is_current():
+        v2_root = (
+            REPO / "pack-db" / "packs" / "comfyui-kjnodes" / "x3f20054"
+            / "ComfyUI-KJNodes-HEAD" / "v2")
+        script = BACKEND / "scripts" / "generate_kjnodes_manifest.py"
+        spec = importlib.util.spec_from_file_location(
+            "generate_kjnodes_manifest", script)
+        assert spec is not None and spec.loader is not None
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+    
+        committed = json.loads((v2_root / "secure-nodes.json").read_text())
+>       assert generator.build(v2_root) == committed
+E       AssertionError: assert {'asset_direc...'3.13'}}, ...} == {'asset_direc...'3.13'}}, ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Differing items:
+E         {'nodes': {'AddLabel': {'class': 'AddLabelSecure', 'methods': {'check_lazy_status': False, 'fingerprint_inputs': False... False, 'fingerprint_inputs': False, 'validate_inputs': False}, 'module': 'nodes.nodes', 'permissions': [], ...}, ...}} != {'nodes': {'AddLabel': {'class': 'AddLabelSecure', 'methods': {'check_lazy_status': False, 'fingerprint_inputs': False... False, 'fingerprint_inputs': False, 'validate_inputs': False}, 'module': 'nodes.nodes', 'permissions': [], ...}, ...}}
+E         Use -v to get more diff
+
+/tmp/mervyn-three-pack-regressions-2mdcsqr3/backend/tests/test_packdb_manifest.py:394: AssertionError
+=========================== short test summary info ============================
+FAILED ../tmp/mervyn-three-pack-regressions-2mdcsqr3/backend/tests/test_packdb_manifest.py::test_kjnodes_manifest_is_current
+1 failed, 3 passed in 2.85s

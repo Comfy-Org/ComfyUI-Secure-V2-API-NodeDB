@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "workflow": "tests/workflows/q-crop-empty-centered.json",
+      "case": "empty-centered",
+      "mask_shape": [
+        1,
+        640,
+        768
+      ],
+      "mask_uniform_value": 0.0,
+      "node2_parameters": {
+        "step_size": 8,
+        "padding": 8,
+        "min_size": 128
+      },
+      "expected_width_height_x_offset_y_offset": [
+        128,
+        128,
+        320,
+        256
+      ],
+      "node4_expected_render": {
+        "width": 128,
+        "height": 128,
+        "rgb": [
+          18,
+          52,
+          86
+        ]
+      },
+      "node6_expected_render": {
+        "width": 768,
+        "height": 640
+      },
+      "oracle_scope": "Render rail consumes Q width/height; offsets need separate scalar inspection. No execution claimed."
+    },
+    {
+      "workflow": "tests/workflows/q-crop-threshold-equal.json",
+      "case": "threshold-equal",
+      "mask_shape": [
+        1,
+        64,
+        96
+      ],
+      "mask_uniform_value": 0.1,
+      "node2_parameters": {
+        "step_size": 8,
+        "padding": 0,
+        "min_size": 128
+      },
+      "expected_width_height_x_offset_y_offset": [
+        128,
+        128,
+        0,
+        0
+      ],
+      "node4_expected_render": {
+        "width": 128,
+        "height": 128,
+        "rgb": [
+          18,
+          52,
+          86
+        ]
+      },
+      "node6_expected_render": {
+        "width": 96,
+        "height": 64
+      },
+      "oracle_scope": "Render rail consumes Q width/height; offsets need separate scalar inspection. No execution claimed."
+    },
+    {
+      "workflow": "tests/workflows/q-crop-threshold-above.json",
+      "case": "threshold-above",
+      "mask_shape": [
+        1,
+        64,
+        96
+      ],
+      "mask_uniform_value": 0.11,
+      "node2_parameters": {
+        "step_size": 8,
+        "padding": 0,
+        "min_size": 128
+      },
+      "expected_width_height_x_offset_y_offset": [
+        96,
+        64,
+        0,
+        0
+      ],
+      "node4_expected_render": {
+        "width": 96,
+        "height": 64,
+        "rgb": [
+          18,
+          52,
+          86
+        ]
+      },
+      "node6_expected_render": {
+        "width": 96,
+        "height": 64
+      },
+      "oracle_scope": "Render rail consumes Q width/height; offsets need separate scalar inspection. No execution claimed."
+    },
+    {
+      "workflow": "tests/workflows/q-crop-full-nonsquare.json",
+      "case": "full-nonsquare",
+      "mask_shape": [
+        1,
+        192,
+        320
+      ],
+      "mask_uniform_value": 1.0,
+      "node2_parameters": {
+        "step_size": 32,
+        "padding": 8,
+        "min_size": 128
+      },
+      "expected_width_height_x_offset_y_offset": [
+        320,
+        192,
+        0,
+        0
+      ],
+      "node4_expected_render": {
+        "width": 320,
+        "height": 192,
+        "rgb": [
+          18,
+          52,
+          86
+        ]
+      },
+      "node6_expected_render": {
+        "width": 320,
+        "height": 192
+      },
+      "oracle_scope": "Render rail consumes Q width/height; offsets need separate scalar inspection. No execution claimed."
+    },
+    {
+      "workflow": "tests/workflows/q-crop-schema-defaults.json",
+      "case": "schema-defaults",
+      "mask_shape": [
+        1,
+        768,
+        640
+      ],
+      "mask_uniform_value": 0.0,
+      "node2_parameters": {
+        "step_size": 8,
+        "padding": 8,
+        "min_size": 520
+      },
+      "expected_width_height_x_offset_y_offset": [
+        520,
+        520,
+        60,
+        124
+      ],
+      "node4_expected_render": {
+        "width": 520,
+        "height": 520,
+        "rgb": [
+          18,
+          52,
+          86
+        ]
+      },
+      "node6_expected_render": {
+        "width": 640,
+        "height": 768
+      },
+      "oracle_scope": "Render rail consumes Q width/height; offsets need separate scalar inspection. No execution claimed."
+    }
+  ],
+  "actual_execution": "NOT_RUN",
+  "cache_variation": "Cases change mask/value/shape and crop parameters. For repeat runs change a producer input within the same branch and update expected results; changing only output color does not rerun Q.",
+  "source_threshold": "NumPy float32 comparison uses dtype-rounded0.1; SolidMask0.1 remains empty. Genuine dtype probes are in actual_dependency_differential.py."
+}
