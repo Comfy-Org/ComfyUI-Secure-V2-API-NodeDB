@@ -15,6 +15,10 @@ import sys
 import time
 from pathlib import Path
 
+if not __debug__:
+    raise SystemExit('Assertions disabled; refusing to produce a PASS report')
+if sys.platform != 'linux':
+    raise SystemExit('This bounded dependency verifier requires Linux')
 assert len(sys.argv) == 4, 'interpreter script.py pristine.py converted.py NEW_report.json'
 if os.name == 'posix':
     import resource

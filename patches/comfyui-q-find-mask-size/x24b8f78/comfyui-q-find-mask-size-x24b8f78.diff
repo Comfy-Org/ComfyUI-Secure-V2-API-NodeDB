@@ -4315,7 +4315,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/actual_dependency_differential.py
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,134 @@
 +"""Real Torch/NumPy helper checks, separate from SDK/registered guest acceptance.
 +
 +Run with an admitted interpreter, pristine find_mask_size.py, V2 file, and a
@@ -4333,6 +4333,10 @@
 +import time
 +from pathlib import Path
 +
++if not __debug__:
++    raise SystemExit('Assertions disabled; refusing to produce a PASS report')
++if sys.platform != 'linux':
++    raise SystemExit('This bounded dependency verifier requires Linux')
 +assert len(sys.argv) == 4, 'interpreter script.py pristine.py converted.py NEW_report.json'
 +if os.name == 'posix':
 +    import resource

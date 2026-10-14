@@ -11,19 +11,13 @@ This custom node for ComfyUI provides a simple way to convert JSON strings to JS
 ## Requirements
 
 - ComfyUI
-- Python 3.10+
+- Python 3.13 (`>=3.13,<3.14`), matching the V2 runtime declaration
 
 ## Installation
 
-1. Navigate to your ComfyUI custom nodes folder:
-   ```
-   cd /path/to/ComfyUI/custom_nodes/
-   ```
-2. Clone this repository:
-   ```
-   git clone https://github.com/a-und-b/ComfyUI-JSONHelper.git
-   ```
-3. Restart ComfyUI
+Load this converted package through the Secure Sandbox pack registry. The
+original custom-node installation instructions remain in the pristine sibling
+README; cloning the upstream repository alone does not install this V2 adapter.
 
 ## Usage
 
