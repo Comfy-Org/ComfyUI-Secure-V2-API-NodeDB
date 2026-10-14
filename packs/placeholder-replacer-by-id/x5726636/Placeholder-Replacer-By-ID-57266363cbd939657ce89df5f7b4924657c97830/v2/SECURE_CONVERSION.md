@@ -33,3 +33,10 @@ Actual job IDs:
 - native-empty-delimiter-failure: `e21465dc503793040f5d89ef290d797a`
 - native-unconditional-manual-parser-failure: `7ab0764d6136724ddf2e536ae95e8836`
 - post-error-recovery: `16493e1cf387f8048b7bd8a277117d7c`
+
+The 17 files in `tests/workflows/` retain the original prepared graphs with
+preview color 2241348. Actual TEST requests use color 1024 and combine the 14
+positive graphs. `tests/EXPECTED_RESULTS.json` distinguishes original fixture
+hashes from submitted fixture hashes and links each case to its verified job.
+Use the five exact requests under `validation/20261014-placeholder` to reproduce
+the run with its TEST-only helpers.

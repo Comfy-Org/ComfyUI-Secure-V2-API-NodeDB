@@ -1,22 +1,27 @@
-Register the productionv2 and separate test-oracle-r1/v2 extension in ephemeral
-draftTEST. Every JSON file here is a raw API graph. Built-ins only EmptyImage
-with literal64x64/batch1/color0x223344 and PreviewImage. Typed producer sends one
-INT_LIST list as plain data, never OUTPUT_IS_LIST or INPUT_IS_LIST. The real
-registered converter receives that typed edge and each3STRING output goes to
-the strict oracle. Exact output types/strings/debug text/Unicode are checked
-against native reference results encoded inside one JSONSTRING. An independent
-ImageRef passes unchanged to PreviewImage only after assertions succeed.
-Observe executed strict-oracle receipt with passed:true and all3exactstrings;
-independentPNG alone is not converter-output evidence. The typed uint64 values
-are JSONSTRING payloads, avoiding JS Number rounding. Submit filebytes exactly.
-Oracle and producer compare their actual installed encode_schema to serialized
-schemas; oracle also canonical-encodes an exact production schema body fixture.
-This confirms source schema compatibility, not actual installed production
-identity: manager must separately compare actual registered producer/converter
-schema and selected published contracts. Original full class/helpers/process
-remain unchanged;3.13target runtime controls are distinct from worker3.12checks.
-Native empty-delimiter/unconditional-manual-parser failures must occur atnode2;
-intentional wrong-debug must fail atnode4. All3must produce0previewartifacts,
-then run golden-default-0 for actual service recovery. Successful cases each
-render1PNG64x64. No worker SDK/guest/job; actual runtime belongs to MERVYN.
-Remaining native error/cache/lifetime/intake gates stay explicit; no inputcaps.
+# Prepared workflows and actual TEST execution
+
+These 17 JSON files are the original prepared API graphs. Their independent
+64x64, batch-one image fixture uses color 2241348 (0x223344). Before execution,
+the manager changed that fixture to 1024, as required by the TEST runner, and
+combined the 14 positive graphs with unique node IDs. These original files are
+retained for provenance; their hashes in `../EXPECTED_RESULTS.json` refer to
+these bytes, not to the adjusted or combined submitted graphs.
+
+The five exact submitted requests, including all adjusted fixtures and the
+TEST-only producer and observer, are stored at repository-root path
+`validation/20261014-placeholder/REQUEST-*.json`. Use those requests to reproduce
+the completed run. `EXPECTED_RESULTS.json` binds every prepared case to its
+verified job and adjusted fixture hash; `SERVICE_STATE.json` stores the results.
+
+The typed producer sends one INT_LIST value as plain data. The production node
+returns three strings to an observer that checks exact types and values against
+the native reference. Only after those assertions pass does a real ImageRef
+reach PreviewImage. A preview alone is not evidence of correct string outputs.
+Unsigned 64-bit values are encoded in JSON strings to avoid JavaScript rounding.
+
+The submitted helpers check schemas with the installed finalized GET_SCHEMA
+and compare the actual production class. The original parser is unchanged.
+The actual target runtime is Python 3.13. Three verified negative cases cover
+an intentionally wrong debug expectation and two native parser errors; each
+produced zero preview artifacts. A final valid job verified recovery. The five
+jobs cover 17 distinct behavior cases and one recovery, with 15 total previews.

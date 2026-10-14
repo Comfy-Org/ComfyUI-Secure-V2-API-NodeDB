@@ -21,3 +21,10 @@ validation request; they are not production nodes. Prepared workflows under
 `tests/` require that test harness. See `SECURE_CONVERSION.md` for evidence scope.
 
 The original MIT license and copyright notice are retained in `LICENSE`.
+
+The 17 files in `tests/workflows/` retain the original prepared graphs with
+preview color 2241348. Actual TEST requests use color 1024 and combine the 14
+positive graphs. `tests/EXPECTED_RESULTS.json` distinguishes original fixture
+hashes from submitted fixture hashes and links each case to its verified job.
+Use the five exact requests under `validation/20261014-placeholder` to reproduce
+the run with its TEST-only helpers.

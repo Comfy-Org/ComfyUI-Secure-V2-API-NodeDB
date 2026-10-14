@@ -20,9 +20,9 @@ bytes. Current generated Python/TypeScript declarations and documentation are
 included in the final full-source pair.
 
 `INTAKE.json` records the TEST transport omissions and independent preview color
-adjustment. Those files remain in the final distribution. Its absolute host
-paths identify the original workspaces; `EVIDENCE_MAP.json` provides portable
-paths and hashes for the evidence saved here. Original worker-only comparisons
+adjustment. Those files remain in the final distribution. Its source packet is identified by name and digest; the target path is relative
+to this repository. `EVIDENCE_MAP.json` provides portable paths and hashes for
+the evidence saved here. Exact submitted requests remain unchanged. Original worker-only comparisons
 are historical and are not added to the 17 actual registered behavior cases.
 
 `released` in the service receipt means the completed editor session was
