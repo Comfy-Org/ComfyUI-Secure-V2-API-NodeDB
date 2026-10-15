@@ -1,5 +1,6 @@
 import { comfy } from '/comfy/api/v2.js';
 import { debounce } from "../../rgthree/common/shared_utils.js";
+import { whereSupported } from "./sandbox_limits.js";
 import { NodeTypesString } from "./constants.js";
 import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
 import { matchLocalSlotsToServer } from "./utils.js";
@@ -180,8 +181,8 @@ comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
     b.onRemoved((node) => {
         stabilizersByNode.delete(node.id);
     });
-    b.onUnplacedLink((node, event) => fanOut(node, event));
-    b.addMenuItem({
+    whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
+    whereSupported(b.def?.type ?? "Context", "convert menu item (dynamic label)", () => b.addMenuItem({
         label: (node) => CONVERT_TO[node.type].label,
         when: (node) => !!CONVERT_TO[node.type],
         run: (node) => {
@@ -193,7 +194,7 @@ comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
             // server-node setup it waited on filled the node in asynchronously.
             comfy.graph.replace(node.id, CONVERT_TO[node.type].type);
         },
-    });
+    }));
 });
 // `matchLocalSlotsToServer` is converted (see utils.js) and called from both hooks
 //   above, which are the original's `nodeCreated` and `loadedGraphNode`. The marker

@@ -1,4 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
+import { whereSupported } from "./sandbox_limits.js";
 import { connectedInputNodes, graphOf, nodeKey } from "./base_any_input_connected_node.js";
 import { applyUpstreamMutation, contextInputs, dynamicInputMenuItems, ensureContextOutput, ensureTrailingContextInput, isOwnedContextInput, nextUniqueContextName, ownedInputName, prepareDynamicContextNode, releaseDynamicContextNode, removeContextPair, renameContextPair, stripOwnedPrefix, } from "./dynamic_context_base.js";
 import { NodeTypesString } from "./constants.js";
@@ -228,12 +229,12 @@ if (CONFIG_SERVICE.getConfigValue("unreleased.dynamic_context.enabled")) {
             stabilizeOwnedNames(node);
             scheduleBaseSync(node);
         });
-        builder.onBeforeConnect((node, event) => {
+        whereSupported(TYPE, "connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
             if (event.side !== "input" || event.index === 0 || event.peerIndex !== 0 || !event.peerNodeId) {
                 return;
             }
             return graphOf(node).node(event.peerNodeId)?.type === TYPE ? false : undefined;
-        });
+        }));
         builder.onConnectionsChanged((node, event) => {
             if (event.side !== "input") {
                 return;

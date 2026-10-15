@@ -1,18 +1,32 @@
-> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 2).
-> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 32 converted but untested/partly tested,
-> 3 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 3).
+> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 13 converted but untested/partly tested,
+> 22 partial or missing: 19 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
+> Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
 # Secure Nodes V2 conversion report — rgthree-comfy (`rgthree-comfy`)
 
 ## What this revision contains
 
-- **Base:** in-progress revision 1, as published on corpus main (`b1e79f4e`). That revision was the registered Label revision
-  (draft PR #6) plus 16 tested frontend files:
-  - the 14-file first repair tranche;
-  - `display_any.js` (F14);
-  - `media/svgs.js`, the worker-safe logo URL.
-- **Changed in revision 2:**
+- **Base:** in-progress revision 2, as merged on corpus main. Revision 2 is kept in the corpus but held from the registry,
+  because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixes that.
+- **Changed in revision 3** (no frontend module may be lost because the host refuses one registration):
+  - `web/comfyui/sandbox_limits.js` (new). Every registration the host refuses goes through `whereSupported`: a refused
+    hook (`onBeforeConnect`, `onUnplacedLink`, `onDragOver`, `onDrop`) or a menu item with a label function costs only that
+    behaviour, and is reported once per node type. Any other error is re-thrown.
+  - The guarded registrations are in `base_any_input_connected_node.js`, `base_power_prompt.js`, `context.js`,
+    `dynamic_context.js`, `feature_import_individual_nodes.js` and `power_primitive.js`. Each lost behaviour is listed under
+    *Blocked behaviours* below.
+  - `web/common/prompt_service.js`: the queue members the sandbox cannot carry yet (`queue.onPendingChanged`,
+    `queue.onInterrupted`) are treated as unavailable and reported once. The progress bar shows less instead of raising a
+    DataCloneError at login. `queue.pending()` is read when its answer arrives.
+  - **Browser evidence:** a read-only run on the live host, with these revision-3 files served to that one browser session
+    and everything else live:
+    - all 54 rgthree entry modules load (live with revision 1: 43);
+    - no DataCloneError;
+    - the 10 previously failing node types register and construct;
+    - 29 one-time notices name each lost behaviour.
+- **Changed in revision 2** (kept):
   - Backend (`py/secure_nodes.py`, `py/_secure.py`, `secure-nodes.json`). Three fixes found by original-comparison runs:
     - Lora Loader Stack resolves the exact selected name and declares an input validator, so real selections pass prompt
       validation and missing names are rejected there.
@@ -30,7 +44,9 @@
     - dispositions updated from the backend original-comparison runs;
     - two refused-technique descriptions corrected (Power Puter; runtime writes in the pack folder);
     - one technique added (the bundled host-update script).
-- **Held back** (unchanged from revision 1 and listed as open):
+- **Revision 1** (kept): the registered Label revision (draft PR #6) plus 16 tested frontend files: the 14-file first repair
+  tranche, `display_any.js` (F14), and `media/svgs.js` (worker-safe logo URL).
+- **Held back** (listed as open):
   - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
     pass their tests, but the deployed frontend does not yet carry S01–S03. A combined S01–S04 frontend patch against the
     deployed sources is in preparation.
@@ -61,12 +77,6 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 | `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
 | `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 connection layouts are not in this revision. |
-| `Context (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
-| `Context Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
-| `Context Merge (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
-| `Context Merge Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
-| `Context Switch (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
-| `Context Switch Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
 | `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 is open. An own-node PNG metadata candidate passed separately and is not in this revision. |
 | `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 is open. |
 | `Fast Groups Bypasser (rgthree)` | converted, partly tested | Tested repair ships here (row state, graph-scoped identities, saved filters). F10 fit-group navigation is open. |
@@ -74,26 +84,32 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Label (rgthree)` | converted, partly tested | Browser: Classic 7/9 edits persist, Vue 8/9. The remaining focus race is a host renderer fix, still pending. |
-| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. In revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
-| `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
+| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
-| `Random Unmuter (rgthree)` | converted, partly tested | The tested failed-attempt cleanup repair ships here. F07 (independent choice per batch item) and F01 are open. |
-| `SDXL Power Prompt - Positive (rgthree)` | converted, partly tested | Backend native cases pass, including the revision-2 prompt-tag strength fix. F01 is open. |
 | `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
 | `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
-| `Power Prompt (rgthree)` | converted, partly tested | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. The frontend is untested, and F01 is open. |
-| `Power Prompt - Simple (rgthree)` | converted, partly tested | Backend native cases: 16/16 equal the original. The frontend is untested, and F01 is open. |
-| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, partly tested | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. The frontend is untested, and F01 is open. |
 | `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
-| `Fast Actions Button (rgthree)` | converted, untested | Frontend-only. F01 and F11 are open. |
-| `Fast Bypasser (rgthree)` | converted, untested | Frontend-only. F01 is open. |
-| `Fast Muter (rgthree)` | converted, untested | Frontend-only. F01 is open. |
-| `Mute / Bypass Relay (rgthree)` | converted, untested | Frontend-only. F01 is open. |
-| `Mute / Bypass Repeater (rgthree)` | converted, untested | Frontend-only. F01 is open. |
-| `Node Collector (rgthree)` | converted, untested | Frontend-only. F01 is open. |
-| `Node Combiner (rgthree)` | converted, untested | Legacy frontend-only node. F01 is open. |
+| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
+| `Power Primitive (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: the "Show/Hide Type Selector Widget" menu item, whose label depends on state (a fixed-label replacement is planned); "Set type" works. The rest of its frontend is untested. |
+| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node rules. F07 (independent choice per batch item) and F01 are open. |
+| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
+| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
+| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). F01 is open. |
+| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). F01 is open. |
+| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 and F11 are open. |
+| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
+| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
+| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. Legacy node. F01 is open. |
 | `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). They are not yet all in the deployed frontend. F05 and F06 are open. |
-| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. |
+| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Its connection filtering is guarded like the others (F17). |
 | `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 
 ## Refused techniques (never-do) and their public replacements
@@ -163,6 +179,20 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
   computes with its intended (pre-V3) SDXL encode. On current Core the original's call fails and returns no conditioning.
   With an SD1 CLIP, v2 falls back to the plain encode described by the original's own log message.
 
+## Blocked behaviours (missing host capability, not refused)
+
+The host refuses these registrations because it would need their result synchronously. Since revision 3 a refusal costs
+only the behaviour below, never the module. Each one is reported once in the console, by node type.
+
+| Behaviour | Needs | Nodes |
+| --- | --- | --- |
+| Connection filtering: the cycle guard ("time paradox") and per-node connection rules | A connection policy the host can evaluate without a synchronous worker call (F17) | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
+| Refusing links from disabled outputs | Same as above (F17) | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
+| Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
+| Menu items whose label depends on node state | None. A replacement with fixed labels and `when` predicates is planned for the next revision. | the six Context nodes ("Convert to …"); Power Primitive ("Show/Hide Type Selector Widget") |
+| Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
+| Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
+
 ## Pending items (not yet supported)
 
 - F02 — repeated (dynamic) outputs for the opt-in Dynamic Context nodes.
@@ -178,6 +208,10 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
 - F12 — the original configurable two-track progress bar.
 - F13 — Power LoRA Loader rows from API-format workflows; A1111 parameter import.
 - F16 — delivery of the pack's model-browser and link-fixer pages.
+- F17 — connection policy for sandboxed packs (replaces the synchronous `onBeforeConnect`).
+- F18 — host-owned contribution for links dropped on empty canvas (replaces `onUnplacedLink`).
+- F19 — host node-drop contribution (replaces `onDragOver`/`onDrop`).
+- F20 — sandbox subscriptions for `queue.onPendingChanged` and `queue.onInterrupted`.
 - Power Prompt LoRA and embedding insert combos when the model list exceeds the worker's definition bounds
   (needs a public model-catalogue read).
 
