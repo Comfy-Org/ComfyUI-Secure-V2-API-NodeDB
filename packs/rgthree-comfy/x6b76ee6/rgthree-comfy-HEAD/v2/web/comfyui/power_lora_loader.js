@@ -6,6 +6,7 @@ import { drawInfoIcon, drawNumberWidgetPart, drawRoundedRectangle, drawTogglePar
 import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
+import { RgthreeLoraInfoDialog } from './dialog_info.js';
 
 // CONVERTED — all three of the blockers that decided the last refusal are closed.
 //
@@ -32,13 +33,9 @@ import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
 // COSMETIC: `app.canvas.editor_alpha` is gone (see utils_canvas.js). A row still
 //   dims to 0.4 when it is switched off and the header still writes its labels at
 //   0.55, but neither follows the node's own fade any more.
-// DROPPED: the lora info dialog, and with it the "ℹ️ Show Info" menu entry and the
-//   click on the info badge. `RgthreeLoraInfoDialog` lives in dialog_info.js, which
-//   is punted, and importing a name a punted module no longer exports throws at
-//   load. The badge is still drawn, because `LORA_INFO_SERVICE` still answers what
-//   it reports — civitai data, a local info file, or neither — and it is still
-//   what colours a strength that falls outside the lora's recommended range. It is
-//   an indicator now rather than a button.
+// Model info editing is restored through the owned dialog and persistent
+// account storage. Metadata hydration still requires an admitted provider;
+// user notes are not treated as evidence of model-file/Civitai introspection.
 // REFUSED, not a gap: (26) the API-JSON load path. `rgthree.loadingApiJson` plus
 //   `configureFromApiJson` synthesised `configure({widgets_values: …})` out of the
 //   built prompt's inputs. Reading the built prompt is deliberately not published.
@@ -46,10 +43,9 @@ import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
 //   {type: "combo", values: [...]}` told the properties panel to edit that property
 //   with a two-item picker rather than a free text field; `"@Match"` declared the
 //   other as a string. Both properties still exist, still save and still work.
-// REFUSED, not a gap: `addConnectionLayoutSupport` — the pack's Left/Right slot layout,
-//   which patches `getConnectionPos` on the node class and recomputes socket positions
-//   from renderer constants. Deciding where the renderer draws a socket is refused
-//   rather than pending; see utils.js.
+// Pending pack port: saved connection layouts can now use public slot positions
+// and directions. The old global renderer patch remains refused; the safe
+// per-node capability is tracked in the frontend lane's gap ledger.
 //
 // WIRE FORMAT: changed, and deliberately. A row is two widgets now — a hidden one
 // holding `{on, lora, strength, strengthTwo?}`, which is what the prompt reads
@@ -253,6 +249,7 @@ function showRowMenu(node, row, event) {
         title: "LORA WIDGET",
         event,
         items: [
+            { label: 'ℹ️ Show Info', disabled: !row.value.lora || row.value.lora === 'None', run: () => row.onInfoClick() },
             {
                 label: `${row.value.on ? "⚫" : "🟢"} Toggle ${row.value.on ? "Off" : "On"}`,
                 run: () => {
@@ -398,6 +395,7 @@ class PowerLoraLoaderWidget extends RgthreeBaseWidget {
         this.hitAreas = {
             toggle: { bounds: [0, 0], onDown: this.onToggleDown },
             lora: { bounds: [0, 0], onClick: this.onLoraClick },
+            info: { bounds: [0, 0], onClick: this.onInfoClick },
             strengthDec: { bounds: [0, 0], onClick: this.onStrengthDecDown },
             strengthVal: { bounds: [0, 0], onClick: this.onStrengthValUp },
             strengthInc: { bounds: [0, 0], onClick: this.onStrengthIncDown },
@@ -517,8 +515,10 @@ class PowerLoraLoaderWidget extends RgthreeBaseWidget {
             rposX = leftArrow[0] - innerMargin;
         }
         const infoIconSize = height * 0.66;
+        this.hitAreas.info.bounds = [0, 0];
         if (CONFIG_SERVICE.getConfigValue("nodes.power_lora_loader.show_info_badge")) {
             rposX -= innerMargin;
+            this.hitAreas.info.bounds = [rposX - infoIconSize, infoIconSize];
             drawInfoIcon(ctx, rposX - infoIconSize, posY + (height - infoIconSize) / 2, infoIconSize, loraInfo && loraInfo.raw && loraInfo.raw.civitai
                 ? "FILLED"
                 : loraInfo && loraInfo.hasInfoFile
@@ -620,20 +620,31 @@ class PowerLoraLoaderWidget extends RgthreeBaseWidget {
         this.redraw();
     }
     getLoraInfo(force = false) {
-        if (!this.loraInfoPromise || force == true) {
+        const requestedFile = this.value.lora;
+        if (!this.loraInfoPromise || force == true || this.loraInfoFile !== requestedFile) {
+            this.loraInfoFile = requestedFile;
             let promise;
             if (this.value.lora && this.value.lora != "None") {
-                promise = LORA_INFO_SERVICE.getInfo(this.value.lora, force, true);
+                promise = LORA_INFO_SERVICE.getInfo(this.value.lora, false, true);
             }
             else {
                 promise = Promise.resolve(null);
             }
             this.loraInfoPromise = promise.then((v) => {
+                if (this.value.lora !== requestedFile) return;
                 this.loraInfo = v;
                 this.redraw();
+            }).catch((error) => {
+                comfy.commands.notify({ severity: 'warn', summary: 'Could not read LoRA information', detail: String(error?.message ?? error) });
             });
         }
         return this.loraInfoPromise;
+    }
+    onInfoClick() {
+        if (!this.value.lora || this.value.lora === 'None') return false;
+        const dialog = new RgthreeLoraInfoDialog(this.value.lora).show();
+        dialog.addEventListener('close', () => { void this.getLoraInfo(true); });
+        return true;
     }
 }
 // Fires whoever caused the reload, where `refreshComboInNode(defs)` only fired for

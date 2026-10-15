@@ -26,14 +26,8 @@ import { canvasToBookmark } from "./bookmark.js";
 // COSMETIC: two buttons where there was one button opening a popup menu. The chrome
 //   takes a button, not a panel; both actions are still one click away, and Settings is
 //   also in the command palette (`rgthree.openSettings`, registered in config.js).
-// DROPPED: the bookmarks popup — a *list*, rebuilt from the current workflow each time
-//   it opened, with one entry per Bookmark node. The chrome takes a fixed button, so
-//   there is nowhere in the top bar to put a list. The bookmarks themselves are not lost
-//   and were never reached only from here: each Bookmark node carries its own shortcut
-//   key and jumps when pressed (bookmark.js), and rgthree.js's own canvas menu lists
-//   them. `comfy.ui.addSidebarTab` would hold a list, but the sidebar is a different
-//   place in the UI from the one this file targets — a port for the pack's author to
-//   decide on, not a translation.
+// The bookmark button opens a current workflow list with the public showMenu
+// contribution. Its independent enabled setting is reconciled after setup too.
 const buttons = new Map();
 function addRgthreeTopBarButtons() {
     if (!CONFIG_SERVICE.getFeatureValue("comfy_top_bar_menu.enabled")) {
@@ -43,8 +37,13 @@ function addRgthreeTopBarButtons() {
         buttons.clear();
         return;
     }
+    // Reconcile the independent bookmark switch too. Keeping the two ordinary
+    // buttons must not prevent adding/removing a bookmark menu after setup.
     if (buttons.size) {
-        return;
+        const wanted = CONFIG_SERVICE.getFeatureValue("comfy_top_bar_menu.button_bookmarks.enabled");
+        if (wanted === buttons.has("bookmarks")) return;
+        for (const button of buttons.values()) button.remove();
+        buttons.clear();
     }
     buttons.set("settings", comfy.ui.addActionBarButton({
         id: "rgthree.settings",

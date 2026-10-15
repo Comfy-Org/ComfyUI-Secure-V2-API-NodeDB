@@ -15,19 +15,15 @@ import { exposeActions, helpMenuItem } from "./base_node.js";
 // FUNCTIONAL, minor: the roll happened once per `graphToPrompt`, so a batch of 4 picked
 //   four different branches. `onBeforeRun` fires once per queue call, so a batch now
 //   runs the same branch four times.
-// FUNCTIONAL, minor: `onAfterRun` is the host's `promptQueued`, which is not dispatched
-//   when nothing was accepted — a cancelled or fully rejected run leaves the chosen node
-//   unmuted, where the original's `queue-end` sat in a `finally`. The next run restores
-//   it before rolling again, so the state cannot accumulate, but it can persist between
-//   two runs. An always-fires queue-end is the missing piece.
+// The cleanup returned by onBeforeRun now runs on every attempt outcome,
+// including refusal and transport failure. onAfterRun alone is insufficient.
 //
 // `exposedActions = ["Mute all", "Enable all"]` is rgthree's own convention, read by the
 // Fast Actions Button; it is `exposeActions` now (see base_node.js). This node never
 // overrode `handleAction`, so both entries are listed and inert — which is exactly what
 // they were, and dropping them would quietly change the button's dropdown.
-// LIMITATION: a handle addresses the graph on screen, so an unmuter inside a subgraph
-//   the user is not looking at is skipped rather than rolled. The original read
-//   `node.graph` and did not care.
+// connectedInputNodes resolves through the node's own graph scope, including
+// subgraphs that are not currently on screen.
 const MODE_ALWAYS = "always";
 const MODE_MUTE = "never";
 const HELP = `
@@ -80,6 +76,7 @@ comfy.onReady(() => {
                 }
             }
         });
+        return restoreAll;
     });
     comfy.queue.onAfterRun(() => {
         restoreAll();
@@ -92,8 +89,10 @@ defineAnyInputConnectedNode({
         unmuterNodes.set(nodeKey(node), node);
     },
     onRemoved(node) {
-        unmuterNodes.delete(nodeKey(node));
-        temporarilyEnabled.delete(nodeKey(node));
+        const key = nodeKey(node), chosen = temporarilyEnabled.get(key);
+        if (chosen && !chosen.isDeleted) comfy.graph.batch(() => setModeDeep([chosen], MODE_MUTE));
+        unmuterNodes.delete(key);
+        temporarilyEnabled.delete(key);
     },
     menuItems: [helpMenuItem(NodeTypesString.RANDOM_UNMUTER, HELP)],
 });

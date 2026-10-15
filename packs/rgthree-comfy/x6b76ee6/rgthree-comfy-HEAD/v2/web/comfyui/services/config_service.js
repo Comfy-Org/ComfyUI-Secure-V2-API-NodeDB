@@ -5,6 +5,36 @@ import { comfy } from '/comfy/api/v2.js';
 // These are the converted features that still have an effect under V2; the host
 // owns their persistence, presentation, and cross-tab updates.
 const SETTINGS = {
+    "features.progress_bar.enabled": {
+        name: "Show rgthree execution progress", type: "boolean", defaultValue: true,
+        category: ["rgthree-comfy", "Features"],
+    },
+    "unreleased.power_conductor.enabled": {
+        name: "Enable Power Conductor (reload required)", type: "boolean", defaultValue: false,
+        category: ["rgthree-comfy", "Experimental"],
+    },
+    "nodes.reroute.default_width": {
+        name: "Reroute default width", type: "number", defaultValue: 40,
+        attrs: { min: 10, max: 8192, step: 10 }, category: ["rgthree-comfy", "Reroute"],
+    },
+    "nodes.reroute.default_height": {
+        name: "Reroute default height", type: "number", defaultValue: 30,
+        attrs: { min: 10, max: 8192, step: 10 }, category: ["rgthree-comfy", "Reroute"],
+    },
+    "nodes.reroute.default_resizable": {
+        name: "Allow resizing new Reroutes", type: "boolean", defaultValue: false,
+        category: ["rgthree-comfy", "Reroute"],
+    },
+    "nodes.reroute.default_layout": {
+        name: "Reroute default connections layout", type: "combo", defaultValue: "Left -> Right",
+        options: ["Left", "Right", "Top", "Bottom"].flatMap((input) =>
+            ["Left", "Right", "Top", "Bottom"].filter((output) => output !== input).map((output) => `${input} -> ${output}`)),
+        category: ["rgthree-comfy", "Reroute"],
+    },
+    "nodes.power_lora_loader.show_info_badge": {
+        name: "Show LoRA model info action", type: "boolean", defaultValue: true,
+        category: ["rgthree-comfy", "Power Lora Loader"],
+    },
     "log_level": {
         name: "Browser console log level",
         type: "combo",
@@ -66,11 +96,15 @@ class ConfigService extends EventTarget {
         if (entries.some(([key]) => !SETTINGS[key])) return false;
         await Promise.all(entries.map(([key, value]) =>
             comfy.settings.set(settingId(key), value)));
-        for (const [key, value] of entries) {
-            this.dispatchEvent(new CustomEvent("config-change", { detail: { key, value } }));
-        }
         return true;
     }
 }
 
 export const SERVICE = new ConfigService();
+// Changes from the host settings screen and another tab must reach the same
+// pack listeners as changes made through rgthree's own settings dialog.
+for (const key of Object.keys(SETTINGS)) {
+    comfy.settings.onChange(settingId(key), (value) => {
+        SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
+    });
+}

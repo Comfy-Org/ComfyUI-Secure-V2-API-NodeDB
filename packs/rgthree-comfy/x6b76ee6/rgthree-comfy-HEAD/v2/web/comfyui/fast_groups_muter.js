@@ -2,6 +2,7 @@ import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString } from "./constants.js";
 import { SERVICE as FAST_GROUPS_SERVICE } from "./services/fast_groups_service.js";
 import { exposeActions, helpMenuItem } from "./base_node.js";
+import { registerWidgetControl } from './widget_controls.js';
 
 // Fast Groups Muter — an input-less node that lists every group in the workflow as
 // a toggle row with a jump-to-group arrow, filtered by colour or title regex, sorted
@@ -54,6 +55,7 @@ const PROPERTY_RESTRICTION = "toggleRestriction";
 // live here, keyed by node id, and are dropped in onRemoved.
 const rowsByNode = new Map();
 const refreshByNode = new Map();
+const nodeKey = (node) => JSON.stringify([node.graphId ?? '', node.id]);
 function rowsFor(nodeId) {
     let rows = rowsByNode.get(nodeId);
     if (!rows) {
@@ -255,7 +257,7 @@ export function defineFastGroupsModeChanger({ type, modeOff, offAction, helpActi
         return group.nodes().some((n) => n.getMode() === modeOn);
     }
     function doModeChange(node, row, force, skipOtherNodeCheck) {
-        const rows = rowsFor(node.id);
+        const rows = rowsFor(nodeKey(node));
         let newValue = force != null ? force : !hasAnyActiveNode(row.group);
         if (skipOtherNodeCheck !== true) {
             const restriction = String(node.getProperty(PROPERTY_RESTRICTION) ?? "default");
@@ -275,7 +277,7 @@ export function defineFastGroupsModeChanger({ type, modeOff, offAction, helpActi
         const row = {
             group,
             toggled: false,
-            setToggled: () => { },
+            setToggled: (value) => { row.toggled = value; },
             setLabel: () => { },
             setNavVisible: () => { },
         };
@@ -315,17 +317,28 @@ export function defineFastGroupsModeChanger({ type, modeOff, offAction, helpActi
                 row.setToggled(row.toggled);
             },
         });
+        row.disposeControl = registerWidgetControl(node, group.id, {
+            getValue: () => ({ toggled: row.toggled }),
+            toggle(value) {
+                const next = value == null ? !row.toggled : value;
+                if (next !== row.toggled) {
+                    row.setToggled(next);
+                    comfy.graph.batch(() => doModeChange(node, row));
+                }
+            },
+        });
         return row;
     }
     function refreshWidgets(node) {
         if (node.isDeleted) {
             return;
         }
-        const rows = rowsFor(node.id);
+        const rows = rowsFor(nodeKey(node));
         const groups = matchingGroups(node);
         const wanted = new Set(groups.map((group) => group.id));
         for (const groupId of [...rows.keys()]) {
             if (!wanted.has(groupId)) {
+                rows.get(groupId).disposeControl?.();
                 node.widgets.remove(groupId);
                 rows.delete(groupId);
             }
@@ -356,7 +369,7 @@ export function defineFastGroupsModeChanger({ type, modeOff, offAction, helpActi
     // off `this.widgets` — are the first and last of `rowsFor(node.id)`, whose insertion
     // order `refreshWidgets` keeps matching the displayed order.
     exposeActions(type, [offAction, "Enable all", "Toggle all"], (node, action) => {
-        const rows = [...rowsFor(node.id).values()];
+        const rows = [...rowsFor(nodeKey(node)).values()];
         const restriction = String(node.getProperty(PROPERTY_RESTRICTION) ?? "default");
         comfy.graph.batch(() => {
             if (action === offAction) {
@@ -393,29 +406,34 @@ export function defineFastGroupsModeChanger({ type, modeOff, offAction, helpActi
         onCreated(node) {
             node.setSerializeWidgets(false);
             node.setSizeConstraints({ autoHeight: true });
-            node.setProperty(PROPERTY_MATCH_COLORS, "");
-            node.setProperty(PROPERTY_MATCH_TITLE, "");
-            node.setProperty(PROPERTY_SHOW_NAV, true);
-            node.setProperty(PROPERTY_SHOW_ALL_GRAPHS, true);
-            node.setProperty(PROPERTY_SORT, "position");
-            node.setProperty(PROPERTY_SORT_CUSTOM_ALPHA, "");
-            node.setProperty(PROPERTY_RESTRICTION, "default");
+            for (const [key, value] of Object.entries({
+                [PROPERTY_MATCH_COLORS]: '', [PROPERTY_MATCH_TITLE]: '',
+                [PROPERTY_SHOW_NAV]: true, [PROPERTY_SHOW_ALL_GRAPHS]: true,
+                [PROPERTY_SORT]: 'position', [PROPERTY_SORT_CUSTOM_ALPHA]: '',
+                [PROPERTY_RESTRICTION]: 'default',
+            })) {
+                if (node.getProperty(key) === undefined) node.setProperty(key, value);
+            }
             const refresh = () => refreshWidgets(node);
-            refreshByNode.set(node.id, refresh);
+            const previous = refreshByNode.get(nodeKey(node));
+            if (previous) FAST_GROUPS_SERVICE.removeFastGroupNode(previous);
+            refreshByNode.set(nodeKey(node), refresh);
             FAST_GROUPS_SERVICE.addFastGroupNode(refresh);
         },
         // A property edit changes which groups are listed and in what order, so it
         // must not wait for the throttle.
         onPropertyChanged(node) {
-            refreshWidgets(node);
+            // The public hook runs before the property write commits.
+            queueMicrotask(() => refreshWidgets(node));
         },
         onRemoved(node) {
-            const refresh = refreshByNode.get(node.id);
+            const refresh = refreshByNode.get(nodeKey(node));
             if (refresh) {
                 FAST_GROUPS_SERVICE.removeFastGroupNode(refresh);
             }
-            refreshByNode.delete(node.id);
-            rowsByNode.delete(node.id);
+            refreshByNode.delete(nodeKey(node));
+            for (const row of rowsByNode.get(nodeKey(node))?.values() ?? []) row.disposeControl?.();
+            rowsByNode.delete(nodeKey(node));
         },
     });
 }
