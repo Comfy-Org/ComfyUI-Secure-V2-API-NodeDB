@@ -44,7 +44,7 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 | Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 | Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
-| Load Image Metadata (LoraManager) | partial | queue parity 3/3; deployed-SDK Guest image/mask parity and drift guard; 18-output secure-Guest workflow | animated/16-bit inputs; annotated names; lossy PIL/PyAV decode differences; piexif dependency profile admission |
+| Load Image Metadata (LoraManager) | partial | retained19-case managed decoder; 12 exact named-container and8 exact upstream12/10-bit PQ native comparisons on composed leaf; managed input/output/temp annotations; raw AVIF brob | compressed brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile; installed gVisor and browser/selector lifecycle |
 
 ## Refused techniques (never do) and public replacements
 
@@ -74,7 +74,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 
 ## Open test gates
 
-- Load Image Metadata: animated/16-bit inputs, annotated input names, lossy decoder differences, admitted piexif profile.
+- Load Image Metadata: compressed AVIF brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile and installed gVisor/browser/selector lifecycle.
 - Prompt/Text library lifecycle and persistence; LoRA Text Loader syntax/library/cache.
 - TriggerWord Toggle and Stack Combiner restore/identity; Lora Pool edit and persistence.
 - Debug Metadata and Metadata Overwrite with wired model/sampler fields.
@@ -133,7 +133,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 - `pyproject.toml`: upstream's file with `requires-python = ">=3.13,<3.14"` added (the runtime declaration).
 - Every other file is the upstream file unchanged. Internal review notes and private test harnesses are not published.
 
-## Revision 4 scoped evidence and limits
+## Revision 4 scoped evidence and limits (historical image decoder)
 
 Load Image Metadata uses deployed public asset loading and storage.get. Its first-frame mask uses the declared SDK raw tier and digest-bound managed bytes. Sampling names are pinned to Core `6257422` (45 samplers, 9 schedulers), with a drift test in `tests/test_core_sampling_names.py`. Exact 8-bit PNG pixel/mask parity and float-alpha tolerance are scoped separately; lossy PIL/PyAV differences remain measured gaps.
 
@@ -142,3 +142,63 @@ Save Image first uses the pack LoRA cache, then resolves only missing logical na
 These CPU pre-flights use secure Guest dispatch with sandbox=none. They do not establish installed gVisor behavior or whole-node certificates. TEST workflows v3 cover 18 of 21 nodes in nine cases (eight ready; CLIP Hook blocked); Lora Info and the two WanVideo nodes need separate UI/model coverage. Frontend and route work remains pending and is not included in this revision.
 
 Portable API prompts and asset instructions are included in `tests/workflows/`; weights and generated fixtures are not shipped.
+
+## Revision 5 private draft: bounded managed image decoder
+
+The image path now ports the pinned Core 6257422 image-only PyAV conversion and
+animated-WebP Pillow fallback over digest-verified managed bytes. IMAGE is created
+with public ImageRef.from_value and MASK through the existing declared raw tier.
+It preserves core precision, alpha, orientation and frame batches in the tested
+PNG/JPEG/WebP/TIFF/GIF profile. Nineteen image/mask comparisons were exactly equal
+through actual backend Guest execution on CPU (sandbox none). All nineteen image
+metadata field results matched the original pack reader. Seven pure decoder
+controls verify error and batch-limit rejection. The old first-frame, 16-bit and
+lossy-decoder limitations above describe revision 4; they are closed for these
+tested revision 5 cases, not for arbitrary containers or runtime configurations.
+
+Bounds: 16 MiB encoded input, 8192 per axis, 16,777,216 aggregate decoded pixels,
+256 frames. Oversized batches raise rather than return a truncated animation.
+Schema, RemoteOptions, permissions, validation and fingerprinting are unchanged.
+No model weights or catalogue fixtures were required. Tests emulate the piexif
+dependency profile; deployed admission and installed/gVisor/browser coverage stay
+open. This revision is a private review draft, not a registry acceptance. Node
+dispositions and whole-node certificate counts remain unchanged.
+
+## Revision6: managed names and scoped AVIF metadata
+
+Revision5 was a private draft, superseded by public revision6. The reviewed
+private revision6 source supplies this public evaluation revision; open gates
+and zero whole-node certificates remain unchanged.
+
+Five exact source leaves compose the proved managed input/output/temp name
+parser, AVIF pixel format gate, bounded raw brob metadata projection and native
+filename-extension selection over private revision5. No dependency, SDK method,
+schema, permission or RemoteOptions change is introduced. The brob scan follows
+the pinned finite32-bit box stop/first-box rules; valid raw objects suppress EXIF,
+while native fallback cases use ordinary metadata. Bounds reject excessive work:
+4096 boxes,1MiB raw JSON,16384 JSON items/depth16,262144 bytes per extracted field,
+plus existing encoded-image, geometry and decoded-frame/pixel limits.
+
+The exact composed leaf has12 named-container cases and8 pinned official libavif
+reference cases with native-equal IMAGE/MASK, managed fingerprints, metadata
+seeds and ExifUtils fields. Genuine12-bit and three10-bit PQ first-stream profiles
+were verified from decoded formats and transfer tags. Each test retains its
+source/runtime binding; earlier annotation/ordinary/raw-brob/19-image proofs are
+historical scoped evidence, not a new all-profile suite or whole-node certificate.
+
+AVIF sequence inputs in these tests return one frame through both native core
+LoadImage and the conversion. Full-sequence expectations FAILED and remain
+recorded. Separate native diagnostics isolate a multi-frame EXIF-rotation encoder
+segfault in Pillow11.3.0. Full/rotated animation and auxiliary-alpha reconstruction
+remain unqualified. PQ output parity does not qualify HDR display, colorimetric
+correctness or tone mapping. Compressed/binary brob, genuine JPEG XL, dependency
+admission, installed/gVisor/browser workflows and existing route/selector holds
+remain open. No reference image assets are added to the production pack.
+
+The per-node classifications remain18 tested(scoped),1 converted-untested and
+2 partial. Revision5's inherited MANIFEST counters16/3 were stale relative to
+that revision's own21-row status table; the new manifest reconciles the counters
+to existing classifications. Certificate and accepted-pack counts remain zero.
+Revision6 is approved for IN PROGRESS / UNVERIFIED evaluation publication.
+Registry admission and deployment are performed by the manager. Revision5 was
+private and is superseded by6; every original proof/failure artifact is preserved.
