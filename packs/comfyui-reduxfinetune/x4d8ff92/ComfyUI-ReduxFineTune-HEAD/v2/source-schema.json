@@ -1,0 +1,261 @@
+{
+  "ReduxFineTune": {
+    "inputs": {
+      "required": {
+        "conditioning": [
+          "CONDITIONING"
+        ],
+        "style_model": [
+          "STYLE_MODEL"
+        ],
+        "clip_vision_output": [
+          "CLIP_VISION_OUTPUT"
+        ],
+        "fusion_mode": [
+          [
+            "Mix",
+            "Enhance",
+            "Sharpen",
+            "AdaIN",
+            "Residual",
+            "Max",
+            "Min",
+            "Random",
+            "FrequencyMix",
+            "Multiply",
+            "AttnBias"
+          ],
+          {
+            "default": "Mix",
+            "tooltip": "Mix - Linear blend, mainly uses the reference image, suitable for style transfer and light style fusion.\nEnhance - Feature enhancement, improves details and realism, suitable for stronger style influence.\nSharpen - Frequency enhancement, highlights high-frequency details, makes the image sharper.\nAdaIN - Adaptive Instance Normalization, automatically matches the mean and variance of style and content features, suitable for style transfer.\nResidual - Residual blend, fuses the difference between style and content, suitable for balancing both.\nMax - Element-wise maximum, keeps the stronger part of style and content features, suitable for highlighting prominent features.\nMin - Element-wise minimum, keeps the weaker part of style and content features, suitable for soft fusion.\nRandom - Random blend, randomly selects style or content features, suitable for generating diverse effects.\nFrequencyMix - Frequency domain blend, low frequency from image, high frequency from text, suitable for structure and detail separation fusion.\nMultiply - Directly multiplies the style feature by the strength, similar to StyleModelApply's multiply.\nAttnBias - Adds a log(strength) bias to the style feature, similar to StyleModelApply's attn_bias."
+          }
+        ],
+        "fusion_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.1,
+            "max": 2.0,
+            "step": 0.1,
+            "display": "slider",
+            "tooltip": "Fusion strength, higher values apply more style from reference image. 0.1-0.5: subtle effect, 1.0: balanced, 1.5-2.0: strong effect."
+          }
+        ],
+        "SUPER_REDUX": [
+          "BOOLEAN",
+          {
+            "default": false,
+            "tooltip": "Enable Super Redux mode for extra enhancement."
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CONDITIONING",
+      "STYLE_MODEL",
+      "CLIP_VISION_OUTPUT"
+    ],
+    "names": null,
+    "output_is_list": null,
+    "function": "apply_style",
+    "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune"
+  },
+  "ReduxFineTuneAdvanced": {
+    "inputs": {
+      "required": {
+        "conditioning": [
+          "CONDITIONING"
+        ],
+        "style_model": [
+          "STYLE_MODEL"
+        ],
+        "clip_vision": [
+          "CLIP_VISION"
+        ],
+        "image": [
+          "IMAGE"
+        ],
+        "crop": [
+          [
+            "center",
+            "mask_area",
+            "none"
+          ],
+          {
+            "default": "none",
+            "tooltip": "Crop mode: center - center crop, mask_area - crop to mask, none - no crop."
+          }
+        ],
+        "fusion_mode": [
+          [
+            "Mix",
+            "Enhance",
+            "Sharpen",
+            "AdaIN",
+            "Residual",
+            "Max",
+            "Min",
+            "Random",
+            "FrequencyMix",
+            "Multiply",
+            "AttnBias"
+          ],
+          {
+            "default": "Mix",
+            "tooltip": "Mix - Linear blend, mainly uses the reference image, suitable for style transfer and light style fusion.\nEnhance - Feature enhancement, improves details and realism, suitable for stronger style influence.\nSharpen - Frequency enhancement, highlights high-frequency details, makes the image sharper.\nAdaIN - Adaptive Instance Normalization, automatically matches the mean and variance of style and content features, suitable for style transfer.\nResidual - Residual blend, fuses the difference between style and content, suitable for balancing both.\nMax - Element-wise maximum, keeps the stronger part of style and content features, suitable for highlighting prominent features.\nMin - Element-wise minimum, keeps the weaker part of style and content features, suitable for soft fusion.\nRandom - Random blend, randomly selects style or content features, suitable for generating diverse effects.\nFrequencyMix - Frequency domain blend, low frequency from image, high frequency from text, suitable for structure and detail separation fusion.\nMultiply - Directly multiplies the style feature by the strength, similar to StyleModelApply's multiply.\nAttnBias - Adds a log(strength) bias to the style feature, similar to StyleModelApply's attn_bias."
+          }
+        ]
+      },
+      "optional": {
+        "mask": [
+          "MASK"
+        ],
+        "style_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 2.0,
+            "step": 0.01,
+            "tooltip": "Overall style strength, higher means more like reference image."
+          }
+        ],
+        "color_strength": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.01,
+            "tooltip": "Color transfer strength. 0 means off, >0 means on with intensity."
+          }
+        ],
+        "content_strength": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.01,
+            "tooltip": "Content transfer strength. 0 means off, >0 means on with intensity."
+          }
+        ],
+        "structure_strength": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.01,
+            "tooltip": "Structure transfer strength. 0 means off, >0 means on with intensity."
+          }
+        ],
+        "texture_strength": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.01,
+            "tooltip": "Texture transfer strength. 0 means off, >0 means on with intensity."
+          }
+        ],
+        "prompt_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 2.0,
+            "step": 0.01,
+            "tooltip": "Prompt (text) feature strength. Higher means more text influence."
+          }
+        ],
+        "feature_noise": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01,
+            "tooltip": "Random noise strength for feature fusion. Can help fix or vary details."
+          }
+        ],
+        "feature_resolution": [
+          "INT",
+          {
+            "default": 16,
+            "min": 1,
+            "max": 64,
+            "step": 1,
+            "tooltip": "Feature resolution for fusion. Higher means finer spatial detail."
+          }
+        ],
+        "SUPER_REDUX": [
+          "BOOLEAN",
+          {
+            "default": false,
+            "tooltip": "Enable Super Redux mode for extra enhancement and quality."
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CONDITIONING",
+      "STYLE_MODEL",
+      "CLIP_VISION_OUTPUT",
+      "IMAGE",
+      "MASK"
+    ],
+    "names": null,
+    "output_is_list": null,
+    "function": "apply_style",
+    "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune"
+  },
+  "ClipVisionStyleLoader": {
+    "inputs": {
+      "required": {
+        "clip_vision": [
+          []
+        ],
+        "style_model": [
+          []
+        ],
+        "image": [
+          "IMAGE"
+        ],
+        "crop_method": [
+          [
+            "none",
+            "center",
+            "mask"
+          ],
+          {
+            "default": "none"
+          }
+        ]
+      },
+      "optional": {
+        "mask": [
+          "MASK"
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "STYLE_MODEL",
+      "CLIP_VISION_OUTPUT"
+    ],
+    "names": [
+      "IMAGE",
+      "STYLE_MODEL",
+      "CLIP_VISION_OUTPUT"
+    ],
+    "output_is_list": [
+      true,
+      false,
+      false
+    ],
+    "function": "process_image",
+    "category": "\ud83e\uddeaAILab/\u269b\ufe0fReduxFineTune"
+  }
+}

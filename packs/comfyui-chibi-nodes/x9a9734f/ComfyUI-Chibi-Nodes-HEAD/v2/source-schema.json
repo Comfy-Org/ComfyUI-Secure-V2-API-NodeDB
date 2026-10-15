@@ -1,0 +1,870 @@
+{
+  "Loader": {
+    "inputs": {
+      "required": {
+        "Checkpoint": [
+          [
+            "fixture.safetensors"
+          ]
+        ],
+        "Vae": [
+          [
+            "Included",
+            "fixture.vae"
+          ]
+        ],
+        "stop_at_clip_layer": [
+          "INT",
+          {
+            "default": -1,
+            "min": -24,
+            "max": -1,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 512,
+            "min": 16,
+            "max": 32768,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 512,
+            "min": 16,
+            "max": 32768,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 4096
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "MODEL",
+      "VAE",
+      "CLIP",
+      "LATENT"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes",
+    "output_node": false,
+    "function": "loader"
+  },
+  "SimpleSampler": {
+    "inputs": {
+      "required": {
+        "model": [
+          "MODEL"
+        ],
+        "sampler": [
+          [
+            "Normal - euler",
+            "Normal - uni_pc",
+            "LCM Lora - lcm",
+            "SDXL Turbo - dpmpp_sde karras"
+          ]
+        ],
+        "positive": [
+          "CONDITIONING"
+        ],
+        "negative": [
+          "CONDITIONING"
+        ],
+        "latents": [
+          "LATENT"
+        ],
+        "mode": [
+          [
+            "txt2img",
+            "img2img"
+          ]
+        ]
+      },
+      "optional": {
+        "seed": [
+          "INT",
+          {
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "LATENT"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes",
+    "output_node": false,
+    "function": "sample"
+  },
+  "Prompts": {
+    "inputs": {
+      "required": {
+        "Positive": [
+          "STRING",
+          {
+            "default": "Positive Prompt",
+            "multiline": true
+          }
+        ],
+        "Negative": [
+          "STRING",
+          {
+            "default": "Negative Prompt",
+            "multiline": true
+          }
+        ]
+      },
+      "optional": {
+        "clip": [
+          "CLIP"
+        ]
+      }
+    },
+    "outputs": [
+      "CONDITIONING",
+      "CONDITIONING",
+      "CLIP",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "Positive CONDITIONING",
+      "Negative CONDITIONING",
+      "CLIP",
+      "Positive text",
+      "Negative text"
+    ],
+    "category": "Chibi-Nodes",
+    "output_node": false,
+    "function": "prompts"
+  },
+  "ImageTool": {
+    "inputs": {
+      "required": {
+        "image": [
+          "IMAGE"
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1920,
+            "min": 16,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1080,
+            "min": 16,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "crop": [
+          [
+            false,
+            true
+          ]
+        ],
+        "rotate": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 360,
+            "step": 1
+          }
+        ],
+        "mirror": [
+          [
+            false,
+            true
+          ]
+        ],
+        "flip": [
+          [
+            false,
+            true
+          ]
+        ],
+        "bgcolor": [
+          [
+            "black",
+            "white"
+          ]
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes/Image",
+    "output_node": false,
+    "function": "imagetools"
+  },
+  "Wildcards": {
+    "inputs": {
+      "required": {
+        "textfile": [
+          [
+            "animals.txt",
+            "art-styles.txt",
+            "clothes.txt",
+            "colours.txt",
+            "descriptors.txt",
+            "fabrics.txt",
+            "foods.txt",
+            "household-objects.txt",
+            "landscapes.txt",
+            "poses.txt"
+          ]
+        ],
+        "keyword": [
+          "STRING",
+          {
+            "default": "__wildcard__",
+            "multiline": false
+          }
+        ],
+        "entries_returned": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "step": 1
+          }
+        ]
+      },
+      "optional": {
+        "clip": [
+          "CLIP"
+        ],
+        "seed": [
+          "INT",
+          {
+            "forceInput": true
+          }
+        ],
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CONDITIONING",
+      "STRING"
+    ],
+    "names": [
+      "CONDITIONING",
+      "text"
+    ],
+    "category": "Chibi-Nodes",
+    "output_node": false,
+    "function": "wildcards"
+  },
+  "LoadEmbedding": {
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ],
+        "embedding": [
+          [
+            "fixture.pt"
+          ]
+        ],
+        "weight": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -2,
+            "max": 2,
+            "step": 0.1,
+            "round": 0.01
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "Chibi-Nodes",
+    "output_node": false,
+    "function": "load_embedding"
+  },
+  "ConditionText": {
+    "inputs": {
+      "required": {
+        "clip": [
+          "CLIP"
+        ],
+        "text": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CLIP",
+      "CONDITIONING"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes/Text",
+    "output_node": false,
+    "function": "conditiontext"
+  },
+  "ConditionTextPrompts": {
+    "inputs": {
+      "required": {
+        "clip": [
+          "CLIP"
+        ],
+        "positive": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CLIP",
+      "CONDITIONING",
+      "CONDITIONING"
+    ],
+    "names": [
+      "CLIP",
+      "positive",
+      "negative"
+    ],
+    "category": "Chibi-Nodes/Text",
+    "output_node": false,
+    "function": "conditiontext"
+  },
+  "ConditionTextMulti": {
+    "inputs": {
+      "required": {
+        "clip": [
+          "CLIP"
+        ]
+      },
+      "optional": {
+        "first": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ],
+        "second": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ],
+        "third": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ],
+        "fourth": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": false,
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "CLIP",
+      "CONDITIONING",
+      "CONDITIONING",
+      "CONDITIONING",
+      "CONDITIONING"
+    ],
+    "names": [
+      "CLIP",
+      "first",
+      "second",
+      "third",
+      "fourth"
+    ],
+    "category": "Chibi-Nodes/Text",
+    "output_node": false,
+    "function": "conditiontext"
+  },
+  "Textbox": {
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "forceInput": false,
+            "print_to_screen": true
+          }
+        ]
+      },
+      "optional": {
+        "passthrough": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "Chibi-Nodes/Text",
+    "output_node": true,
+    "function": "textbox"
+  },
+  "ImageSizeInfo": {
+    "inputs": {
+      "required": {
+        "image": [
+          "IMAGE"
+        ]
+      },
+      "hidden": {
+        "width": [
+          "INT"
+        ],
+        "height": [
+          "INT"
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "INT",
+      "INT"
+    ],
+    "names": [
+      "IMAGE",
+      "width",
+      "height"
+    ],
+    "category": "Chibi-Nodes/Image",
+    "output_node": true,
+    "function": "imagesizeinfo"
+  },
+  "ImageSimpleResize": {
+    "inputs": {
+      "required": {
+        "image": [
+          "IMAGE"
+        ],
+        "size": [
+          "INT",
+          {
+            "default": 512,
+            "min": 16,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "edge": [
+          [
+            "largest",
+            "smallest",
+            "all",
+            "width",
+            "height"
+          ]
+        ]
+      },
+      "optional": {
+        "size_override": [
+          "INT",
+          {
+            "forceInput": true
+          }
+        ],
+        "vae": [
+          "VAE"
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "LATENT"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes/Image",
+    "output_node": false,
+    "function": "imagesimpleresize"
+  },
+  "ImageAddText": {
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "default": "Chibi-Nodes",
+            "multiline": true
+          }
+        ],
+        "font": [
+          [
+            "Ubuntu-Bold.ttf",
+            "Ubuntu-BoldItalic.ttf",
+            "Ubuntu-Italic.ttf",
+            "Ubuntu-Light.ttf",
+            "Ubuntu-LightItalic.ttf",
+            "Ubuntu-Medium.ttf",
+            "Ubuntu-MediumItalic.ttf",
+            "Ubuntu-Regular.ttf",
+            "UbuntuCondensed-Regular.ttf",
+            "UbuntuMono-Bold.ttf",
+            "UbuntuMono-BoldItalic.ttf",
+            "UbuntuMono-Italic.ttf",
+            "UbuntuMono-Regular.ttf"
+          ]
+        ],
+        "font_size": [
+          "INT",
+          {
+            "default": 24,
+            "min": 0,
+            "max": 200,
+            "step": 1
+          }
+        ],
+        "font_colour": [
+          [
+            "black",
+            "white",
+            "red",
+            "green",
+            "blue"
+          ]
+        ],
+        "invert_mask": [
+          [
+            false,
+            true
+          ]
+        ],
+        "position_x": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "position_y": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 512,
+            "min": 0,
+            "max": 32768,
+            "step": 1
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 512,
+            "min": 0,
+            "max": 32768,
+            "step": 1
+          }
+        ]
+      },
+      "optional": {
+        "image": [
+          "IMAGE"
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "MASK",
+      "STRING"
+    ],
+    "names": [
+      "IMAGE",
+      "MASK",
+      "text"
+    ],
+    "category": "Chibi-Nodes/Image",
+    "output_node": false,
+    "function": "addtext"
+  },
+  "Int2String": {
+    "inputs": {
+      "required": {
+        "Int": [
+          "INT",
+          {
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "STRING"
+    ],
+    "names": null,
+    "category": "Chibi-Nodes/Text",
+    "output_node": false,
+    "function": "int2string"
+  },
+  "LoadImageExtended": {
+    "inputs": {
+      "required": {
+        "image": [
+          [],
+          {
+            "image_upload": true
+          }
+        ]
+      },
+      "optional": {
+        "vae": [
+          "VAE"
+        ]
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "MASK",
+      "LATENT",
+      "STRING",
+      "STRING",
+      "INT",
+      "INT"
+    ],
+    "names": [
+      "IMAGE",
+      "MASK",
+      "LATENT",
+      "filename",
+      "image Info",
+      "width",
+      "height"
+    ],
+    "category": "Chibi-Nodes/Image",
+    "output_node": false,
+    "function": "load_image"
+  },
+  "SeedGenerator": {
+    "inputs": {
+      "required": {
+        "mode": [
+          [
+            "Random",
+            "Fixed"
+          ]
+        ],
+        "fixed_seed": [
+          "INT",
+          {
+            "default": 8008135,
+            "min": 0,
+            "max": 18446744073709551615,
+            "step": 1
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "INT",
+      "STRING"
+    ],
+    "names": [
+      "seed",
+      "text"
+    ],
+    "category": "Chibi-Nodes/Numbers",
+    "output_node": false,
+    "function": "generator"
+  },
+  "SaveImages": {
+    "inputs": {
+      "required": {
+        "filename_type": [
+          [
+            "Timestamp",
+            "Fixed",
+            "Fixed Single"
+          ]
+        ],
+        "fixed_filename": [
+          "STRING",
+          {
+            "default": "output"
+          }
+        ]
+      },
+      "optional": {
+        "images": [
+          "IMAGE"
+        ],
+        "latents": [
+          "LATENT"
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "fixed_filename_override": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO"
+      }
+    },
+    "outputs": [
+      "IMAGE",
+      "STRING"
+    ],
+    "names": [
+      "images",
+      "filename_list"
+    ],
+    "category": "Chibi-Nodes",
+    "output_node": true,
+    "function": "saveimage"
+  },
+  "TextSplit": {
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "forceInput": true
+          }
+        ],
+        "separator": [
+          "STRING",
+          {
+            "default": "."
+          }
+        ],
+        "reverse": [
+          [
+            false,
+            true
+          ]
+        ],
+        "return_half": [
+          [
+            "First Half",
+            "Second Half"
+          ]
+        ]
+      }
+    },
+    "outputs": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "Chibi-Nodes/Text",
+    "output_node": true,
+    "function": "do_split"
+  },
+  "RandomResolutionLatent": {
+    "inputs": {
+      "required": {
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 4096
+          }
+        ]
+      }
+    },
+    "outputs": [
+      "LATENT",
+      "INT",
+      "INT"
+    ],
+    "names": [
+      "LATENT",
+      "width",
+      "height"
+    ],
+    "category": "Chibi-Nodes/Numbers",
+    "output_node": true,
+    "function": "random_resolution"
+  }
+}
