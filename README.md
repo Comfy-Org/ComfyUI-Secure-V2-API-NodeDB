@@ -18,11 +18,16 @@ to that pristine V1 source reproduces the complete V2 tree byte-for-byte.
 `<xsha>` is the pack's short git commit sha; `packs/packs.json` records the
 upstream URL and full commit.
 
-**A converted pack is one that has a `v2/` subfolder** — which is precisely
+**A pack with a `v2/` subfolder has a conversion artifact** — which is precisely
 what applying its patch pair produces:
 
     patches/<slug>/<xsha>/<slug>-<xsha>.json    per-file manifest
                           <slug>-<xsha>.diff    the boundary-only diff
+
+Functional completion is tracked separately in `validation/`, with the tested
+revision and scope. A materialized tree or matching patch pair alone does not
+establish that every original node works. Known omitted or stubbed nodes keep a
+pack incomplete; see the [rgthree Label audit](validation/20261015-rgthree-label/README.md).
 
 The checked-in trees are conversion artifacts. `v2/` is fully materialized so
 it is self-consistent when used as the pack root: sibling imports and relative
