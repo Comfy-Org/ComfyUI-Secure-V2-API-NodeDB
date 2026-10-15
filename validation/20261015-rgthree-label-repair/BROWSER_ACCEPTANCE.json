@@ -1,0 +1,18 @@
+{
+  "status": "NOT_RUN_DEPLOYMENT_REQUIRED",
+  "workflow": "label-acceptance-workflow.json",
+  "limits": { "render_queue_jobs": 0, "models": 0, "suggested_browser_wall_seconds_per_renderer": 120 },
+  "run_in": ["Classic canvas renderer", "Vue Nodes renderer"],
+  "checks": [
+    "Load the workflow. Both Label nodes register without missing-node warning or pack exception. Confirm asset web/comfyui/label.js is the frozen candidate.",
+    "Verify the unpinned Label has no host title/body chrome and shows two lines, centered text, alpha background, padding, border radius and rotation; no resize/collapse affordance.",
+    "Double-click the unpinned Label. The pack-owned dialog exposes Title plus all eight original properties. Edit title with real and literal backslash-n line breaks, font size/family/color, alignment, background color, padding, radius and angle. Drawing and saved size update.",
+    "Move the Label. Its unrotated interaction rectangle moves correctly; rotated glyphs are not clipped when panning and zooming.",
+    "Click and drag through the pinned overlay to the CLIPTextEncode node underneath. Confirm underlying text-widget click also works. Right-click the Label still opens its menu and can unpin it.",
+    "Double-click the pinned Label. The properties dialog opens once, with no second underlying click or accidental Label movement.",
+    "Save workflow, reload the page, then reload that saved workflow. Title, all eight properties, pinned state and position survive and each Label has exactly one surface.",
+    "Delete each Label while its dialog is open. Its dialog/surface are removed; no stale bitmap or console exception. Reload the original fixture to prove cleanup did not corrupt registration.",
+    "Capture screenshots, exact frontend/host/pack hashes, workflow export hash, console errors, and pass/fail for each renderer. Stop on a mismatch and report the failing boundary."
+  ],
+  "not_a_claim": "Focused harness success does not establish these browser results or whole-pack completion."
+}

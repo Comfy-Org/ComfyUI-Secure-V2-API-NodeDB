@@ -39,22 +39,6 @@ export interface BackendHandle {
    */
   sessionId(): string | undefined
   /**
-   * Fires when {@link sessionId} becomes a different value.
-   *
-   * A pack that keys ephemeral server-side work by session — a scratch
-   * directory, a warmed model, a subscription — needs to know its old key is
-   * dead. The id changes on the first connection and again whenever the socket
-   * reconnects under a new identity, and the work filed under the previous one
-   * is no longer addressable.
-   *
-   * The session is not the user, the workflow or the node. It does not survive
-   * a reload, and storing it in any of those is how a pack ends up reading
-   * another tab's scratch state.
-   */
-  onSessionChanged(
-    listener: (sessionId: string | undefined) => void
-  ): Unsubscribe
-  /**
    * Subscribes to a backend message. The name is whatever the backend emits;
    * `detail` is its payload, unparsed.
    */
@@ -103,93 +87,6 @@ export interface ButtonContribution {
    * behaviour has nothing to read.
    */
   run(event: MouseEvent): void
-}
-
-// ─── boundedFiles.ts ─────────────────────────────────────────────
-
-export interface FilePickOptions {
-  readonly extensions?: readonly string[]
-  readonly mimeTypes?: readonly string[]
-  /** Maximum accepted file size. The host-wide ceiling is 16 MiB. */
-  readonly maxBytes: number
-}
-
-export interface FilePickManyOptions extends FilePickOptions {
-  /** Maximum number of selected files. The host-wide ceiling is 50. */
-  readonly maxFiles: number
-  /** Maximum aggregate payload. The host-wide ceiling is 256 MiB. */
-  readonly maxTotalBytes: number
-}
-
-export interface PickedFileData {
-  /** Basename only; no host path is exposed. */
-  readonly name: string
-  readonly type: string
-  readonly bytes: Uint8Array
-}
-
-export interface FileDownloadOptions {
-  /** Safe basename only. */
-  readonly name: string
-  readonly mimeType: string
-  /** At most 16 MiB. */
-  readonly bytes: Uint8Array
-}
-
-export interface FilesHandle {
-  /** Opens one explicit host file picker; cancellation resolves undefined. */
-  pick(options: FilePickOptions): Promise<PickedFileData | undefined>
-  /** Opens one bounded multi-file picker; cancellation resolves an empty list. */
-  pickMany(options: FilePickManyOptions): Promise<PickedFileData[]>
-  /** Asks the host to download one bounded in-memory file. */
-  download(options: FileDownloadOptions): Promise<void>
-}
-
-// ─── cryptoHandle.ts ─────────────────────────────────────────────
-
-export interface AesCbcEncryptOptions {
-  readonly key: Uint8Array
-  readonly iv: Uint8Array
-  readonly plaintext: Uint8Array
-}
-
-export interface AesCbcDecryptOptions {
-  readonly key: Uint8Array
-  readonly iv: Uint8Array
-  readonly ciphertext: Uint8Array
-}
-
-export interface HmacSha256Options {
-  readonly key: Uint8Array
-  readonly data: Uint8Array
-}
-
-export interface VerifyHmacSha256Options extends HmacSha256Options {
-  readonly signature: Uint8Array
-}
-
-/** Fixed canonical primitives; no caller-selected algorithms or retained keys. */
-export interface CryptoHandle {
-  aesCbcEncrypt(options: AesCbcEncryptOptions): Promise<Uint8Array>
-  aesCbcDecrypt(options: AesCbcDecryptOptions): Promise<Uint8Array>
-  hmacSha256(options: HmacSha256Options): Promise<Uint8Array>
-  verifyHmacSha256(options: VerifyHmacSha256Options): Promise<boolean>
-}
-
-// ─── integrationsHandle.ts ───────────────────────────────────────
-
-export interface OllamaListModelsOptions {
-  /** Exact loopback Ollama origin or an `ollama://name` admin profile. */
-  readonly endpoint: string
-}
-
-export interface OllamaIntegrationHandle {
-  listModels(options: OllamaListModelsOptions): Promise<string[]>
-}
-
-/** Vendor pass-throughs have a weaker stability promise than generic APIs. */
-export interface IntegrationsHandle {
-  readonly ollama: OllamaIntegrationHandle
 }
 
 // ─── closedProxy.ts ──────────────────────────────────────────────
@@ -248,24 +145,20 @@ export interface Comfy {
   readonly version: string
   /** Breaking-change generation. Incremented only when something is removed. */
   readonly major: number
-  /**
-   * Cheap, never throws. The supported way to branch.
-   *
-   * Answers whether this host can do something, under the grant it is running
-   * with. It is not a permission request: asking does not obtain authority, and
-   * a pack never enumerates capabilities to be allowed to run.
-   */
+  /** Cheap, never throws. The supported way to branch. */
   supports(capability: string): boolean
   /** Asserts a capability, with an actionable error naming it. */
   require(capability: string): void
   /** Every capability this host provides. */
   capabilities(): readonly string[]
   /**
-   * Pins to a specific major.
+   * Pins to a specific major, so a pack written against one is not moved onto
+   * the next by a host upgrade.
    *
-   * A major stays available until it is announced for removal and withdrawn
-   * through the normal phased deprecation process, so a pack written against
-   * one keeps working across that period rather than breaking on a release.
+   * A pinned major stays available for as long as it is supported — see
+   * {@link SUPPORTED_MAJORS} — not indefinitely. Withdrawal follows ComfyUI's
+   * phased deprecation, so a pin buys a stable contract across releases rather
+   * than a permanent one.
    */
   forMajor(major: number): Comfy
 
@@ -304,22 +197,12 @@ export interface Comfy {
   readonly system: SystemHandle
   /** The sanctioned slice of app chrome — sidebar tabs. */
   readonly ui: UiHandle
-  /** Host-owned facilities shared by widget implementations. */
-  readonly widgets: WidgetsHandle
-  /** Bounded declarative locale catalogs rendered by host-native i18n. */
-  readonly localization: LocalizationHandle
   /** Commands, their keybindings, and notifications. */
   readonly commands: CommandsHandle
   /** Backend URLs and messages, including a pack's own events. */
   readonly backend: BackendHandle
   /** Loading a parsed workflow into a new active document. */
   readonly workflow: WorkflowHandle
-  /** Explicit, bounded host file selection and download. */
-  readonly files: FilesHandle
-  /** Fixed host cryptographic primitives available to opaque-origin workers. */
-  readonly crypto: CryptoHandle
-  /** Bounded vendor-specific facilities. */
-  readonly integrations: IntegrationsHandle
   /**
    * The editor is already mid-gesture — dragging a link, resizing a node,
    * dragging a widget. A pack running its own pointer gesture must stand down
@@ -412,51 +295,8 @@ export interface Comfy {
    * This is `afterConfigureGraph`. Unlike {@link onReady} it fires again for
    * every workflow the user opens, which is what a pack re-attaching itself to
    * the document needs — `onReady` fires once and misses every later open.
-   *
-   * It also fires for undo, redo and a reload of the same document, because a
-   * pack rebuilding state from the graph needs those too. The handle says
-   * which of them happened: an id equal to the one from last time means this
-   * document was rebuilt, not replaced. `undefined` when the host cannot name
-   * a document, as when raw workflow data is loaded with no file behind it.
    */
-  onWorkflowLoaded(
-    listener: (document: DocumentHandle | undefined) => void
-  ): Unsubscribe
-  /**
-   * A document's editing session began.
-   *
-   * Where per-document state belongs. Fires for a tab opened in the
-   * background too, so a pack that allocates here and releases in
-   * {@link onDocumentClosed} stays balanced however the user moves around.
-   */
-  onDocumentOpened(listener: (document: DocumentHandle) => void): Unsubscribe
-  /**
-   * A document became the one on screen.
-   *
-   * Distinct from opening: the user returning to a tab activates a document
-   * that was already open, and its state is still valid. Anything tied to
-   * *being visible* — a panel, a canvas overlay — belongs here.
-   */
-  onDocumentActivated(listener: (document: DocumentHandle) => void): Unsubscribe
-  /**
-   * A document stopped being the one on screen, but is still open.
-   *
-   * Fires before the next document is activated, so a pack moving something
-   * between them never sees two claiming the screen at once.
-   */
-  onDocumentDeactivated(
-    listener: (document: DocumentHandle) => void
-  ): Unsubscribe
-  /**
-   * A document's editing session ended, however it ended — the user closing
-   * the tab, a temporary workflow being deleted, or the host discarding a
-   * background tab whose file changed on disk.
-   *
-   * Release everything keyed to it. The handle already reports `isDeleted`,
-   * and carries the id so a pack can find what it stored; it will not describe
-   * the document, because there is no longer one to describe.
-   */
-  onDocumentClosed(listener: (document: DocumentHandle) => void): Unsubscribe
+  onWorkflowLoaded(listener: () => void): Unsubscribe
 }
 
 // ─── commandsHandle.ts ───────────────────────────────────────────
@@ -504,9 +344,20 @@ export interface NotifyDef {
   readonly life?: number
 }
 
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface PlaySoundDef {
+  /**
+   * A browser-readable audio asset. Sandboxed hosts restrict this to pack files.
+   */
+  readonly src: string
+  /** Range 0–1. Defaults to 1. */
+  readonly volume?: number
+}
+
 export interface CommandsHandle {
   register(def: CommandDef): void
   notify(def: NotifyDef): void
+  playSound(def: PlaySoundDef): Promise<void>
   /**
    * Runs a command the host or another pack registered, by id.
    *
@@ -553,11 +404,7 @@ export interface NodeDef {
      */
     options: Readonly<Record<string, unknown>>
   }>[]
-  readonly outputs: readonly Readonly<{
-    name: string
-    type: string
-    tooltip?: string
-  }>[]
+  readonly outputs: readonly Readonly<{ name: string; type: string }>[]
   readonly isOutputNode: boolean
   /**
    * The node's `hidden` input declarations, verbatim.
@@ -964,6 +811,7 @@ export type DefSelector =
  */
 export interface NodeDefinition {
   readonly type: string
+  readonly presentation?: NodePresentation
   readonly title?: string
   readonly category?: string
   readonly description?: string
@@ -1110,72 +958,6 @@ export interface PropertyChangeEvent {
   reject(): void
 }
 
-// ─── documentHandle.ts ───────────────────────────────────────────
-
-export interface DocumentHandle extends HandleCommon {
-  /**
-   * Identity of this editing session. Stable for as long as the document is
-   * open — including across undo, redo and tab switches — and never reused.
-   *
-   * Not the id inside the workflow JSON, which travels with the file, so two
-   * opens of it and any copy made outside the app all share one value. Not the
-   * path either, which is a storage address and changes on rename. Do not
-   * persist this: it means nothing in the next page load.
-   */
-  readonly id: string
-  /** Display name, without the directory or extension. */
-  readonly name: string | undefined
-  /**
-   * Storage path, for addressing the file. Undefined for a document with no
-   * file behind it yet. Changes when the user renames, so key pack state on
-   * {@link id} instead.
-   */
-  readonly path: string | undefined
-  /** Whether there are edits the user has not saved. */
-  readonly isModified: boolean
-  /**
-   * True once this editing session has ended.
-   *
-   * A handle is a snapshot of a session, and a pack may hold one across a tab
-   * close or a background unload. Check before acting on stored state rather
-   * than trusting a captured handle, exactly as for a node or a widget.
-   */
-  readonly isDeleted: boolean
-}
-
-/** What the host must supply to describe one open document. */
-export interface DocumentSource {
-  readonly sessionId: string | null
-  readonly filename?: string
-  readonly path?: string
-  readonly isModified?: boolean
-  /** Whether this is the document the editor is showing. */
-  readonly isActive?: boolean
-}
-
-/**
- * Every document currently open, including background tabs.
- *
- * One reader rather than one per question: a handle has to answer for a
- * document that is open but not on screen, and a lookup that only knew the
- * active one would report every background tab as closed.
- */
-export type DocumentReader = () => readonly DocumentSource[]
-
-// ─── documentLifecycle.ts ────────────────────────────────────────
-
-/**
- * The transitions a document makes.
- *
- * `opened` and `closed` bracket the session's existence; `activated` and
- * `deactivated` bracket its time on screen. A document opened in the
- * background is `opened` without being `activated`, which is why they are
- * separate: a pack that allocates on `opened` and releases on `closed` stays
- * balanced no matter how the user moves between tabs.
-
- */
-export type DocumentPhase = 'opened' | 'activated' | 'deactivated' | 'closed'
-
 // ─── graphHandle.ts ──────────────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
@@ -1184,69 +966,11 @@ export interface NodeInit {
   position?: { x: number; y: number }
 }
 
-/**
- * How far {@link GraphHandle.queryNodes} looks.
- *
- * `'visible'` is the graph on screen and the default, matching `nodes()`.
- * `'root-and-subgraphs'` is the root graph and every subgraph *definition* —
- * the same set `onNodeChanged`'s `'document'` scope reports over. A subgraph
- * placed three times contributes its nodes once, which is what a pack acting
- * on "each of my nodes" means.
- *
- * @knipIgnoreUnusedButUsedByCustomNodes
- */
-export type NodeQueryScope = 'visible' | 'root-and-subgraphs'
-
-/**
- * Which nodes {@link GraphHandle.queryNodes} should return.
- *
- * Every field narrows; omitting all of them returns the whole scope. They
- * compose as AND, because the cases packs actually hand-rolled — "my nodes,
- * anywhere in the document", "everything in this group" — are intersections.
- *
- * @knipIgnoreUnusedButUsedByCustomNodes
- */
-export interface NodeQuery {
-  readonly scope?: NodeQueryScope
-  /**
-   * Node type. A string matches exactly, an array matches any of them, and a
-   * regular expression matches by pattern — which is how a pack asks for its
-   * own nodes without listing every type it ships.
-   */
-  readonly type?: string | RegExp | readonly string[]
-  /**
-   * Restrict to nodes in the graph the user is looking at.
-   *
-   * Only meaningful under `'root-and-subgraphs'`: it is the difference between
-   * "every node in the document" and "the ones the user can currently see".
-   * This is *not* a viewport test — a node scrolled off the edge of a graph
-   * the user is in is still rendered by this definition. Culling belongs to
-   * the renderer and differs between the two of them.
-   */
-  readonly rendered?: boolean
-  /** Restrict to nodes the group currently contains. */
-  readonly group?: GroupHandle
-}
-
 export interface GraphHandle {
   readonly id: string
   node(id: string): NodeHandle | undefined
   nodes(): readonly NodeHandle[]
   nodesOfType(type: string): readonly NodeHandle[]
-  /**
-   * One flat query over graph-scoped nodes.
-   *
-   * `nodes()` and `nodesOfType()` address the graph on screen, so a pack that
-   * wanted "every node of mine in this document" had to walk `root()` and each
-   * `subgraphs()` entry itself and concatenate the results — and the ones that
-   * did not simply stopped working the moment a user nested anything.
-   *
-   * Handles come from the scope that owns each node, so a node reached here
-   * under `'root-and-subgraphs'` is not `===` the one `graph.node()` returns
-   * for it. That is the same scope rule `sameEntity()` exists for; compare
-   * with `comfy.sameEntity()` rather than `===`.
-   */
-  queryNodes(query?: NodeQuery): readonly NodeHandle[]
   add(type: string, init?: NodeInit): NodeHandle
   remove(id: string): boolean
   links(): readonly LinkInfo[]
@@ -1498,6 +1222,23 @@ export type NodeDragEndSource = (
   onDragEnd: (nodeIds: readonly string[]) => void
 ) => Unsubscribe
 
+// ─── nodeCanvas.ts ───────────────────────────────────────────────
+
+export interface NodeCanvasDef {
+  /** Finite local drawing bounds, independent of the serialized node rectangle. */
+  readonly bounds: Bounds
+  /** Pack content overlays the ordinary body/slots; no layout or hit-test changes. */
+  readonly layer?: 'foreground'
+  /** Draws in node-local coordinates into a private canvas. */
+  draw(context: CanvasRenderingContext2D): void
+}
+
+export interface NodeCanvasHandle {
+  setBounds(bounds: Bounds): void
+  redraw(): void
+  remove(): void
+}
+
 // ─── nodeChanges.ts ──────────────────────────────────────────────
 
 /** A field the host tracks and reports. Not every property is one. */
@@ -1537,16 +1278,6 @@ export interface NodeChangeEvent {
    * its own records under `'document'` must key on both.
    */
   readonly graphId: string
-  /**
-   * The editing session the change happened in, or `undefined` when the host
-   * cannot name one.
-   *
-   * `graphId` is restored from the saved workflow and round-trips through
-   * `serialize()`, so it identifies the graph on disk, not the document open
-   * in front of the user — two opens of one file report the same value. A pack
-   * holding records across a document swap needs this to know they are stale.
-   */
-  readonly documentId: string | undefined
   readonly property: TrackedProperty
   readonly from: unknown
   readonly to: unknown
@@ -1634,6 +1365,8 @@ export interface NodeHandle extends HandleCommon {
   setCollapsed(collapsed: boolean): void
   isPinned(): boolean
   setPinned(pinned: boolean): void
+  /** Change this node's resize affordance without changing its serialized size. */
+  setResizable(resizable: boolean): void
   getColor(): string | undefined
   setColor(color: string | undefined): void
   getBgColor(): string | undefined
@@ -1755,6 +1488,8 @@ export interface NodeHandle extends HandleCommon {
   readonly inputs: SlotCollection<InputSlotHandle>
   readonly outputs: SlotCollection<OutputSlotHandle>
   readonly widgets: WidgetCollection
+  /** One bounded canvas for the content of a pack-owned chromeless node. */
+  canvas(def: NodeCanvasDef): NodeCanvasHandle
   snapshot(): Readonly<NodeSnapshot> | undefined
   remove(): void
 }
@@ -1764,6 +1499,20 @@ export interface NodeCollections {
   inputs(nodeId: string): SlotCollection<InputSlotHandle>
   outputs(nodeId: string): SlotCollection<OutputSlotHandle>
   widgets(nodeId: string): WidgetCollection
+}
+
+// ─── nodePresentation.ts ─────────────────────────────────────────
+
+export interface NodePresentation {
+  readonly chrome?: 'default' | 'none'
+  /** Hide the title independently of the normal node body and slots. */
+  readonly title?: 'default' | 'hidden'
+  /** Fixed nodes keep their declared body rectangle in the DOM renderer. */
+  readonly sizing?: 'content' | 'fixed'
+  readonly resizable?: boolean
+  readonly collapsible?: boolean
+  /** Primary clicks pass through while pinned; editing and context menus remain. */
+  readonly pinnedInteraction?: 'default' | 'pass-through'
 }
 
 // ─── queueHandle.ts ──────────────────────────────────────────────
@@ -2545,24 +2294,6 @@ export interface ResolveOptions {
 
 // ─── storageHandle.ts ────────────────────────────────────────────
 
-/** @knipIgnoreUnusedButUsedByCustomNodes */
-export interface StorageUsage {
-  /** Total bytes stored under the namespace. */
-  readonly usedBytes: number
-  /** How many entries make up {@link usedBytes}. */
-  readonly entryCount: number
-  /**
-   * The ceiling this host enforces, or `undefined` where it enforces none.
-   *
-   * Undefined is the honest answer for a local install with the user's own
-   * disk behind it, and it is deliberately not reported as `Infinity`: a pack
-   * dividing by it to draw a gauge would get a meaningless bar rather than the
-   * chance to skip drawing one. Do not treat a present number as a promise
-   * that a write below it succeeds — another namespace shares the same store.
-   */
-  readonly quotaBytes?: number
-}
-
 export interface StorageHandle {
   /**
    * Names stored under a namespace, which must be one this pack owns.
@@ -2574,14 +2305,6 @@ export interface StorageHandle {
   get(name: string): Promise<string | undefined>
   set(name: string, value: string): Promise<void>
   remove(name: string): Promise<void>
-  /**
-   * What a namespace currently occupies.
-   *
-   * For a pack that stores things a user accumulates — presets, captions,
-   * saved prompts — so it can show what it is holding and offer to prune it,
-   * rather than growing without bound until someone else's write fails.
-   */
-  usage(namespace: string): Promise<StorageUsage>
 }
 
 // ─── systemHandle.ts ─────────────────────────────────────────────
@@ -2698,26 +2421,10 @@ export interface DialogBase {
   readonly title?: string
 }
 
-/** A bounded keyboard event captured while a mounted dialog owns focus. */
-/** @knipIgnoreUnusedButUsedByCustomNodes */
-export interface DialogKeyEvent {
-  readonly key: string
-  readonly code: string
-  readonly repeat: boolean
-  readonly altKey: boolean
-  readonly ctrlKey: boolean
-  readonly metaKey: boolean
-  readonly shiftKey: boolean
-  /** True for an input, textarea, select, or editable content target. */
-  readonly editableTarget: boolean
-}
-
 /** A dialog the pack draws into a container itself. */
 /** @knipIgnoreUnusedButUsedByCustomNodes */
 export interface MountedDialog extends DialogBase {
   render(container: HTMLElement): void
-  /** Receives dialog-scoped key events even before a child takes focus. */
-  onKeyDown?(event: DialogKeyEvent): void | Promise<void>
   destroy?(): void
 }
 
@@ -2931,6 +2638,8 @@ export interface WidgetHandle extends HandleCommon {
   setHidden(hidden: boolean): void
   getOptions(): Readonly<WidgetOptions> | undefined
   setOption(key: string, value: unknown): void
+  /** Explicit display label, including empty text; undefined means no label. */
+  getLabel(): string | undefined
   setLabel(label: string): void
 
   isDisabled(): boolean
@@ -3281,82 +2990,6 @@ export interface WidgetCollection {
   [Symbol.iterator](): Iterator<WidgetHandle>
 }
 
-export interface ComboPreviewRegistration {
-  /** Namespaced registration id. */
-  readonly id: string
-  /** Managed model catalogues searched in order. */
-  readonly modelCategories: readonly (
-    | 'loras'
-    | 'checkpoints'
-    | 'unet'
-    | 'diffusion_models'
-  )[]
-  /** Model filename suffixes that activate this policy. */
-  readonly extensions: readonly (
-    | 'safetensors'
-    | 'sft'
-    | 'pt'
-    | 'ckpt'
-    | 'gguf'
-  )[]
-  /** Host-owned adjacent-preview lookup policy. */
-  readonly candidatePolicy: 'adjacent-model-preview-v1'
-  /** Preview media types the host may display. */
-  readonly media: readonly (
-    | 'image/png'
-    | 'image/webp'
-    | 'image/jpeg'
-    | 'video/mp4'
-    | 'video/webm'
-  )[]
-}
-
-export interface ComboPreviewAssignment {
-  /** Managed model catalogue containing `modelValue`. */
-  readonly category: 'loras' | 'checkpoints' | 'unet' | 'diffusion_models'
-  /** Logical model filename from the managed combo; never a host path. */
-  readonly modelValue: string
-  /** Graph node whose host-owned output image is used as the preview. */
-  readonly sourceNodeId: string
-  /** Exact image in that node's current host-owned output list. */
-  readonly imageIndex: number
-  readonly policy: 'adjacent-model-preview-v1'
-}
-
-export interface WidgetsHandle {
-  /**
-   * Adds a declarative preview policy to host-owned combo option menus.
-   * The host resolves managed assets and renders the hover surface; the pack
-   * receives neither filesystem paths nor media URLs.
-   */
-  registerComboPreview(definition: ComboPreviewRegistration): Unsubscribe
-  /**
-   * Re-encodes one managed graph output as an adjacent managed-model preview.
-   * The host resolves both resources; the pack receives no path or image bytes.
-   */
-  assignComboPreview(assignment: ComboPreviewAssignment): Promise<void>
-}
-
-export type LocalizationMessage =
-  | string
-  | null
-  | { readonly [key: string]: LocalizationMessage }
-
-export interface LocalizationCatalog {
-  /** Native vue-i18n-shaped messages such as main/nodeDefs/nodeCategories. */
-  readonly messages: Readonly<Record<string, LocalizationMessage>>
-  /** Exact-source fallback translations used only at host-owned render points. */
-  readonly phrases?: Readonly<Record<string, string>>
-}
-
-export interface LocalizationHandle {
-  /**
-   * Contributes one bounded catalog for a host-supported locale. The host
-   * owns merging, rendering, precedence, and cleanup; no DOM access is given.
-   */
-  registerCatalog(locale: string, catalog: LocalizationCatalog): Unsubscribe
-}
-
 // ─── widgetTextInteraction.ts ────────────────────────────────────
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
@@ -3480,40 +3113,9 @@ export interface WidgetTypeDef {
 /** Parsed ComfyUI workflow JSON. */
 export type WorkflowData = Readonly<Record<string, unknown>>
 
-export interface WorkflowImportContext {
-  readonly name: string
-  readonly type: string
-}
-
-export type WorkflowImportResult =
-  | { readonly workflow: WorkflowData | string }
-  | { readonly prompt: Readonly<Record<string, unknown>> | string }
-
-export interface WorkflowImporter {
-  /** Namespaced and unique within the pack. */
-  readonly id: string
-  readonly mimeTypes?: readonly string[]
-  readonly extensions?: readonly string[]
-  /** Per-file limit; the host-wide ceiling is 16 MiB. */
-  readonly maxBytes: number
-  enabled?(): boolean | Promise<boolean>
-  parse(
-    bytes: Uint8Array,
-    context: WorkflowImportContext
-  ):
-    | WorkflowImportResult
-    | null
-    | undefined
-    | Promise<WorkflowImportResult | null | undefined>
-}
-
 export interface WorkflowHandle {
   /** Replaces the active document with parsed ComfyUI workflow JSON. */
   open(data: WorkflowData): Promise<void>
-  /** Returns the current saved-format workflow, bounded to 8 MiB. */
-  snapshot(): Promise<WorkflowData>
-  /** Registers a bounded worker-side parser for host-opened or dropped files. */
-  registerImporter(importer: WorkflowImporter): Unsubscribe
   /** Expands the active document's `%date:...%` and `%Node.widget%` tokens. */
   applyTextReplacements(value: string): string
   /**
@@ -3529,20 +3131,6 @@ export interface WorkflowHandle {
    * replaced" from "the document I was looking at got edited", which
    * comparing graph contents cannot do, since editing IS mutating the graph
    * contents of the very document that is still current.
-   *
-   * Equivalent to `current()?.id`, and kept because reading the id is the
-   * common case and does not need a handle.
    */
   documentId(): string | undefined
-  /**
-   * The document on screen, or `undefined` before one is open.
-   *
-   * A handle rather than the bare id when a pack needs to know what it is
-   * looking at — the name to label its own UI, whether there are unsaved
-   * edits, and whether a document it stored state for is still open.
-   *
-   * Read-only: opening has its own explicit call, and saving, closing and
-   * renaming belong to the user.
-   */
-  current(): DocumentHandle | undefined
 }

@@ -1,0 +1,416 @@
+diff --git a/guest.mjs b/guest.mjs
+--- a/guest.mjs
++++ b/guest.mjs
+@@ -1350,6 +1350,96 @@
+   }
+   const mountedUIs = new Map()    // key -> mount record
+   const canvasSurfaces = new Map() // `${nodeId}:${name}` -> surface record
++  const nodeCanvasSurfaces = new Map() // graph-scoped whole-node content
++
++  function checkedNodeCanvasBounds(value) {
++    if (!value || typeof value !== 'object' || Array.isArray(value) ||
++        Object.keys(value).some((key) => !['x', 'y', 'width', 'height'].includes(key))) {
++      throw new TypeError('invalid node canvas bounds')
++    }
++    const { x, y, width, height } = value
++    if (![x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n)) ||
++        Math.abs(x) > 8192 || Math.abs(y) > 8192 || width < 1 || height < 1 ||
++        width > 8192 || height > 8192 || Math.ceil(width) * Math.ceil(height) > 16_777_216) {
++      throw new RangeError('node canvas bounds exceed finite coordinate or pixel limits')
++    }
++    return Object.freeze({ x, y, width, height })
++  }
++
++  function makeNodeCanvas(ref, def) {
++    if (typeof def?.draw !== 'function') throw new TypeError('node canvas draw is required')
++    if (def.layer !== undefined && def.layer !== 'foreground') throw new TypeError('invalid node canvas layer')
++    let bounds = checkedNodeCanvasBounds(def.bounds)
++    const surfaceId = `nc-${seq++}`
++    let mounted = false, removed = false, revision = 0, offscreen, key, graphId
++    let painting = false, redrawQueued = false
++    const identity = () => ({ nodeId: ref.id, graphId, surfaceId })
++    const surface = {
++      redraw() {
++        if (removed || !mounted) return
++        if (painting) { revision++; redrawQueued = true; return }
++        const frameBounds = bounds
++        const frameRevision = ++revision
++        offscreen ??= new OffscreenCanvas(1, 1)
++        offscreen.width = Math.ceil(frameBounds.width)
++        offscreen.height = Math.ceil(frameBounds.height)
++        const ctx = wrapContext(offscreen.getContext('2d'))
++        ctx.setTransform(1, 0, 0, 1, -frameBounds.x, -frameBounds.y)
++        try { def.draw(ctx) } catch (error) {
++          self.postMessage({ t: 'packerror', hook: 'node.canvas', error: String(error) })
++          return
++        }
++        painting = true
++        let snapshot
++        try { snapshot = createImageBitmap(offscreen) } catch (error) {
++          painting = false
++          self.postMessage({ t: 'packerror', hook: 'node.canvas', error: String(error) })
++          return
++        }
++        Promise.resolve(snapshot).then((bitmap) => {
++          if (removed || revision !== frameRevision) { bitmap.close(); return }
++          try {
++            self.postMessage({ t: 'nodecanvasframe', ...identity(),
++              revision: frameRevision, bounds: frameBounds, bitmap }, [bitmap])
++          } catch (error) { bitmap.close(); throw error }
++        }).catch((error) => {
++          self.postMessage({ t: 'packerror', hook: 'node.canvas', error: String(error) })
++        }).finally(() => {
++          painting = false
++          if (redrawQueued && !removed) { redrawQueued = false; surface.redraw() }
++        })
++      },
++      setBounds(value) {
++        if (removed) throw new Error('node canvas was removed')
++        bounds = checkedNodeCanvasBounds(value)
++        surface.redraw()
++      },
++      remove() {
++        if (removed) return
++        removed = true
++        revision++
++        if (offscreen) offscreen.width = offscreen.height = 0
++        if (nodeCanvasSurfaces.get(key)?.surfaceId === surfaceId) nodeCanvasSurfaces.delete(key)
++        if (mounted) void rpc('nodecanvasremove', identity())
++      },
++    }
++    ref.whenReal(() => {
++      if (removed) return
++      graphId = ref.snap?.graphId
++      key = JSON.stringify([String(graphId), ref.id])
++      nodeCanvasSurfaces.get(key)?.surface.remove()
++      nodeCanvasSurfaces.set(key, { surfaceId, surface })
++      void rpc('nodecanvasmount', { ...identity(), bounds, layer: def.layer }).then(() => {
++        mounted = true
++        if (removed) { void rpc('nodecanvasremove', identity()); return }
++        surface.redraw()
++      }, (error) => {
++        surface.remove()
++        self.postMessage({ t: 'packerror', hook: 'node.canvas', error: String(error) })
++      })
++    })
++    return Object.freeze(surface)
++  }
+ 
+   const escText = (s) => String(s)
+     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+@@ -1527,7 +1617,10 @@
+ 
+   function widgetView(ref, name) {
+     const find = () => {
+-      if (ref.id) ref.snap = graphState.nodes.get(ref.id) || ref.snap
++      if (ref.id) {
++        const current = graphState.nodes.get(ref.id)
++        if (current && (!ref.snap || current.graphId === ref.snap.graphId)) ref.snap = current
++      }
+       const snap = ref.snap
+       const w = snap && snap.widgets && snap.widgets.find((x) => x.name === name)
+       if (!w) throw new Error(`[sandbox] widget '${name}' is gone from node ${ref.id}`)
+@@ -1536,6 +1629,7 @@
+     return {
+       get name() { return name },
+       get widgetType() { return find().widgetType },
++      getLabel() { return find().label },
+       getValue() { return find().value },
+       getOptions() {
+         const options = find().options
+@@ -1767,7 +1861,7 @@
+       queue: [],
+       op(op, args) {
+         if (!ref.id) { ref.queue.push([op, args]); return }
+-        rpc('nodeop', { nodeId: ref.id, op, args }).then((snapshot) => {
++        rpc('nodeop', { nodeId: ref.id, graphId: ref.snap?.graphId, op, args }).then((snapshot) => {
+           ref.snap = snapshot
+           mergeSnapshot(snapshot)
+         },
+@@ -1789,7 +1883,10 @@
+     }
+     const read = (what, fn) => {
+       // Between dispatches the cache may be fresher than the ref's own copy.
+-      if (ref.id) ref.snap = graphState.nodes.get(ref.id) || ref.snap
++      if (ref.id) {
++        const current = graphState.nodes.get(ref.id)
++        if (current && (!ref.snap || current.graphId === ref.snap.graphId)) ref.snap = current
++      }
+       if (!ref.snap) {
+         throw new Error(
+           `[sandbox] ${what} read before the host confirmed this node — ` +
+@@ -1829,6 +1926,10 @@
+       setMode: (v) => optimistic({ mode: v }, 'setMode', [v]),
+       setCollapsed: (v) => optimistic({ collapsed: v }, 'setCollapsed', [v]),
+       setPinned: (v) => optimistic({ pinned: v }, 'setPinned', [v]),
++      setResizable: (v) => {
++        if (typeof v !== 'boolean') throw new TypeError('resizable must be boolean')
++        ref.op('setResizable', [v])
++      },
+       setProperty: (k, v) => {
+         if (ref.snap) (ref.snap.properties ??= {})[k] = v
+         ref.op('setProperty', [k, v])
+@@ -1868,6 +1969,7 @@
+         }
+       },
+       remove: () => ref.op('remove', []),
++      canvas: (def) => makeNodeCanvas(ref, def),
+       widgets: (() => {
+         const collection = {
+         get: (name) => {
+@@ -2018,7 +2120,7 @@
+     const key = String(id)
+     if (snap) mergeSnapshot(snap)
+     const existing = nodeViews.get(key)
+-    if (existing) return existing
++    if (existing && (!snap || existing.graphId === snap.graphId)) return existing
+     if (!graphState.nodes.has(key)) return undefined
+     return makeNodeRef(key).view
+   }
+@@ -2513,6 +2615,13 @@
+       return
+     }
+ 
++    if (m.t === 'nodecanvasremoved') {
++      const key = JSON.stringify([String(m.graphId), String(m.nodeId)])
++      const rec = nodeCanvasSurfaces.get(key)
++      if (rec?.surfaceId === m.surfaceId) rec.surface.remove()
++      return
++    }
++
+     if (m.t === 'canvassize') {
+       // The host owns layout; the surface learns its pixels from the host's
+       // own draw pass and re-renders at the real size.
+diff --git a/host-entry.mjs b/host-entry.mjs
+--- a/host-entry.mjs
++++ b/host-entry.mjs
+@@ -16,6 +16,21 @@
+ import { mountPackUI } from './ui-renderer.mjs'
+ 
+ const DEFAULT_GUEST_BOOTSTRAP_URL = new URL('./guest.mjs', import.meta.url).href
++
++/** Closed geometry DTO for one pack-owned node surface. */
++export function nodeCanvasBoundsData(value) {
++  if (!value || typeof value !== 'object' || Array.isArray(value) ||
++      Object.keys(value).some((key) => !['x', 'y', 'width', 'height'].includes(key))) {
++    throw new TypeError('invalid node canvas bounds')
++  }
++  const { x, y, width, height } = value
++  if (![x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n)) ||
++      Math.abs(x) > 8192 || Math.abs(y) > 8192 || width < 1 || height < 1 ||
++      width > 8192 || height > 8192 || Math.ceil(width) * Math.ceil(height) > 16_777_216) {
++    throw new RangeError('node canvas bounds exceed finite coordinate or pixel limits')
++  }
++  return Object.freeze({ x, y, width, height })
++}
+ 
+ /** Path segments a sandboxed pack may never address. */
+ const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor'])
+@@ -834,6 +849,9 @@
+     this._uiByKey = new Map()      // `${pack}:${nodeId}:${widget}` -> ui handle
+     this._elements = new Map()     // `${pack}:${name}` -> HTMLElement
+     this._packEntries = new Map()
++    this._definitionOwners = new Map()
++    this._definitionDisposers = new Set()
++    this._nodeCanvases = new Map()
+     this._packCapabilities = new Map()
+     this._packRouteBase = new Map()
+     this._importers = new Map()    // `${pack}:${id}` -> bounded data
+@@ -1385,6 +1403,65 @@
+         return reply(true, await this.comfy.system.monitor())
+       }
+ 
++      if (msg.t === 'nodecanvasmount') {
++        const node = this._scopedNode(msg)
++        if (!node || this._definitionOwners.get(node.type) !== pack) {
++          throw new Error('node canvas requires a node type defined by this pack')
++        }
++        if (typeof msg.surfaceId !== 'string' || !/^[a-z0-9-]{1,64}$/i.test(msg.surfaceId)) {
++          throw new TypeError('invalid node canvas surface id')
++        }
++        const bounds = nodeCanvasBoundsData(msg.bounds)
++        if (msg.layer !== undefined && msg.layer !== 'foreground') {
++          throw new TypeError('invalid node canvas layer')
++        }
++        const key = JSON.stringify([pack, String(node.graphId), String(node.id)])
++        this._checkNodeCanvasBudget(pack, key, bounds)
++        this._removeNodeCanvas(key)
++        const rec = { pack, nodeId: String(node.id), graphId: String(node.graphId),
++          surfaceId: msg.surfaceId, bounds, bitmap: null, revision: -1, surface: null }
++        rec.surface = node.canvas({ bounds, layer: msg.layer, draw: (ctx) => {
++          if (rec.bitmap) ctx.drawImage(rec.bitmap, rec.bounds.x, rec.bounds.y)
++        } })
++        this._nodeCanvases.set(key, rec)
++        return reply(true, null)
++      }
++      if (msg.t === 'nodecanvasframe') {
++        const key = JSON.stringify([pack, String(msg.graphId), String(msg.nodeId)])
++        const rec = this._nodeCanvases.get(key)
++        const bitmap = msg.bitmap
++        try {
++          if (!rec || rec.surfaceId !== msg.surfaceId ||
++              !Number.isSafeInteger(msg.revision) || msg.revision <= rec.revision) return
++          const node = this._scopedNode(msg)
++          if (!node || this._definitionOwners.get(node.type) !== pack) {
++            this._removeNodeCanvas(key)
++            throw new Error('node canvas owner is no longer present')
++          }
++          const bounds = nodeCanvasBoundsData(msg.bounds)
++          this._checkNodeCanvasBudget(pack, key, bounds)
++          if (!(bitmap instanceof ImageBitmap) || bitmap.width !== Math.ceil(bounds.width) ||
++              bitmap.height !== Math.ceil(bounds.height)) {
++            throw new TypeError('node canvas bitmap does not match its bounded geometry')
++          }
++          rec.bitmap?.close()
++          rec.bitmap = bitmap
++          rec.bounds = bounds
++          rec.revision = msg.revision
++          rec.surface.setBounds(bounds)
++        } finally {
++          if (rec?.bitmap !== bitmap) bitmap?.close?.()
++        }
++        return
++      }
++      if (msg.t === 'nodecanvasremove') {
++        const key = JSON.stringify([pack, String(msg.graphId), String(msg.nodeId)])
++        if (this._nodeCanvases.get(key)?.surfaceId === msg.surfaceId) {
++          this._removeNodeCanvas(key)
++        }
++        return reply(true, null)
++      }
++
+       if (msg.t === 'canvasmount') {                // guest-drawn canvas widget
+         const node = this.comfy.graph.node(String(msg.nodeId))
+         if (!node) return reply(false, null, `no such node: ${msg.nodeId}`)
+@@ -1724,6 +1801,7 @@
+         widgets.push({
+           name: w.name,
+           widgetType: w.widgetType,
++          label: this._sanitizeReturn(w.getLabel?.()),
+           value: this._sanitizeReturn(w.getValue()),
+           hidden: !!w.isHidden?.(),
+           disabled: !!w.isDisabled?.(),
+@@ -1793,6 +1871,7 @@
+     return {
+       ...base,
+       id: String(node.id),
++      graphId: node.graphId,
+       type: node.type,
+       properties: this._sanitizeReturn(node.getProperties?.() ?? {}),
+       widgets,
+@@ -1829,7 +1908,7 @@
+    * node the guest could already see.
+    */
+   _nodeOp(msg) {
+-    const node = this.comfy.graph.node(String(msg.nodeId))
++    const node = this._scopedNode(msg)
+     if (!node) return [false, null, `no such node: ${msg.nodeId}`]
+     const a = msg.args || []
+     const slotRef = (value) => Number.isInteger(value)
+@@ -1843,6 +1922,7 @@
+       'setMode': () => node.setMode(a[0]),
+       'setCollapsed': () => node.setCollapsed(a[0]),
+       'setPinned': () => node.setPinned(a[0]),
++      'setResizable': () => node.setResizable(a[0]),
+       'setProperty': () => node.setProperty(a[0], a[1]),
+       'setSizeConstraints': () => node.setSizeConstraints(a[0]),
+       'setSerializeWidgets': () => node.setSerializeWidgets(a[0]),
+@@ -1916,7 +1996,7 @@
+         inp.disconnect()
+       },
+     }
+-    const op = OPS[msg.op]
++    const op = Object.hasOwn(OPS, msg.op) ? OPS[msg.op] : undefined
+     if (!op) return [false, null, `node op '${msg.op}' not permitted`]
+     op()
+     return [true, this._nodeSnapshot(node)]
+@@ -2186,6 +2266,38 @@
+    * contract now awaits them on the prompt path — that refresh the guest's
+    * replica and ask it to answer from its own copy of the pack's logic.
+    */
++  _scopedNode(msg) {
++    const graph = this.comfy.graph
++    if (msg.graphId == null) return graph.node(String(msg.nodeId))
++    const scopes = [graph, graph.root?.(), ...(graph.subgraphs?.() || [])]
++    return scopes.find((scope) => scope && String(scope.id) === String(msg.graphId))
++      ?.node(String(msg.nodeId))
++  }
++
++  _removeNodeCanvas(key) {
++    const rec = this._nodeCanvases.get(key)
++    if (!rec) return
++    this._nodeCanvases.delete(key)
++    rec.bitmap?.close()
++    rec.bitmap = null
++    rec.surface?.remove()
++    this._host.send(rec.pack, { t: 'nodecanvasremoved', nodeId: rec.nodeId,
++      graphId: rec.graphId, surfaceId: rec.surfaceId })
++  }
++
++  _checkNodeCanvasBudget(pack, replacingKey, bounds) {
++    let count = 1
++    let pixels = Math.ceil(bounds.width) * Math.ceil(bounds.height)
++    for (const [key, rec] of this._nodeCanvases) {
++      if (rec.pack !== pack || key === replacingKey) continue
++      count++
++      pixels += Math.ceil(rec.bounds.width) * Math.ceil(rec.bounds.height)
++    }
++    if (count > 256 || pixels > 67_108_864) {
++      throw new RangeError('pack node canvas count or pixel budget exceeded')
++    }
++  }
++
+   _applyDefine(pack, { regId, def, hooks = [], hasSerialize = false,
+                        hasPromptSerialize = false, has = {} }) {
+     const definition = { ...def }
+@@ -2229,7 +2341,14 @@
+         })
+       }
+     }
+-    this.comfy.defs.define(definition)
++    const removed = definition.onRemoved
++    definition.onRemoved = (node) => {
++      this._removeNodeCanvas(JSON.stringify([pack, String(node.graphId), String(node.id)]))
++      removed?.(node)
++    }
++    const dispose = this.comfy.defs.define(definition)
++    this._definitionOwners.set(def.type, pack)
++    this._definitionDisposers.add(dispose)
+   }
+ 
+   /** Host→guest request; the guest replies on the 'answer' channel. */
+@@ -2563,6 +2682,10 @@
+   }
+ 
+   destroy() {
++    for (const key of [...this._nodeCanvases.keys()]) this._removeNodeCanvas(key)
++    for (const dispose of this._definitionDisposers) dispose?.()
++    this._definitionDisposers.clear()
++    this._definitionOwners.clear()
+     this._importers.clear()
+     this._comboPreviews.clear()
+     this._hideComboOptionPreview()
+diff --git a/sandbox-host.mjs b/sandbox-host.mjs
+--- a/sandbox-host.mjs
++++ b/sandbox-host.mjs
+@@ -44,8 +44,18 @@
+       // pack via dynamic import(), which works in classic workers everywhere.
+       const w = new Worker(blobUrl)
+       workers.set(m.pack, w)
+-      w.onmessage = (ev) => parent.postMessage(
+-        { __sn: true, t: 'from', pack: m.pack, payload: ev.data }, '*')
++      w.onmessage = (ev) => {
++        const bitmap = ev.data?.bitmap
++        const transfer = (ev.data?.t === 'nodecanvasframe' || ev.data?.t === 'canvasbitmap') &&
++          bitmap instanceof ImageBitmap ? [bitmap] : []
++        try {
++          parent.postMessage(
++            { __sn: true, t: 'from', pack: m.pack, payload: ev.data }, '*', transfer)
++        } catch (error) {
++          for (const item of transfer) item.close()
++          throw error
++        }
++      }
+       w.onerror = (ev) => parent.postMessage(
+         { __sn: true, t: 'error', pack: m.pack, error: String(ev.message || ev) }, '*')
+       w.postMessage({ t: 'init', packUrl: m.packUrl, packBlobUrl, name: m.pack,
