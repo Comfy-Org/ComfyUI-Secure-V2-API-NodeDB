@@ -338,7 +338,6 @@ class WanVideoDiffusionForcingSampler:
                 return (noise_pred, [teacache_state_cond, teacache_state_uncond])
         log.info(f'Sampling {(latent_video_length - 1) * 4 + 1} frames at {latents.shape[3] * 8}x{latents.shape[2] * 8} with {steps} steps')
         intermediate_device = device
-        self._release_owned_conditioning()
         mm.soft_empty_cache()
         gc.collect()
         try:

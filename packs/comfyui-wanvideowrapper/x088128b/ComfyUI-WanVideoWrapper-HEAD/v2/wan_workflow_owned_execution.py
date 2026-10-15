@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 import gc
 from threading import Event
+import traceback
 
 from .wan_workflow_context import clone_model, clone_options, model_options
 from .wan_workflow_model_runtime import materialize_model
@@ -120,8 +121,14 @@ async def run_owned_native_sampler(context, model, native_sampler, *, image_embe
             with progress_scope(context), interrupt_scope(check_cancelled):
                 task = asyncio.create_task(asyncio.to_thread(run))
                 return await _finish_worker(task, cancelled)
+        except BaseException as error:
+            # Finished frames on this error's traceback (the worker's sampler frame and its
+            # closures) would keep the owned NN alive after this owner exits. Drop their
+            # locals; the error itself (type, message, traceback lines) is re-raised unchanged.
+            traceback.clear_frames(error.__traceback__)
+            raise
         finally:
-            execution = None
+            execution = transformer = pipeline = None
             # These are cloned private option containers. The graph's original
             # recipes/tensors and any parent's ownership record are unchanged.
             control = options.get('transformer_options', {}).get('controlnet')

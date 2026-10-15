@@ -15,7 +15,8 @@ def set_loras_schema():
 
 def diffusion_forcing_schema():
     return io.Schema(
-        node_id='WanVideoDiffusionForcingSampler', category='WanVideoWrapper',
+        node_id='WanVideoDiffusionForcingSampler', display_name='WanVideo Diffusion Forcing Sampler',
+        category='WanVideoWrapper',
         inputs=[
             io.Custom('WANVIDEOMODEL').Input('model'),
             io.Custom('WANVIDEOTEXTEMBEDS').Input('text_embeds'),
