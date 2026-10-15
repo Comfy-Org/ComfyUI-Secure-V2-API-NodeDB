@@ -41,6 +41,22 @@ class LoadImageMetadata(io.ComfyNode):
                 io.String.Output(display_name='readable_report'), io.String.Output(display_name='missing_files')])
 
     @classmethod
+    async def validate_inputs(cls, image, **kwargs):
+        # Original VALIDATE_INPUTS(image, **kwargs): reject a missing image at queue time.
+        # The remote image list has no static options, so core cannot check membership itself.
+        # Annotated [input]/[output]/[temp] names are not supported by this conversion
+        # (execute reads confined input names), so they are rejected here, not later.
+        del kwargs
+        try:
+            name = _logical(image)
+            exists = await sdk.ctx().assets.exists('input', name)
+        except ValueError:
+            exists = False
+        if not exists:
+            return f'Invalid image file: {image}'
+        return True
+
+    @classmethod
     async def fingerprint_inputs(cls, image, **kwargs):
         asset = await sdk.ctx().assets.resolve('input', _logical(image))
         return await sdk.ctx().assets.digest(asset)

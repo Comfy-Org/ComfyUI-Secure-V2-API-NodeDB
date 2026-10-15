@@ -28,8 +28,8 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Text (LoraManager) | tested (scoped) | shared gVisor workflow (R50) | wildcard/library lifecycle; frontend |
 | Lora Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55); queue validator native-vs-Guest parity 2/2 + permission-denial control | cache acquisition on all paths; opaque metadata; other model branches; frontend |
 | LoRA Text Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55) | syntax/library/cache/metadata; frontend |
-| Checkpoint Loader (LoraManager) | converted-untested | - | real model load and consumer; scanner roots; queue-time check of the remote checkpoint list (empty static options, no validator) |
-| Unet Loader (LoraManager) | partial | - | GGUF path not implemented; real diffusion-model load; same remote-list queue check |
+| Checkpoint Loader (LoraManager) | converted-untested | queue validator native-vs-Guest parity 3/3 and core queue path (existing accepted, missing/unsafe rejected) | real model load and consumer; extra scanner roots; base-model list |
+| Unet Loader (LoraManager) | partial | queue validator native-vs-Guest parity 3/3 and core queue path; weight_dtype still checked by core | GGUF path not implemented (rejected at queue time with a clear message); real diffusion-model load |
 | TriggerWord Toggle (LoraManager) | tested (scoped) | gVisor workflow (R6) | lifecycle/restore/state; transport identity |
 | Lora Stacker (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 8 cases, strict queue validator 28, metadata lifecycle 8 phases, stale-file deletion 2 | multi-root order; installed queue; frontend |
 | Lora Stack Combiner (LoraManager) | tested (scoped) | gVisor workflows (R6/R7) | tuple transport/identity; editor lifecycle |
@@ -44,7 +44,7 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | LoRA Syntax → Path (LoraManager) | converted-untested | - | path rule approved (library-relative names); parser tests; negative test that no host path is emitted |
 | Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 | Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
-| Load Image Metadata (LoraManager) | partial | - | queue-time image check missing (upstream rejects a missing image at queue time); annotated [input]/[output]/[temp] names unsupported; 18-output parity; catalogue lookup |
+| Load Image Metadata (LoraManager) | partial | queue validator native-vs-Guest parity 3/3 with identical messages, and core queue path | annotated [input]/[output]/[temp] names unsupported (rejected at queue time); 18-output parity; catalogue lookup; EXIF decoding needs `piexif` in the runtime |
 
 ## Refused techniques (never do) and public replacements
 
@@ -74,13 +74,13 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 
 ## Open test gates
 
-- Load Image Metadata: queue-time image check, catalogue lookup, 18-output parity with the original.
+- Load Image Metadata: catalogue lookup, 18-output parity with the original, annotated input names.
 - Prompt/Text library lifecycle and persistence; LoRA Text Loader syntax/library/cache.
 - TriggerWord Toggle and Stack Combiner restore/identity; Lora Pool edit and persistence.
 - Debug Metadata and Metadata Overwrite with wired model/sampler fields.
 - Multi-root ordering for Stacker, Randomizer, Cycler and Save Image.
 - LoRA Syntax → Path parser tests and the no-host-path negative test.
-- Real model loads (CPU): Checkpoint Loader, Unet Loader; queue-time checks of their remote model lists.
+- Real model loads (CPU): Checkpoint Loader, Unet Loader.
 - Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 - Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
 - Dependency profile: `piexif` is imported lazily by metadata recovery and is not yet declared for the runtime.
@@ -94,7 +94,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | Text (LoraManager) | storage |
 | Lora Loader (LoraManager) | assets, storage, raw |
 | LoRA Text Loader (LoraManager) | assets, storage, raw |
-| Checkpoint Loader (LoraManager) | models |
+| Checkpoint Loader (LoraManager) | models, assets (read-only existence check) |
 | Unet Loader (LoraManager) | models |
 | TriggerWord Toggle (LoraManager) | (none) |
 | Lora Stacker (LoraManager) | assets, storage, raw |
@@ -125,6 +125,8 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 
 - `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
 - `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`; `secure_routes/` and `held-registration/`: unregistered route work.
+- Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
+  their queue validators check the selected name, because remote dropdowns carry no static options.
 - `secure_full_library_nodes.py`, `secure_pool_editor.py`, `secure_text_nodes.py`: in-progress modules, not registered.
 - `secure-nodes.json`: the node manifest, generated by the backend manifest generator (21 nodes, web directory
   `secure_web`, Python `>=3.13,<3.14`, no routes registered yet).
