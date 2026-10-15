@@ -21,6 +21,11 @@ public TypeScript declarations. These are focused harness results, not a live
 browser or complete repository build. Results and exact source hashes are in
 `focused/`.
 
+`GENERATION_CLARIFICATION.json` distinguishes the recorded API-surface generator
+input from its generated output. The original input, final output used as input,
+and an interface-scan omission all produce the same declarations and surface
+bytes; that generated constant contributes no interface declarations.
+
 `DISTRIBUTION_REPLAY.json` verifies the official patch manifest, diff and bundle
 reconstruct all 226 V2 files byte-for-byte with their modes and preserve all 258
 original source files. Only three V2 files changed. This proves distribution
