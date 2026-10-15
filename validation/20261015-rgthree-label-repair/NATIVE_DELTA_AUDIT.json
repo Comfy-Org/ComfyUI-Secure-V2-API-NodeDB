@@ -1,0 +1,57 @@
+{
+  "status": "UNSELECTED_NATIVE_OVERLAY_REVIEWED_AND_EXCLUDED",
+  "scope": "Read-only comparison of three critical selected/native source deltas; no source changes, additional tests, merge or build.",
+  "delta_archive_sha256": "8df7b8e3e24f00ff5589581f22eee66655e49732b72448e25f33a645b2781666",
+  "delta_archive_bytes": 605979,
+  "delta_file_count": 179,
+  "no_overlap_with_label_leaves": true,
+  "critical_source_hashes": [
+    {
+      "path": "src/platform/magicPatch/services/magicPatchClient.test.ts",
+      "preimage_sha256": "fa6eb3cd06bc1fc0d679342dfc7e28c69ca68cb5bbdb6b8af13c674cb4ec564a",
+      "sha256": "ed84b991c62b83ec6ccd478a19eaa8d26bd8497e7463ba04923efb31de261695",
+      "bytes": 17485
+    },
+    {
+      "path": "src/platform/magicPatch/services/magicPatchClient.ts",
+      "preimage_sha256": "c7f215ab662c0868e4ac9fc99def3a68ccb9285ce74f6fbe6648e99d8f62c4a4",
+      "sha256": "536fee7e2e65b104075afa7296e8f27c9edbc22673d08f53308dd367c1583180",
+      "bytes": 11339
+    },
+    {
+      "path": "src/platform/workflow/core/services/workflowService.ts",
+      "preimage_sha256": "01540ac142762fffb76faaeaa589d144243a7507376d1f4e996e2bbfa9144196",
+      "sha256": "3b11e699c0b37e85c4bb5c1dc2306cf87138ac58282cb6dab1f16ccf78c3a58b",
+      "bytes": 31268
+    }
+  ],
+  "findings": [
+    {
+      "file": "src/platform/magicPatch/services/magicPatchClient.ts",
+      "finding": "Native version removes prepareSource, prepareWorkflowSource, sourceStatus, eligibility, exported MagicPatchFailure, and selected safe HTTP reason/message handling.",
+      "selected_consumers": [
+        "src/platform/magicPatch/utils/workflowSourcePreparation.ts",
+        "src/platform/magicPatch/utils/magicPatchConversion.ts"
+      ],
+      "implication": "Replacing this selected file wholesale would remove APIs consumed by the retained outer workflow-acquisition modules."
+    },
+    {
+      "file": "src/platform/magicPatch/services/magicPatchClient.test.ts",
+      "finding": "Native tests add pack-selector and dispatch-scope cases but remove selected workflow-selector, acquisition and bounded failure-body cases.",
+      "implication": "Retain applicable checks from both variants during the operator merge."
+    },
+    {
+      "file": "src/platform/workflow/core/services/workflowService.ts",
+      "finding": "Native version removes reloadCurrentWorkflow transformCurrent, serialized active-state transformation and updateModified after transformed reload.",
+      "selected_consumer": "src/platform/magicPatch/stores/magicPatchBatchStore.ts:803",
+      "implication": "Retain the transform hook required by the selected converted-pack workflow loading path."
+    }
+  ],
+  "native_mount_absent_selected_files": [
+    "src/platform/magicPatch/utils/workflowPackCandidates.ts",
+    "src/platform/magicPatch/stores/magicPatchBatchStore.ts"
+  ],
+  "decision": "DANNY confirmed selected R5/frontend/source matches all6781 baseline members. Native179delta is a separate unselected tree; none was applied. Keep exact verified R3dist and current login overrides. No source rebase or rebuild is required.",
+  "runtime_claim": "The findings describe hypothetical regressions from an unselected overlay. It was never applied; installation/browser acceptance remains pending.",
+  "authority_correction": "SOURCE_AUTHORITY_CORRECTION.json"
+}

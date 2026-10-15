@@ -1,0 +1,63 @@
+{
+  "status": "SOURCE_REGRESSION_PASS_BROWSER_PENDING",
+  "change": "Label workflow-load initialization and extension registration order",
+  "diagnosis": [
+    "LGraph.configure adds nodes before applying saved state. The actual defsRegistry sends onCreated({loading:true,restored:false}) with empty properties. The actual guest processes the queued old snapshot and the old Label initializer sends eight default setProperty RPCs after the host is configured.",
+    "The old Label calls defs.extend after defs.define. The real defsRegistry warns that this extension will not be applied, leaving double-click and Edit label absent."
+  ],
+  "correction": [
+    "onCreated skips initialization while event.loading is true; onConfigured initializes the restored state. Fresh and pasted nodes retain normal initialization.",
+    "Register double-click/menu extension before define; actual guest replay proves both empty and populated definition catalogues."
+  ],
+  "implementation_delta": [
+    "pack/web/comfyui/label.js"
+  ],
+  "old_label_sha256": "7feb4f3140d662773522e9e55f3a63cd4d33efaf18254e804742d846a1899316",
+  "new_label_sha256": "63114a2fa1ee3367d3e6df745a8ab8239dadeb694d5a37c13b83bbe86628de07",
+  "validation": {
+    "terminal": "PASS",
+    "wall_seconds": 1.7295181,
+    "limits": {
+      "wall_seconds": 90,
+      "dependency_install": false,
+      "cpus": 1,
+      "v8_heap_mib": 512
+    },
+    "new_actual_protocol_checks": 34,
+    "old_source_expected_failures": 4,
+    "existing_focused_checks": 112,
+    "existing_focused_breakdown": "111 original behavior/assertion checks plus 1 source parse",
+    "source_regression_receipt": "../evidence/run2/lifecycle-regression.json",
+    "terminal_receipt": "../evidence/run2/receipt.json",
+    "focused_receipt": "FOCUSED_RECEIPT.json",
+    "historical_run1": "../evidence/run1/receipt.json",
+    "historical_run1_note": "Assertions passed but the process reached its90s controller limit (exit124): the complete guest bootstrap retains its periodic UI timer. The versioned r2 test driver clears fixture-worker intervals at teardown; production source and all34+112 assertions are unchanged."
+  },
+  "scope_boundaries": [
+    "The production defsRegistry, complete guest bootstrap and real host handler/snapshot/nodeop execute unmodified. External graph storage, node handles and canvas pixels are test fixtures.",
+    "No real browser, renderer raster/font proof or live workflow acceptance is claimed.",
+    "The12 frontend prerequisite files,3 host files and all other overlay files match frozen R3. No frontend build was run or required by this pack-only delta.",
+    "Root owns corpus commit, package identity and registry publication. DANNY owns deployment and actual Classic/Vue browser validation."
+  ],
+  "browser_status": "PENDING_OPERATOR_RETEST_OF_SUCCESSOR",
+  "required_browser_retest": [
+    "Load the original acceptance workflow in Classic and Vue and verify node2/node3 exact eight properties, title, pinned flag and drawing.",
+    "Double-click opens the nine-field editor (title plus eight properties); Edit label menu works.",
+    "Change properties/title, save, reload and verify values and visible bounds persist.",
+    "Verify pinned primary click passes through to underlying control while double-click edits Label.",
+    "Check served Label asset hash equals the new63114a2f source, unchanged drawing4c0f6b8 and required host/public presentation assets remain selected."
+  ],
+  "source_bindings": "PACK_SOURCE_BINDINGS.json",
+  "minimal_patch": "label-lifecycle.patch",
+  "browser_failure_evidence": {
+    "classic": {
+      "capsule_sha256": "5cc5604a99e55569e17e470c04f38a623fc967b04fc6846524164fb3da6dfed2",
+      "filtered": "../browser-failure/classic-filtered.json"
+    },
+    "vue": {
+      "capsule_sha256": "cb6741424df5f9d9dab981a701255bf9f4e900f392a721c41b4c13a20da57566",
+      "filtered": "../browser-failure/vue-filtered.json"
+    }
+  },
+  "frozen_r3_handoff_sha256": "524b59554cfede10c09e2b3715359103830dfb2d747fe7706a4cff0f32637f10"
+}

@@ -1,0 +1,59 @@
+{
+  "status": "SOURCE_REGRESSION_PASS_BROWSER_PENDING",
+  "summary": "Restore transported textarea/select values after sanitized child construction.",
+  "production_delta": [
+    "ui-renderer.mjs"
+  ],
+  "base_sha256": "62b5e5eceb8c9094b7df91087250c0fbf8f311eb438876e38adbfa50c037b0b5",
+  "successor_sha256": "46882ce0fecfd4156abf927dc49a22cc911f3a84d6f3ad1de99893393ac17fb6",
+  "diagnosis": "The complete guest serializer encodes assigned control.value into a value attribute. Browsers do not reflect that attribute into textarea/select.value. The previous sanitizer copied attributes and children, leaving blank textarea/first-option select on initial display and every update.",
+  "correction": "After copying allowed attributes and sanitizing/appending children, restore textarea/select.value only when the source has a value attribute. This preserves explicit empty values and lets native select semantics match the completed sanitized option list; unmatched values leave no selection. No HTML parsing is added for the value string.",
+  "validation": {
+    "status": "PASS",
+    "checks": 26,
+    "expected_old_source_failures": 2,
+    "terminal_exit_code": 0,
+    "oom": false,
+    "wall_seconds": 1.9261207670024305,
+    "jsdom_version": "29.1.1",
+    "command": "/node/bin/node --max-old-space-size=512 --experimental-vm-modules /src/dom-regression.mjs",
+    "limits": {
+      "wall_seconds": 90,
+      "container_mib": 768,
+      "node_heap_mib": 512,
+      "cpus": 1,
+      "network": "none",
+      "install": false
+    },
+    "test_source_sha256": "946ad98d6eefa401cddf2eeb8cec84d9f6e638af4ec73ba0956fa9e71f4a3ab5",
+    "controller_sha256": "4eae6482daa4ecc35d63fce266f76f396b6a765c391e68625edc77ff7d26be5d",
+    "receipt": "../evidence/run1/DOM_REGRESSION.json",
+    "terminal": "../evidence/run1/TERMINAL.json",
+    "scope": "Unmodified production guest bootstrap/serialization, host dialog/dispatch, mountPackUI and sanitizeMarkup execute against real jsdom DOMParser/elements/events/closed shadow roots. Only the generic textarea/select value restoration differs.",
+    "not_proven": [
+      "Real Chromium keyboard/mouse editing, raster and graph save/reload remain DANNY browser acceptance gates."
+    ]
+  },
+  "identity": {
+    "label_js_sha256_unchanged": "63114a2fa1ee3367d3e6df745a8ab8239dadeb694d5a37c13b83bbe86628de07",
+    "pack_registration_unchanged": true,
+    "guest_unchanged": true,
+    "host_entry_unchanged": true,
+    "public_types_unchanged": true
+  },
+  "operator_status": "PENDING_DANNY_BROWSER_ACCEPTANCE",
+  "operator_integration": [
+    "Apply only candidate/ui-renderer.mjs after verifying current served preimage62b5e5ec; retain all then-current selected frontend/index/pack-list/ownership/login assets.",
+    "No pack revision change or frontend compiler rebuild is required by this host asset delta. Root owns publication; DANNY owns deployment and actual browser acceptance.",
+    "Verify served ui-renderer successor46882ce0 and unchanged Label63114 bytes in a fresh browser context.",
+    "In Classic and Vue load the acceptance fixture, open Label editor and verify Title textarea text and center alignment before input.",
+    "Edit title and all eight properties; blur and reopen, then save/reload. Verify both graph state and DOM values stay correct.",
+    "Complete remaining original Label drawing, drag, pinned click-through and doubleclick browser checks. Do not treat a diagnostic focus predicate mismatch as a product failure without actual behavior evidence."
+  ],
+  "patch": "../ui-renderer.patch",
+  "source_bindings": "SOURCE_BINDINGS.json",
+  "browser_failure_capsules": {
+    "LABEL-DIALOG-BOUNDARY-r31.zip": "641bc3eda03451658ce7216c0c94b998c5cbb67cd74ee5afdc8dea8aa91ccff2",
+    "LABEL-VUE-DIALOG-TRACE-r31.zip": "10626839665a5085f7f6dfe06ca0d683005f89e9e4d6ef444b886c33ecd18da5"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "status": "CANDIDATE_NOT_YET_DEPLOYED",
+  "owner": "MERVYN Label child",
+  "definition_presentation": {
+    "chrome": "optional: default | none",
+    "title": "optional: default | hidden; independent of visible body/slots",
+    "sizing": "optional: content | fixed; fixed preserves the declared body rectangle in Vue",
+    "resizable": "optional boolean",
+    "collapsible": "optional boolean",
+    "pinnedInteraction": "optional: default | pass-through"
+  },
+  "node_canvas": {
+    "call": "node.canvas({ bounds: {x, y, width, height}, layer?: 'foreground', draw(context) })",
+    "handle": ["setBounds(bounds)", "redraw()", "remove()"],
+    "ownership": "only a node type declared by the requesting pack",
+    "chromeless_restriction": "chrome:none requires frontend execution without slots or widgets; foreground canvas also works with ordinary body and slots",
+    "limits": "8192 coordinate/edge limit, 16 MiPixels per surface, 64 MiPixels/256 surfaces per pack"
+  },
+  "node_resizable": "node.setResizable(boolean); leaves saved size unchanged and obeys a definition's fixed resizable policy if declared",
+  "widget_label": "widget.getLabel(): string | undefined, reads only the explicit label; preserves empty string and does not substitute widget.name",
+  "reroute_coordination": "Frontend child owns Reroute. Agreed presentation {title:'hidden', sizing:'fixed', collapsible:false}, node.setResizable(boolean), canvas layer:'foreground'. Sole shared API writer is this lane.",
+  "write_root": "coordination/rgthree-storm-20261015/lanes/label"
+}
