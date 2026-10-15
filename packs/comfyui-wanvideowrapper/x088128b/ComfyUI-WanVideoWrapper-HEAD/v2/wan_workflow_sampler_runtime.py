@@ -58,23 +58,27 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
     from .wan_workflow_math.nodes_sampler import WanVideoSampler
     if type(image_embeds) is not dict or set(image_embeds) != {'target_shape', 'num_frames', 'control_embeds'}:
         raise NotImplementedError('First staged trained workflow requires plain empty T2V conditioning')
-    if tuple(image_embeds['target_shape']) != (16, 1, 8, 8) or image_embeds['num_frames'] != 1 or image_embeds['control_embeds'] is not None:
-        raise NotImplementedError('First staged trained workflow is bounded to one 64x64 frame')
-    if type(kwargs.get('steps')) is not int or not 1 <= kwargs['steps'] <= 4:
-        raise ValueError('First staged trained workflow supports at most four sampling steps')
-    unsupported = ('samples', 'feta_args', 'context_options', 'cache_args', 'teacache_args',
+    if image_embeds['control_embeds'] is not None:
+        raise NotImplementedError('Control embeds await their reviewed execution slice')
+    unsupported = ('feta_args', 'context_options', 'cache_args', 'teacache_args',
                    'flowedit_args', 'slg_args', 'loop_args', 'experimental_args',
                    'unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',
                    'multitalk_embeds', 'freeinit_args')
     if any(kwargs.get(key) is not None for key in unsupported):
         raise NotImplementedError('Advanced sampling inputs await their reviewed execution slices')
-    if kwargs.get('denoise_strength', 1.0) != 1.0 or kwargs.get('batched_cfg', False) or kwargs.get('add_noise_to_samples', False):
-        raise NotImplementedError('Advanced conditioning/noise modes need separate trained qualification')
+    if kwargs.get('batched_cfg', False):
+        raise NotImplementedError('Batched CFG awaits its reviewed execution slice')
     scheduler = kwargs['scheduler']
     if type(scheduler) is dict:
         if scheduler.get('format') != SCHEDULER_FORMAT:
             raise ValueError('Expected the shared owned scheduler recipe')
         kwargs = dict(kwargs, scheduler=restore_scheduler(scheduler))
+    # Like the original (nodes_sampler.py: steps = len(timesteps)), a scheduler dict defines the step count;
+    # WanVideoSamplerv2 passes steps=None and relies on it.
+    effective_steps = (len(kwargs['scheduler']['timesteps']) if type(kwargs['scheduler']) is dict
+                       else kwargs.get('steps'))
+    if type(effective_steps) is not int or effective_steps < 1:
+        raise ValueError('Wan sampling requires a positive integer step count')
     from .wan_workflow_context import model_options
     options = model_options(model)
     if options.get('lora_resource_plan') is not None:

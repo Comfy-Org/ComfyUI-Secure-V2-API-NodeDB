@@ -1,4 +1,4 @@
-"""PRIVATE145 source candidate. No installable manifest or promotion claim."""
+"""PRIVATE146 source candidate. No installable manifest or promotion claim."""
 from .secure_schedule_nodes import CreateCFGScheduleFloatList as _node0
 from .secure_schedule_nodes import CreateScheduleFloatList as _node1
 from .secure_fantasytalking_nodes import DownloadAndLoadWav2VecModel as _node2
@@ -144,6 +144,7 @@ from .secure_whisper_nodes import WhisperModelLoader as _node141
 from .secure_set_loras_node import WanVideoSetLoRAs as _node142
 from .secure_control_loader_nodes import WanVideoControlnetLoader as _node143
 from .secure_control_loader_nodes import WanVideoUni3C_ControlnetLoader as _node144
+from .secure_diffusion_forcing_node import WanVideoDiffusionForcingSampler as _node145
 NODE_CLASS_MAPPINGS = {
     'CreateCFGScheduleFloatList': _node0,
     'CreateScheduleFloatList': _node1,
@@ -217,6 +218,7 @@ NODE_CLASS_MAPPINGS = {
     'WanVideoControlnetLoader': _node143,
     'WanVideoDecode': _node69,
     'WanVideoDecodeOviAudio': _node70,
+    'WanVideoDiffusionForcingSampler': _node145,
     'WanVideoEasyCache': _node71,
     'WanVideoEmptyEmbeds': _node72,
     'WanVideoEmptyMMAudioLatents': _node73,
