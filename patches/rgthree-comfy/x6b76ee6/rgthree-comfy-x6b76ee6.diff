@@ -1,3 +1,181 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,175 @@
++> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
++> Nodes: 37 of 40 upstream converted; 2 tested (scoped), 35 converted but untested/partly tested,
++> 3 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
++
++<!-- secure-conversion-report-v1 -->
++# Secure Nodes V2 conversion report — rgthree-comfy (`rgthree-comfy`)
++
++## What this revision contains
++
++- **Base:** the registered Label revision (draft PR #6, commit `e7f5d08`). That is main `317175f` plus `label.js`, the new
++  `label_drawing.js`, and `comfy-api.d.ts`.
++- **Added:** 16 frontend files whose existing tests pass:
++  - 14 files from the first repair tranche, covered by 70 focused original-comparison cases:
++    - `web/comfyui/comfy_ui_bar.js`, `dialog_info.js`, `fast_groups_muter.js`, `power_conductor.js`, `power_lora_loader.js`,
++      `random_unmuter.js`, `rgthree.js`, `services/config_service.js`, `widget_controls.js`
++    - `web/common/model_info_service.js`, `model_info_storage.js`, `progress_bar.js`, `prompt_service.js`, `rgthree_api.js`
++  - `web/comfyui/display_any.js` (F14 output serialization, checked against the original as an oracle).
++  - `web/common/media/svgs.js`. Its logo now resolves against the module's own URL; that fixes an invalid-URL fetch in the
++    sandboxed worker (6 hermetic cases).
++- **Held back** (left at the PR #6 version and listed as open):
++  - the Reroute definition and the F01 connection-layout port, both waiting on host renderer prerequisites S01–S04;
++  - the optional Dynamic Context backend, waiting on the repeated-output API;
++  - the host-side `comfy.defs.onRefreshed` fix, which is a separate host deployment.
++
++## Provenance
++
++Upstream https://github.com/rgthree/rgthree-comfy at commit `6b76ee6f2c5a007710b5a16f97c94330d6ecc871`
++(key `x6b76ee6`). The pristine tree beside `v2/` is byte-exact at that commit (258 files). Upstream has
++40 node IDs: 37 enabled by default and 3 opt-in (Dynamic Context, Dynamic Context Switch, Power Conductor).
++Of the defaults, 24 have Python classes and 13 are frontend-only.
++
++## Node dispositions
++
++Node IDs, display names and categories are the original's (mirror mode). "Tested (scoped)" means every
++part the node has upstream (backend and/or custom frontend) passed executed original-comparison tests and no
++pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVisor) still apply to every node.
++
++| Node id | Disposition | Evidence or gap |
++| --- | --- | --- |
++| `KSampler Config (rgthree)` | tested (scoped) | Backend native cases pass; no custom frontend. |
++| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. |
++| `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 connection layouts are not in this revision. |
++| `Context (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Context Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Context Merge (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Context Merge Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Context Switch (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Context Switch Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
++| `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 is open. An own-node PNG metadata candidate passed separately and is not in this revision. |
++| `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 is open. |
++| `Fast Groups Bypasser (rgthree)` | converted, partly tested | Tested repair ships here (row state, graph-scoped identities, saved filters). F10 fit-group navigation is open. |
++| `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
++| `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
++| `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
++| `Label (rgthree)` | converted, partly tested | Browser: Classic 7/9 edits persist, Vue 8/9. The remaining focus race is a host renderer fix, still pending. |
++| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Open: F01, F03, F04, F13, and the startup callback error until the host `defs.onRefreshed` fix is deployed. |
++| `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
++| `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
++| `Random Unmuter (rgthree)` | converted, partly tested | The tested failed-attempt cleanup repair ships here. F07 (independent choice per batch item) and F01 are open. |
++| `SDXL Power Prompt - Positive (rgthree)` | converted, partly tested | Backend native cases pass. F01 is open, plus the startup callback error (host fix pending). |
++| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
++| `Image Comparer (rgthree)` | converted, untested | Backend behaviour is not yet exercised; F01 is open. |
++| `Image Resize (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
++| `Lora Loader Stack (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
++| `SDXL Empty Latent Image (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
++| `Power Prompt (rgthree)` | converted, untested | Backend behaviour is not yet exercised. F01 is open, plus the startup callback error (host fix pending). |
++| `Power Prompt - Simple (rgthree)` | converted, untested | Same as Power Prompt. |
++| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, untested | Same as Power Prompt. |
++| `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
++| `Fast Actions Button (rgthree)` | converted, untested | Frontend-only. F01 and F11 are open. |
++| `Fast Bypasser (rgthree)` | converted, untested | Frontend-only. F01 is open. |
++| `Fast Muter (rgthree)` | converted, untested | Frontend-only. F01 is open. |
++| `Mute / Bypass Relay (rgthree)` | converted, untested | Frontend-only. F01 is open. |
++| `Mute / Bypass Repeater (rgthree)` | converted, untested | Frontend-only. F01 is open. |
++| `Node Collector (rgthree)` | converted, untested | Frontend-only. F01 is open. |
++| `Node Combiner (rgthree)` | converted, untested | Legacy frontend-only node. F01 is open. |
++| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists: host prerequisites S01–S03 pass and S04 is in progress. F05 and F06 are open. |
++| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. |
++| `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
++
++## Refused techniques (never-do) and their public replacements
++
++No whole user feature is refused. Only these techniques are; each feature they served has a public
++replacement or is listed as *not yet* with its prerequisite. Line numbers refer to the pristine upstream tree.
++
++1. **Patching host classes, prototypes and global tables.** This changes behaviour for every node and every pack in the session.
++   Upstream instances:
++   - `LGraphCanvas.prototype.processKey` (web/comfyui/services/key_events_services.js:17–18);
++   - `drawNode` and `getNodeOnPos` (web/comfyui/label.js:132–145);
++   - `LiteGraph.isValidConnection` (web/comfyui/utils.js:688);
++   - `slot_types_default_out` (web/comfyui/context.js:113–115, dynamic_context_base.js:184–188);
++   - `LiteGraph.ContextMenu` (web/comfyui/menu_auto_nest.js:10);
++   - `processMouseDown` (web/comfyui/rgthree.js:249–250);
++   - `drawGroups` (web/comfyui/feature_group_fast_toggle.js:85–86).
++
++   *Replacements:* per-type `comfy.defs.extend` hooks, `isTypeCompatible`, public slot handles, and the Label
++   presentation/canvas APIs. Not yet: group-header toggles (F08) and keyboard shortcuts (F11).
++2. **Reading host-private objects or symbols** (`Object.getOwnPropertySymbols` on widgets,
++   web/comfyui/utils_deprecated_comfyui.js:10). This crosses the isolation boundary and breaks between versions. *Replacement:* public widget
++   handles (`getLabel`, `getOptions`, `getValue`).
++3. **Injecting into host DOM** (`app.menu.settingsGroup.element.before`, web/comfyui/comfy_ui_bar.js:18,84; progress
++   bar and message containers on `document.body`, web/comfyui/rgthree.js:222–229, 613–624). The host owns its DOM. *Replacement:* public
++   chrome contributions (action buttons, top-bar badges) and `comfy.ui`. Not yet: the two-track progress-bar presentation (F12).
++4. **Mutating the raw link table** (`app.graph.links[...]`, web/comfyui/reroute.js:307–430). This bypasses validation and undo
++   and can corrupt graphs. *Replacement:* public link and slot handles. Not yet: Reroute insertion (F05).
++5. **Intercepting or rewriting the built prompt** (`app.graphToPrompt` / `api.queuePrompt` wrappers, web/comfyui/rgthree.js:499–508,
++   web/common/prompt_service.js:85). That exposes and alters other nodes' data. *Replacement:* public queue hooks
++   (`onBeforeRun`, `onAfterRun`). Not yet: per-submission preparation (F07) and API-workflow import (F13).
++6. **Hijacking in-flight canvas gestures** (`canvas.connecting_links`, web/comfyui/reroute.js:53, 116–142). The host owns gestures.
++   *Replacement:* not yet; needs a host-owned link-gesture contribution (F05).
++7. **Enumerating other packs and calling their lifecycle callbacks** (`comfyapp.extensions.map(...)`,
++   web/comfyui/rgthree.js:285–293). That interferes across packs. *Replacement:* none needed; the host runs each pack's own hooks.
++8. **Unrestricted evaluation in Power Puter**, reaching arbitrary attributes of live objects (`getattr(item, attr)`,
++   py/power_puter.py:569). That puts arbitrary code on the host. *Replacement:* the bounded evaluator in `v2/py/safe_puter.py`.
++9. **Host-wide VRAM purge** (`purge_vram` → `unload_all_models` / `soft_empty_cache`, py/power_puter.py:63–74, 152).
++   This evicts other users' models. *Replacement:* none; the host manages memory.
++10. **Writing or deleting host files outside the pack**, and serving them from raw routes on the host server:
++    - `shutil.rmtree` of ComfyUI `web/extensions/rgthree*` at import (`__init__.py:86–92`);
++    - `rgthree_config.json` in the install directory (py/config.py:49,55);
++    - JSON writes and removes (py/utils.py:128,149; py/utils_userdata.py:21–29);
++    - model-info sidecars (py/server/utils_info.py:452);
++    - the `/rgthree/api/*` routes (py/server/*.py).
++
++    *Replacements:* public settings and pack storage (`services/config_service.js`, `common/model_info_storage.js`) and core
++    authenticated routes. Not yet: provider-backed model info (F03) and the JS↔Python storage bridge (F04).
++11. **Disclosing absolute host model paths** (`folder_paths.get_full_path`, py/power_lora_loader.py:72,
++    py/server/routes_model_info.py:152–160, py/server/utils_info.py:416). That exposes the host layout. *Replacement:* logical
++    names through the `assets` permission.
++12. **Unaudited network fetches by the pack** (Civitai via `requests`, py/server/utils_info.py:327–339; update
++    check via `aiohttp`, py/pyproject.py:49–56). *Replacement:* not yet; needs an admitted metadata provider (F03).
++
++## Pending items (not yet supported)
++
++- F02 — repeated (dynamic) outputs for the opt-in Dynamic Context nodes.
++- F03 — model metadata provider: trained words, Civitai details and images.
++- F04 — same-user JS↔Python model-info storage continuity.
++- F05 — Reroute insertion/reposition during an unfinished link drag.
++- F06 — remaining Reroute presentation parity: per-link colour, low-zoom label suppression.
++- F07 — Random Unmuter choosing independently for each prompt in a batch.
++- F08 — fast toggle actions in group headers.
++- F09 — Bookmark navigation into a hidden subgraph with the original viewport offset.
++- F10 — Fast Groups navigation that fits the whole group.
++- F11 — widget-configured keyboard shortcuts in the sandboxed realm.
++- F12 — the original configurable two-track progress bar.
++- F13 — Power LoRA Loader rows from API-format workflows; A1111 parameter import.
++- F16 — delivery of the pack's model-browser and link-fixer pages.
++- Power Prompt LoRA and embedding insert combos when the model list exceeds the worker's definition bounds
++  (needs a public model-catalogue read).
++- Startup callback errors (`comfy.defs.onRefreshed` inside the sandbox): a host fix is written and tested,
++  with 1 negative control plus 8 cases passing, and is awaiting review and deployment.
++
++## Open test gates
++
++- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). S04 has one failure under diagnosis.
++- Backend behaviour runs for Image Comparer, Image Resize, Lora Loader Stack, Power Prompt, Power Prompt - Simple,
++  SDXL Empty Latent Image, and SDXL Power Prompt - Simple / Negative.
++- Original-comparison runs for the eight frontend-only nodes listed as untested.
++- Label browser acceptance after the host focus-race fix.
++- Live asset delivery and CORS for `/rgthree/*` static files, including the logo.
++- gVisor admission and whole-pack acceptance review.
++
++## Authority and permissions
++
++- No SDK permissions (12 nodes): the Context family, Any Switch, Display Int, KSampler Config, Seed, Power Prompt - Simple,
++  SDXL Power Prompt - Simple / Negative.
++- `assets` (4): Lora Loader Stack, Power Lora Loader, Power Prompt, SDXL Power Prompt - Positive.
++- `raw` (7): Display Any, Image Inset Crop, Image Resize, Image or Latent Size, Power Primitive, Power Puter, SDXL Empty Latent Image.
++- `ui` (1): Image Comparer.
++- Frontend: `web/comfyui` loads into the sandboxed pack worker; static directory `rgthree` -> `web`. No pack HTTP routes.
++  Runtime: Python >=3.13,<3.14.
++
++## Assets and weights
++
++No weights are committed. LoRAs, checkpoints, CLIP and embeddings come from the user's managed model catalogue.
++
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,126 +1,17 @@
@@ -15775,7 +15953,7 @@
 +defineModeChangerNode({ type: NodeTypesString.FAST_BYPASSER, modeOn: "always", modeOff: "bypass", offAction: "Bypass all" });
 --- a/web/comfyui/comfy_ui_bar.js
 +++ b/v2/web/comfyui/comfy_ui_bar.js
-@@ -1,197 +1,103 @@
+@@ -1,197 +1,102 @@
 -import { app } from "../../scripts/app.js";
 -import { iconGear, iconStarFilled, logoRgthreeAsync } from "../../rgthree/common/media/svgs.js";
 -import { $el, empty } from "../../rgthree/common/utils_dom.js";
@@ -15811,14 +15989,8 @@
 +// COSMETIC: two buttons where there was one button opening a popup menu. The chrome
 +//   takes a button, not a panel; both actions are still one click away, and Settings is
 +//   also in the command palette (`rgthree.openSettings`, registered in config.js).
-+// DROPPED: the bookmarks popup — a *list*, rebuilt from the current workflow each time
-+//   it opened, with one entry per Bookmark node. The chrome takes a fixed button, so
-+//   there is nowhere in the top bar to put a list. The bookmarks themselves are not lost
-+//   and were never reached only from here: each Bookmark node carries its own shortcut
-+//   key and jumps when pressed (bookmark.js), and rgthree.js's own canvas menu lists
-+//   them. `comfy.ui.addSidebarTab` would hold a list, but the sidebar is a different
-+//   place in the UI from the one this file targets — a port for the pack's author to
-+//   decide on, not a translation.
++// The bookmark button opens a current workflow list with the public showMenu
++// contribution. Its independent enabled setting is reconciled after setup too.
 +const buttons = new Map();
  function addRgthreeTopBarButtons() {
 -    var _a, _b, _c;
@@ -15833,8 +16005,14 @@
      }
 -    else if (rgthreeButtonGroup) {
 -        (_b = app.menu) === null || _b === void 0 ? void 0 : _b.settingsGroup.element.before(rgthreeButtonGroup.element);
+-        return;
++    // Reconcile the independent bookmark switch too. Keeping the two ordinary
++    // buttons must not prevent adding/removing a bookmark menu after setup.
 +    if (buttons.size) {
-         return;
++        const wanted = CONFIG_SERVICE.getFeatureValue("comfy_top_bar_menu.button_bookmarks.enabled");
++        if (wanted === buttons.has("bookmarks")) return;
++        for (const button of buttons.values()) button.remove();
++        buttons.clear();
      }
 -    const buttons = [];
 -    const rgthreeButton = new RgthreeComfyButton({
@@ -16839,7 +17017,7 @@
 +//   every link on a freshly created node.
 --- a/web/comfyui/dialog_info.js
 +++ b/v2/web/comfyui/dialog_info.js
-@@ -1,292 +1,22 @@
+@@ -1,292 +1,105 @@
 -import { RgthreeDialog } from "../../rgthree/common/dialog.js";
 -import { createElement as $el, empty, appendChildren, getClosestOrSelf, query, queryAll, setAttributes, } from "../../rgthree/common/utils_dom.js";
 -import { logoCivitai, link, pencilColored, diskColored, dotdotdot, } from "../../rgthree/common/media/svgs.js";
@@ -16855,13 +17033,45 @@
 -            content: "<center>Loading..</center>",
 -            onBeforeClose: () => {
 -                return true;
--            },
++import { comfy } from '/comfy/api/v2.js';
++import { LORA_INFO_SERVICE, CHECKPOINT_INFO_SERVICE } from '../../rgthree/common/model_info_service.js';
++
++let nextDialog = 0;
++const EDITABLE = [
++    ['name', 'Name'], ['strengthMin', 'Strength Min'],
++    ['strengthMax', 'Strength Max'], ['userNote', 'Additional Notes'],
++];
++
++export function normalizeModelInfoEdit(field, value) {
++    if (!EDITABLE.some(([key]) => key === field)) throw new Error('This model info field is not editable.');
++    if (field.startsWith('strength')) {
++        if (!Number.isFinite(Number(value))) throw new Error('Strength must be a finite number.');
++        return (Math.round(Number(value) * 100) / 100).toFixed(2);
++    }
++    return String(value);
++}
++
++class RgthreeInfoDialog extends EventTarget {
++    constructor(file, service) {
++        super(); this.file = file; this.service = service;
++        this.modifiedModelData = false; this.closed = false;
++    }
++    show() {
++        this.handle = comfy.ui.showDialog({
++            key: `rgthree.model-info.${++nextDialog}`, title: this.file,
++            render: (container) => { this.container = container; void this.render(); },
++            destroy: () => {
++                this.closed = true; this.container = null;
++                this.dispatchEvent(new CustomEvent('close', { detail: { modified: this.modifiedModelData } }));
+             },
 -        };
 -        super(dialogOptions);
 -        this.modifiedModelData = false;
 -        this.modelInfo = null;
 -        this.init(file);
--    }
++        });
++        return this;
+     }
 -    async init(file) {
 -        var _a, _b;
 -        const cssPromise = injectCss("rgthree/common/css/dialog_model_info.css");
@@ -16883,7 +17093,44 @@
 -            const action = target === null || target === void 0 ? void 0 : target.getAttribute("data-action");
 -            if (!target || !action) {
 -                return;
--            }
++    async render() {
++        const container = this.container;
++        if (!container || this.closed) return;
++        container.textContent = 'Loading model information…';
++        try {
++            const info = await this.service.getInfo(this.file, false, false);
++            if (this.closed || this.container !== container) return;
++            this.modelInfo = info;
++            container.textContent = '';
++            const element = (tag, text = '') => {
++                const item = document.createElement(tag); item.textContent = text; return item;
++            };
++            const table = element('table');
++            const row = (label, value) => {
++                const tr = element('tr'); tr.append(element('th', label), element('td', String(value ?? ''))); table.append(tr);
++            };
++            row('File', info.file);
++            if (info.sha256) row('Hash (sha256)', info.sha256);
++            if (info.baseModel || info.baseModelFile) row('Base Model', [info.baseModel, info.baseModelFile].filter(Boolean).join(' '));
++            if (info.raw?.metadata?.ss_clip_skip && info.raw.metadata.ss_clip_skip !== 'None') row('Clip Skip', info.raw.metadata.ss_clip_skip);
++            for (const [field, label] of EDITABLE) {
++                const tr = element('tr'), cell = element('td');
++                const input = element(field === 'userNote' ? 'textarea' : 'input');
++                input.value = String(info[field] ?? (field === 'name' ? info.raw?.metadata?.ss_output_name ?? '' : ''));
++                input.setAttribute('aria-label', label);
++                const save = element('button', 'Save'); save.type = 'button';
++                const status = element('span'); status.setAttribute('role', 'status');
++                save.addEventListener('click', async () => {
++                    save.disabled = true; status.textContent = '';
++                    try {
++                        const value = normalizeModelInfoEdit(field, input.value);
++                        const saved = await this.service.savePartialInfo(this.file, { [field]: value });
++                        this.modelInfo = saved; this.modifiedModelData = true; input.value = String(value); status.textContent = 'Saved';
++                    } catch (error) { status.textContent = String(error?.message ?? error); }
++                    finally { save.disabled = false; }
++                });
++                cell.append(input, save, status); tr.append(element('th', label), cell); table.append(tr);
+             }
 -            await this.handleEventAction(action, target, e);
 -        });
 -    }
@@ -16917,12 +17164,27 @@
 -                let small = query("small", span);
 -                if (!small) {
 -                    small = $el("small", { parent: span });
--                }
++            container.append(table);
++            if (Array.isArray(info.trainedWords) && info.trainedWords.length) {
++                container.append(element('h3', 'Trained Words'));
++                const selected = new Set(), output = element('textarea'); output.readOnly = true;
++                output.setAttribute('aria-label', 'Selected trained words');
++                for (const word of info.trainedWords) {
++                    const text = String(word.word ?? ''), button = element('button', text); button.type = 'button';
++                    button.setAttribute('aria-pressed', 'false');
++                    button.addEventListener('click', () => {
++                        if (selected.has(text)) selected.delete(text); else selected.add(text);
++                        button.setAttribute('aria-pressed', String(selected.has(text)));
++                        output.value = [...selected].join(', '); output.focus(); output.select();
++                    });
++                    container.append(button);
+                 }
 -                const num = queryAll(".-rgthree-is-selected", tr).length;
 -                small.innerHTML = num
 -                    ? `${num} selected | <span role="button" data-action="copy-trained-words">Copy</span>`
 -                    : "";
--            }
++                container.append(output);
+             }
 -        }
 -        else if (action === "edit-row") {
 -            const tr = target.closest("tr");
@@ -16958,8 +17220,13 @@
 -            }
 -            e === null || e === void 0 ? void 0 : e.preventDefault();
 -            e === null || e === void 0 ? void 0 : e.stopPropagation();
--        }
--    }
++            // No automatic remote requests or source-file path probing. Provider
++            // data already stored is displayed above; refresh is a distinct gap.
++            container.append(element('p', 'Model-file metadata and Civitai refresh require an admitted metadata provider.'));
++        } catch (error) {
++            if (!this.closed) container.textContent = String(error?.message ?? error);
+         }
+     }
 -    getInfoContent() {
 -        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
 -        const info = this.modelInfo || {};
@@ -16971,7 +17238,8 @@
 -        <li class="rgthree-info-menu" stub="menu"></li>
 -        ${""}
 -      </ul>
-+import { comfy } from '/comfy/api/v2.js';
++    close() { this.handle?.close(); }
++}
  
 -      <table class="rgthree-info-table">
 -        ${infoTableRow("File", info.file || "")}
@@ -17063,7 +17331,7 @@
 -        return div;
 -    }
 -}
--export class RgthreeLoraInfoDialog extends RgthreeInfoDialog {
+ export class RgthreeLoraInfoDialog extends RgthreeInfoDialog {
 -    async getModelInfo(file) {
 -        return LORA_INFO_SERVICE.getInfo(file, false, false);
 -    }
@@ -17073,8 +17341,9 @@
 -    async clearModelInfo(file) {
 -        return LORA_INFO_SERVICE.clearFetchedInfo(file);
 -    }
--}
--export class RgthreeCheckpointInfoDialog extends RgthreeInfoDialog {
++    constructor(file) { super(file, LORA_INFO_SERVICE); }
+ }
+ export class RgthreeCheckpointInfoDialog extends RgthreeInfoDialog {
 -    async getModelInfo(file) {
 -        return CHECKPOINT_INFO_SERVICE.getInfo(file, false, false);
 -    }
@@ -17084,7 +17353,8 @@
 -    async clearModelInfo(file) {
 -        return CHECKPOINT_INFO_SERVICE.clearFetchedInfo(file);
 -    }
--}
++    constructor(file) { super(file, CHECKPOINT_INFO_SERVICE); }
+ }
 -function infoTableRow(name, value, help = "", editableFieldName = "") {
 -    return `
 -    <tr class="${editableFieldName ? "editable" : ""}" ${editableFieldName ? `data-field-name="${editableFieldName}"` : ""}>
@@ -17133,35 +17403,14 @@
 -function imgInfoField(label, value) {
 -    return value != null ? `<span>${label ? `<label>${label} </label>` : ""}${value}</span>` : "";
 -}
-+// PUNTED IN FULL — 292 lines removed, nothing converted.
-+//
-+// The model info modal: a lora's or checkpoint's file, sha256, Civitai link,
-+// click-to-select trained words, clip skip, recommended strength range, user notes
-+// and preview media, with a few inline-editable fields saved back to rgthree's own
-+// server.
-+//
-+// This file is almost entirely plain DOM and touches no graph or canvas API. It is
-+// punted for two reasons, and the second is the decisive one:
-+//
-+//  1. Its two remaining couplings are to the punted rgthree.js singleton —
-+//     `rgthree.showMessage({...})` for the "copied N keywords" toast, which maps to
-+//     `comfy.commands.notify({severity, summary})`, and `rgthree.isDevMode()`,
-+//     which gates a dev-only actions menu and reads a log level that no longer
-+//     exists.
-+//  2. Its only importer is power_lora_loader.js, which is punted. Converting it
-+//     would produce a module nothing loads.
-+//
-+// Nothing else here needs the API. If Power Lora Loader is ever ported, this file
-+// converts in two lines.
 --- a/web/comfyui/display_any.js
 +++ b/v2/web/comfyui/display_any.js
-@@ -1,35 +1,45 @@
+@@ -1,35 +1,50 @@
 -import { app } from "../../scripts/app.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
 -import { addConnectionLayoutSupport } from "./utils.js";
 -import { rgthree } from "./rgthree.js";
-+import { comfy } from '/comfy/api/v2.js';
- let hasShownAlertForUpdatingInt = false;
+-let hasShownAlertForUpdatingInt = false;
 -app.registerExtension({
 -    name: "rgthree.DisplayAny",
 -    async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -17189,42 +17438,49 @@
 -                onExecuted === null || onExecuted === void 0 ? void 0 : onExecuted.apply(this, [message]);
 -                this.showValueWidget.value = message.text[0];
 -            };
++import { comfy } from '/comfy/api/v2.js';
++const serializationListeners = new Map();
++const keyOf = (node) => JSON.stringify([node.graphId ?? '', node.id]);
 +comfy.defs.extend(["Display Any (rgthree)", "Display Int (rgthree)"], (b) => {
 +    b.onCreated((node) => {
 +        // onCreated fires when the node joins a graph, which can happen more than
 +        // once for one node; mount() throws on a duplicate name.
-+        if (node.widgets.get("output")) {
-+            return;
++        if (!node.widgets.get("output")) {
++            let stopWatching = null;
++            node.widgets.mount({
++                name: "output",
++                defaultValue: "",
++                serialize: true,
++                render(container, value) {
++                    const textarea = document.createElement("textarea");
++                    textarea.readOnly = true;
++                    textarea.style.width = "100%";
++                    textarea.style.height = "100%";
++                    textarea.value = String(value.get());
++                    container.appendChild(textarea);
++                    stopWatching = value.onChange((v) => {
++                        textarea.value = String(v);
++                    });
++                },
++                destroy() {
++                    stopWatching === null || stopWatching === void 0 ? void 0 : stopWatching();
++                    stopWatching = null;
++                },
++            });
          }
 -    },
-+        let stopWatching = null;
-+        node.widgets.mount({
-+            name: "output",
-+            defaultValue: "",
-+            serialize: true,
-+            render(container, value) {
-+                const textarea = document.createElement("textarea");
-+                textarea.readOnly = true;
-+                textarea.style.width = "100%";
-+                textarea.style.height = "100%";
-+                textarea.value = String(value.get());
-+                container.appendChild(textarea);
-+                stopWatching = value.onChange((v) => {
-+                    textarea.value = String(v);
-+                });
-+            },
-+            destroy() {
-+                stopWatching === null || stopWatching === void 0 ? void 0 : stopWatching();
-+                stopWatching = null;
-+            },
-+        });
++        const key = keyOf(node);
++        serializationListeners.get(key)?.();
++        // The original serializer returned an empty string and cleared the
++        // embedded workflow's matching value. Public serialization contexts
++        // let us express both without touching another node or the built prompt.
++        serializationListeners.set(key, node.widgets.get('output').on('beforeSerialize', (event) => {
++            event.setSerializedValue('');
++        }));
 +    });
-+    // REFUSED, not a gap: `addConnectionLayoutSupport` put the input and output on
-+    // chosen sides of the node by patching `getConnectionPos` on the node class and
-+    // recomputing positions from `LiteGraph.NODE_SLOT_HEIGHT`. Deciding where the
-+    // renderer draws a socket is refused rather than pending — see utils.js. The
-+    // "Connections Layout" menu entry and the saved `connections_layout` property go
-+    // with it; existing workflows keep the property and it no longer does anything.
++    b.onRemoved((node) => {
++        const key = keyOf(node); serializationListeners.get(key)?.(); serializationListeners.delete(key);
++    });
 +    b.onExecuted((node, result) => {
 +        const showValueWidget = node.widgets.get("output");
 +        if (!showValueWidget) {
@@ -19049,7 +19305,7 @@
  });
 --- a/web/comfyui/fast_groups_muter.js
 +++ b/v2/web/comfyui/fast_groups_muter.js
-@@ -1,10 +1,48 @@
+@@ -1,10 +1,49 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 +import { comfy } from '/comfy/api/v2.js';
@@ -19059,6 +19315,7 @@
 -import { RgthreeBaseWidget } from "./utils_widgets.js";
 -import { changeModeOfNodes, getGroupNodes } from "./utils.js";
 +import { exposeActions, helpMenuItem } from "./base_node.js";
++import { registerWidgetControl } from './widget_controls.js';
 +
 +// Fast Groups Muter — an input-less node that lists every group in the workflow as
 +// a toggle row with a jump-to-group arrow, filtered by colour or title regex, sorted
@@ -19103,7 +19360,7 @@
  const PROPERTY_SORT = "sort";
  const PROPERTY_SORT_CUSTOM_ALPHA = "customSortAlphabet";
  const PROPERTY_MATCH_COLORS = "matchColors";
-@@ -12,203 +50,137 @@
+@@ -12,203 +51,138 @@
  const PROPERTY_SHOW_NAV = "showNav";
  const PROPERTY_SHOW_ALL_GRAPHS = "showAllGraphs";
  const PROPERTY_RESTRICTION = "toggleRestriction";
@@ -19186,6 +19443,7 @@
 +// live here, keyed by node id, and are dropped in onRemoved.
 +const rowsByNode = new Map();
 +const refreshByNode = new Map();
++const nodeKey = (node) => JSON.stringify([node.graphId ?? '', node.id]);
 +function rowsFor(nodeId) {
 +    let rows = rowsByNode.get(nodeId);
 +    if (!rows) {
@@ -19437,7 +19695,7 @@
        <ul>
          <li>
            <p>
-@@ -274,164 +246,182 @@
+@@ -274,164 +248,198 @@
            </ul>
          </li>
        </ul>`;
@@ -19496,7 +19754,7 @@
 +        return group.nodes().some((n) => n.getMode() === modeOn);
 +    }
 +    function doModeChange(node, row, force, skipOtherNodeCheck) {
-+        const rows = rowsFor(node.id);
++        const rows = rowsFor(nodeKey(node));
 +        let newValue = force != null ? force : !hasAnyActiveNode(row.group);
          if (skipOtherNodeCheck !== true) {
 -            if (newValue && ((_b = (_a = this.node.properties) === null || _a === void 0 ? void 0 : _a[PROPERTY_RESTRICTION]) === null || _b === void 0 ? void 0 : _b.includes(" one"))) {
@@ -19597,25 +19855,6 @@
 -                        canvas.canvas.height / 2,
 -                    ]);
 -                    canvas.setDirty(true, true);
--                }
--            }
--            else {
--                this.toggle();
--            }
--        }
--        return true;
--    }
--}
--app.registerExtension({
--    name: "rgthree.FastGroupsMuter",
--    registerCustomNodes() {
--        FastGroupsMuter.setUp();
--    },
--    loadedGraphNode(node) {
--        if (node.type == FastGroupsMuter.title) {
--            node.tempSize = [...node.size];
--        }
--    },
 +            else if (!newValue && restriction === "always one") {
 +                newValue = [...rows.values()].every((other) => !other.toggled || other === row);
 +            }
@@ -19627,7 +19866,7 @@
 +        const row = {
 +            group,
 +            toggled: false,
-+            setToggled: () => { },
++            setToggled: (value) => { row.toggled = value; },
 +            setLabel: () => { },
 +            setNavVisible: () => { },
 +        };
@@ -19667,17 +19906,46 @@
 +                row.setToggled(row.toggled);
 +            },
 +        });
++        row.disposeControl = registerWidgetControl(node, group.id, {
++            getValue: () => ({ toggled: row.toggled }),
++            toggle(value) {
++                const next = value == null ? !row.toggled : value;
++                if (next !== row.toggled) {
++                    row.setToggled(next);
++                    comfy.graph.batch(() => doModeChange(node, row));
+                 }
+-            }
+-            else {
+-                this.toggle();
+-            }
+-        }
+-        return true;
+-    }
+-}
+-app.registerExtension({
+-    name: "rgthree.FastGroupsMuter",
+-    registerCustomNodes() {
+-        FastGroupsMuter.setUp();
+-    },
+-    loadedGraphNode(node) {
+-        if (node.type == FastGroupsMuter.title) {
+-            node.tempSize = [...node.size];
+-        }
+-    },
++            },
++        });
 +        return row;
 +    }
 +    function refreshWidgets(node) {
 +        if (node.isDeleted) {
 +            return;
 +        }
-+        const rows = rowsFor(node.id);
++        const rows = rowsFor(nodeKey(node));
 +        const groups = matchingGroups(node);
 +        const wanted = new Set(groups.map((group) => group.id));
 +        for (const groupId of [...rows.keys()]) {
 +            if (!wanted.has(groupId)) {
++                rows.get(groupId).disposeControl?.();
 +                node.widgets.remove(groupId);
 +                rows.delete(groupId);
 +            }
@@ -19708,7 +19976,7 @@
 +    // off `this.widgets` — are the first and last of `rowsFor(node.id)`, whose insertion
 +    // order `refreshWidgets` keeps matching the displayed order.
 +    exposeActions(type, [offAction, "Enable all", "Toggle all"], (node, action) => {
-+        const rows = [...rowsFor(node.id).values()];
++        const rows = [...rowsFor(nodeKey(node)).values()];
 +        const restriction = String(node.getProperty(PROPERTY_RESTRICTION) ?? "default");
 +        comfy.graph.batch(() => {
 +            if (action === offAction) {
@@ -19745,29 +20013,34 @@
 +        onCreated(node) {
 +            node.setSerializeWidgets(false);
 +            node.setSizeConstraints({ autoHeight: true });
-+            node.setProperty(PROPERTY_MATCH_COLORS, "");
-+            node.setProperty(PROPERTY_MATCH_TITLE, "");
-+            node.setProperty(PROPERTY_SHOW_NAV, true);
-+            node.setProperty(PROPERTY_SHOW_ALL_GRAPHS, true);
-+            node.setProperty(PROPERTY_SORT, "position");
-+            node.setProperty(PROPERTY_SORT_CUSTOM_ALPHA, "");
-+            node.setProperty(PROPERTY_RESTRICTION, "default");
++            for (const [key, value] of Object.entries({
++                [PROPERTY_MATCH_COLORS]: '', [PROPERTY_MATCH_TITLE]: '',
++                [PROPERTY_SHOW_NAV]: true, [PROPERTY_SHOW_ALL_GRAPHS]: true,
++                [PROPERTY_SORT]: 'position', [PROPERTY_SORT_CUSTOM_ALPHA]: '',
++                [PROPERTY_RESTRICTION]: 'default',
++            })) {
++                if (node.getProperty(key) === undefined) node.setProperty(key, value);
++            }
 +            const refresh = () => refreshWidgets(node);
-+            refreshByNode.set(node.id, refresh);
++            const previous = refreshByNode.get(nodeKey(node));
++            if (previous) FAST_GROUPS_SERVICE.removeFastGroupNode(previous);
++            refreshByNode.set(nodeKey(node), refresh);
 +            FAST_GROUPS_SERVICE.addFastGroupNode(refresh);
 +        },
 +        // A property edit changes which groups are listed and in what order, so it
 +        // must not wait for the throttle.
 +        onPropertyChanged(node) {
-+            refreshWidgets(node);
++            // The public hook runs before the property write commits.
++            queueMicrotask(() => refreshWidgets(node));
 +        },
 +        onRemoved(node) {
-+            const refresh = refreshByNode.get(node.id);
++            const refresh = refreshByNode.get(nodeKey(node));
 +            if (refresh) {
 +                FAST_GROUPS_SERVICE.removeFastGroupNode(refresh);
 +            }
-+            refreshByNode.delete(node.id);
-+            rowsByNode.delete(node.id);
++            refreshByNode.delete(nodeKey(node));
++            for (const row of rowsByNode.get(nodeKey(node))?.values() ?? []) row.disposeControl?.();
++            rowsByNode.delete(nodeKey(node));
 +        },
 +    });
 +}
@@ -22544,7 +22817,7 @@
  });
 --- a/web/comfyui/power_conductor.js
 +++ b/v2/web/comfyui/power_conductor.js
-@@ -4,91 +4,98 @@
+@@ -4,91 +4,94 @@
      else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
      return c > 3 && r && Object.defineProperty(target, key, r), r;
  };
@@ -22570,6 +22843,7 @@
  import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 -import { changeModeOfNodes, getNodeById } from "./utils.js";
 +import { setModeDeep } from "./base_any_input_connected_node.js";
++import { getWidgetControl } from './widget_controls.js';
 +
 +// Power Conductor (unreleased; gated on `unreleased.power_conductor.enabled`) — a code
 +// box and a Run button that execute a small python-like script against the live graph,
@@ -22582,20 +22856,13 @@
 +// front end: `widgets.mount` hands over a container to fill, and a `button` widget with
 +// `on('activate')` is the published press.
 +//
-+// SCRIPT-VISIBLE: `ComfyWidgetWrapper.label` hands the script the widget's `name`, where
-+//   it used to see `label`. `WidgetHandle` has `setLabel` and no reader, so there is
-+//   nothing else to give it — but the original handed the script `undefined` for every
-+//   widget that never set a label, which after this migration is all of them, so a name
-+//   is strictly more than it had rather than a loss.
-+// DROPPED: `ComfyWidgetWrapper.toggle(value)` duck-typed a `toggle` method that only
-+//   rgthree's own widget classes declared. A handle exposes the published widget surface
-+//   and nothing another pack hung on a widget, so the call is gone rather than
-+//   converted — and with those classes replaced by mounted DOM there is no `toggle` left
-+//   for it to have found.
++// getLabel is the generic read-only primitive supplied by the Label/API lane.
++// Missing and explicitly empty labels keep their original distinct values.
++// rgthree's group-row toggle is registered pack-side in widget_controls.js.
++// The script can call its original behavior without duck-typing a host handle.
 +//
-+// SCRIPT-VISIBLE: `node(5).mode` returned litegraph's number (0/2/4) and now returns the
-+//   published name ('always'/'never'/'bypass'). `mute()`, `bypass()` and `enable()` are
-+//   unchanged, and now descend into a subgraph node's children in one undo step.
++// Script-visible mode preserves original numbers (0/2/4); the public facade's
++// names are translated only at this boundary.
 +//
 +// WIRE FORMAT: `widgets_values` goes from three entries to two. The original called
 +//   `addCustomWidget(this.codeWidget)` on a widget `ComfyWidgets.STRING` had *already*
@@ -22624,63 +22891,49 @@
 -        })),
 -            this.addCustomWidget(this.buttonWidget);
 -        this.onConstructed();
--    }
--    execute() {
--        execute(this.codeWidget.value, {}, BUILT_INS);
--    }
 +// `getNodeById` searched the root graph, the graph on screen, then every subgraph. A
 +// node id only resolves inside its own graph, so each is asked in turn.
 +function getNodeById(id) {
 +    return (comfy.graph.node(id) ??
 +        comfy.graph.subgraphs().reduce((found, subgraph) => found ?? subgraph.node(id), undefined));
- }
--RgthreePowerConductor.title = NodeTypesString.POWER_CONDUCTOR;
--RgthreePowerConductor.type = NodeTypesString.POWER_CONDUCTOR;
--const NODE_CLASS = RgthreePowerConductor;
- class ComfyNodeWrapper {
-     constructor(id) {
--        _ComfyNodeWrapper_id.set(this, void 0);
--        __classPrivateFieldSet(this, _ComfyNodeWrapper_id, id, "f");
++}
++class ComfyNodeWrapper {
++    constructor(id) {
 +        this.nodeId = id;
      }
-     getNode() {
--        return getNodeById(__classPrivateFieldGet(this, _ComfyNodeWrapper_id, "f"));
+-    execute() {
+-        execute(this.codeWidget.value, {}, BUILT_INS);
++    getNode() {
 +        const node = getNodeById(this.nodeId);
 +        if (!node) {
 +            throw new Error(`[rgthree.PowerConductor] no node with id ${this.nodeId}.`);
 +        }
 +        return node;
-     }
-     get id() {
-         return this.getNode().id;
-     }
-     get title() {
--        return this.getNode().title;
++    }
++    get id() {
++        const id = this.getNode().id;
++        return /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : id;
++    }
++    get title() {
 +        return this.getNode().getTitle();
-     }
-     set title(value) {
--        this.getNode().title = value;
++    }
++    set title(value) {
 +        this.getNode().setTitle(value);
-     }
-     get widgets() {
--        var _a;
--        return new PyTuple((_a = this.getNode().widgets) === null || _a === void 0 ? void 0 : _a.map((w) => new ComfyWidgetWrapper(w)));
-+        return new PyTuple(this.getNode().widgets.all().map((w) => new ComfyWidgetWrapper(w)));
-     }
-     get mode() {
--        return this.getNode().mode;
-+        return this.getNode().getMode();
-     }
-     mute() {
--        changeModeOfNodes(this.getNode(), 2);
++    }
++    get widgets() {
++        const node = this.getNode();
++        return new PyTuple(node.widgets.all().map((w) => new ComfyWidgetWrapper(w, node)));
++    }
++    get mode() {
++        return { always: 0, never: 2, bypass: 4 }[this.getNode().getMode()];
++    }
++    mute() {
 +        this.setMode("never");
-     }
-     bypass() {
--        changeModeOfNodes(this.getNode(), 4);
++    }
++    bypass() {
 +        this.setMode("bypass");
-     }
-     enable() {
--        changeModeOfNodes(this.getNode(), 0);
++    }
++    enable() {
 +        this.setMode("always");
 +    }
 +    setMode(mode) {
@@ -22688,25 +22941,66 @@
 +        comfy.graph.batch(() => setModeDeep([node], mode));
      }
  }
+-RgthreePowerConductor.title = NodeTypesString.POWER_CONDUCTOR;
+-RgthreePowerConductor.type = NodeTypesString.POWER_CONDUCTOR;
+-const NODE_CLASS = RgthreePowerConductor;
+-class ComfyNodeWrapper {
+-    constructor(id) {
+-        _ComfyNodeWrapper_id.set(this, void 0);
+-        __classPrivateFieldSet(this, _ComfyNodeWrapper_id, id, "f");
+-    }
+-    getNode() {
+-        return getNodeById(__classPrivateFieldGet(this, _ComfyNodeWrapper_id, "f"));
+-    }
+-    get id() {
+-        return this.getNode().id;
+-    }
+-    get title() {
+-        return this.getNode().title;
+-    }
+-    set title(value) {
+-        this.getNode().title = value;
+-    }
+-    get widgets() {
+-        var _a;
+-        return new PyTuple((_a = this.getNode().widgets) === null || _a === void 0 ? void 0 : _a.map((w) => new ComfyWidgetWrapper(w)));
+-    }
+-    get mode() {
+-        return this.getNode().mode;
+-    }
+-    mute() {
+-        changeModeOfNodes(this.getNode(), 2);
+-    }
+-    bypass() {
+-        changeModeOfNodes(this.getNode(), 4);
+-    }
+-    enable() {
+-        changeModeOfNodes(this.getNode(), 0);
+-    }
+-}
 -_ComfyNodeWrapper_id = new WeakMap();
  __decorate([
      Exposed
  ], ComfyNodeWrapper.prototype, "id", null);
-@@ -112,24 +119,18 @@
+@@ -111,25 +114,21 @@
+     Exposed
  ], ComfyNodeWrapper.prototype, "enable", null);
  class ComfyWidgetWrapper {
-     constructor(widget) {
+-    constructor(widget) {
 -        _ComfyWidgetWrapper_widget.set(this, void 0);
 -        __classPrivateFieldSet(this, _ComfyWidgetWrapper_widget, widget, "f");
++    constructor(widget, node) {
 +        this.widget = widget;
++        this.node = node;
      }
      get value() {
 -        return __classPrivateFieldGet(this, _ComfyWidgetWrapper_widget, "f").value;
-+        return this.widget.getValue();
++        const control = this.node && getWidgetControl(this.node, this.widget.name);
++        return control ? control.getValue() : this.widget.getValue();
      }
      get label() {
 -        return __classPrivateFieldGet(this, _ComfyWidgetWrapper_widget, "f").label;
-+        return this.widget.name;
++        return this.widget.getLabel();
      }
      toggle(value) {
 -        if (typeof __classPrivateFieldGet(this, _ComfyWidgetWrapper_widget, "f")["toggle"] === "function") {
@@ -22714,14 +23008,14 @@
 -        }
 -        else {
 -        }
-+        void value;
++        if (this.node) getWidgetControl(this.node, this.widget.name)?.toggle(value);
      }
  }
 -_ComfyWidgetWrapper_widget = new WeakMap();
  __decorate([
      Exposed
  ], ComfyWidgetWrapper.prototype, "value", null);
-@@ -139,11 +140,50 @@
+@@ -139,11 +138,50 @@
  __decorate([
      Exposed
  ], ComfyWidgetWrapper.prototype, "toggle", null);
@@ -22782,7 +23076,7 @@
 +}
 --- a/web/comfyui/power_lora_loader.js
 +++ b/v2/web/comfyui/power_lora_loader.js
-@@ -1,267 +1,290 @@
+@@ -1,267 +1,287 @@
 -var _a, _b;
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -22801,6 +23095,7 @@
 -import { moveArrayItem, removeArrayItem } from "../../rgthree/common/shared_utils.js";
 -import { RgthreeLoraInfoDialog } from "./dialog_info.js";
  import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
++import { RgthreeLoraInfoDialog } from './dialog_info.js';
 +
 +// CONVERTED — all three of the blockers that decided the last refusal are closed.
 +//
@@ -22827,13 +23122,9 @@
 +// COSMETIC: `app.canvas.editor_alpha` is gone (see utils_canvas.js). A row still
 +//   dims to 0.4 when it is switched off and the header still writes its labels at
 +//   0.55, but neither follows the node's own fade any more.
-+// DROPPED: the lora info dialog, and with it the "ℹ️ Show Info" menu entry and the
-+//   click on the info badge. `RgthreeLoraInfoDialog` lives in dialog_info.js, which
-+//   is punted, and importing a name a punted module no longer exports throws at
-+//   load. The badge is still drawn, because `LORA_INFO_SERVICE` still answers what
-+//   it reports — civitai data, a local info file, or neither — and it is still
-+//   what colours a strength that falls outside the lora's recommended range. It is
-+//   an indicator now rather than a button.
++// Model info editing is restored through the owned dialog and persistent
++// account storage. Metadata hydration still requires an admitted provider;
++// user notes are not treated as evidence of model-file/Civitai introspection.
 +// REFUSED, not a gap: (26) the API-JSON load path. `rgthree.loadingApiJson` plus
 +//   `configureFromApiJson` synthesised `configure({widgets_values: …})` out of the
 +//   built prompt's inputs. Reading the built prompt is deliberately not published.
@@ -22841,10 +23132,9 @@
 +//   {type: "combo", values: [...]}` told the properties panel to edit that property
 +//   with a two-item picker rather than a free text field; `"@Match"` declared the
 +//   other as a string. Both properties still exist, still save and still work.
-+// REFUSED, not a gap: `addConnectionLayoutSupport` — the pack's Left/Right slot layout,
-+//   which patches `getConnectionPos` on the node class and recomputes socket positions
-+//   from renderer constants. Deciding where the renderer draws a socket is refused
-+//   rather than pending; see utils.js.
++// Pending pack port: saved connection layouts can now use public slot positions
++// and directions. The old global renderer patch remains refused; the safe
++// per-node capability is tracked in the frontend lane's gap ledger.
 +//
 +// WIRE FORMAT: changed, and deliberately. A row is two widgets now — a hidden one
 +// holding `{on, lora, strength, strengthTwo?}`, which is what the prompt reads
@@ -23207,6 +23497,7 @@
 +        title: "LORA WIDGET",
 +        event,
 +        items: [
++            { label: 'ℹ️ Show Info', disabled: !row.value.lora || row.value.lora === 'None', run: () => row.onInfoClick() },
 +            {
 +                label: `${row.value.on ? "⚫" : "🟢"} Toggle ${row.value.on ? "Off" : "On"}`,
 +                run: () => {
@@ -23325,7 +23616,7 @@
          of functionality in a single, dynamic node that allows you to add loras, change strengths,
          and quickly toggle on/off all without taking up half your screen.
        </p>
-@@ -288,85 +311,93 @@
+@@ -288,85 +308,94 @@
            </ul>
          </li>
        </ul>`;
@@ -23464,10 +23755,11 @@
              toggle: { bounds: [0, 0], onDown: this.onToggleDown },
              lora: { bounds: [0, 0], onClick: this.onLoraClick },
 -            info: { bounds: [0, 0], onDown: this.onInfoDown },
++            info: { bounds: [0, 0], onClick: this.onInfoClick },
              strengthDec: { bounds: [0, 0], onClick: this.onStrengthDecDown },
              strengthVal: { bounds: [0, 0], onClick: this.onStrengthValUp },
              strengthInc: { bounds: [0, 0], onClick: this.onStrengthIncDown },
-@@ -376,12 +407,7 @@
+@@ -376,12 +405,7 @@
              strengthTwoInc: { bounds: [0, 0], onClick: this.onStrengthTwoIncDown },
              strengthTwoAny: { bounds: [0, 0], onMove: this.onStrengthTwoAnyMove },
          };
@@ -23481,7 +23773,7 @@
      }
      set value(v) {
          this._value = v;
-@@ -391,6 +417,10 @@
+@@ -391,6 +415,10 @@
                  this._value.strengthTwo = this._value.strength;
              }
          }
@@ -23492,7 +23784,7 @@
          this.getLoraInfo();
      }
      get value() {
-@@ -400,15 +430,14 @@
+@@ -400,15 +428,14 @@
          this._value.lora = lora;
          this.getLoraInfo();
      }
@@ -23511,7 +23803,7 @@
                  }
              }
              else {
-@@ -420,35 +449,32 @@
+@@ -420,35 +447,32 @@
              }
          }
          ctx.save();
@@ -23562,7 +23854,7 @@
              posY,
              height,
              value: strengthValue,
-@@ -467,18 +493,17 @@
+@@ -467,18 +491,17 @@
              this.hitAreas.strengthTwoInc.bounds = this.hitAreas.strengthInc.bounds;
              this.hitAreas.strengthTwoAny.bounds = this.hitAreas.strengthAny.bounds;
              let textColor = undefined;
@@ -23584,15 +23876,17 @@
                  direction: -1,
                  textColor,
              });
-@@ -492,51 +517,40 @@
+@@ -492,51 +515,42 @@
              rposX = leftArrow[0] - innerMargin;
          }
          const infoIconSize = height * 0.66;
 -        const infoWidth = infoIconSize + innerMargin + innerMargin;
++        this.hitAreas.info.bounds = [0, 0];
          if (CONFIG_SERVICE.getConfigValue("nodes.power_lora_loader.show_info_badge")) {
              rposX -= innerMargin;
 -            drawInfoIcon(ctx, rposX - infoIconSize, posY + (height - infoIconSize) / 2, infoIconSize, ((_r = (_q = this.loraInfo) === null || _q === void 0 ? void 0 : _q.raw) === null || _r === void 0 ? void 0 : _r.civitai) ? "FILLED" : ((_s = this.loraInfo) === null || _s === void 0 ? void 0 : _s.hasInfoFile) ? "OUTLINED" : "GRAYED");
 -            this.hitAreas.info.bounds = [rposX - infoIconSize, infoWidth];
++            this.hitAreas.info.bounds = [rposX - infoIconSize, infoIconSize];
 +            drawInfoIcon(ctx, rposX - infoIconSize, posY + (height - infoIconSize) / 2, infoIconSize, loraInfo && loraInfo.raw && loraInfo.raw.civitai
 +                ? "FILLED"
 +                : loraInfo && loraInfo.hasInfoFile
@@ -23683,7 +23977,7 @@
      }
      onStrengthValUp(event, pos, node) {
          this.doOnStrengthValUp(event, false);
-@@ -576,30 +596,28 @@
+@@ -576,51 +596,97 @@
          if (this.haveMouseMovedStrength)
              return;
          let prop = isTwo ? "strengthTwo" : "strength";
@@ -23726,20 +24020,30 @@
 +        this.redraw();
      }
      getLoraInfo(force = false) {
-         if (!this.loraInfoPromise || force == true) {
-@@ -610,17 +628,54 @@
+-        if (!this.loraInfoPromise || force == true) {
++        const requestedFile = this.value.lora;
++        if (!this.loraInfoPromise || force == true || this.loraInfoFile !== requestedFile) {
++            this.loraInfoFile = requestedFile;
+             let promise;
+             if (this.value.lora && this.value.lora != "None") {
+-                promise = LORA_INFO_SERVICE.getInfo(this.value.lora, force, true);
++                promise = LORA_INFO_SERVICE.getInfo(this.value.lora, false, true);
+             }
              else {
                  promise = Promise.resolve(null);
              }
 -            this.loraInfoPromise = promise.then((v) => (this.loraInfo = v));
 +            this.loraInfoPromise = promise.then((v) => {
++                if (this.value.lora !== requestedFile) return;
 +                this.loraInfo = v;
 +                this.redraw();
++            }).catch((error) => {
++                comfy.commands.notify({ severity: 'warn', summary: 'Could not read LoRA information', detail: String(error?.message ?? error) });
 +            });
          }
          return this.loraInfoPromise;
      }
- }
+-}
 -const NODE_CLASS = RgthreePowerLoraLoader;
 -app.registerExtension({
 -    name: "rgthree.PowerLoraLoader",
@@ -23748,6 +24052,13 @@
 -            NODE_CLASS.setUp(nodeType, nodeData);
 -        }
 -    },
++    onInfoClick() {
++        if (!this.value.lora || this.value.lora === 'None') return false;
++        const dialog = new RgthreeLoraInfoDialog(this.value.lora).show();
++        dialog.addEventListener('close', () => { void this.getLoraInfo(true); });
++        return true;
++    }
++}
 +// Fires whoever caused the reload, where `refreshComboInNode(defs)` only fired for
 +// the node hook ComfyUI called when object_info came back.
 +comfy.defs.onRefreshed(() => {
@@ -24746,7 +25057,7 @@
  });
 --- a/web/comfyui/random_unmuter.js
 +++ b/v2/web/comfyui/random_unmuter.js
-@@ -1,73 +1,36 @@
+@@ -1,73 +1,32 @@
 -import { app } from "../../scripts/app.js";
 -import { BaseAnyInputConnectedNode } from "./base_any_input_connected_node.js";
 +import { comfy } from '/comfy/api/v2.js';
@@ -24833,26 +25144,22 @@
 +// FUNCTIONAL, minor: the roll happened once per `graphToPrompt`, so a batch of 4 picked
 +//   four different branches. `onBeforeRun` fires once per queue call, so a batch now
 +//   runs the same branch four times.
-+// FUNCTIONAL, minor: `onAfterRun` is the host's `promptQueued`, which is not dispatched
-+//   when nothing was accepted — a cancelled or fully rejected run leaves the chosen node
-+//   unmuted, where the original's `queue-end` sat in a `finally`. The next run restores
-+//   it before rolling again, so the state cannot accumulate, but it can persist between
-+//   two runs. An always-fires queue-end is the missing piece.
++// The cleanup returned by onBeforeRun now runs on every attempt outcome,
++// including refusal and transport failure. onAfterRun alone is insufficient.
 +//
 +// `exposedActions = ["Mute all", "Enable all"]` is rgthree's own convention, read by the
 +// Fast Actions Button; it is `exposeActions` now (see base_node.js). This node never
 +// overrode `handleAction`, so both entries are listed and inert — which is exactly what
 +// they were, and dropping them would quietly change the button's dropdown.
-+// LIMITATION: a handle addresses the graph on screen, so an unmuter inside a subgraph
-+//   the user is not looking at is skipped rather than rolled. The original read
-+//   `node.graph` and did not care.
++// connectedInputNodes resolves through the node's own graph scope, including
++// subgraphs that are not currently on screen.
 +const MODE_ALWAYS = "always";
 +const MODE_MUTE = "never";
 +const HELP = `
        <p>
          Use this node to unmute on of its inputs randomly when the graph is queued (and, immediately
          mute it back).
-@@ -84,19 +47,53 @@
+@@ -84,19 +43,56 @@
          </p></li>
        </ul>
      `;
@@ -24896,6 +25203,7 @@
 +                }
 +            }
 +        });
++        return restoreAll;
 +    });
 +    comfy.queue.onAfterRun(() => {
 +        restoreAll();
@@ -24912,8 +25220,10 @@
 -            node._tempWidth = node.size[0];
 -        }
 +    onRemoved(node) {
-+        unmuterNodes.delete(nodeKey(node));
-+        temporarilyEnabled.delete(nodeKey(node));
++        const key = nodeKey(node), chosen = temporarilyEnabled.get(key);
++        if (chosen && !chosen.isDeleted) comfy.graph.batch(() => setModeDeep([chosen], MODE_MUTE));
++        unmuterNodes.delete(key);
++        temporarilyEnabled.delete(key);
      },
 +    menuItems: [helpMenuItem(NodeTypesString.RANDOM_UNMUTER, HELP)],
  });
@@ -25980,7 +26290,7 @@
 +export {}
 --- a/web/comfyui/rgthree.js
 +++ b/v2/web/comfyui/rgthree.js
-@@ -1,751 +1,106 @@
+@@ -1,751 +1,108 @@
 -import { app } from "../../scripts/app.js";
 -import { api } from "../../scripts/api.js";
 -import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
@@ -26033,9 +26343,11 @@
 -    if (route.includes("rgthree/")) {
 -        return (this.api_base + "/" + route).replace(/\/\//g, "/");
 +import { comfy } from '/comfy/api/v2.js';
++import { installProgress } from '../../rgthree/common/progress_bar.js';
 +import { canvasToBookmark } from './bookmark.js';
 +import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
 +import { SERVICE as BOOKMARKS_SERVICE, shortcutKeyOf } from './services/bookmarks_services.js';
++installProgress(CONFIG_SERVICE);
 +
 +let logLevel = String(CONFIG_SERVICE.getConfigValue('log_level') ?? 'ERROR').toUpperCase();
 +
@@ -27303,7 +27615,7 @@
      getNextShortcut() {
 --- a/web/comfyui/services/config_service.js
 +++ b/v2/web/comfyui/services/config_service.js
-@@ -1,28 +1,76 @@
+@@ -1,28 +1,110 @@
 -import { rgthreeConfig } from "../../../rgthree/config.js";
 -import { getObjectValue, setObjectValue } from "../../../rgthree/common/shared_utils.js";
 -import { rgthreeApi } from "../../../rgthree/common/rgthree_api.js";
@@ -27314,6 +27626,36 @@
 +// These are the converted features that still have an effect under V2; the host
 +// owns their persistence, presentation, and cross-tab updates.
 +const SETTINGS = {
++    "features.progress_bar.enabled": {
++        name: "Show rgthree execution progress", type: "boolean", defaultValue: true,
++        category: ["rgthree-comfy", "Features"],
++    },
++    "unreleased.power_conductor.enabled": {
++        name: "Enable Power Conductor (reload required)", type: "boolean", defaultValue: false,
++        category: ["rgthree-comfy", "Experimental"],
++    },
++    "nodes.reroute.default_width": {
++        name: "Reroute default width", type: "number", defaultValue: 40,
++        attrs: { min: 10, max: 8192, step: 10 }, category: ["rgthree-comfy", "Reroute"],
++    },
++    "nodes.reroute.default_height": {
++        name: "Reroute default height", type: "number", defaultValue: 30,
++        attrs: { min: 10, max: 8192, step: 10 }, category: ["rgthree-comfy", "Reroute"],
++    },
++    "nodes.reroute.default_resizable": {
++        name: "Allow resizing new Reroutes", type: "boolean", defaultValue: false,
++        category: ["rgthree-comfy", "Reroute"],
++    },
++    "nodes.reroute.default_layout": {
++        name: "Reroute default connections layout", type: "combo", defaultValue: "Left -> Right",
++        options: ["Left", "Right", "Top", "Bottom"].flatMap((input) =>
++            ["Left", "Right", "Top", "Bottom"].filter((output) => output !== input).map((output) => `${input} -> ${output}`)),
++        category: ["rgthree-comfy", "Reroute"],
++    },
++    "nodes.power_lora_loader.show_info_badge": {
++        name: "Show LoRA model info action", type: "boolean", defaultValue: true,
++        category: ["rgthree-comfy", "Power Lora Loader"],
++    },
 +    "log_level": {
 +        name: "Browser console log level",
 +        type: "combo",
@@ -27387,18 +27729,23 @@
 -        }
 -        else {
 -            return false;
+-        }
 +        const entries = Object.entries(changed);
 +        if (entries.some(([key]) => !SETTINGS[key])) return false;
 +        await Promise.all(entries.map(([key, value]) =>
 +            comfy.settings.set(settingId(key), value)));
-+        for (const [key, value] of entries) {
-+            this.dispatchEvent(new CustomEvent("config-change", { detail: { key, value } }));
-         }
          return true;
      }
  }
 +
  export const SERVICE = new ConfigService();
++// Changes from the host settings screen and another tab must reach the same
++// pack listeners as changes made through rgthree's own settings dialog.
++for (const key of Object.keys(SETTINGS)) {
++    comfy.settings.onChange(settingId(key), (value) => {
++        SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
++    });
++}
 --- a/web/comfyui/services/context_service.js
 +++ b/v2/web/comfyui/services/context_service.js
 @@ -1,51 +1,61 @@
@@ -29657,6 +30004,21 @@
 -            : super.serializeValue(node, index);
 -    }
 -}
+--- /dev/null
++++ b/v2/web/comfyui/widget_controls.js
+@@ -0,0 +1,12 @@
++// These are rgthree's own controls, shared by its modules in the same realm.
++// Nothing calls an unpublished method on a host handle or another pack.
++const controls = new Map();
++const key = (node, name) => JSON.stringify([node.graphId ?? '', node.id, name]);
++export function registerWidgetControl(node, name, control) {
++    const identity = key(node, name);
++    controls.set(identity, control);
++    return () => { if (controls.get(identity) === control) controls.delete(identity); };
++}
++export function getWidgetControl(node, name) {
++    return controls.get(key(node, name));
++}
 --- a/web/common/comfyui_shim.js
 +++ b/v2/web/common/comfyui_shim.js
 @@ -1,32 +1,5 @@
@@ -29994,7 +30356,7 @@
 +//     would destroy the nodes just made.
 --- a/web/common/media/svgs.js
 +++ b/v2/web/common/media/svgs.js
-@@ -1,19 +1,11 @@
+@@ -1,19 +1,15 @@
  import { createElement as $el } from "../utils_dom.js";
  export let logoRgthree = "";
  export async function logoRgthreeAsync() {
@@ -30011,13 +30373,17 @@
 -    baseUrl = baseUrl || "./rgthree";
 -    return fetch(`${baseUrl}/logo_markup.svg?fg=currentColor&cssClass=rgthree-logo&w=auto&h=auto`)
 -        .then((r) => r.text())
-+    // The secure static root carries the currentColor logo directly.
-+    return fetch("/rgthree/common/media/rgthree.svg")
++    // The secure static root carries the currentColor logo directly, next to
++    // this module. A sandboxed pack worker has no document base URL, so a
++    // root-relative string is an invalid URL there; resolve against this
++    // module's real location instead, as the pack API documents for a pack's
++    // own neighbouring files (comfy-api.d.ts `assetUrl`).
++    return fetch(new URL("./rgthree.svg", import.meta.url))
 +        .then((r) => r.ok ? r.text() : "")
          .then((t) => {
          if (t.length < 100) {
              t = `<svg viewBox="0 0 256 256" fill="currentColor" class="rgthree-logo">
-@@ -22,6 +14,9 @@
+@@ -22,6 +18,9 @@
                <path d="M189.85,107.717 L137.892,137.718 L143.532,147.49 L185.723,123.133 L231.109,201.746 L24.895,201.746 L37.363,180.146     L27.592,174.505 L5.347,213.03 L250.653,213.03 "></path>
                <path d="M5.347,247.299v8.111h245.307v-8.111l-41.94-0.003c-1.336,0-2.404-1.065-2.441-2.396v-12.14     c0.037-1.315,1.089-2.368,2.41-2.385h41.972v-8.11H5.347v8.11h41.951c1.338,0.017,2.427,1.104,2.427,2.449v12.01     c0,1.365-1.105,2.462-2.457,2.462L5.347,247.299z M139.438,247.296c-1.334,0-2.406-1.065-2.439-2.396v-12.14     c0.033-1.315,1.085-2.368,2.41-2.385h46.415c1.335,0.017,2.425,1.104,2.425,2.449v12.01c0,1.365-1.103,2.462-2.459,2.462H139.438z       M70.193,247.296c-1.339,0-2.408-1.065-2.441-2.396v-12.14c0.033-1.315,1.086-2.368,2.407-2.385h46.418     c1.336,0.017,2.425,1.104,2.425,2.449v12.01c0,1.365-1.103,2.462-2.458,2.462H70.193z"></path>
              </svg>`;
@@ -30029,7 +30395,7 @@
          return t;
 --- a/web/common/model_info_service.js
 +++ b/v2/web/common/model_info_service.js
-@@ -1,72 +1,14 @@
+@@ -1,72 +1,30 @@
 -import { rgthreeApi } from "./rgthree_api.js";
 -import { api } from "../../scripts/api.js";
 -class BaseModelInfoService extends EventTarget {
@@ -30058,15 +30424,28 @@
 -    async savePartialInfo(file, data) {
 -        let info = await rgthreeApi.saveModelInfo(this.modelInfoType, file, data);
 -        this.fileToInfo.set(file, info);
--        return info;
--    }
++import { readModelInfo, writeModelInfo, ModelMetadataUnavailableError } from './model_info_storage.js';
++
++class ModelInfoService extends EventTarget {
++    constructor(kind) { super(); this.kind = kind; this.fileToInfo = new Map(); }
++    async getInfo(file, refresh = false, light = false) {
++        if (refresh) return this.refreshInfo(file);
++        if (this.fileToInfo.has(file)) return structuredClone(this.fileToInfo.get(file));
++        const info = await readModelInfo(this.kind, file);
++        if (!light) this.fileToInfo.set(file, structuredClone(info));
+         return info;
+     }
 -    handleAsyncUpdate(event) {
 -        var _a;
 -        const info = (_a = event.detail) === null || _a === void 0 ? void 0 : _a.data;
 -        if (info === null || info === void 0 ? void 0 : info.file) {
 -            this.setFreshInfo(info.file, info);
 -        }
--    }
++    async refreshInfo() { throw new ModelMetadataUnavailableError(); }
++    async clearFetchedInfo() {
++        // Clearing fetched provider cache must never delete the user's notes.
++        throw new ModelMetadataUnavailableError();
+     }
 -    async fetchInfo(file, refresh = false, light = false) {
 -        var _a;
 -        let info = null;
@@ -30080,21 +30459,17 @@
 -        if (!light) {
 -            this.fileToInfo.set(file, info);
 -        }
--        return info;
--    }
--    setFreshInfo(file, info) {
++    async savePartialInfo(file, changes) {
++        const info = await writeModelInfo(this.kind, file, changes);
++        this.setFreshInfo(file, info);
++        this.dispatchEvent(new CustomEvent('info-change', { detail: { file, info: structuredClone(info) } }));
+         return info;
+     }
+     setFreshInfo(file, info) {
 -        this.fileToInfo.set(file, info);
--    }
-+// rgthree's model metadata service read and mutated pack-owned sidecar files
-+// through custom Python routes. Secure packs do not register those routes.
-+// Keep the imported service shape so Power Lora Loader remains loadable, while
-+// making the retired badge data explicitly absent and side-effect free.
-+class UnavailableModelInfoService extends EventTarget {
-+    async getInfo() { return null; }
-+    async refreshInfo() { return null; }
-+    async clearFetchedInfo() { return null; }
-+    async savePartialInfo() { return null; }
-+    setFreshInfo() {}
++        if (!info || info.file !== file) throw new Error('Model metadata identity mismatch.');
++        this.fileToInfo.set(file, structuredClone(info));
+     }
  }
 -class LoraInfoService extends BaseModelInfoService {
 -    constructor() {
@@ -30113,11 +30488,98 @@
 -export const LORA_INFO_SERVICE = new LoraInfoService();
 -export const CHECKPOINT_INFO_SERVICE = new CheckpointInfoService();
 +
-+export const LORA_INFO_SERVICE = new UnavailableModelInfoService();
-+export const CHECKPOINT_INFO_SERVICE = new UnavailableModelInfoService();
++export const LORA_INFO_SERVICE = new ModelInfoService('loras');
++export const CHECKPOINT_INFO_SERVICE = new ModelInfoService('checkpoints');
+--- /dev/null
++++ b/v2/web/common/model_info_storage.js
+@@ -0,0 +1,84 @@
++import { comfy } from '/comfy/api/v2.js';
++
++// Authored metadata is account state, never a source-adjacent sidecar or a
++// worker-global substitute for persistence. The same versioned key/document is
++// consumed by the Python pack. Cross-render/JS-to-Python backing-store continuity
++// is an integration gate and must be verified against the deployed broker.
++export const MODEL_INFO_SCHEMA = 'rgthree-model-info-v1';
++const PREFIX = 'rgthree.model-info.v1.';
++const LIMIT = 256 * 1024;
++const pendingWrites = new Map();
++const allowedKind = (kind) => {
++    if (!['loras', 'checkpoints'].includes(kind)) throw new Error(`Unsupported model category: ${kind}`);
++    return kind;
++};
++
++export async function modelInfoKey(kind, file) {
++    allowedKind(kind);
++    if (typeof file !== 'string' || !file || file.length > 8192) throw new Error('A bounded logical model filename is required.');
++    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(file));
++    return PREFIX + kind + '.' + [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
++}
++
++function decode(text, kind, file) {
++    if (text === undefined) return { file };
++    if (new TextEncoder().encode(text).length > LIMIT) throw new Error('Stored model info exceeds its size limit.');
++    const record = JSON.parse(text);
++    if (!record || record.schema !== MODEL_INFO_SCHEMA || record.kind !== kind || record.file !== file ||
++        !record.info || typeof record.info !== 'object' || Array.isArray(record.info) || record.info.file !== file) {
++        throw new Error('Stored model info has a different schema or model identity.');
++    }
++    return record.info;
++}
++
++export async function readModelInfo(kind, file) {
++    const key = await modelInfoKey(kind, file);
++    return decode(await comfy.storage.get(key), kind, file);
++}
++
++export async function writeModelInfo(kind, file, changes) {
++    const key = await modelInfoKey(kind, file);
++    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Model info changes must be an object.');
++    for (const field of Object.keys(changes)) {
++        if (['__proto__', 'constructor', 'prototype'].includes(field)) throw new Error('Invalid model info field.');
++    }
++    if ('file' in changes && changes.file !== file) throw new Error('Model info cannot change its logical filename.');
++    // Preserve partial edits from two controls in this realm. A failed write
++    // rejects its own caller and does not prevent a later explicit retry.
++    const before = pendingWrites.get(key) ?? Promise.resolve();
++    const writing = before.catch(() => {}).then(async () => {
++        const current = decode(await comfy.storage.get(key), kind, file);
++        const info = { ...current, ...structuredClone(changes), file };
++        const text = JSON.stringify({ schema: MODEL_INFO_SCHEMA, kind, file, info });
++        if (new TextEncoder().encode(text).length > LIMIT) throw new Error('Model info exceeds its size limit.');
++        await comfy.storage.set(key, text);
++        return info;
++    });
++    pendingWrites.set(key, writing);
++    try { return await writing; }
++    finally { if (pendingWrites.get(key) === writing) pendingWrites.delete(key); }
++}
++
++export async function listModelInfo(kind) {
++    allowedKind(kind);
++    const keys = await comfy.storage.list(PREFIX + kind);
++    const found = [];
++    for (const key of keys) {
++        if (!key.startsWith(PREFIX + kind + '.')) continue;
++        const text = await comfy.storage.get(key);
++        if (text === undefined) continue;
++        if (new TextEncoder().encode(text).length > LIMIT) throw new Error('Stored model info exceeds its size limit.');
++        const record = JSON.parse(text);
++        const info = decode(text, kind, record.file);
++        if (await modelInfoKey(kind, record.file) !== key) throw new Error('Stored model info key does not match its identity.');
++        found.push(info);
++    }
++    return found;
++}
++
++export class ModelMetadataUnavailableError extends Error {
++    constructor() {
++        super('Model-file metadata and remote Civitai refresh need an admitted metadata provider. Saved user metadata remains available.');
++        this.name = 'ModelMetadataUnavailableError';
++    }
++}
 --- a/web/common/progress_bar.js
 +++ b/v2/web/common/progress_bar.js
-@@ -1,179 +1,31 @@
+@@ -1,179 +1,43 @@
 -import { SERVICE as PROMPT_SERVICE } from "../common/prompt_service.js";
 -import { createElement } from "./utils_dom.js";
 -export class RgthreeProgressBar extends HTMLElement {
@@ -30195,8 +30657,25 @@
 -            }
 -            this.progressNodesEl.style.width = `0%`;
 -            this.progressStepsEl.style.width = `0%`;
--        }
--    }
++import { comfy } from '/comfy/api/v2.js';
++import { SERVICE as PROMPT_SERVICE } from './prompt_service.js';
++
++// The public chrome owns its presentation. A text badge and jump action retain
++// actual queue/node/step information without inserting a custom DOM bar into
++// the host's top/bottom layout. No percentage is invented for an unknown total.
++export function progressText({ queue, prompt }) {
++    const pieces = [];
++    if (prompt?.errorDetails) pieces.push(String(prompt.errorDetails.exception_type ?? 'Execution error'));
++    if (prompt) {
++        const count = prompt.executedNodeIds.length;
++        pieces.push(prompt.totalNodes == null ? `${count} nodes completed` : `${count}/${prompt.totalNodes} nodes`);
++        const current = prompt.currentlyExecuting;
++        if (current) {
++            if (current.nodeLabel) pieces.push(current.nodeLabel);
++            if (current.step != null && current.maxSteps > 0) pieces.push(`${current.step}/${current.maxSteps} steps`);
++            if (current.pass > 1) pieces.push(`pass ${current.pass}`);
+         }
+     }
 -    connectedCallback() {
 -        if (!this.connected) {
 -            PROMPT_SERVICE.addEventListener("progress-update", this.onProgressUpdateBound);
@@ -30211,7 +30690,9 @@
 -        this.shadow = this.attachShadow({ mode: "open" });
 -        const sheet = new CSSStyleSheet();
 -        sheet.replaceSync(`
-+import { comfy } from '/comfy/api/v2.js';
++    pieces.push(`Queue: ${queue}`);
++    return pieces.join(' · ');
++}
  
 -      :host {
 -        position: relative;
@@ -30290,50 +30771,43 @@
 -        this.progressNodesEl = createElement(`div.bar[part="progress-nodes"]`, { parent: this.shadow });
 -        this.progressStepsEl = createElement(`div.bar[part="progress-steps"]`, { parent: this.shadow });
 -        this.progressTextEl = createElement(`span[part="text"]`, { text: "Idle", parent: this.shadow });
--    }
++export function installProgress(CONFIG_SERVICE) {
++let badge, jump, last = { queue: comfy.queue.pending(), prompt: null };
++function reconcile() {
++    if (!CONFIG_SERVICE.getFeatureValue('progress_bar.enabled', true)) {
++        badge?.remove(); jump?.remove(); badge = jump = undefined; return;
+     }
 -    disconnectedCallback() {
 -        this.connected = false;
 -        PROMPT_SERVICE.removeEventListener("progress-update", this.onProgressUpdateBound);
 -    }
--}
++    const value = { text: progressText(last), variant: last.prompt?.errorDetails ? 'error' : 'info' };
++    if (badge) badge.update(value);
++    else badge = comfy.ui.addTopBarBadge({ id: 'rgthree.progress', ...value });
++    if (!jump) jump = comfy.ui.addActionBarButton({ id: 'rgthree.progress.jump', icon: 'pi-crosshairs', tooltip: 'Show executing node',
++        run() { const node = comfy.executingNode(); if (node) comfy.graph.centerOn(node); } });
+ }
 -RgthreeProgressBar.NAME = "rgthree-progress-bar";
 -customElements.define(RgthreeProgressBar.NAME, RgthreeProgressBar);
-+// PUNTED IN FULL — 179 lines removed, nothing converted.
-+//
-+// `<rgthree-progress-bar>` — the thin two-tier bar rgthree puts at the top (or
-+// bottom) of the window showing overall node progress and the current node's step
-+// progress, with the running node's title and the queue depth.
-+//
-+// The element itself is a plain custom element and needs nothing from the API. It
-+// is punted because its only data source is common/prompt_service.js, which is
-+// punted:
-+//
-+// API-GAP: (31) no node execution progress. `progress-update` carries
-+//   `{queue, prompt: {totalNodes, executedNodeIds, currentlyExecuting: {nodeId,
-+//   nodeLabel, step, maxSteps, pass, maxPasses}}}`, built by reading the prompt
-+//   out of an intercepted `api.queuePrompt` — a refusal, not a gap; see
-+//   common/prompt_service.js.
-+// REFUSED, not a gap: how it is mounted. rgthree.js inserts the element into
-+//   `.comfyui-body-top` / `.comfyui-body-bottom` by query selector. The chrome
-+//   surface is declarative — `comfy.ui.addTopBarBadge({id, text, variant, tooltip})`
-+//   then `badge.update({text})` on each tick — and takes no element, class or style.
-+//   A pack-drawn two-tier bar spanning the window has no published form and is not
-+//   waiting on one. `update()` rather than a closure, because the host renders on
-+//   reactive change and cannot see a plain function.
-+//
-+// `currentNodeId` — which the bar exposes so rgthree.js can centre the canvas on the
-+// running node when clicked — is no longer a gap: it is `comfy.executingNode()`,
-+// with `comfy.onExecutingNodeChanged(fn)` to drive the redraw, and the centring half
-+// is `comfy.graph.centerOn(node)`. The queue depth beside it is
-+// `comfy.queue.pending()` / `onPendingChanged`. Only the per-node *step* progress
-+// above has nothing behind it.
++comfy.onReady(() => {
++    PROMPT_SERVICE.addEventListener('progress-update', (event) => { last = event.detail; reconcile(); });
++    CONFIG_SERVICE.addEventListener('config-change', (event) => {
++        if (event.detail.key === 'features.progress_bar.enabled') reconcile();
++    });
++    reconcile();
++});
++}
 --- a/web/common/prompt_service.js
 +++ b/v2/web/common/prompt_service.js
-@@ -1,188 +1,36 @@
+@@ -1,188 +1,105 @@
 -import { api } from "../../scripts/api.js";
 -import { getResolver } from "./shared_utils.js";
--export class PromptExecution {
--    constructor(id) {
++import { comfy } from '/comfy/api/v2.js';
++
++// The host publishes accepted prompt ids and exact executable-node counts.
++// Progress events describe execution; the built prompt is never intercepted.
+ export class PromptExecution {
+     constructor(id) {
 -        this.promptApi = null;
 -        this.executedNodeIds = [];
 -        this.totalNodes = 0;
@@ -30341,7 +30815,9 @@
 -        this.errorDetails = null;
 -        this.apiPrompt = getResolver();
 -        this.id = id;
--    }
++        this.id = id; this.totalNodes = null; this.executedNodeIds = [];
++        this.currentlyExecuting = null; this.errorDetails = null; this.finished = false;
+     }
 -    setPrompt(prompt) {
 -        this.promptApi = prompt.output;
 -        this.totalNodes = Object.keys(this.promptApi).length;
@@ -30360,13 +30836,17 @@
 -            label = (graphNode === null || graphNode === void 0 ? void 0 : graphNode.title) || (graphNode === null || graphNode === void 0 ? void 0 : graphNode.type) || undefined;
 -        }
 -        return label;
--    }
--    executing(nodeId, step, maxSteps) {
++    completed(nodeId) {
++        if (nodeId != null && !this.executedNodeIds.includes(String(nodeId))) this.executedNodeIds.push(String(nodeId));
+     }
+     executing(nodeId, step, maxSteps) {
 -        var _a;
--        if (nodeId == null) {
+         if (nodeId == null) {
 -            this.currentlyExecuting = null;
 -            return;
--        }
++            if (this.currentlyExecuting && !this.errorDetails) this.completed(this.currentlyExecuting.nodeId);
++            this.currentlyExecuting = null; this.finished = true; return;
+         }
 -        if (((_a = this.currentlyExecuting) === null || _a === void 0 ? void 0 : _a.nodeId) !== nodeId) {
 -            if (this.currentlyExecuting != null) {
 -                this.executedNodeIds.push(nodeId);
@@ -30389,15 +30869,23 @@
 -                    this.currentlyExecuting.maxPasses = (_a = apiNode === null || apiNode === void 0 ? void 0 : apiNode.inputs["steps"]) !== null && _a !== void 0 ? _a : -1;
 -                }
 -            });
--        }
++        nodeId = String(nodeId);
++        if (this.currentlyExecuting?.nodeId !== nodeId) {
++            if (this.currentlyExecuting) this.completed(this.currentlyExecuting.nodeId);
++            const node = comfy.executionNode(nodeId);
++            this.currentlyExecuting = { nodeId, nodeLabel: node?.getTitle() ?? node?.type, pass: 0 };
+         }
 -        if (step != null) {
 -            if (!this.currentlyExecuting.step || step < this.currentlyExecuting.step) {
 -                this.currentlyExecuting.pass++;
 -            }
 -            this.currentlyExecuting.step = step;
 -            this.currentlyExecuting.maxSteps = maxSteps;
--        }
--    }
++        if (Number.isFinite(step) && Number.isFinite(maxSteps) && maxSteps > 0) {
++            if (this.currentlyExecuting.step == null || step < this.currentlyExecuting.step) this.currentlyExecuting.pass++;
++            this.currentlyExecuting.step = step; this.currentlyExecuting.maxSteps = maxSteps;
+         }
+     }
 -    error(details) {
 -        this.errorDetails = details;
 -    }
@@ -30405,7 +30893,8 @@
 -        var _a;
 -        return ((_a = window === null || window === void 0 ? void 0 : window.app) === null || _a === void 0 ? void 0 : _a.graph) || null;
 -    }
--}
++    error(details) { this.errorDetails = details; }
+ }
 -class PromptService extends EventTarget {
 -    constructor(api) {
 -        super();
@@ -30418,7 +30907,18 @@
 -            let response;
 -            try {
 -                response = await queuePrompt.apply(api, [...arguments]);
--            }
++
++export class PromptService extends EventTarget {
++    constructor() {
++        super(); this.promptsMap = new Map(); this.currentExecution = null;
++        this.lastQueueRemaining = comfy.queue.pending(); this.unsubscribers = [];
++        const listen = (name, callback) => this.unsubscribers.push(comfy.backend.on(name, callback));
++        this.unsubscribers.push(comfy.queue.onAfterRun((event) => {
++            for (const submission of event.submissions ?? []) {
++                const prompt = this.getOrMakePrompt(submission.promptId);
++                prompt.totalNodes = submission.nodeCount;
++                this.dispatchEvent(new CustomEvent('queue-prompt', { detail: { prompt } }));
+             }
 -            catch (e) {
 -                const promptExecution = that.getOrMakePrompt("error");
 -                promptExecution.error({ exception_type: "Unknown." });
@@ -30442,12 +30942,41 @@
 -            if (!((_a = e.detail) === null || _a === void 0 ? void 0 : _a.exec_info))
 -                return;
 -            this.lastQueueRemaining = e.detail.exec_info.queue_remaining;
--            this.dispatchProgressUpdate();
--        });
++            this.dispatchProgressUpdate();
++        }));
++        this.unsubscribers.push(comfy.queue.onPendingChanged((value) => { this.lastQueueRemaining = value; this.dispatchProgressUpdate(); }));
++        listen('execution_start', (event) => {
++            this.currentExecution = this.getOrMakePrompt(event.prompt_id);
++            this.currentExecution.finished = false; this.dispatchProgressUpdate();
++        });
++        listen('executing', (event) => {
++            const nodeId = event && typeof event === 'object' ? event.node : event;
++            const id = event && typeof event === 'object' ? event.prompt_id : undefined;
++            const prompt = this.forEvent(id); prompt.executing(nodeId); this.dispatchProgressUpdate();
++            if (nodeId == null && this.currentExecution === prompt) this.currentExecution = null;
++        });
++        listen('progress', (event) => {
++            this.forEvent(event.prompt_id).executing(event.node, event.value, event.max); this.dispatchProgressUpdate();
++        });
++        listen('execution_cached', (event) => {
++            const prompt = this.forEvent(event.prompt_id);
++            for (const id of event.nodes ?? []) prompt.completed(id);
+             this.dispatchProgressUpdate();
+         });
 -        api.addEventListener("execution_start", (e) => {
 -            if (!this.promptsMap.has(e.detail.prompt_id)) {
 -                console.warn("'execution_start' fired before prompt was made.");
--            }
++        listen('executed', (event) => {
++            this.forEvent(event.prompt_id).completed(event.node); this.dispatchProgressUpdate();
++        });
++        listen('execution_error', (event) => {
++            this.forEvent(event.prompt_id).error(event); this.dispatchProgressUpdate();
++        });
++        this.unsubscribers.push(comfy.queue.onInterrupted(() => {
++            if (this.currentExecution) {
++                this.currentExecution.error({ exception_type: 'Interrupted' });
++                this.currentExecution.finished = true;
+             }
 -            const prompt = this.getOrMakePrompt(e.detail.prompt_id);
 -            this.currentExecution = prompt;
 -            this.dispatchProgressUpdate();
@@ -30506,66 +31035,53 @@
 -                queue: this.lastQueueRemaining,
 -                prompt: this.currentExecution,
 -            },
--        }));
--    }
--    getOrMakePrompt(id) {
--        let prompt = this.promptsMap.get(id);
--        if (!prompt) {
++            this.dispatchProgressUpdate(); this.currentExecution = null;
+         }));
+     }
++    forEvent(id) {
++        if (id != null) {
++            const prompt = this.getOrMakePrompt(id);
++            // A delayed event for an older prompt may update its history but
++            // must not replace the active execution selected by execution_start.
++            if (!this.currentExecution && !prompt.finished) this.currentExecution = prompt;
++            return prompt;
++        }
++        return this.currentExecution ?? (this.currentExecution = this.getOrMakePrompt('unknown'));
++    }
+     getOrMakePrompt(id) {
++        id = String(id ?? 'unknown');
+         let prompt = this.promptsMap.get(id);
+         if (!prompt) {
 -            prompt = new PromptExecution(id);
 -            this.promptsMap.set(id, prompt);
--        }
--        return prompt;
--    }
--}
++            prompt = new PromptExecution(id); this.promptsMap.set(id, prompt);
++            // History is bounded. A later event for an evicted prompt stays
++            // usable with an explicitly unknown total, never a guessed zero.
++            while (this.promptsMap.size > 256) this.promptsMap.delete(this.promptsMap.keys().next().value);
+         }
+         return prompt;
+     }
++    dispatchProgressUpdate() {
++        this.dispatchEvent(new CustomEvent('progress-update', { detail: { queue: this.lastQueueRemaining, prompt: this.currentExecution } }));
++    }
++    dispose() { for (const unsubscribe of this.unsubscribers) unsubscribe(); this.unsubscribers.length = 0; }
+ }
 -export const SERVICE = new PromptService(api);
-+// Tracks the state of every queued prompt — which node is running, how many nodes it
-+// has, which are cached, step progress within a node, and errors — and emits a
-+// "progress-update" event. It is the model behind the progress bar.
-+//
-+// REFUSED, not a pending gap: reading the built prompt. It wraps `api.queuePrompt` to
-+// take the prompt's *contents* at submit time — `promptExecution.setPrompt(prompt)`
-+// stores `prompt.output`, which is where `totalNodes`, every node's `class_type` and
-+// `_meta.title`, and the UltimateSDUpscale / IterativeImageUpscale pass counting all come
-+// from. Reading or editing the built prompt is the surface that made the old API
-+// impossible to retire, and it is deliberately not published; the same information is
-+// not obtainable after the fact either, for the same reason. This is a decision, not a
-+// queue.
-+//
-+// The consequence, stated plainly rather than left to be discovered: every counter in
-+// this file is made of the prompt's contents. `comfy.queue.onBeforeRun` / `onAfterRun`
-+// say that a run started and that one was submitted, and carry no payload, so a
-+// conversion built on them would report every prompt as zero nodes with no labels. That
-+// is a half-conversion wearing a port's clothes, and shipping it would leave a progress
-+// model that is always empty and a pack author wondering why.
-+//
-+// What the file needed *besides* the prompt's contents is published, and is recorded here
-+// so the next reader does not re-derive it. The event half is
-+// `comfy.backend.on("status" | "execution_start" | "executing" | "progress" |
-+// "execution_cached" | "executed" | "execution_error", detail => …)`, which is exactly
-+// what `api.addEventListener` was doing. Resolving the running node is
-+// `comfy.executingNode()` plus `comfy.onExecutingNodeChanged(fn)`, so neither the raw
-+// `executing` event nor `window.app.graph.getNodeById(...)` is needed for the label.
-+// Queue depth is `comfy.queue.pending()` with `comfy.queue.onPendingChanged`, and a
-+// cancelled run is `comfy.queue.onInterrupted`. A per-node progress readout built from
-+// those — this node, this step, this queue depth — is a smaller feature than the one
-+// here, and it is the pack author's call whether it is the one they want.
-+//
-+// INOPERABLE: the `progress_bar` feature (common/progress_bar.js, which this is the model
-+// for). No node type depends on it.
 +
-+export {}
++export const SERVICE = new PromptService();
 --- a/web/common/rgthree_api.js
 +++ b/v2/web/common/rgthree_api.js
-@@ -1,131 +1,75 @@
+@@ -1,131 +1,76 @@
 +import { comfy } from '/comfy/api/v2.js';
++import { readModelInfo, writeModelInfo, listModelInfo, ModelMetadataUnavailableError } from './model_info_storage.js';
 +
 +/**
 + * The frontend slice of rgthree's former custom server API.
 + *
 + * Secure packs do not execute arbitrary Python route registration. The one
 + * runtime dependency the converted nodes need—the LoRA catalogue—is already a
-+ * core authenticated route. Model-info mutation was tied to rgthree-owned files
-+ * and intentionally reports unavailable instead of probing dead endpoints.
++ * core authenticated route. Authored model-info fields use public storage;
++ * metadata hydration still needs an admitted provider and reports unavailable.
 + */
  class RgthreeApi {
 -    constructor(baseUrl) {
@@ -30630,27 +31146,8 @@
 -        if (response.status === 200 && response.data) {
 -            return response.data || null;
 -        }
-+    async getModelsInfo() {
-+        return [];
-+    }
-+    async getLorasInfo() {
-+        return [];
-+    }
-+    async getCheckpointsInfo() {
-+        return [];
-+    }
-+    async refreshModelsInfo() {
-+        return [];
-+    }
-+    async refreshLorasInfo() {
-+        return [];
-+    }
-+    async refreshCheckpointsInfo() {
-+        return [];
-+    }
-+    async clearModelsInfo() {
-         return null;
-     }
+-        return null;
+-    }
 -    async getModelsInfo(options) {
 -        var _a;
 -        const params = new URLSearchParams();
@@ -30665,18 +31162,16 @@
 -        }
 -        const path = `/${options.type}/info?` + params.toString();
 -        return (await this.fetchApiJsonOrNull(path)) || [];
-+    async clearLorasInfo() {
-+        return null;
++    async getModelsInfo({ type, files } = {}) {
++        return files?.length ? Promise.all(files.map((file) => readModelInfo(type, file))) : listModelInfo(type);
      }
--    async getLorasInfo(options = {}) {
+     async getLorasInfo(options = {}) {
 -        return this.getModelsInfo({ type: "loras", ...options });
-+    async clearCheckpointsInfo() {
-+        return null;
++        return this.getModelsInfo({ type: 'loras', ...options });
      }
--    async getCheckpointsInfo(options = {}) {
+     async getCheckpointsInfo(options = {}) {
 -        return this.getModelsInfo({ type: "checkpoints", ...options });
-+    async saveModelInfo() {
-+        return null;
++        return this.getModelsInfo({ type: 'checkpoints', ...options });
      }
 -    async refreshModelsInfo(options) {
 -        var _a;
@@ -30687,15 +31182,17 @@
 -        const path = `/${options.type}/info/refresh?` + params.toString();
 -        const infos = await this.fetchApiJsonOrNull(path);
 -        return infos;
-+    async saveLoraInfo() {
-+        return null;
++    async refreshModelsInfo() {
++        throw new ModelMetadataUnavailableError();
      }
--    async refreshLorasInfo(options = {}) {
+     async refreshLorasInfo(options = {}) {
 -        return this.refreshModelsInfo({ type: "loras", ...options });
--    }
--    async refreshCheckpointsInfo(options = {}) {
++        return this.refreshModelsInfo({ type: 'loras', ...options });
+     }
+     async refreshCheckpointsInfo(options = {}) {
 -        return this.refreshModelsInfo({ type: "checkpoints", ...options });
--    }
++        return this.refreshModelsInfo({ type: 'checkpoints', ...options });
+     }
 -    async clearModelsInfo(options) {
 -        var _a;
 -        const params = new URLSearchParams();
@@ -30705,25 +31202,32 @@
 -        const path = `/${options.type}/info/clear?` + params.toString();
 -        await this.fetchApiJsonOrNull(path);
 -        return;
--    }
++    async clearModelsInfo() {
++        throw new ModelMetadataUnavailableError();
+     }
 -    async clearLorasInfo(options = {}) {
 -        return this.clearModelsInfo({ type: "loras", ...options });
--    }
++    async clearLorasInfo() {
++        return this.clearModelsInfo();
+     }
 -    async clearCheckpointsInfo(options = {}) {
 -        return this.clearModelsInfo({ type: "checkpoints", ...options });
--    }
--    async saveModelInfo(type, file, data) {
++    async clearCheckpointsInfo() {
++        return this.clearModelsInfo();
+     }
+     async saveModelInfo(type, file, data) {
 -        const body = new FormData();
 -        body.append("json", JSON.stringify(data));
 -        return await this.fetchApiJsonOrNull(`/${type}/info?file=${encodeURIComponent(file)}`, { cache: "no-store", method: "POST", body });
--    }
--    async saveLoraInfo(file, data) {
++        return writeModelInfo(type, file, data);
+     }
+     async saveLoraInfo(file, data) {
 -        return this.saveModelInfo("loras", file, data);
--    }
--    async saveCheckpointsInfo(file, data) {
++        return this.saveModelInfo('loras', file, data);
+     }
+     async saveCheckpointsInfo(file, data) {
 -        return this.saveModelInfo("checkpoints", file, data);
-+    async saveCheckpointsInfo() {
-+        return null;
++        return this.saveModelInfo('checkpoints', file, data);
      }
      fetchComfyApi(route, options) {
 -        const url = this.comfyBaseUrl + "/api" + route;

@@ -1,0 +1,127 @@
+{
+  "8": {
+    "inputs": {
+      "samples": [
+        "48",
+        0
+      ],
+      "vae": [
+        "55",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "31": {
+    "inputs": {
+      "filename_prefix": "ZImage/%date:yyyy_MM_dd%/ZI",
+      "civitai_compatible_metadata": true,
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage //ZImagePowerNodes",
+    "_meta": {
+      "title": "⚡| Save Image"
+    }
+  },
+  "32": {
+    "inputs": {
+      "landscape": false,
+      "ratio": "3:2  (photo)",
+      "size": "medium (recommended)",
+      "batch_size": 1
+    },
+    "class_type": "EmptyZImageLatentImage //ZImagePowerNodes",
+    "_meta": {
+      "title": "⚡| Empty Z-Image Latent Image"
+    }
+  },
+  "43": {
+    "inputs": {
+      "value": "\n\n>>>CUSTOM 1\nYOUR CONTEXT:\nYou are a documentary photographer capturing authentic moments beneath the surface.\nYour images prioritize realism and believability, focusing on natural light filtering through the water and the subtle movement of marine life. The water is clear, but not sterile, with visible particulate matter creating a sense of depth and atmosphere.\nLight beams and caustics dance across the scene, illuminating details and adding a dynamic quality. Colors are natural and muted, reflecting the underwater environment. The overall mood is grounded and immersive, inviting the viewer to experience the underwater world as it truly is.\nYOUR PHOTO:\n{$@}\n\n\n\n>>>Custom 2\nYOUR CONTEXT:\nA nearly completed jigsaw puzzle lying on a warm-toned wooden table. The puzzle pieces are made of glossy cardboard, reflecting the light from a nearby window. One puzzle piece is missing, and it rests beside the puzzle on the table. The scene is lit with soft, natural light.\nTHE PUZZLE IMAGE:\nA detailed, high-resolution image of {$@}. The image is vibrant and colorful, with sharp details.\nTHE MISSING PIECE:\nThe missing puzzle piece is lying on the table, slightly angled, showing its unprinted back.\nTHE TABLE & REFLECTIONS:\nA wooden table with a visible grain. The glossy surface of the puzzle reflects the light from a window, creating highlights and subtle distortions.\n\n\n\n>>>custom 3\nYOUR CONTEXT:\nYou are a visionary comic artist creating dense cosmic odysseys.\nYour illustration features {$spicy-content-with} chaotic aesthetic. The composition emphasizes verticality and deep perspective. The drawing style is rapid and fluid, with a thin contour line that prioritizes clarity and movement. Lighting is flat and overhead. Colors are vibrant and blended, with a painterly quality.\nYOUR IMAGE:\n{$@}"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "String (Multiline) With Custom Styles"
+    }
+  },
+  "45": {
+    "inputs": {
+      "style": "\"Custom 1\"",
+      "gallery": null,
+      "spacer": null,
+      "text": "A full-lipped Star Trek captain dressed in her signature tight-fitting uniform walks through a dense jungle. Her expression is one of fear. In the background, large cocoon-like structures are revealed to be the terrifying nests of giant spiders.",
+      "clip": [
+        "54",
+        0
+      ],
+      "customization": [
+        "43",
+        0
+      ]
+    },
+    "class_type": "StylePromptEncoder2 //ZImagePowerNodes",
+    "_meta": {
+      "title": "⚡| Style & Prompt Encoder"
+    }
+  },
+  "48": {
+    "inputs": {
+      "seed": 1,
+      "steps": 9,
+      "denoise": 1,
+      "divider": null,
+      "initial_noise_calibration": "100%",
+      "lowres_bias": false,
+      "model": [
+        "53",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "latent_input": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "ZSamplerTurbo //ZImagePowerNodes",
+    "_meta": {
+      "title": "⚡| Z-Sampler Turbo"
+    }
+  },
+  "53": {
+    "inputs": {
+      "unet_name": "z_image_turbo-Q5_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "54": {
+    "inputs": {
+      "clip_name": "Qwen3-4B.i1-Q5_K_S.gguf",
+      "type": "lumina2"
+    },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "55": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  }
+}

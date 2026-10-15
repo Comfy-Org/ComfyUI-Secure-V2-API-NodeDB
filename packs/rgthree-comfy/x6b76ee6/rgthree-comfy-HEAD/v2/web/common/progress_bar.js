@@ -1,31 +1,43 @@
 import { comfy } from '/comfy/api/v2.js';
+import { SERVICE as PROMPT_SERVICE } from './prompt_service.js';
 
-// PUNTED IN FULL — 179 lines removed, nothing converted.
-//
-// `<rgthree-progress-bar>` — the thin two-tier bar rgthree puts at the top (or
-// bottom) of the window showing overall node progress and the current node's step
-// progress, with the running node's title and the queue depth.
-//
-// The element itself is a plain custom element and needs nothing from the API. It
-// is punted because its only data source is common/prompt_service.js, which is
-// punted:
-//
-// API-GAP: (31) no node execution progress. `progress-update` carries
-//   `{queue, prompt: {totalNodes, executedNodeIds, currentlyExecuting: {nodeId,
-//   nodeLabel, step, maxSteps, pass, maxPasses}}}`, built by reading the prompt
-//   out of an intercepted `api.queuePrompt` — a refusal, not a gap; see
-//   common/prompt_service.js.
-// REFUSED, not a gap: how it is mounted. rgthree.js inserts the element into
-//   `.comfyui-body-top` / `.comfyui-body-bottom` by query selector. The chrome
-//   surface is declarative — `comfy.ui.addTopBarBadge({id, text, variant, tooltip})`
-//   then `badge.update({text})` on each tick — and takes no element, class or style.
-//   A pack-drawn two-tier bar spanning the window has no published form and is not
-//   waiting on one. `update()` rather than a closure, because the host renders on
-//   reactive change and cannot see a plain function.
-//
-// `currentNodeId` — which the bar exposes so rgthree.js can centre the canvas on the
-// running node when clicked — is no longer a gap: it is `comfy.executingNode()`,
-// with `comfy.onExecutingNodeChanged(fn)` to drive the redraw, and the centring half
-// is `comfy.graph.centerOn(node)`. The queue depth beside it is
-// `comfy.queue.pending()` / `onPendingChanged`. Only the per-node *step* progress
-// above has nothing behind it.
+// The public chrome owns its presentation. A text badge and jump action retain
+// actual queue/node/step information without inserting a custom DOM bar into
+// the host's top/bottom layout. No percentage is invented for an unknown total.
+export function progressText({ queue, prompt }) {
+    const pieces = [];
+    if (prompt?.errorDetails) pieces.push(String(prompt.errorDetails.exception_type ?? 'Execution error'));
+    if (prompt) {
+        const count = prompt.executedNodeIds.length;
+        pieces.push(prompt.totalNodes == null ? `${count} nodes completed` : `${count}/${prompt.totalNodes} nodes`);
+        const current = prompt.currentlyExecuting;
+        if (current) {
+            if (current.nodeLabel) pieces.push(current.nodeLabel);
+            if (current.step != null && current.maxSteps > 0) pieces.push(`${current.step}/${current.maxSteps} steps`);
+            if (current.pass > 1) pieces.push(`pass ${current.pass}`);
+        }
+    }
+    pieces.push(`Queue: ${queue}`);
+    return pieces.join(' · ');
+}
+
+export function installProgress(CONFIG_SERVICE) {
+let badge, jump, last = { queue: comfy.queue.pending(), prompt: null };
+function reconcile() {
+    if (!CONFIG_SERVICE.getFeatureValue('progress_bar.enabled', true)) {
+        badge?.remove(); jump?.remove(); badge = jump = undefined; return;
+    }
+    const value = { text: progressText(last), variant: last.prompt?.errorDetails ? 'error' : 'info' };
+    if (badge) badge.update(value);
+    else badge = comfy.ui.addTopBarBadge({ id: 'rgthree.progress', ...value });
+    if (!jump) jump = comfy.ui.addActionBarButton({ id: 'rgthree.progress.jump', icon: 'pi-crosshairs', tooltip: 'Show executing node',
+        run() { const node = comfy.executingNode(); if (node) comfy.graph.centerOn(node); } });
+}
+comfy.onReady(() => {
+    PROMPT_SERVICE.addEventListener('progress-update', (event) => { last = event.detail; reconcile(); });
+    CONFIG_SERVICE.addEventListener('config-change', (event) => {
+        if (event.detail.key === 'features.progress_bar.enabled') reconcile();
+    });
+    reconcile();
+});
+}

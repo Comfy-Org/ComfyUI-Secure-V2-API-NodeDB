@@ -9,6 +9,7 @@ import { Exposed, execute, PyTuple } from "../../rgthree/common/py_parser.js";
 import { NodeTypesString } from "./constants.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 import { setModeDeep } from "./base_any_input_connected_node.js";
+import { getWidgetControl } from './widget_controls.js';
 
 // Power Conductor (unreleased; gated on `unreleased.power_conductor.enabled`) — a code
 // box and a Run button that execute a small python-like script against the live graph,
@@ -21,20 +22,13 @@ import { setModeDeep } from "./base_any_input_connected_node.js";
 // front end: `widgets.mount` hands over a container to fill, and a `button` widget with
 // `on('activate')` is the published press.
 //
-// SCRIPT-VISIBLE: `ComfyWidgetWrapper.label` hands the script the widget's `name`, where
-//   it used to see `label`. `WidgetHandle` has `setLabel` and no reader, so there is
-//   nothing else to give it — but the original handed the script `undefined` for every
-//   widget that never set a label, which after this migration is all of them, so a name
-//   is strictly more than it had rather than a loss.
-// DROPPED: `ComfyWidgetWrapper.toggle(value)` duck-typed a `toggle` method that only
-//   rgthree's own widget classes declared. A handle exposes the published widget surface
-//   and nothing another pack hung on a widget, so the call is gone rather than
-//   converted — and with those classes replaced by mounted DOM there is no `toggle` left
-//   for it to have found.
+// getLabel is the generic read-only primitive supplied by the Label/API lane.
+// Missing and explicitly empty labels keep their original distinct values.
+// rgthree's group-row toggle is registered pack-side in widget_controls.js.
+// The script can call its original behavior without duck-typing a host handle.
 //
-// SCRIPT-VISIBLE: `node(5).mode` returned litegraph's number (0/2/4) and now returns the
-//   published name ('always'/'never'/'bypass'). `mute()`, `bypass()` and `enable()` are
-//   unchanged, and now descend into a subgraph node's children in one undo step.
+// Script-visible mode preserves original numbers (0/2/4); the public facade's
+// names are translated only at this boundary.
 //
 // WIRE FORMAT: `widgets_values` goes from three entries to two. The original called
 //   `addCustomWidget(this.codeWidget)` on a widget `ComfyWidgets.STRING` had *already*
@@ -68,7 +62,8 @@ class ComfyNodeWrapper {
         return node;
     }
     get id() {
-        return this.getNode().id;
+        const id = this.getNode().id;
+        return /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : id;
     }
     get title() {
         return this.getNode().getTitle();
@@ -77,10 +72,11 @@ class ComfyNodeWrapper {
         this.getNode().setTitle(value);
     }
     get widgets() {
-        return new PyTuple(this.getNode().widgets.all().map((w) => new ComfyWidgetWrapper(w)));
+        const node = this.getNode();
+        return new PyTuple(node.widgets.all().map((w) => new ComfyWidgetWrapper(w, node)));
     }
     get mode() {
-        return this.getNode().getMode();
+        return { always: 0, never: 2, bypass: 4 }[this.getNode().getMode()];
     }
     mute() {
         this.setMode("never");
@@ -118,17 +114,19 @@ __decorate([
     Exposed
 ], ComfyNodeWrapper.prototype, "enable", null);
 class ComfyWidgetWrapper {
-    constructor(widget) {
+    constructor(widget, node) {
         this.widget = widget;
+        this.node = node;
     }
     get value() {
-        return this.widget.getValue();
+        const control = this.node && getWidgetControl(this.node, this.widget.name);
+        return control ? control.getValue() : this.widget.getValue();
     }
     get label() {
-        return this.widget.name;
+        return this.widget.getLabel();
     }
     toggle(value) {
-        void value;
+        if (this.node) getWidgetControl(this.node, this.widget.name)?.toggle(value);
     }
 }
 __decorate([

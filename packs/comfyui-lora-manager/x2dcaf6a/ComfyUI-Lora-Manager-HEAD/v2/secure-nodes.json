@@ -1,0 +1,2958 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "Checkpoint Loader (LoraManager)": {
+      "class": "CheckpointLoader",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_checkpoint_node",
+      "permissions": [
+        "models"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/loaders",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Checkpoint Loader (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": {
+                "$type": "enum",
+                "enum": "ControlAfterGenerate",
+                "name": "fixed"
+              },
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "ckpt_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "control_after_refresh": "first",
+                  "max_retries": null,
+                  "refresh": null,
+                  "refresh_button": true,
+                  "route": "/lora-manager/secure/checkpoints/standard-names",
+                  "timeout": null
+                }
+              },
+              "socketless": null,
+              "tooltip": "The name of the checkpoint (model) to load. Use control_after_generate to pick a random model on every run.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Any",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "base_model",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Any"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Restrict the random selection pool to this base model. 'Any' uses the full pool.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "MODEL",
+              "id": "_0_MODEL_",
+              "is_output_list": false,
+              "tooltip": "The model used for denoising latents."
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "CLIP",
+              "id": "_1_CLIP_",
+              "is_output_list": false,
+              "tooltip": "The CLIP model used for encoding text prompts."
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "VAE",
+              "id": "_2_VAE_",
+              "is_output_list": false,
+              "tooltip": "The VAE model used for encoding and decoding images to and from latent space."
+            },
+            "io_type": "VAE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Create Hook LoRA (LoraManager)": {
+      "class": "CreateHookLoraLM",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_hook_node",
+      "permissions": [
+        "models",
+        "assets",
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/hooks",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Create Hook LoRA (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Search LoRAs to add..."
+              },
+              "id": "text",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Search and select LoRAs. Each LoRA gets its own model/clip strength. Hooks chain with prev_hooks."
+            },
+            "io_type": "AUTOCOMPLETE_TEXT_LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "loras",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORAS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "HOOKS",
+              "id": "_0_HOOKS_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "HOOKS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "active_loras",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "loras"
+        ],
+        "kwargs": false
+      }
+    },
+    "Debug Metadata (LoraManager)": {
+      "class": "DebugMetadataLM",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_debug_metadata_node",
+      "permissions": [
+        "graph.metadata"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "Debug node to verify metadata_processor functionality",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "Debug Metadata (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id",
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true
+    },
+    "LoRA Syntax \u2192 Path (LoraManager)": {
+      "class": "LoraSyntaxToResource",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_resource_nodes",
+      "permissions": [
+        "assets"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "LoRA Syntax \u2192 Path (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "lora_syntax",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "<lora:name:strength> formatted text from loaded_loras / active_loras output",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "paths",
+              "id": "_0_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "LoRA Text Loader (LoraManager)": {
+      "class": "LoraTextLoader",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_loader_nodes",
+      "permissions": [
+        "assets",
+        "storage",
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/loaders",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "LoRA Text Loader (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "lora_syntax",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Format: <lora:lora_name:strength> separated by spaces or punctuation",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "lora_stack",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "MODEL",
+              "id": "_0_MODEL_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "CLIP",
+              "id": "_1_CLIP_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "loaded_loras",
+              "id": "_3_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Load Image Metadata (LoraManager)": {
+      "class": "LoadImageMetadata",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": true,
+        "validate_inputs": false
+      },
+      "module": "secure_image_metadata_node",
+      "permissions": [
+        "assets",
+        "models",
+        "storage",
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/loaders",
+          "description": "Load an image and recover prompts, LoRAs and sampling settings from its metadata. Connect lora_stack to Lora Loader. Convert loader/sampler widgets to inputs for the other outputs. Extraction failures use starter defaults and are shown as ERROR messages in readable_report.",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Load Image Metadata (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "image",
+              "image_folder": {
+                "$type": "enum",
+                "enum": "FolderType",
+                "name": "input"
+              },
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "control_after_refresh": "first",
+                  "max_retries": null,
+                  "refresh": null,
+                  "refresh_button": true,
+                  "route": "/secure-nodes/assets/input?kind=image",
+                  "timeout": null
+                }
+              },
+              "socketless": null,
+              "tooltip": null,
+              "upload": {
+                "$type": "enum",
+                "enum": "UploadType",
+                "name": "image"
+              },
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sampler_node_id",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Leave empty for a single sampler. Subgraphs: use the full API ID, e.g. 1481:1783 (or 1481/1783). A container or leaf ID works only when unique.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "missing_settings",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "use_defaults",
+                "strict"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Extraction errors always return defaults and an ERROR report, including for saved strict settings. Unresolved files are listed in missing_files.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "{}",
+              "display_name": null,
+              "dynamic_prompts": false,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "overrides_json",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Explicit replacements, e.g. {\"scheduler\":\"normal\", \"model_name\":\"folder/model.safetensors\"}. Use \"loras\": [] to clear the recovered stack.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "prefer_saved_image_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Prefer saved A1111-style generation parameters. Disable to select an active workflow sampler; muted/bypassed samplers are excluded.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "image",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "mask",
+              "id": "_1_MASK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "positive",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "negative",
+              "id": "_3_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "model_name",
+              "id": "_4_*_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "lora_stack",
+              "id": "_5_LORA_STACK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "lora_stack_text",
+              "id": "_6_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "seed",
+              "id": "_7_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "steps",
+              "id": "_8_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "cfg",
+              "id": "_9_FLOAT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "sampler_name",
+              "id": "_10_*_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "scheduler",
+              "id": "_11_*_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "*",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "width",
+              "id": "_12_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "height",
+              "id": "_13_INT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "denoise",
+              "id": "_14_FLOAT_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "report",
+              "id": "_15_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "readable_report",
+              "id": "_16_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "missing_files",
+              "id": "_17_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Lora Cycler (LoraManager)": {
+      "class": "LoraCycler",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_pool_nodes",
+      "permissions": [
+        "assets",
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/randomizer",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Cycler (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "cycler_config",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "CYCLER_CONFIG",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "pool_config",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "POOL_CONFIG",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "LORA_STACK",
+              "id": "_0_LORA_STACK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Lora Info (LoraManager)": {
+      "class": "LoraInfo",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_info_node",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "Displays information (filename, notes) about the currently selected LoRA. Connect any output from a LoRA Loader or Stacker to the lora_source input, then select a LoRA in the source widget \u2014 the info updates automatically. Does not affect workflow execution.",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Info (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [],
+        "outputs": []
+      },
+      "sdk_refs": true
+    },
+    "Lora Loader (LoraManager)": {
+      "class": "LoraLoader",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_loader_nodes",
+      "permissions": [
+        "assets",
+        "storage",
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/loaders",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Loader (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Search LoRAs to add..."
+              },
+              "id": "text",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Format: <lora:lora_name:strength> separated by spaces or punctuation"
+            },
+            "io_type": "AUTOCOMPLETE_TEXT_LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "loras",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "lora_stack",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "MODEL",
+              "id": "_0_MODEL_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "CLIP",
+              "id": "_1_CLIP_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "loaded_loras",
+              "id": "_3_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "loras"
+        ],
+        "kwargs": false
+      }
+    },
+    "Lora Pool (LoraManager)": {
+      "class": "LoraPool",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/randomizer",
+          "description": "",
+          "display_name": "Lora Pool (LoraManager)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Pool (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "pool_config",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORA_POOL_CONFIG",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "POOL_CONFIG",
+              "id": "_0_POOL_CONFIG_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "POOL_CONFIG",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Lora Randomizer (LoraManager)": {
+      "class": "LoraRandomizer",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_pool_nodes",
+      "permissions": [
+        "assets",
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/randomizer",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Randomizer (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "randomizer_config",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "RANDOMIZER_CONFIG",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "loras",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "pool_config",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "POOL_CONFIG",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "LORA_STACK",
+              "id": "_0_LORA_STACK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "loras"
+        ],
+        "kwargs": false
+      }
+    },
+    "Lora Stack Combiner (LoraManager)": {
+      "class": "LoraStackCombiner",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/stackers",
+          "description": "Combines multiple LoRA stacks into a single stack. Supports dynamic inputs: connect a stack to add more inputs.",
+          "display_name": "Lora Stack Combiner (LoraManager)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Stack Combiner (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "lora_stack1",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "A LoRA stack to combine. Connect to add more inputs."
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "lora_stack2",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "A LoRA stack to combine. Connect to add more inputs."
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "LORA_STACK",
+              "id": "_0_LORA_STACK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Lora Stacker (LoraManager)": {
+      "class": "LoraStacker",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_stack_nodes",
+      "permissions": [
+        "assets",
+        "storage",
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/stackers",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Lora Stacker (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Search LoRAs to add..."
+              },
+              "id": "text",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Format: <lora:lora_name:strength> separated by spaces or punctuation"
+            },
+            "io_type": "AUTOCOMPLETE_TEXT_LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "loras",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORAS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "LORA_STACK",
+              "id": "_0_LORA_STACK_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "LORA_STACK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "active_loras",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "loras"
+        ],
+        "kwargs": false
+      }
+    },
+    "Metadata Overwrite (LoraManager)": {
+      "class": "MetadataOverwrite",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_metadata_overwrite_node",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "Manually specify generation parameters to override automatically collected metadata. Only filled/connected inputs will take effect \u2014 empty defaults are ignored.",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "Metadata Overwrite (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "prompt",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Positive prompt. Only overwrites when non-empty.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "negative_prompt",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Negative prompt. Only overwrites when non-empty.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": false,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 18446744073709551615,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Seed value. Only overwrites when > 0.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "steps",
+              "lazy": null,
+              "max": 10000,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Number of steps. Only overwrites when > 0.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "cfg_scale",
+              "lazy": null,
+              "max": 100.0,
+              "min": 0.0,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "CFG scale. Only overwrites when > 0.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "_io_types": [
+                {
+                  "$type": "io-class",
+                  "io_type": "STRING"
+                },
+                {
+                  "$type": "io-class",
+                  "io_type": "SAMPLER"
+                }
+              ],
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "default": "",
+                "widgetType": "STRING"
+              },
+              "id": "sampler",
+              "input_override": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Sampler name. Fill in the name manually or connect a SAMPLER output (e.g. KSamplerSelect) \u2014 the sampler name is then extracted automatically. Note: ddim is recorded as euler (ComfyUI internal representation). Only overwrites when non-empty."
+            },
+            "io_type": "COMFY_MULTITYPED_V3",
+            "kind": "multi-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "scheduler",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Scheduler name. Only overwrites when non-empty.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "_io_types": [
+                {
+                  "$type": "io-class",
+                  "io_type": "STRING"
+                },
+                {
+                  "$type": "io-class",
+                  "io_type": "MODEL"
+                }
+              ],
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "default": "",
+                "widgetType": "STRING"
+              },
+              "id": "model",
+              "input_override": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "The checkpoint or diffusion model (UNet) used for generation. Fill in the name manually or connect a MODEL output \u2014 the model name is then extracted automatically. Only overwrites when non-empty."
+            },
+            "io_type": "COMFY_MULTITYPED_V3",
+            "kind": "multi-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "loras",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "LoRA syntax, e.g. <lora:name:strength> or <lora:name:model_strength:clip_strength>, separated by spaces. Only overwrites when non-empty.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "size",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Image size in WIDTHxHEIGHT format (e.g. 512x768). Only overwrites when non-empty.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": -25,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "clip_skip",
+              "lazy": null,
+              "max": 24,
+              "min": -25,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Clip skip (ComfyUI: -24..-1, A1111: 1+). Default -25 means not set \u2014 any other value overwrites.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "additional_data",
+              "lazy": null,
+              "multiline": true,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Additional data to embed in the image metadata. Inserted between Clip skip and Model hash in the A1111-compatible parameters string. Example: \"Copyright\": \"Some license info\"",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "metadata",
+              "id": "_0_METADATA_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "METADATA",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Prompt (LoraManager)": {
+      "class": "Prompt",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": true,
+        "validate_inputs": false
+      },
+      "module": "secure_durable_prompt_node",
+      "permissions": [
+        "storage",
+        "raw"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/conditioning",
+          "description": "Encodes a text prompt using a CLIP model into an embedding that can be used to guide the diffusion model towards generating specific images. Supports dynamic trigger words inputs and runtime wildcard expansion.",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Prompt (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "_io_types": [
+                {
+                  "$type": "io-class",
+                  "io_type": "AUTOCOMPLETE_TEXT_PROMPT"
+                },
+                {
+                  "$type": "io-class",
+                  "io_type": "STRING"
+                }
+              ],
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Enter prompt... /character, /artist, /wildcard for quick search",
+                "widgetType": "AUTOCOMPLETE_TEXT_PROMPT"
+              },
+              "id": "text",
+              "input_override": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The text to be encoded. Wildcard references inserted with /wildcard are expanded at runtime."
+            },
+            "io_type": "COMFY_MULTITYPED_V3",
+            "kind": "multi-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "clip",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The CLIP model used for encoding the text."
+            },
+            "io_type": "CLIP",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "seed",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Optional seed for wildcard generation. Leave unconnected for non-deterministic wildcard expansion.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "trigger_words1",
+              "lazy": null,
+              "multiline": false,
+              "optional": true,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Trigger words to prepend. Connect to add more inputs.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "CONDITIONING",
+              "id": "_0_CONDITIONING_",
+              "is_output_list": false,
+              "tooltip": "A conditioning containing the embedded text used to guide the diffusion model."
+            },
+            "io_type": "CONDITIONING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "PROMPT",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Save Image (LoraManager)": {
+      "class": "SaveImageLM",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_save_image_node",
+      "permissions": [
+        "graph.metadata",
+        "assets",
+        "storage",
+        "raw",
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "Save images with embedded generation metadata in compatible format",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "Save Image (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id",
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Base filename for saved images. Supports format patterns like %seed%, %width%, %height%, %model%, etc.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "file_format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "png",
+                "jpeg",
+                "webp"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Image format to save as. PNG preserves quality, JPEG is smaller, WebP balances size and quality.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "lossless_webp",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, saves WebP images with lossless compression. Results in larger files but no quality loss.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 100,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "quality",
+              "lazy": null,
+              "max": 100,
+              "min": 1,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Compression quality for JPEG and lossy WebP formats (1-100). Higher values mean better quality but larger files.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 6,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "webp_method",
+              "lazy": null,
+              "max": 6,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "WebP compression method (0-6). 0=fastest/largest, 6=slowest/smallest. Only applies when file_format is 'webp'.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "jpeg_subsampling",
+              "lazy": null,
+              "max": 2,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "JPEG chroma subsampling level. 0=4:4:4 (best quality), 1=4:2:2, 2=4:2:0 (smallest files). Only applies when file_format is 'jpeg'.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "embed_workflow",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, saved images store the complete workflow. Drag the image back into ComfyUI to restore the original node graph. PNG and WebP only.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_with_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, embeds generation parameters into the saved image metadata. Disable to skip writing generation metadata.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "add_loras_to_prompt",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, appends the LoRA syntax line (e.g. <lora:name:strength>) after the positive prompt in the saved metadata.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "add_counter_to_filename",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Adds an incremental counter to filenames to prevent overwriting previous images.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_as_recipe",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Also saves each generated image as a LoRA Manager recipe.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "images",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Text (LoraManager)": {
+      "class": "Text",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": true,
+        "validate_inputs": false
+      },
+      "module": "secure_durable_text_node",
+      "permissions": [
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/utils",
+          "description": "A simple text input node with autocomplete support for tags, styles, and wildcard expansion.",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Text (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "_io_types": [
+                {
+                  "$type": "io-class",
+                  "io_type": "AUTOCOMPLETE_TEXT_PROMPT"
+                },
+                {
+                  "$type": "io-class",
+                  "io_type": "STRING"
+                }
+              ],
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Enter text... /character, /artist, /wildcard for quick search",
+                "widgetType": "AUTOCOMPLETE_TEXT_PROMPT"
+              },
+              "id": "text",
+              "input_override": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The text output. Wildcard references inserted with /wildcard are expanded at runtime."
+            },
+            "io_type": "COMFY_MULTITYPED_V3",
+            "kind": "multi-type"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "seed",
+              "lazy": null,
+              "max": null,
+              "min": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "Optional seed for wildcard generation. Leave unconnected for non-deterministic wildcard expansion.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "STRING",
+              "id": "_0_STRING_",
+              "is_output_list": false,
+              "tooltip": "The text output."
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "TriggerWord Toggle (LoraManager)": {
+      "class": "TriggerWordToggle",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/utils",
+          "description": "Toggle trigger words on/off",
+          "display_name": "TriggerWord Toggle (LoraManager)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "TriggerWord Toggle (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "unique_id"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "group_mode",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, treats each group of trigger words as a single toggleable unit.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "default_active",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Sets the default initial state (active or inactive) when trigger words are added.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "allow_strength_adjustment",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Enable mouse wheel adjustment of each trigger word's strength.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "filtered_trigger_words",
+              "id": "_0_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "Unet Loader (LoraManager)": {
+      "class": "UnetLoader",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_unet_node",
+      "permissions": [
+        "models"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/loaders",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "Unet Loader (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": {
+                "$type": "enum",
+                "enum": "ControlAfterGenerate",
+                "name": "fixed"
+              },
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "unet_name",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "control_after_refresh": "first",
+                  "max_retries": null,
+                  "refresh": null,
+                  "refresh_button": true,
+                  "route": "/lora-manager/secure/diffusion-models/standard-names",
+                  "timeout": null
+                }
+              },
+              "socketless": null,
+              "tooltip": "The name of the diffusion model to load. Use control_after_generate to pick a random model on every run.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "weight_dtype",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "default",
+                "fp8_e4m3fn",
+                "fp8_e4m3fn_fast",
+                "fp8_e5m2"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The dtype to use for the model weights.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Any",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "base_model",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Any"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Restrict the random selection pool to this base model. 'Any' uses the full pool.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "MODEL",
+              "id": "_0_MODEL_",
+              "is_output_list": false,
+              "tooltip": "The model used for denoising latents."
+            },
+            "io_type": "MODEL",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    },
+    "WanVideo Lora Select (LoraManager)": {
+      "class": "WanVideoLoraSelectLM",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_wan_selectors",
+      "permissions": [
+        "assets",
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Lora Manager/stackers",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "WanVideo Lora Select (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "low_mem_load",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Load LORA models with less VRAM usage, slower loading. This affects ALL LoRAs, not just the current ones. No effect if merge_loras is False",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "merge_loras",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Merge LoRAs into the model, otherwise they are loaded on the fly. Always disabled for GGUF and scaled fp8 models. This affects ALL LoRAs, not just the current one",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {
+                "placeholder": "Search LoRAs to add..."
+              },
+              "id": "text",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Format: <lora:lora_name:strength> separated by spaces or punctuation"
+            },
+            "io_type": "AUTOCOMPLETE_TEXT_LORAS",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "loras",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "LORAS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "lora",
+              "id": "_0_WANVIDLORA_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "WANVIDLORA",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "active_loras",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "loras"
+        ],
+        "kwargs": false
+      }
+    },
+    "WanVideo Lora Select From Text (LoraManager)": {
+      "class": "WanVideoLoraTextSelectLM",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_wan_selectors",
+      "permissions": [
+        "assets",
+        "storage"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Lora Manager/stackers",
+          "description": "",
+          "display_name": null,
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "WanVideo Lora Select From Text (LoraManager)",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "low_mem_load",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Load LORA models with less VRAM usage, slower loading. This affects ALL LoRAs, not just the current ones. No effect if merge_loras is False",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "merge_lora",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Merge LoRAs into the model, otherwise they are loaded on the fly. Always disabled for GGUF and scaled fp8 models. This affects ALL LoRAs, not just the current one",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": null,
+              "display_name": null,
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": true,
+              "id": "lora_syntax",
+              "lazy": null,
+              "multiline": true,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Connect a TEXT output for LoRA syntax: <lora:name:strength>",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "prev_lora",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "WANVIDLORA",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "blocks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "BLOCKS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "lora",
+              "id": "_0_WANVIDLORA_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "WANVIDLORA",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "trigger_words",
+              "id": "_1_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "active_loras",
+              "id": "_2_STRING_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "secure_web"
+}

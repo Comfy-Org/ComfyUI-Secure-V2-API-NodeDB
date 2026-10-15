@@ -3,8 +3,12 @@ export let logoRgthree = "";
 export async function logoRgthreeAsync() {
     if (logoRgthree)
         return logoRgthree;
-    // The secure static root carries the currentColor logo directly.
-    return fetch("/rgthree/common/media/rgthree.svg")
+    // The secure static root carries the currentColor logo directly, next to
+    // this module. A sandboxed pack worker has no document base URL, so a
+    // root-relative string is an invalid URL there; resolve against this
+    // module's real location instead, as the pack API documents for a pack's
+    // own neighbouring files (comfy-api.d.ts `assetUrl`).
+    return fetch(new URL("./rgthree.svg", import.meta.url))
         .then((r) => r.ok ? r.text() : "")
         .then((t) => {
         if (t.length < 100) {

@@ -1,7 +1,9 @@
 import { comfy } from '/comfy/api/v2.js';
+import { installProgress } from '../../rgthree/common/progress_bar.js';
 import { canvasToBookmark } from './bookmark.js';
 import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
 import { SERVICE as BOOKMARKS_SERVICE, shortcutKeyOf } from './services/bookmarks_services.js';
+installProgress(CONFIG_SERVICE);
 
 let logLevel = String(CONFIG_SERVICE.getConfigValue('log_level') ?? 'ERROR').toUpperCase();
 

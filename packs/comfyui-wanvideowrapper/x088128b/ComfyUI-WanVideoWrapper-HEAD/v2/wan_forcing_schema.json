@@ -1,0 +1,140 @@
+{
+  "node_id": "WanVideoDiffusionForcingSampler",
+  "inputs": {
+    "required": {
+      "model": [
+        "WANVIDEOMODEL"
+      ],
+      "text_embeds": [
+        "WANVIDEOTEXTEMBEDS"
+      ],
+      "image_embeds": [
+        "WANVIDIMAGE_EMBEDS"
+      ],
+      "addnoise_condition": [
+        "INT",
+        {
+          "default": 10,
+          "min": 0,
+          "max": 1000,
+          "tooltip": "Improves consistency in long video generation"
+        }
+      ],
+      "fps": [
+        "FLOAT",
+        {
+          "default": 24.0,
+          "min": 1.0,
+          "max": 120.0,
+          "step": 0.01
+        }
+      ],
+      "steps": [
+        "INT",
+        {
+          "default": 30,
+          "min": 1
+        }
+      ],
+      "cfg": [
+        "FLOAT",
+        {
+          "default": 6.0,
+          "min": 0.0,
+          "max": 30.0,
+          "step": 0.01
+        }
+      ],
+      "shift": [
+        "FLOAT",
+        {
+          "default": 8.0,
+          "min": 0.0,
+          "max": 1000.0,
+          "step": 0.01
+        }
+      ],
+      "seed": [
+        "INT",
+        {
+          "default": 0,
+          "min": 0,
+          "max": 18446744073709551615
+        }
+      ],
+      "force_offload": [
+        "BOOLEAN",
+        {
+          "default": true,
+          "tooltip": "Moves the model to the offload device after sampling"
+        }
+      ],
+      "scheduler": [
+        [
+          "unipc",
+          "unipc/beta",
+          "euler",
+          "euler/beta",
+          "lcm",
+          "lcm/beta"
+        ],
+        {
+          "default": "unipc"
+        }
+      ]
+    },
+    "optional": {
+      "samples": [
+        "LATENT",
+        {
+          "tooltip": "init Latents to use for video2video process"
+        }
+      ],
+      "prefix_samples": [
+        "LATENT",
+        {
+          "tooltip": "prefix latents"
+        }
+      ],
+      "denoise_strength": [
+        "FLOAT",
+        {
+          "default": 1.0,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
+      ],
+      "cache_args": [
+        "CACHEARGS"
+      ],
+      "slg_args": [
+        "SLGARGS"
+      ],
+      "rope_function": [
+        [
+          "default",
+          "comfy"
+        ],
+        {
+          "default": "comfy",
+          "tooltip": "Comfy's RoPE implementation doesn't use complex numbers and can thus be compiled, that should be a lot faster when using torch.compile"
+        }
+      ],
+      "experimental_args": [
+        "EXPERIMENTALARGS"
+      ],
+      "unianimate_poses": [
+        "UNIANIMATE_POSE"
+      ]
+    }
+  },
+  "outputs": [
+    "LATENT"
+  ],
+  "output_names": [
+    "samples"
+  ],
+  "category": "WanVideoWrapper",
+  "source_sha256": "ff93033dbc681a0afc95ce47609aec2c5de4dd614f4f0b6212c19dc672ab67a3"
+}

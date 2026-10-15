@@ -1,0 +1,1 @@
+"""Owned original WanMove mathematics."""

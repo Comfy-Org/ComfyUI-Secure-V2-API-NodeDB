@@ -1,12 +1,13 @@
 import { comfy } from '/comfy/api/v2.js';
+import { readModelInfo, writeModelInfo, listModelInfo, ModelMetadataUnavailableError } from './model_info_storage.js';
 
 /**
  * The frontend slice of rgthree's former custom server API.
  *
  * Secure packs do not execute arbitrary Python route registration. The one
  * runtime dependency the converted nodes need—the LoRA catalogue—is already a
- * core authenticated route. Model-info mutation was tied to rgthree-owned files
- * and intentionally reports unavailable instead of probing dead endpoints.
+ * core authenticated route. Authored model-info fields use public storage;
+ * metadata hydration still needs an admitted provider and reports unavailable.
  */
 class RgthreeApi {
     constructor() {
@@ -28,41 +29,41 @@ class RgthreeApi {
         }
         return this.getLorasPromise;
     }
-    async getModelsInfo() {
-        return [];
+    async getModelsInfo({ type, files } = {}) {
+        return files?.length ? Promise.all(files.map((file) => readModelInfo(type, file))) : listModelInfo(type);
     }
-    async getLorasInfo() {
-        return [];
+    async getLorasInfo(options = {}) {
+        return this.getModelsInfo({ type: 'loras', ...options });
     }
-    async getCheckpointsInfo() {
-        return [];
+    async getCheckpointsInfo(options = {}) {
+        return this.getModelsInfo({ type: 'checkpoints', ...options });
     }
     async refreshModelsInfo() {
-        return [];
+        throw new ModelMetadataUnavailableError();
     }
-    async refreshLorasInfo() {
-        return [];
+    async refreshLorasInfo(options = {}) {
+        return this.refreshModelsInfo({ type: 'loras', ...options });
     }
-    async refreshCheckpointsInfo() {
-        return [];
+    async refreshCheckpointsInfo(options = {}) {
+        return this.refreshModelsInfo({ type: 'checkpoints', ...options });
     }
     async clearModelsInfo() {
-        return null;
+        throw new ModelMetadataUnavailableError();
     }
     async clearLorasInfo() {
-        return null;
+        return this.clearModelsInfo();
     }
     async clearCheckpointsInfo() {
-        return null;
+        return this.clearModelsInfo();
     }
-    async saveModelInfo() {
-        return null;
+    async saveModelInfo(type, file, data) {
+        return writeModelInfo(type, file, data);
     }
-    async saveLoraInfo() {
-        return null;
+    async saveLoraInfo(file, data) {
+        return this.saveModelInfo('loras', file, data);
     }
-    async saveCheckpointsInfo() {
-        return null;
+    async saveCheckpointsInfo(file, data) {
+        return this.saveModelInfo('checkpoints', file, data);
     }
     fetchComfyApi(route, options) {
         return comfy.backend.fetch(route, options);
