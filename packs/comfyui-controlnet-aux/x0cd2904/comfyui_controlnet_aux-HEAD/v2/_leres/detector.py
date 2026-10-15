@@ -12,6 +12,18 @@ from .pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
 from .pix2pix.options.test_options import TestOptions
 from .selection import selected_asset, selected_member, option_projection, native_map_location
 
+async def managed_depth_state(ref, item):
+    """Literal depth_model member read through the published asset API.
+
+    Native LeReS consumes only checkpoint['depth_model'] of res101.pth. The guest
+    weight bridge carries flat tensor maps only, so the nested container cannot
+    cross it whole; the member is read on the trusted side on both routes and
+    the selected container contract is then applied unchanged.
+    """
+    state = await sdk.ctx().assets.load_state_dict(ref, member='depth_model')
+    return {'depth_model': state} if item['load_state_contract'] == 'nested-depth-model-retained' else state
+
+
 class LeresDetector:
     def __init__(self, model, pix2pixmodel):
             self.model = model
@@ -20,7 +32,7 @@ class LeresDetector:
     @classmethod
     async def from_managed(cls, selection):
             depth_ref = await selected_asset(selection['assets']['depth'])
-            checkpoint = {'depth_model': selected_member(await sdk.ctx().assets.load_state_dict(depth_ref), selection['assets']['depth'])}
+            checkpoint = {'depth_model': selected_member(await managed_depth_state(depth_ref, selection['assets']['depth']), selection['assets']['depth'])}
     
             model = RelDepthModel(backbone='resnext101')
             model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)

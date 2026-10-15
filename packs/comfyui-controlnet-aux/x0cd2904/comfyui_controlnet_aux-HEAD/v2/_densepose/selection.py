@@ -66,7 +66,8 @@ async def selected_bytes(item, repo, filename):
     ref = await assets.resolve(row['folder'], row['catalogue_name'])
     if await assets.size(ref) != row['bytes'] or await assets.digest(ref, 'sha256') != row['sha256']:
         raise RuntimeError('DensePose sealed archive identity differs from selection')
-    payload = await assets.read_bytes(ref)
+    from .._sealed_asset_read import read_sealed_asset
+    payload = await read_sealed_asset(assets, ref, row['bytes'], row['sha256'])
     if type(payload) is not bytes or len(payload) != row['bytes'] or hashlib.sha256(payload).hexdigest() != row['sha256']:
         raise RuntimeError('DensePose actual executable archive bytes differ from selection')
     return payload

@@ -13,6 +13,25 @@ def digest(value):
     return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
 
+# AMY lane rev2 (test-only candidate): per-invocation sealed-content binding (see
+# asset-selection.json current_authenticated_realm_generation_contract evidence).
+PER_INVOCATION_BINDING = 'per-invocation-sealed-content/no-warm-cache/1'
+ONNX_CV2_CONSTRUCTOR = 'cv2.dnn.readNetFromONNX(numpy.uint8 buffer)'
+
+
+def onnx_cv2_contract_holds(item):
+    # OpenCV DNN byte constructor only, and only while the original
+    # classification (util.get_model_type) picks cv2 in this runtime: no
+    # non-CPU onnxruntime provider available, on the inspected OpenCV build.
+    contract = item.get('onnx_ort_opencv_byte_constructor_contract')
+    if (type(contract) is not dict or contract.get('engine') != 'cv2' or contract.get('constructor') != ONNX_CV2_CONSTRUCTOR
+            or contract.get('original_classification') != 'cv2' or not digest(contract.get('evidence_sha256'))):
+        return False
+    import cv2
+    from .util import get_ort_providers
+    return not [p for p in get_ort_providers() if p != 'CPUExecutionProvider'] and cv2.__version__ == contract.get('opencv_version')
+
+
 def selected_family(node_id):
     item = json.loads(Path(__file__).with_name('asset-selection.json').read_text())
     if item.get('approved') is not True:
@@ -26,7 +45,17 @@ def selected_family(node_id):
     # A receipt or ambient environment variable alone cannot establish the
     # current authenticated realm/generation. The consumed published guest
     # asset interface has no such identity accessor. Do not guess one.
-    raise RuntimeError(node_id + ': published current realm/resource/provider/device generation binding is held; native warm cache cannot be admitted')
+    # AMY lane rev2 (test-only): no realm identity is claimed or guessed. The
+    # selected binding is per-invocation sealed content: each invocation reads
+    # and verifies the exact bytes it uses (size + sha256), and __init__.execute
+    # empties the native module caches before and after the call, so no warm
+    # cache is admitted across invocations.
+    contract = item.get('current_authenticated_realm_generation_contract')
+    if (item.get('current_generation_binding_approved') is not True or type(contract) is not dict
+            or contract.get('binding') != PER_INVOCATION_BINDING or contract.get('realm_identity') is not None
+            or contract.get('cross_invocation_cache') is not False or not digest(contract.get('evidence_sha256'))):
+        raise RuntimeError(node_id + ': published current realm/resource/provider/device generation binding is held; native warm cache cannot be admitted')
+    return item
 
 
 @dataclass(frozen=True)
@@ -83,7 +112,9 @@ def resource_record(item, repo, filename):
         # No vendor ABI/filelike/byte constructor contract has been supplied
         # for ORT or OpenCV. Refuse BEFORE resolving/reading an asset or
         # constructing an engine. Classification/fallback source stays exact.
-        raise RuntimeError('ONNX ORT/OpenCV sealed-byte constructor contract is held')
+        # AMY lane rev2 (test-only): selected OpenCV DNN byte constructor only.
+        if r.get('format') != 'onnx' or not onnx_cv2_contract_holds(item):
+            raise RuntimeError('ONNX ORT/OpenCV sealed-byte constructor contract is held')
     else:
         raise RuntimeError('native serialization format construction is held')
     return r
@@ -105,7 +136,8 @@ async def selected_resource(item, repo, filename):
     ref = await assets.resolve(r['folder'], r['catalogue_name'])
     if await assets.size(ref) != r['bytes'] or await assets.digest(ref, 'sha256') != r['sha256']:
         raise RuntimeError('sealed resource size/digest differs from selection')
-    payload = await assets.read_bytes(ref)
+    from .._sealed_asset_read import read_sealed_asset
+    payload = await read_sealed_asset(assets, ref, r['bytes'], r['sha256'])
     if type(payload) is not bytes or len(payload) != r['bytes'] or hashlib.sha256(payload).hexdigest() != r['sha256']:
         raise RuntimeError('actual serialized resource bytes differ from selection')
     return SealedResource(repo, filename, payload, r['sha256'], r['format'])
@@ -114,6 +146,11 @@ async def selected_resource(item, repo, filename):
 def engine_input(resource, engine):
     if not isinstance(resource, SealedResource):
         raise TypeError('engine input must be a genuine sealed resource')
+    if engine == 'cv2' and resource.format == 'onnx':
+        # AMY lane rev2 (test-only): OpenCV's readNetFromONNX(buffer) overload
+        # parses the same serialized bytes the original reads from its path.
+        import numpy as np
+        return np.frombuffer(resource.payload, dtype=np.uint8)
     if engine != 'torchscript' or resource.format != 'torchscript':
         raise RuntimeError('ONNX ORT/OpenCV byte/buffer construction remains held')
     # Published Torch2.8 source accepts BytesIO and calls the genuine C++
