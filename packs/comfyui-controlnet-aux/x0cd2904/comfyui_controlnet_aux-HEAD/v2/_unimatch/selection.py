@@ -13,6 +13,36 @@ MAX_BYTES=512*1024*1024
 def is_sha(value):return type(value) is str and re.fullmatch('[0-9a-f]{64}',value) is not None
 
 
+PROOF='metadata-equivalence-proof.json'
+
+
+def metadata_equivalence_proof(r):
+    """Recorded proof that, for THIS checkpoint sha256 only, the original UniMatch
+    loaded with and without the state's _metadata has identical state and outputs.
+    Any other checkpoint, revision, proof byte or source pin is refused."""
+    if not is_sha(r.get('metadata_equivalence_proof_sha256')):
+        raise RuntimeError('UniMatch native state _metadata present without a recorded per-checkpoint equivalence proof')
+    try:
+        raw=Path(__file__).with_name(PROOF).read_bytes()
+    except OSError:
+        raise RuntimeError('UniMatch recorded _metadata equivalence proof missing') from None
+    if hashlib.sha256(raw).hexdigest()!=r['metadata_equivalence_proof_sha256']:
+        raise RuntimeError('UniMatch recorded _metadata equivalence proof differs')
+    proof=json.loads(raw)
+    c=proof.get('checkpoint') if type(proof) is dict else None
+    m=proof.get('metadata') if type(proof) is dict else None
+    if (type(c) is not dict or type(m) is not dict or proof.get('kind')!='UNIMATCH_METADATA_EQUIVALENCE_PROOF'
+            or proof.get('upstream_source_pin')!=PIN or c.get('sha256')!=r['sha256'] or c.get('bytes')!=r['bytes']
+            or c.get('repo')!=r['source_repo'] or c.get('file')!=r['source_filename'] or c.get('revision')!=r['revision']
+            or m.get('present') is not True or proof.get('state_dict_identical') is not True
+            or proof.get('forward_outputs_identical') is not True or proof.get('state_tensors')!=len(r['model_state_records'])
+            or not is_sha(proof.get('with_metadata_state_sha256'))
+            or proof.get('with_metadata_state_sha256')!=proof.get('without_metadata_state_sha256')
+            or type(proof.get('torch')) is not str):
+        raise RuntimeError('UniMatch recorded _metadata equivalence proof does not cover this exact checkpoint')
+    return proof
+
+
 def validate_selection(item):
     if item.get('approved') is not True:
         raise RuntimeError('UniMatch checkpoint model-key/vendor/device/flow-lifetime selection pending')
@@ -46,14 +76,18 @@ def validate_selection(item):
     # that complete raw layout before RPC rather than inventing flattening.
     if expected!='singleton_model':
         raise RuntimeError('UniMatch multi-key raw model container unsupported by published tensor-only transport')
-    # The transport must not silently lose native model state version metadata.
-    # Only the actually inspected absent-metadata contract is currently handled.
-    if r.get('native_model_state_metadata_present') is not False:
-        raise RuntimeError('UniMatch native state _metadata transport correspondence unsupported')
     records=r.get('model_state_records')
     if type(records) is not list or not records or any(type(v) is not dict or type(v.get('key')) is not str for v in records):
         raise RuntimeError('UniMatch actual ordered state tensor records unselected')
     if len({v['key'] for v in records})!=len(records):raise RuntimeError('UniMatch repeated selected model state key')
+    # The transport must not silently lose native model state version metadata.
+    # Absent metadata needs nothing more. Present metadata is accepted ONLY with
+    # the recorded proof for this exact checkpoint sha256 (nothing generic).
+    present=r.get('native_model_state_metadata_present')
+    if present is True:
+        metadata_equivalence_proof(r)
+    elif present is not False:
+        raise RuntimeError('UniMatch native state _metadata transport correspondence unsupported')
     return r
 
 
@@ -97,6 +131,16 @@ async def read_checkpoint(ref,item):
 def model_state(projected,item):
     r=validate_selection(item)
     state=projected
+    if r.get('native_model_state_metadata_present') is True:
+        # validate_selection bound the recorded per-checkpoint proof. Both routes
+        # load the metadata-free state that proof compared (the guest transport
+        # already delivers it). The proof was recorded under one torch build; its
+        # version-dependent loaders are proven only there.
+        import torch
+        if str(torch.__version__)!=metadata_equivalence_proof(r)['torch']:
+            raise RuntimeError('UniMatch _metadata equivalence proof was recorded under a different torch build')
+        if isinstance(state,dict) and hasattr(state,'_metadata'):
+            state=dict(state)
     if not isinstance(state,dict) or list(state)!=[v['key'] for v in r['model_state_records']] or hasattr(state,'_metadata'):
         raise RuntimeError('UniMatch native model state key/order/metadata correspondence differs')
     import torch

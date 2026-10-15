@@ -1,6 +1,216 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,297 @@
+@@ -0,0 +1,507 @@
++> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
++> Nodes: 64 of 64 converted; 47 tested (scoped), 3 converted but untested/partly tested,
++> 14 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
++> (Revision 2. The 14: 11 pending capability — `addict` ×4, `yacs` + >4 GiB ×1, transformers bundle constructor ×6; 3 blocked by the platform — FaceMesh: legacy mediapipe API absent on Python 3.13; MeshGraphormer ×2: engine image lacks libEGL/libGLESv2.)
++
++# ControlNet Aux — secure conversion report (in progress, revision 2)
++
++## Provenance
++
++- Upstream: https://github.com/Fannovel16/comfyui_controlnet_aux
++- Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
++- Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
++- Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
++
++## Per-node status (2026-10-15, revision 2)
++
++Dispositions: **tested** = scoped behavior evidence on the registered node (revision-2 additions: in-process registered node AND ordinary guest, each bit-exact vs the genuine upstream original on the same staged weights, CPU, capped container); **partial** = source converted, positive behavior only partly tested; **pending-capability** = source converted but blocked on a capability (dependency, constructor, memory); **blocked (platform)** = source converted but the runtime platform cannot host the original dependency.
++
++| Node id | Display name | Disposition | Evidence or gap |
++| --- | --- | --- | --- |
++| AIO_Preprocessor | AIO Aux Preprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `aio-shared-and-full-cli-original-dispatch-pass-r2` |
++| AnimalPosePreprocessor | AnimalPose Estimator (AP10K) | tested | TorchScript pair; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1` |
++| AnimeFace_SemSegPreprocessor | Anime Face Segmentor | partial | In-process exact vs the genuine original (both background modes). Guest blocked by an SDK gap: guest outputs are typed by value, so upstream's 4-D NCHW MASK is validated as IMAGE and refused. Evidence: `tests/animeface-inprocess-exact-guest-blocked-sdk-output-typing-r1` |
++| AnimeLineArtPreprocessor | Anime Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anime-shared-and-full-cli-original-model-pass-r1` |
++| AnyLineArtPreprocessor_aux | AnyLine Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anyline-shared-and-full-cli-original-model-pass-r2` |
++| BAE-NormalMapPreprocessor | BAE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `bae-shared-and-full-cli-original-model-pass-r1` |
++| BinaryPreprocessor | Binary Lines | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
++| CannyEdgePreprocessor | Canny Edge | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
++| ColorPreprocessor | Color Pallete | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
++| ControlNetAuxSimpleAddText | ControlNetAuxSimpleAddText | tested | Scoped typed native pass (non-model controls) — evidence: `flow-font-and-complete-source-r1` |
++| ControlNetPreprocessorSelector | Preprocessor Selector | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1` |
++| DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
++| DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1` |
++| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | pending-capability | needs `yacs` in the private profile and a test memory cap above 4 GiB (1.19 GB checkpoint + swin_b + vgg16); upstream-tracked LPIPS `vgg.pth` excluded from v2. |
++| DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4` |
++| DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1` |
++| ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. |
++| FacialPartColoringFromPoseKps | Colorize Facial Parts from PoseKPS | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
++| FakeScribblePreprocessor | Fake Scribble Lines (aka scribble_hed) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
++| HEDPreprocessor | HED Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
++| HintImageEnchance | Enchance And Resize Hint Images | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| ImageGenResolutionFromImage | Generation Resolution From Image | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| ImageGenResolutionFromLatent | Generation Resolution From Latent | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| ImageIntensityDetector | Image Intensity | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| ImageLuminanceDetector | Image Luminance | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| InpaintPreprocessor | Inpaint Preprocessor | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| LeReS-DepthMapPreprocessor | LeReS Depth Map (enable boost for leres++) | tested | Default and boost; in-process and guest exact vs the genuine original — evidence: `tests/leres-inprocess-and-guest-vs-original-r1` |
++| LineArtPreprocessor | Realistic Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `lineart-shared-and-full-cli-original-model-pass-r1` |
++| LineartStandardPreprocessor | Standard Lineart | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
++| M-LSDPreprocessor | M-LSD Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `mlsd-shared-and-full-cli-original-model-pass-r1` |
++| Manga2Anime_LineArt_Preprocessor | Manga Lineart (aka lineart_anime_denoise) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `manga-shared-and-full-cli-original-model-pass-r1` |
++| MaskOptFlow | Mask Optical Flow (DragNUWA) | tested | Scoped typed native pass (non-model controls) — evidence: `flow-font-and-complete-source-r1` |
++| MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. |
++| MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). |
++| MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. |
++| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
++| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
++| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1` |
++| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1` |
++| OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
++| OneFormer-COCO-SemSegPreprocessor | OneFormer COCO Segmentor | pending-capability | shi-labs/oneformer_coco_swin_large bundle + class-info JSON (shi-labs/oneformer_demo); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
++| OpenposePreprocessor | OpenPose Pose | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `openpose-original7-HTTP-full1591-CLI-scoped-pass-r5` |
++| PiDiNetPreprocessor | PiDiNet Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
++| PixelPerfectResolution | Pixel Perfect Resolution | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| PyraCannyPreprocessor | PyraCanny | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| RenderAnimalKps | Render Pose JSON (Animal) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
++| RenderPeopleKps | Render Pose JSON (Human) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
++| SAMPreprocessor | SAM Segmentor | pending-capability | Upstream default at this pin is `facebook/sam-vit-base` via transformers (`mobile_sam.pt` is only a label; vendored MobileSAM code is unreachable); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Upstream uses the global numpy RNG (nondeterministic). |
++| SavePoseKpsAsJsonFile | Save Pose Keypoints | tested | Scoped original managed-output pass on shared HTTP and full-source CLI — evidence: `savepose-shared-full-cli-original-json-scoped-pass-r4` |
++| Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
++| Scribble_XDoG_Preprocessor | Scribble XDoG Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| ScribblePreprocessor | Scribble Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | pending-capability | Alias of UniFormer-SemSegPreprocessor: needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
++| ShufflePreprocessor | Content Shuffle | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2` |
++| TilePreprocessor | Tile | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| TTPlanet_TileGF_Preprocessor | TTPlanet Tile GuidedFilter | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| TTPlanet_TileSimple_Preprocessor | TTPlanet Tile Simple | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
++| UniFormer-SemSegPreprocessor | UniFormer Segmentor | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
++| Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1` |
++| UpperBodyTrackingFromPoseKps | Upper Body Tracking From PoseKps (InstanceDiffusion) | partial | Populated multi-person / multi-frame cases: in-process exact vs the genuine original. Guest wire changes plain-data types (int dict keys -> str, numpy float64 -> Tensor); prompt string exact. Evidence: `tests/upperbody-tracking-inprocess-exact-guest-wire-typing-r1` |
++| Zoe-DepthMapPreprocessor | Zoe Depth Map | pending-capability | Intel/zoedepth-nyu-kitti bundle; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
++| Zoe_DepthAnythingPreprocessor | Zoe Depth Anything | pending-capability | Upstream uses Intel/zoedepth-nyu-kitti for both metric defaults; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
++
++## Revision 2 changes
++
++### Pack-local source fixes (shipped)
++
++| File | Why |
++| --- | --- |
++| `_densepose/selection.py` | sealed whole-archive read via `_sealed_asset_read.py` |
++| `_dwpose/__init__.py` | per-invocation construction: the native module caches are emptied before and after each call (warm == cold proven exact), so no model outlives its invocation |
++| `_dwpose/selection.py` | per-invocation sealed-content binding (no realm identity, no cross-invocation cache) replaces the unconditional hold; ONNX via OpenCV DNN byte constructor only while upstream's own routing selects cv2 (pinned OpenCV); sealed read |
++| `_leres/detector.py` | nested `res101.pth` read via `assets.load_state_dict(ref, member="depth_model")` (the DSINE precedent); the guest weight bridge refuses the whole nested container |
++| `_sealed_asset_read.py` | shared: whole-archive reads through the bounded `assets.read_range` (<= 16 MiB per call), size + sha256 verified — the guest caps `assets.read_bytes` at 64 MiB |
++| `_unimatch/metadata-equivalence-proof.json` | the recorded proof (with/without `_metadata`: identical state and outputs on the original model, this checkpoint only) |
++| `_unimatch/selection.py` | checkpoint `_metadata` accepted only with the recorded per-checkpoint equivalence proof (proof sha256 + checkpoint sha256/bytes/revision + torch build); both routes load the metadata-free state |
++
++### Declaration fixes (secure-nodes.json; regenerated by the SDK from this tree)
++
++| Node id | Permissions | Required weights |
++| --- | --- | --- |
++| DensePosePreprocessor | `raw`, `assets` | — (see note) |
++| DepthAnythingV2Preprocessor | `raw`, `assets`, `models.download` | `depth_anything_v2_vits.pth` (depth-anything/Depth-Anything-V2-Small@03876f86, sha256 715fade13be8) |
++| AnimalPosePreprocessor | `raw`, `assets`, `models.download` | — (see note) |
++| DWPreprocessor | `raw`, `assets`, `models.download` | `yolox_l.onnx` (yzd-v/DWPose@1a714410, sha256 7860ae79de6c) |
++| LeReS-DepthMapPreprocessor | `raw`, `assets`, `models.download` | `res101.pth` (lllyasviel/Annotators@982e7eda, sha256 1d696b2ef3e8); `latest_net_G.pth` (lllyasviel/Annotators@982e7eda, sha256 50ec735d74ed) |
++| Unimatch_OptFlowPreprocessor | `raw`, `assets`, `models.download` | `gmflow-scale2-regrefine6-mixdata.pth` (hr16/Unimatch@9ef80c9c, sha256 4e7b215d5a25) |
++| AnimeFace_SemSegPreprocessor | `raw`, `assets`, `models.download` | `Annotators/UNet.pth` (bdsqlsz/qinglong_controlnet-lllite@67006a35, sha256 96c2a509b3eb); `isnetis.ckpt` (skytnt/anime-seg@493cb608, sha256 2c8f6b9a7738) |
++
++Not declarable today (SDK): executable TorchScript archives (`densepose_r50_fpn_dl.torchscript`, the DW/AnimalPose `*.torchscript.pt` — they fail the restricted-archive check) and download.pytorch.org weights (AnimeFace `mobilenet_v2-b0353104.pth`). These nodes resolve them from the managed store when staged.
++
++### SDK gaps recorded with GERALD (not pack-fixable)
++
++- Guest outputs are typed by value (any non-1-D tensor becomes IMAGE): blocks AnimeFace's native 4-D MASK on the guest route.
++- Plain-data guest outputs lose types (int dict keys, numpy scalars): blocks UpperBodyTracking on the guest route.
++- `required_weights` cannot declare executable TorchScript or URL-sourced weights.
++- Pickled state `_metadata` is dropped by the guest transport (Unimatch carries a per-checkpoint proof instead).
++
++## Refused techniques (never-do) and public replacements
++
++| Refused technique | Public replacement in this conversion |
++| --- | --- |
++| Importing ComfyUI private core (`comfy.*`, `folder_paths`, model management) inside node code | Public `comfy_api.latest` `io` / `sdk` APIs; private-core references confined to test-only `_test_*` reference helpers |
++| Downloading checkpoints at run time (Hugging Face Hub / torch.hub / URLs in `from_pretrained`) | Declared, SHA-256-pinned managed weights resolved by the host; no guest network |
++| Unrestricted pickle loading of downloaded checkpoints | Managed loaders / restricted state-dict readers bound to pinned bytes |
++| Writing files into the pack folder or arbitrary paths (SavePose JSON) | SDK managed `output` capability |
++| Reaching into the executing prompt graph directly (ExecuteAll) | Public graph expansion (`enable_expand`) on the SDK node output |
++
++## Pending (not yet supported — needs <capability>)
++
++- UniFormer-SemSegPreprocessor, SemSegPreprocessor, Metric3D-DepthMapPreprocessor, Metric3D-NormalMapPreprocessor: not yet supported — needs `addict` in the pack's private profile (approved; in the account-deps queue).
++- DiffusionEdge_Preprocessor: not yet supported — needs `yacs` and a test memory cap above 4 GiB.
++- SAMPreprocessor, DepthAnythingPreprocessor, Zoe_DepthAnythingPreprocessor, Zoe-DepthMapPreprocessor, OneFormer-ADE20K-SemSegPreprocessor, OneFormer-COCO-SemSegPreprocessor: not yet supported — needs a sealed transformers bundle constructor.
++- MediaPipe-FaceMeshPreprocessor: blocked (platform) — needs the legacy mediapipe `mp.solutions` API, absent from every Python 3.13 mediapipe wheel.
++- MeshGraphormer-DepthMapPreprocessor, MeshGraphormer+ImpactDetector-DepthMapPreprocessor: blocked (platform) — needs `libEGL.so.1` + `libGLESv2.so.2` in the engine image, then mediapipe, trimesh, yacs, weights and MANO/SMPL data.
++- AnimeFace_SemSegPreprocessor (guest route): needs SDK output typing by the declared output type.
++- UpperBodyTrackingFromPoseKps (guest route): needs a type-preserving plain-data guest wire.
++- ExecuteAllControlNetPreprocessors: full positive run once every child preprocessor is runnable.
++
++## Open test gates
++
++- Every pending-capability and blocked node above, once its capability lands.
++- AnimeFace and UpperBodyTracking guest routes after the SDK fixes.
++- ExecuteAll full run; whole-pack acceptance and normal registry publication: not started.
++
++## Authority / permissions
++
++| Permission set | Nodes |
++| --- | --- |
++| `raw` | 39 (BinaryPreprocessor, CannyEdgePreprocessor, ColorPreprocessor, ControlNetAuxSimpleAddText, DepthAnythingPreprocessor, DiffusionEdge_Preprocessor, …) |
++| `raw`, `assets`, `models.download` | 21 (AnimalPosePreprocessor, AnimeFace_SemSegPreprocessor, AnimeLineArtPreprocessor, AnyLineArtPreprocessor_aux, BAE-NormalMapPreprocessor, DSINE-NormalMapPreprocessor, …) |
++| `raw`, `assets` | 1 (DensePosePreprocessor) |
++| `assets`, `output` | 1 (SavePoseKpsAsJsonFile) |
++| `raw`, `assets`, `models.download`, `output` | 1 (AIO_Preprocessor) |
++| (none) | 1 (ControlNetPreprocessorSelector) |
++
++## Assets / weights required (never committed)
++
++Declared managed weights in the regenerated manifest:
++
++| Node id | Declared weights |
++| --- | --- |
++| AIO_Preprocessor | `Anyline/MTEED.pth` (TheMistoAI/MistoLine, sha256 a3c2d8a8ce94); `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061); `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf); `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013); `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6); `mlsd_large_512_fp32.pth` (lllyasviel/Annotators, sha256 5696f168eb2c); `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725); `Annotators/7_model.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 b9037964149c) |
++| AnimeFace_SemSegPreprocessor | `Annotators/UNet.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 96c2a509b3eb); `isnetis.ckpt` (skytnt/anime-seg, sha256 2c8f6b9a7738) |
++| AnimeLineArtPreprocessor | `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf) |
++| AnyLineArtPreprocessor_aux | `Anyline/MTEED.pth` (TheMistoAI/MistoLine, sha256 a3c2d8a8ce94); `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061); `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf); `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013) |
++| BAE-NormalMapPreprocessor | `scannet.pt` (lllyasviel/Annotators, sha256 03dbf1600c51) |
++| DSINE-NormalMapPreprocessor | `dsine.pt` (hr16/Diffusion-Edge, sha256 629472c66ea9) |
++| DWPreprocessor | `yolox_l.onnx` (yzd-v/DWPose, sha256 7860ae79de6c) |
++| DepthAnythingV2Preprocessor | `depth_anything_v2_vits.pth` (depth-anything/Depth-Anything-V2-Small, sha256 715fade13be8) |
++| FakeScribblePreprocessor | `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6) |
++| HEDPreprocessor | `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6) |
++| LeReS-DepthMapPreprocessor | `res101.pth` (lllyasviel/Annotators, sha256 1d696b2ef3e8); `latest_net_G.pth` (lllyasviel/Annotators, sha256 50ec735d74ed) |
++| LineArtPreprocessor | `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061) |
++| M-LSDPreprocessor | `mlsd_large_512_fp32.pth` (lllyasviel/Annotators, sha256 5696f168eb2c) |
++| Manga2Anime_LineArt_Preprocessor | `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013) |
++| MiDaS-DepthMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
++| MiDaS-NormalMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
++| OpenposePreprocessor | `body_pose_model.pth` (lllyasviel/Annotators, sha256 25a948c16078); `hand_pose_model.pth` (lllyasviel/Annotators, sha256 b76b00d17509); `facenet.pth` (lllyasviel/Annotators, sha256 8beb52e54862) |
++| PiDiNetPreprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
++| Scribble_PiDiNet_Preprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
++| TEEDPreprocessor | `Annotators/7_model.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 b9037964149c) |
++| Unimatch_OptFlowPreprocessor | `gmflow-scale2-regrefine6-mixdata.pth` (hr16/Unimatch, sha256 4e7b215d5a25) |
++
++Upstream-tracked model files excluded from `v2/` (still present in the pristine tree):
++
++| File (upstream path) | Bytes |
++| --- | --- |
++| `src/custom_controlnet_aux/diffusion_edge/taming/modules/autoencoder/lpips/vgg.pth` | 7289 |
++| `src/custom_controlnet_aux/mesh_graphormer/hand_landmarker.task` | 7819105 |
++| `src/custom_mesh_graphormer/modeling/data/J_regressor_extra.npy` | 771808 |
++| `src/custom_mesh_graphormer/modeling/data/J_regressor_h36m_correct.npy` | 937168 |
++| `src/custom_mesh_graphormer/modeling/data/MANO_LEFT.pkl` | 3447713 |
++| `src/custom_mesh_graphormer/modeling/data/MANO_RIGHT.pkl` | 3447679 |
++| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_indices.pt` | 21639 |
++| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_size.pt` | 173 |
++| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_values.pt` | 5663 |
++| `src/custom_mesh_graphormer/modeling/data/mano_downsampling.npz` | 176509 |
++| `src/custom_mesh_graphormer/modeling/data/mesh_downsampling.npz` | 1720359 |
++| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_indices.pt` | 48423 |
++| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_size.pt` | 175 |
++| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_values.pt` | 12359 |
++| `src/custom_mesh_graphormer/modeling/data/smpl_431_faces.npy` | 21128 |
++
++---
++
++## Revision 1 report (retained; superseded above)
++
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 64 of 64 converted; 39 tested (scoped), 4 converted but untested/partly tested,
 +> 21 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -3555,7 +3765,7 @@
 +        return ("BOOLEAN", dict(default=default))
 --- /dev/null
 +++ b/v2/_densepose/selection.py
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,73 @@
 +"""Pack-owned immutable executable-code selection. No scientific imports."""
 +import hashlib
 +import json
@@ -3624,7 +3834,8 @@
 +    ref = await assets.resolve(row['folder'], row['catalogue_name'])
 +    if await assets.size(ref) != row['bytes'] or await assets.digest(ref, 'sha256') != row['sha256']:
 +        raise RuntimeError('DensePose sealed archive identity differs from selection')
-+    payload = await assets.read_bytes(ref)
++    from .._sealed_asset_read import read_sealed_asset
++    payload = await read_sealed_asset(assets, ref, row['bytes'], row['sha256'])
 +    if type(payload) is not bytes or len(payload) != row['bytes'] or hashlib.sha256(payload).hexdigest() != row['sha256']:
 +        raise RuntimeError('DensePose actual executable archive bytes differ from selection')
 +    return payload
@@ -22124,7 +22335,7 @@
 \ No newline at end of file
 --- /dev/null
 +++ b/v2/_dwpose/__init__.py
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,24 @@
 +"""Gate before scientific imports, startup mutation, asset RPC and engines."""
 +from .selection import selected_family
 +
@@ -22137,7 +22348,18 @@
 +    from .wrappers import DWPose_Preprocessor, AnimalPose_Preprocessor
 +    cls = {'DWPreprocessor': DWPose_Preprocessor,
 +           'AnimalPosePreprocessor': AnimalPose_Preprocessor}[node_id]
-+    return await cls().estimate_pose(selection=selection, **values)
++    # AMY lane rev2 (test-only): per-invocation construction. The native module
++    # caches start empty (the original's cold-cache branch) and are emptied
++    # again afterwards: engines are built only from this invocation's verified
++    # bytes and never outlive it.
++    from . import detector
++    detector.global_cached_dwpose = detector.Wholebody()
++    detector.global_cached_animalpose = detector.AnimalPoseImage()
++    try:
++        return await cls().estimate_pose(selection=selection, **values)
++    finally:
++        detector.global_cached_dwpose = detector.Wholebody()
++        detector.global_cached_animalpose = detector.AnimalPoseImage()
 --- /dev/null
 +++ b/v2/_dwpose/animalpose.py
 @@ -0,0 +1,272 @@
@@ -25002,7 +25224,7 @@
 +        return ("BOOLEAN", dict(default=default))
 --- /dev/null
 +++ b/v2/_dwpose/selection.py
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,159 @@
 +"""Pack-owned sealed inputs. No engine, realm or generation authority is invented."""
 +import hashlib
 +import io
@@ -25018,6 +25240,25 @@
 +    return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 +
 +
++# AMY lane rev2 (test-only candidate): per-invocation sealed-content binding (see
++# asset-selection.json current_authenticated_realm_generation_contract evidence).
++PER_INVOCATION_BINDING = 'per-invocation-sealed-content/no-warm-cache/1'
++ONNX_CV2_CONSTRUCTOR = 'cv2.dnn.readNetFromONNX(numpy.uint8 buffer)'
++
++
++def onnx_cv2_contract_holds(item):
++    # OpenCV DNN byte constructor only, and only while the original
++    # classification (util.get_model_type) picks cv2 in this runtime: no
++    # non-CPU onnxruntime provider available, on the inspected OpenCV build.
++    contract = item.get('onnx_ort_opencv_byte_constructor_contract')
++    if (type(contract) is not dict or contract.get('engine') != 'cv2' or contract.get('constructor') != ONNX_CV2_CONSTRUCTOR
++            or contract.get('original_classification') != 'cv2' or not digest(contract.get('evidence_sha256'))):
++        return False
++    import cv2
++    from .util import get_ort_providers
++    return not [p for p in get_ort_providers() if p != 'CPUExecutionProvider'] and cv2.__version__ == contract.get('opencv_version')
++
++
 +def selected_family(node_id):
 +    item = json.loads(Path(__file__).with_name('asset-selection.json').read_text())
 +    if item.get('approved') is not True:
@@ -25031,7 +25272,17 @@
 +    # A receipt or ambient environment variable alone cannot establish the
 +    # current authenticated realm/generation. The consumed published guest
 +    # asset interface has no such identity accessor. Do not guess one.
-+    raise RuntimeError(node_id + ': published current realm/resource/provider/device generation binding is held; native warm cache cannot be admitted')
++    # AMY lane rev2 (test-only): no realm identity is claimed or guessed. The
++    # selected binding is per-invocation sealed content: each invocation reads
++    # and verifies the exact bytes it uses (size + sha256), and __init__.execute
++    # empties the native module caches before and after the call, so no warm
++    # cache is admitted across invocations.
++    contract = item.get('current_authenticated_realm_generation_contract')
++    if (item.get('current_generation_binding_approved') is not True or type(contract) is not dict
++            or contract.get('binding') != PER_INVOCATION_BINDING or contract.get('realm_identity') is not None
++            or contract.get('cross_invocation_cache') is not False or not digest(contract.get('evidence_sha256'))):
++        raise RuntimeError(node_id + ': published current realm/resource/provider/device generation binding is held; native warm cache cannot be admitted')
++    return item
 +
 +
 +@dataclass(frozen=True)
@@ -25088,7 +25339,9 @@
 +        # No vendor ABI/filelike/byte constructor contract has been supplied
 +        # for ORT or OpenCV. Refuse BEFORE resolving/reading an asset or
 +        # constructing an engine. Classification/fallback source stays exact.
-+        raise RuntimeError('ONNX ORT/OpenCV sealed-byte constructor contract is held')
++        # AMY lane rev2 (test-only): selected OpenCV DNN byte constructor only.
++        if r.get('format') != 'onnx' or not onnx_cv2_contract_holds(item):
++            raise RuntimeError('ONNX ORT/OpenCV sealed-byte constructor contract is held')
 +    else:
 +        raise RuntimeError('native serialization format construction is held')
 +    return r
@@ -25110,7 +25363,8 @@
 +    ref = await assets.resolve(r['folder'], r['catalogue_name'])
 +    if await assets.size(ref) != r['bytes'] or await assets.digest(ref, 'sha256') != r['sha256']:
 +        raise RuntimeError('sealed resource size/digest differs from selection')
-+    payload = await assets.read_bytes(ref)
++    from .._sealed_asset_read import read_sealed_asset
++    payload = await read_sealed_asset(assets, ref, r['bytes'], r['sha256'])
 +    if type(payload) is not bytes or len(payload) != r['bytes'] or hashlib.sha256(payload).hexdigest() != r['sha256']:
 +        raise RuntimeError('actual serialized resource bytes differ from selection')
 +    return SealedResource(repo, filename, payload, r['sha256'], r['format'])
@@ -25119,6 +25373,11 @@
 +def engine_input(resource, engine):
 +    if not isinstance(resource, SealedResource):
 +        raise TypeError('engine input must be a genuine sealed resource')
++    if engine == 'cv2' and resource.format == 'onnx':
++        # AMY lane rev2 (test-only): OpenCV's readNetFromONNX(buffer) overload
++        # parses the same serialized bytes the original reads from its path.
++        import numpy as np
++        return np.frombuffer(resource.payload, dtype=np.uint8)
 +    if engine != 'torchscript' or resource.format != 'torchscript':
 +        raise RuntimeError('ONNX ORT/OpenCV byte/buffer construction remains held')
 +    # Published Torch2.8 source accepts BytesIO and calls the genuine C++
@@ -27610,7 +27869,7 @@
 +}
 --- /dev/null
 +++ b/v2/_leres/detector.py
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,111 @@
 +"""Full retained LeReS detector, managed state inputs, native options/device sequence."""
 +import cv2
 +import numpy as np
@@ -27625,6 +27884,18 @@
 +from .pix2pix.options.test_options import TestOptions
 +from .selection import selected_asset, selected_member, option_projection, native_map_location
 +
++async def managed_depth_state(ref, item):
++    """Literal depth_model member read through the published asset API.
++
++    Native LeReS consumes only checkpoint['depth_model'] of res101.pth. The guest
++    weight bridge carries flat tensor maps only, so the nested container cannot
++    cross it whole; the member is read on the trusted side on both routes and
++    the selected container contract is then applied unchanged.
++    """
++    state = await sdk.ctx().assets.load_state_dict(ref, member='depth_model')
++    return {'depth_model': state} if item['load_state_contract'] == 'nested-depth-model-retained' else state
++
++
 +class LeresDetector:
 +    def __init__(self, model, pix2pixmodel):
 +            self.model = model
@@ -27633,7 +27904,7 @@
 +    @classmethod
 +    async def from_managed(cls, selection):
 +            depth_ref = await selected_asset(selection['assets']['depth'])
-+            checkpoint = {'depth_model': selected_member(await sdk.ctx().assets.load_state_dict(depth_ref), selection['assets']['depth'])}
++            checkpoint = {'depth_model': selected_member(await managed_depth_state(depth_ref, selection['assets']['depth']), selection['assets']['depth'])}
 +    
 +            model = RelDepthModel(backbone='resnext101')
 +            model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
@@ -71054,6 +71325,37 @@
 +    "display_name": "ControlNetAuxSimpleAddText"
 +  }
 +}
+--- /dev/null
++++ b/v2/_sealed_asset_read.py
+@@ -0,0 +1,28 @@
++"""Whole sealed asset bytes through the bounded published range API.
++
++The guest broker caps assets.read_bytes at COMFY_SECURE_ASSET_READ_MAX (64 MiB by
++default; in-process has no cap), so the two routes diverge for larger checkpoints.
++Families whose ORIGINAL loader needs the complete raw archive (restricted torch.load
++of nested containers, TorchScript, ONNX) read it with assets.read_range, which both
++routes bound to [1, 16 MiB] per call. The selected size and sha256 are verified over
++exactly the bytes returned; nothing is cached or written.
++"""
++import hashlib
++
++CHUNK = 16 * 1024 * 1024
++
++
++async def read_sealed_asset(assets, ref, size, sha256):
++    if type(size) is not int or size <= 0 or type(sha256) is not str or len(sha256) != 64:
++        raise RuntimeError('sealed asset size/digest is unselected')
++    if await assets.size(ref) != size:
++        raise RuntimeError('sealed asset size differs')
++    chunks = []; done = 0; h = hashlib.sha256()
++    while done < size:
++        chunk = await assets.read_range(ref, done, min(CHUNK, size - done))
++        if type(chunk) is not bytes or not chunk or len(chunk) > size - done:
++            raise RuntimeError('sealed asset range read differs')
++        chunks.append(chunk); h.update(chunk); done += len(chunk)
++    if done != size or h.hexdigest() != sha256:
++        raise RuntimeError('sealed asset bytes differ')
++    return b''.join(chunks)
 --- /dev/null
 +++ b/v2/_selector_native.py
 @@ -0,0 +1,19 @@
@@ -135711,6 +136013,45 @@
 +
 +        return flow, vis_image
 --- /dev/null
++++ b/v2/_unimatch/metadata-equivalence-proof.json
+@@ -0,0 +1,36 @@
++{
++  "checkpoint": {
++    "bytes": 29500177,
++    "file": "gmflow-scale2-regrefine6-mixdata.pth",
++    "repo": "hr16/Unimatch",
++    "revision": "9ef80c9c6206687ab43a7f6b15d415444ad7d783",
++    "sha256": "4e7b215d5a25dc3b41bd2fb55cbbfe1b715a9c279bdcc8ad30bc31afe69421ca"
++  },
++  "conclusion": "For this checkpoint, UniMatch loaded with and without _metadata has identical state and identical outputs; _metadata may be dropped for THIS checkpoint sha only.",
++  "flow_sha256": "ff37c1aa256940249e6c0184e6f60ffb55b07f23081f292b8aa9f7f053d97725",
++  "forward_case": "checker pair 64x64 shift(2,3), output_type np, no bwd/bidir",
++  "forward_outputs_identical": true,
++  "kind": "UNIMATCH_METADATA_EQUIVALENCE_PROOF",
++  "metadata": {
++    "entries": 191,
++    "present": true,
++    "version_dependent_module_types": {
++      "InstanceNorm2d": {
++        "class_version": 2,
++        "count": 15,
++        "metadata_versions": [
++          "2"
++        ]
++      }
++    }
++  },
++  "model_config": "gmflow-scale2-regrefine6",
++  "scope": "this exact checkpoint only; nothing generic",
++  "state_dict_identical": true,
++  "state_tensors": 152,
++  "torch": "2.8.0+cu128",
++  "upstream_source_pin": "0cd290477128d42cdc3e76a826a402d866e8c684",
++  "vis_sha256": "789fd692f7cfd08bfdc88c00b6fafb108c69c2ca33cf43641fadbae9d334d380",
++  "with_metadata_state_sha256": "bad4e5bc80a45fe23efe9eb5895ffdab4926868221135be3d6e6c62b66794da2",
++  "without_metadata_state_sha256": "bad4e5bc80a45fe23efe9eb5895ffdab4926868221135be3d6e6c62b66794da2"
++}
+--- /dev/null
 +++ b/v2/_unimatch/native-sources.json
 @@ -0,0 +1,28 @@
 +{
@@ -135743,7 +136084,7 @@
 +}
 --- /dev/null
 +++ b/v2/_unimatch/selection.py
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,155 @@
 +"""Source-bound native model-key correspondence through published Assets."""
 +import hashlib
 +import json
@@ -135757,6 +136098,36 @@
 +
 +
 +def is_sha(value):return type(value) is str and re.fullmatch('[0-9a-f]{64}',value) is not None
++
++
++PROOF='metadata-equivalence-proof.json'
++
++
++def metadata_equivalence_proof(r):
++    """Recorded proof that, for THIS checkpoint sha256 only, the original UniMatch
++    loaded with and without the state's _metadata has identical state and outputs.
++    Any other checkpoint, revision, proof byte or source pin is refused."""
++    if not is_sha(r.get('metadata_equivalence_proof_sha256')):
++        raise RuntimeError('UniMatch native state _metadata present without a recorded per-checkpoint equivalence proof')
++    try:
++        raw=Path(__file__).with_name(PROOF).read_bytes()
++    except OSError:
++        raise RuntimeError('UniMatch recorded _metadata equivalence proof missing') from None
++    if hashlib.sha256(raw).hexdigest()!=r['metadata_equivalence_proof_sha256']:
++        raise RuntimeError('UniMatch recorded _metadata equivalence proof differs')
++    proof=json.loads(raw)
++    c=proof.get('checkpoint') if type(proof) is dict else None
++    m=proof.get('metadata') if type(proof) is dict else None
++    if (type(c) is not dict or type(m) is not dict or proof.get('kind')!='UNIMATCH_METADATA_EQUIVALENCE_PROOF'
++            or proof.get('upstream_source_pin')!=PIN or c.get('sha256')!=r['sha256'] or c.get('bytes')!=r['bytes']
++            or c.get('repo')!=r['source_repo'] or c.get('file')!=r['source_filename'] or c.get('revision')!=r['revision']
++            or m.get('present') is not True or proof.get('state_dict_identical') is not True
++            or proof.get('forward_outputs_identical') is not True or proof.get('state_tensors')!=len(r['model_state_records'])
++            or not is_sha(proof.get('with_metadata_state_sha256'))
++            or proof.get('with_metadata_state_sha256')!=proof.get('without_metadata_state_sha256')
++            or type(proof.get('torch')) is not str):
++        raise RuntimeError('UniMatch recorded _metadata equivalence proof does not cover this exact checkpoint')
++    return proof
 +
 +
 +def validate_selection(item):
@@ -135792,14 +136163,18 @@
 +    # that complete raw layout before RPC rather than inventing flattening.
 +    if expected!='singleton_model':
 +        raise RuntimeError('UniMatch multi-key raw model container unsupported by published tensor-only transport')
-+    # The transport must not silently lose native model state version metadata.
-+    # Only the actually inspected absent-metadata contract is currently handled.
-+    if r.get('native_model_state_metadata_present') is not False:
-+        raise RuntimeError('UniMatch native state _metadata transport correspondence unsupported')
 +    records=r.get('model_state_records')
 +    if type(records) is not list or not records or any(type(v) is not dict or type(v.get('key')) is not str for v in records):
 +        raise RuntimeError('UniMatch actual ordered state tensor records unselected')
 +    if len({v['key'] for v in records})!=len(records):raise RuntimeError('UniMatch repeated selected model state key')
++    # The transport must not silently lose native model state version metadata.
++    # Absent metadata needs nothing more. Present metadata is accepted ONLY with
++    # the recorded proof for this exact checkpoint sha256 (nothing generic).
++    present=r.get('native_model_state_metadata_present')
++    if present is True:
++        metadata_equivalence_proof(r)
++    elif present is not False:
++        raise RuntimeError('UniMatch native state _metadata transport correspondence unsupported')
 +    return r
 +
 +
@@ -135843,6 +136218,16 @@
 +def model_state(projected,item):
 +    r=validate_selection(item)
 +    state=projected
++    if r.get('native_model_state_metadata_present') is True:
++        # validate_selection bound the recorded per-checkpoint proof. Both routes
++        # load the metadata-free state that proof compared (the guest transport
++        # already delivers it). The proof was recorded under one torch build; its
++        # version-dependent loaders are proven only there.
++        import torch
++        if str(torch.__version__)!=metadata_equivalence_proof(r)['torch']:
++            raise RuntimeError('UniMatch _metadata equivalence proof was recorded under a different torch build')
++        if isinstance(state,dict) and hasattr(state,'_metadata'):
++            state=dict(state)
 +    if not isinstance(state,dict) or list(state)!=[v['key'] for v in r['model_state_records']] or hasattr(state,'_metadata'):
 +        raise RuntimeError('UniMatch native model state key/order/metadata correspondence differs')
 +    import torch
@@ -144307,7 +144692,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,8595 @@
+@@ -0,0 +1,8666 @@
 +{
 +  "conversion": {
 +    "complete": false,
@@ -144835,13 +145220,30 @@
 +      "sdk_refs": false,
 +      "permissions": [
 +        "raw",
-+        "assets"
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false
-+      }
++      },
++      "required_weights": [
++        {
++          "repo_id": "bdsqlsz/qinglong_controlnet-lllite",
++          "filename": "Annotators/UNet.pth",
++          "folder": "controlnet",
++          "revision": "67006a35a5955437d118490bfec822402eff09f5",
++          "sha256": "96c2a509b3eb1b2083b5384bbc30808dc205f370c513ee930e644edc0ea4688d"
++        },
++        {
++          "repo_id": "skytnt/anime-seg",
++          "filename": "isnetis.ckpt",
++          "folder": "controlnet",
++          "revision": "493cb60893f47441b26ec4fb9a306bce9e342982",
++          "sha256": "2c8f6b9a77386c54dcdbf55b6c917108c4bdf4328abca9152c7bce5727b74d18"
++        }
++      ]
 +    },
 +    "BinaryPreprocessor": {
 +      "class": "BinaryPreprocessor",
@@ -145587,7 +145989,8 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
@@ -146420,13 +146823,24 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false
-+      }
++      },
++      "required_weights": [
++        {
++          "repo_id": "yzd-v/DWPose",
++          "filename": "yolox_l.onnx",
++          "folder": "controlnet",
++          "revision": "1a7144101628d69ee7a3768d1ee3a094070dc388",
++          "sha256": "7860ae79de6c89a3c1eb72ae9a2756c0ccfbe04b7791bb5880afabd97855a411"
++        }
++      ]
 +    },
 +    "AnimalPosePreprocessor": {
 +      "class": "AnimalPosePreprocessor",
@@ -146575,7 +146989,9 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
@@ -147394,13 +147810,24 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false
-+      }
++      },
++      "required_weights": [
++        {
++          "repo_id": "depth-anything/Depth-Anything-V2-Small",
++          "filename": "depth_anything_v2_vits.pth",
++          "folder": "controlnet",
++          "revision": "03876f8651c73a60fe4c2c48294e09fcb6838fcf",
++          "sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378"
++        }
++      ]
 +    },
 +    "CannyEdgePreprocessor": {
 +      "class": "CannyEdgePreprocessor",
@@ -150271,13 +150698,31 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false
-+      }
++      },
++      "required_weights": [
++        {
++          "repo_id": "lllyasviel/Annotators",
++          "filename": "res101.pth",
++          "folder": "controlnet",
++          "revision": "982e7edaec38759d914a963c48c4726685de7d96",
++          "sha256": "1d696b2ef3e8336b057d0c15bc82d2fecef821bfebe5ef9d7671a5ec5dde520b"
++        },
++        {
++          "repo_id": "lllyasviel/Annotators",
++          "filename": "latest_net_G.pth",
++          "folder": "controlnet",
++          "revision": "982e7edaec38759d914a963c48c4726685de7d96",
++          "sha256": "50ec735d74ed6499562d898f41b49343e521808b8dae589aa3c2f5c9ac9f7462"
++        }
++      ]
 +    },
 +    "Unimatch_OptFlowPreprocessor": {
 +      "class": "Unimatch_OptFlowPreprocessor",
@@ -150413,13 +150858,24 @@
 +      },
 +      "sdk_refs": false,
 +      "permissions": [
-+        "raw"
++        "raw",
++        "assets",
++        "models.download"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false
-+      }
++      },
++      "required_weights": [
++        {
++          "repo_id": "hr16/Unimatch",
++          "filename": "gmflow-scale2-regrefine6-mixdata.pth",
++          "folder": "controlnet",
++          "revision": "9ef80c9c6206687ab43a7f6b15d415444ad7d783",
++          "sha256": "4e7b215d5a25dc3b41bd2fb55cbbfe1b715a9c279bdcc8ad30bc31afe69421ca"
++        }
++      ]
 +    },
 +    "MaskOptFlow": {
 +      "class": "MaskOptFlow",

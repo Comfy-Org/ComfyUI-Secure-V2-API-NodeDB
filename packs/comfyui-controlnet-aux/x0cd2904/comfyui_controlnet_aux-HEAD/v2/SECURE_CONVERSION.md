@@ -1,4 +1,214 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
+> Nodes: 64 of 64 converted; 47 tested (scoped), 3 converted but untested/partly tested,
+> 14 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> (Revision 2. The 14: 11 pending capability — `addict` ×4, `yacs` + >4 GiB ×1, transformers bundle constructor ×6; 3 blocked by the platform — FaceMesh: legacy mediapipe API absent on Python 3.13; MeshGraphormer ×2: engine image lacks libEGL/libGLESv2.)
+
+# ControlNet Aux — secure conversion report (in progress, revision 2)
+
+## Provenance
+
+- Upstream: https://github.com/Fannovel16/comfyui_controlnet_aux
+- Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
+- Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
+- Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
+
+## Per-node status (2026-10-15, revision 2)
+
+Dispositions: **tested** = scoped behavior evidence on the registered node (revision-2 additions: in-process registered node AND ordinary guest, each bit-exact vs the genuine upstream original on the same staged weights, CPU, capped container); **partial** = source converted, positive behavior only partly tested; **pending-capability** = source converted but blocked on a capability (dependency, constructor, memory); **blocked (platform)** = source converted but the runtime platform cannot host the original dependency.
+
+| Node id | Display name | Disposition | Evidence or gap |
+| --- | --- | --- | --- |
+| AIO_Preprocessor | AIO Aux Preprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `aio-shared-and-full-cli-original-dispatch-pass-r2` |
+| AnimalPosePreprocessor | AnimalPose Estimator (AP10K) | tested | TorchScript pair; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1` |
+| AnimeFace_SemSegPreprocessor | Anime Face Segmentor | partial | In-process exact vs the genuine original (both background modes). Guest blocked by an SDK gap: guest outputs are typed by value, so upstream's 4-D NCHW MASK is validated as IMAGE and refused. Evidence: `tests/animeface-inprocess-exact-guest-blocked-sdk-output-typing-r1` |
+| AnimeLineArtPreprocessor | Anime Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anime-shared-and-full-cli-original-model-pass-r1` |
+| AnyLineArtPreprocessor_aux | AnyLine Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anyline-shared-and-full-cli-original-model-pass-r2` |
+| BAE-NormalMapPreprocessor | BAE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `bae-shared-and-full-cli-original-model-pass-r1` |
+| BinaryPreprocessor | Binary Lines | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
+| CannyEdgePreprocessor | Canny Edge | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
+| ColorPreprocessor | Color Pallete | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
+| ControlNetAuxSimpleAddText | ControlNetAuxSimpleAddText | tested | Scoped typed native pass (non-model controls) — evidence: `flow-font-and-complete-source-r1` |
+| ControlNetPreprocessorSelector | Preprocessor Selector | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1` |
+| DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
+| DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1` |
+| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | pending-capability | needs `yacs` in the private profile and a test memory cap above 4 GiB (1.19 GB checkpoint + swin_b + vgg16); upstream-tracked LPIPS `vgg.pth` excluded from v2. |
+| DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4` |
+| DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1` |
+| ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. |
+| FacialPartColoringFromPoseKps | Colorize Facial Parts from PoseKPS | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
+| FakeScribblePreprocessor | Fake Scribble Lines (aka scribble_hed) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
+| HEDPreprocessor | HED Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
+| HintImageEnchance | Enchance And Resize Hint Images | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| ImageGenResolutionFromImage | Generation Resolution From Image | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| ImageGenResolutionFromLatent | Generation Resolution From Latent | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| ImageIntensityDetector | Image Intensity | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| ImageLuminanceDetector | Image Luminance | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| InpaintPreprocessor | Inpaint Preprocessor | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| LeReS-DepthMapPreprocessor | LeReS Depth Map (enable boost for leres++) | tested | Default and boost; in-process and guest exact vs the genuine original — evidence: `tests/leres-inprocess-and-guest-vs-original-r1` |
+| LineArtPreprocessor | Realistic Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `lineart-shared-and-full-cli-original-model-pass-r1` |
+| LineartStandardPreprocessor | Standard Lineart | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
+| M-LSDPreprocessor | M-LSD Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `mlsd-shared-and-full-cli-original-model-pass-r1` |
+| Manga2Anime_LineArt_Preprocessor | Manga Lineart (aka lineart_anime_denoise) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `manga-shared-and-full-cli-original-model-pass-r1` |
+| MaskOptFlow | Mask Optical Flow (DragNUWA) | tested | Scoped typed native pass (non-model controls) — evidence: `flow-font-and-complete-source-r1` |
+| MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. |
+| MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). |
+| MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. |
+| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
+| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
+| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1` |
+| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1` |
+| OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
+| OneFormer-COCO-SemSegPreprocessor | OneFormer COCO Segmentor | pending-capability | shi-labs/oneformer_coco_swin_large bundle + class-info JSON (shi-labs/oneformer_demo); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
+| OpenposePreprocessor | OpenPose Pose | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `openpose-original7-HTTP-full1591-CLI-scoped-pass-r5` |
+| PiDiNetPreprocessor | PiDiNet Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
+| PixelPerfectResolution | Pixel Perfect Resolution | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| PyraCannyPreprocessor | PyraCanny | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| RenderAnimalKps | Render Pose JSON (Animal) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
+| RenderPeopleKps | Render Pose JSON (Human) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
+| SAMPreprocessor | SAM Segmentor | pending-capability | Upstream default at this pin is `facebook/sam-vit-base` via transformers (`mobile_sam.pt` is only a label; vendored MobileSAM code is unreachable); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Upstream uses the global numpy RNG (nondeterministic). |
+| SavePoseKpsAsJsonFile | Save Pose Keypoints | tested | Scoped original managed-output pass on shared HTTP and full-source CLI — evidence: `savepose-shared-full-cli-original-json-scoped-pass-r4` |
+| Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
+| Scribble_XDoG_Preprocessor | Scribble XDoG Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| ScribblePreprocessor | Scribble Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | pending-capability | Alias of UniFormer-SemSegPreprocessor: needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
+| ShufflePreprocessor | Content Shuffle | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2` |
+| TilePreprocessor | Tile | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| TTPlanet_TileGF_Preprocessor | TTPlanet Tile GuidedFilter | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| TTPlanet_TileSimple_Preprocessor | TTPlanet Tile Simple | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
+| UniFormer-SemSegPreprocessor | UniFormer Segmentor | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. |
+| Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1` |
+| UpperBodyTrackingFromPoseKps | Upper Body Tracking From PoseKps (InstanceDiffusion) | partial | Populated multi-person / multi-frame cases: in-process exact vs the genuine original. Guest wire changes plain-data types (int dict keys -> str, numpy float64 -> Tensor); prompt string exact. Evidence: `tests/upperbody-tracking-inprocess-exact-guest-wire-typing-r1` |
+| Zoe-DepthMapPreprocessor | Zoe Depth Map | pending-capability | Intel/zoedepth-nyu-kitti bundle; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
+| Zoe_DepthAnythingPreprocessor | Zoe Depth Anything | pending-capability | Upstream uses Intel/zoedepth-nyu-kitti for both metric defaults; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. |
+
+## Revision 2 changes
+
+### Pack-local source fixes (shipped)
+
+| File | Why |
+| --- | --- |
+| `_densepose/selection.py` | sealed whole-archive read via `_sealed_asset_read.py` |
+| `_dwpose/__init__.py` | per-invocation construction: the native module caches are emptied before and after each call (warm == cold proven exact), so no model outlives its invocation |
+| `_dwpose/selection.py` | per-invocation sealed-content binding (no realm identity, no cross-invocation cache) replaces the unconditional hold; ONNX via OpenCV DNN byte constructor only while upstream's own routing selects cv2 (pinned OpenCV); sealed read |
+| `_leres/detector.py` | nested `res101.pth` read via `assets.load_state_dict(ref, member="depth_model")` (the DSINE precedent); the guest weight bridge refuses the whole nested container |
+| `_sealed_asset_read.py` | shared: whole-archive reads through the bounded `assets.read_range` (<= 16 MiB per call), size + sha256 verified — the guest caps `assets.read_bytes` at 64 MiB |
+| `_unimatch/metadata-equivalence-proof.json` | the recorded proof (with/without `_metadata`: identical state and outputs on the original model, this checkpoint only) |
+| `_unimatch/selection.py` | checkpoint `_metadata` accepted only with the recorded per-checkpoint equivalence proof (proof sha256 + checkpoint sha256/bytes/revision + torch build); both routes load the metadata-free state |
+
+### Declaration fixes (secure-nodes.json; regenerated by the SDK from this tree)
+
+| Node id | Permissions | Required weights |
+| --- | --- | --- |
+| DensePosePreprocessor | `raw`, `assets` | — (see note) |
+| DepthAnythingV2Preprocessor | `raw`, `assets`, `models.download` | `depth_anything_v2_vits.pth` (depth-anything/Depth-Anything-V2-Small@03876f86, sha256 715fade13be8) |
+| AnimalPosePreprocessor | `raw`, `assets`, `models.download` | — (see note) |
+| DWPreprocessor | `raw`, `assets`, `models.download` | `yolox_l.onnx` (yzd-v/DWPose@1a714410, sha256 7860ae79de6c) |
+| LeReS-DepthMapPreprocessor | `raw`, `assets`, `models.download` | `res101.pth` (lllyasviel/Annotators@982e7eda, sha256 1d696b2ef3e8); `latest_net_G.pth` (lllyasviel/Annotators@982e7eda, sha256 50ec735d74ed) |
+| Unimatch_OptFlowPreprocessor | `raw`, `assets`, `models.download` | `gmflow-scale2-regrefine6-mixdata.pth` (hr16/Unimatch@9ef80c9c, sha256 4e7b215d5a25) |
+| AnimeFace_SemSegPreprocessor | `raw`, `assets`, `models.download` | `Annotators/UNet.pth` (bdsqlsz/qinglong_controlnet-lllite@67006a35, sha256 96c2a509b3eb); `isnetis.ckpt` (skytnt/anime-seg@493cb608, sha256 2c8f6b9a7738) |
+
+Not declarable today (SDK): executable TorchScript archives (`densepose_r50_fpn_dl.torchscript`, the DW/AnimalPose `*.torchscript.pt` — they fail the restricted-archive check) and download.pytorch.org weights (AnimeFace `mobilenet_v2-b0353104.pth`). These nodes resolve them from the managed store when staged.
+
+### SDK gaps recorded with GERALD (not pack-fixable)
+
+- Guest outputs are typed by value (any non-1-D tensor becomes IMAGE): blocks AnimeFace's native 4-D MASK on the guest route.
+- Plain-data guest outputs lose types (int dict keys, numpy scalars): blocks UpperBodyTracking on the guest route.
+- `required_weights` cannot declare executable TorchScript or URL-sourced weights.
+- Pickled state `_metadata` is dropped by the guest transport (Unimatch carries a per-checkpoint proof instead).
+
+## Refused techniques (never-do) and public replacements
+
+| Refused technique | Public replacement in this conversion |
+| --- | --- |
+| Importing ComfyUI private core (`comfy.*`, `folder_paths`, model management) inside node code | Public `comfy_api.latest` `io` / `sdk` APIs; private-core references confined to test-only `_test_*` reference helpers |
+| Downloading checkpoints at run time (Hugging Face Hub / torch.hub / URLs in `from_pretrained`) | Declared, SHA-256-pinned managed weights resolved by the host; no guest network |
+| Unrestricted pickle loading of downloaded checkpoints | Managed loaders / restricted state-dict readers bound to pinned bytes |
+| Writing files into the pack folder or arbitrary paths (SavePose JSON) | SDK managed `output` capability |
+| Reaching into the executing prompt graph directly (ExecuteAll) | Public graph expansion (`enable_expand`) on the SDK node output |
+
+## Pending (not yet supported — needs <capability>)
+
+- UniFormer-SemSegPreprocessor, SemSegPreprocessor, Metric3D-DepthMapPreprocessor, Metric3D-NormalMapPreprocessor: not yet supported — needs `addict` in the pack's private profile (approved; in the account-deps queue).
+- DiffusionEdge_Preprocessor: not yet supported — needs `yacs` and a test memory cap above 4 GiB.
+- SAMPreprocessor, DepthAnythingPreprocessor, Zoe_DepthAnythingPreprocessor, Zoe-DepthMapPreprocessor, OneFormer-ADE20K-SemSegPreprocessor, OneFormer-COCO-SemSegPreprocessor: not yet supported — needs a sealed transformers bundle constructor.
+- MediaPipe-FaceMeshPreprocessor: blocked (platform) — needs the legacy mediapipe `mp.solutions` API, absent from every Python 3.13 mediapipe wheel.
+- MeshGraphormer-DepthMapPreprocessor, MeshGraphormer+ImpactDetector-DepthMapPreprocessor: blocked (platform) — needs `libEGL.so.1` + `libGLESv2.so.2` in the engine image, then mediapipe, trimesh, yacs, weights and MANO/SMPL data.
+- AnimeFace_SemSegPreprocessor (guest route): needs SDK output typing by the declared output type.
+- UpperBodyTrackingFromPoseKps (guest route): needs a type-preserving plain-data guest wire.
+- ExecuteAllControlNetPreprocessors: full positive run once every child preprocessor is runnable.
+
+## Open test gates
+
+- Every pending-capability and blocked node above, once its capability lands.
+- AnimeFace and UpperBodyTracking guest routes after the SDK fixes.
+- ExecuteAll full run; whole-pack acceptance and normal registry publication: not started.
+
+## Authority / permissions
+
+| Permission set | Nodes |
+| --- | --- |
+| `raw` | 39 (BinaryPreprocessor, CannyEdgePreprocessor, ColorPreprocessor, ControlNetAuxSimpleAddText, DepthAnythingPreprocessor, DiffusionEdge_Preprocessor, …) |
+| `raw`, `assets`, `models.download` | 21 (AnimalPosePreprocessor, AnimeFace_SemSegPreprocessor, AnimeLineArtPreprocessor, AnyLineArtPreprocessor_aux, BAE-NormalMapPreprocessor, DSINE-NormalMapPreprocessor, …) |
+| `raw`, `assets` | 1 (DensePosePreprocessor) |
+| `assets`, `output` | 1 (SavePoseKpsAsJsonFile) |
+| `raw`, `assets`, `models.download`, `output` | 1 (AIO_Preprocessor) |
+| (none) | 1 (ControlNetPreprocessorSelector) |
+
+## Assets / weights required (never committed)
+
+Declared managed weights in the regenerated manifest:
+
+| Node id | Declared weights |
+| --- | --- |
+| AIO_Preprocessor | `Anyline/MTEED.pth` (TheMistoAI/MistoLine, sha256 a3c2d8a8ce94); `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061); `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf); `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013); `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6); `mlsd_large_512_fp32.pth` (lllyasviel/Annotators, sha256 5696f168eb2c); `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725); `Annotators/7_model.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 b9037964149c) |
+| AnimeFace_SemSegPreprocessor | `Annotators/UNet.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 96c2a509b3eb); `isnetis.ckpt` (skytnt/anime-seg, sha256 2c8f6b9a7738) |
+| AnimeLineArtPreprocessor | `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf) |
+| AnyLineArtPreprocessor_aux | `Anyline/MTEED.pth` (TheMistoAI/MistoLine, sha256 a3c2d8a8ce94); `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061); `netG.pth` (lllyasviel/Annotators, sha256 ccabdcc3f5cf); `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013) |
+| BAE-NormalMapPreprocessor | `scannet.pt` (lllyasviel/Annotators, sha256 03dbf1600c51) |
+| DSINE-NormalMapPreprocessor | `dsine.pt` (hr16/Diffusion-Edge, sha256 629472c66ea9) |
+| DWPreprocessor | `yolox_l.onnx` (yzd-v/DWPose, sha256 7860ae79de6c) |
+| DepthAnythingV2Preprocessor | `depth_anything_v2_vits.pth` (depth-anything/Depth-Anything-V2-Small, sha256 715fade13be8) |
+| FakeScribblePreprocessor | `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6) |
+| HEDPreprocessor | `ControlNetHED.pth` (lllyasviel/Annotators, sha256 5ca93762ffd6) |
+| LeReS-DepthMapPreprocessor | `res101.pth` (lllyasviel/Annotators, sha256 1d696b2ef3e8); `latest_net_G.pth` (lllyasviel/Annotators, sha256 50ec735d74ed) |
+| LineArtPreprocessor | `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061) |
+| M-LSDPreprocessor | `mlsd_large_512_fp32.pth` (lllyasviel/Annotators, sha256 5696f168eb2c) |
+| Manga2Anime_LineArt_Preprocessor | `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013) |
+| MiDaS-DepthMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
+| MiDaS-NormalMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
+| OpenposePreprocessor | `body_pose_model.pth` (lllyasviel/Annotators, sha256 25a948c16078); `hand_pose_model.pth` (lllyasviel/Annotators, sha256 b76b00d17509); `facenet.pth` (lllyasviel/Annotators, sha256 8beb52e54862) |
+| PiDiNetPreprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
+| Scribble_PiDiNet_Preprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
+| TEEDPreprocessor | `Annotators/7_model.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 b9037964149c) |
+| Unimatch_OptFlowPreprocessor | `gmflow-scale2-regrefine6-mixdata.pth` (hr16/Unimatch, sha256 4e7b215d5a25) |
+
+Upstream-tracked model files excluded from `v2/` (still present in the pristine tree):
+
+| File (upstream path) | Bytes |
+| --- | --- |
+| `src/custom_controlnet_aux/diffusion_edge/taming/modules/autoencoder/lpips/vgg.pth` | 7289 |
+| `src/custom_controlnet_aux/mesh_graphormer/hand_landmarker.task` | 7819105 |
+| `src/custom_mesh_graphormer/modeling/data/J_regressor_extra.npy` | 771808 |
+| `src/custom_mesh_graphormer/modeling/data/J_regressor_h36m_correct.npy` | 937168 |
+| `src/custom_mesh_graphormer/modeling/data/MANO_LEFT.pkl` | 3447713 |
+| `src/custom_mesh_graphormer/modeling/data/MANO_RIGHT.pkl` | 3447679 |
+| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_indices.pt` | 21639 |
+| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_size.pt` | 173 |
+| `src/custom_mesh_graphormer/modeling/data/mano_195_adjmat_values.pt` | 5663 |
+| `src/custom_mesh_graphormer/modeling/data/mano_downsampling.npz` | 176509 |
+| `src/custom_mesh_graphormer/modeling/data/mesh_downsampling.npz` | 1720359 |
+| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_indices.pt` | 48423 |
+| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_size.pt` | 175 |
+| `src/custom_mesh_graphormer/modeling/data/smpl_431_adjmat_values.pt` | 12359 |
+| `src/custom_mesh_graphormer/modeling/data/smpl_431_faces.npy` | 21128 |
+
+---
+
+## Revision 1 report (retained; superseded above)
+
+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 > Nodes: 64 of 64 converted; 39 tested (scoped), 4 converted but untested/partly tested,
 > 21 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
 > (The 21 are converted in source but pending capability: 20 need original checkpoints staged and a model-load test; FaceMesh needs `mediapipe`.)

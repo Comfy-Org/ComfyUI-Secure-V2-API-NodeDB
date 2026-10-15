@@ -10,4 +10,15 @@ async def execute(node_id, **values):
     from .wrappers import DWPose_Preprocessor, AnimalPose_Preprocessor
     cls = {'DWPreprocessor': DWPose_Preprocessor,
            'AnimalPosePreprocessor': AnimalPose_Preprocessor}[node_id]
-    return await cls().estimate_pose(selection=selection, **values)
+    # AMY lane rev2 (test-only): per-invocation construction. The native module
+    # caches start empty (the original's cold-cache branch) and are emptied
+    # again afterwards: engines are built only from this invocation's verified
+    # bytes and never outlive it.
+    from . import detector
+    detector.global_cached_dwpose = detector.Wholebody()
+    detector.global_cached_animalpose = detector.AnimalPoseImage()
+    try:
+        return await cls().estimate_pose(selection=selection, **values)
+    finally:
+        detector.global_cached_dwpose = detector.Wholebody()
+        detector.global_cached_animalpose = detector.AnimalPoseImage()
