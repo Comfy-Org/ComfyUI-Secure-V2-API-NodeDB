@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {readFileSync,existsSync} from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import vm from 'node:vm';
+import {fileURLToPath} from 'node:url';
+import {chromium} from '/Users/ben/comfy/ComfyUI_secure_nodes/frontend/tests/_deps.mjs';
+const here=path.dirname(fileURLToPath(import.meta.url));
+const pack=readFileSync(path.resolve(here,'../js/chibi_nodes.js'),'utf8');
+const original=readFileSync(path.resolve(here,'../../js/chibi_nodes.js'),'utf8');
+let legacy;
+vm.runInNewContext(original.replace(/^import.*$/gm,''),{app:{registerExtension(x){legacy=x;}},ComfyWidgets:{INT(node,name){const widget={name,value:0};node.widgets.push(widget);return{widget};}},console:{log(){}}});
+assert.equal(legacy.name,'chibi_nodes');
+const textboxType={prototype:{}},sizeType={prototype:{}};
+legacy.beforeRegisterNodeDef(textboxType,{name:'Textbox'},{});
+legacy.beforeRegisterNodeDef(sizeType,{name:'ImageSizeInfo'},{});
+const oldText={widgets:[{name:'text',type:'customtext',value:'old'}],onResize(){}};
+textboxType.prototype.onExecuted.call(oldText,{text:['<script>','literal</script>']});
+assert.equal(oldText.widgets[0].value,'<script>literal</script>');
+const oldSize={widgets:[],onResize(){}};
+sizeType.prototype.onNodeCreated.call(oldSize);
+sizeType.prototype.onExecuted.call(oldSize,{width:[864],height:[512]});
+assert.deepEqual(oldSize.widgets.map(w=>w.value),[864,512]);
+const root='/Users/ben/comfy/ComfyUI_secure_nodes/frontend/src';
+const pageSource=`<!doctype html><meta charset="utf-8"><body><script type="module">
+import {SecureExtensionHost} from '/src/host-entry.mjs';
+import {serializeWorkflow} from '/serialization.mjs';
+const hooks=new Map(),nodes=new Map();let epoch=0;
+function make(id,type,saved){const items=new Map();const add=def=>{const w={name:def.name,widgetType:def.type,getValue:()=>w.value,setValue:value=>{w.value=value;},value:def.value};items.set(w.name,w);return w;};if(type==='Textbox')add({name:'text',type:'customtext',value:saved?.[0]??'authored'});else for(const [i,name]of['width','height'].entries())add({name,type:'INT',value:saved?.[i]??0});const node={id,type,graphId:'chibi-'+epoch,widgets:{all:()=>[...items.values()],get:name=>items.get(name),add},inputs:{all:()=>[]},outputs:{all:()=>[]},snapshot:()=>({id,type,graphId:'chibi-'+epoch})};nodes.set(id,node);return node;}
+let a=make('1','Textbox'),b=make('2','Textbox'),s=make('3','ImageSizeInfo');
+const comfy={backend:{url:v=>new URL(v,location.origin).href,fetch:async()=>new Response('{}')},onWorkflowLoaded(){return()=>{};},workflow:{documentId:()=> 'chibi-'+epoch},graph:{nodes:()=>[...nodes.values()],node:id=>nodes.get(String(id)),groups:()=>[]},defs:{extend(type,apply){const record={};apply({addWidget(def){record.widgets??=[];record.widgets.push(def);},onExecuted(fn){record.executed=fn;},onCreated(fn){record.created=fn;},onConfigured(fn){record.configured=fn;},onRemoved(fn){record.removed=fn;}});hooks.set(type,record);return()=>{};}}};
+const host=new SecureExtensionHost({comfy,bootstrapUrl:'/guest.js',capabilities:[]});
+window.__start=()=>host.load('/extensions/chibi/pack.js');
+window.__state=()=>({a:a.widgets.get('text').getValue(),b:b.widgets.get('text').getValue(),size:s.widgets.all().map(w=>w.getValue()),hooks:[...hooks.keys()],defs:hooks.get('ImageSizeInfo')?.widgets,sandbox:document.querySelector('iframe')?.getAttribute('sandbox'),errors:host.packErrors||[]});
+window.__run=(id,result)=>{const n=nodes.get(id);return hooks.get(n.type).executed(n,result);};
+window.__save=()=>serializeWorkflow({nodes:[a,b,s].map(n=>({widgets:n.widgets.all(),serialize_widgets:true,isSubgraphNode:()=>false})),serialize:()=>({nodes:[a,b,s].map(n=>({id:n.id,widgets_values:n.widgets.all().map(w=>w.getValue())}))})});
+window.__restore=async()=>{const saved=(await window.__save()).nodes.map(n=>n.widgets_values);epoch++;nodes.clear();a=make('1','Textbox',saved[0]);b=make('2','Textbox',saved[1]);s=make('3','ImageSizeInfo',saved[2]);};
+window.__remove=()=>nodes.delete('1');
+window.__destroy=()=>{host.destroy();return {subs:host._subs?.size??0,iframe:!!document.querySelector('iframe')};};
+</script></body>`;
+const server=http.createServer((request,response)=>{const url=new URL(request.url,'http://localhost').pathname;let body,type='text/javascript';if(url==='/'){body=pageSource;type='text/html';}else if(url==='/serialization.mjs')body=readFileSync('/Users/ben/comfy/ComfyUI_frontend-secure-nodes/temp/many-oct7-widget-serialization/serialization.mjs');else if(url==='/guest.js')body=readFileSync(path.join(root,'guest.mjs'));else if(url==='/comfy/api/v2.js')body='export const comfy=globalThis.comfy';else if(url==='/extensions/chibi/pack.js')body=pack;else if(url.startsWith('/src/')){const file=path.resolve(root,url.slice(5));if(file.startsWith(root+path.sep)&&existsSync(file))body=readFileSync(file);}if(body===undefined){response.writeHead(404);response.end();return;}response.writeHead(200,{'Content-Type':type,'Access-Control-Allow-Origin':'*'});response.end(body);});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true});
+try{const page=await browser.newPage();page.setDefaultTimeout(5000);const errors=[];page.on('pageerror',e=>{errors.push(String(e));console.error('page error',String(e));});page.on('console',m=>{if(m.type()==='error')console.error('browser console',m.text());});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>typeof window.__start==='function');await page.evaluate(()=>window.__start());try{await page.waitForFunction(()=>window.__state().hooks.includes('Textbox')&&window.__state().hooks.includes('ImageSizeInfo'));}catch(e){console.error('bridge state',JSON.stringify(await page.evaluate(()=>window.__state())));throw e;}assert.equal((await page.evaluate(()=>window.__state())).sandbox,'allow-scripts');
+for(const value of ['','汉字😀','<img src=x onerror=alert(1)>','\r\n','x'.repeat(65536)]){await page.evaluate(v=>window.__run('1',{text:[v]}),value);await page.waitForFunction(v=>window.__state().a===v,value);assert.equal((await page.evaluate(()=>window.__state())).b,'authored');}
+await page.evaluate(()=>window.__run('2',{text:'native plain UI string'}));await page.waitForFunction(()=>window.__state().b==='native plain UI string');
+await page.evaluate(()=>window.__run('3',{width:[864],height:[512]}));await page.waitForFunction(()=>window.__state().size.join(',')==='864,512');
+await page.evaluate(()=>window.__restore());assert.equal((await page.evaluate(()=>window.__state())).a.length,65536);assert.deepEqual((await page.evaluate(()=>window.__state())).size,[864,512]);
+await page.evaluate(()=>window.__run('1',{}));await page.evaluate(()=>window.__run('1',{text:['remounted']}));await page.waitForFunction(()=>window.__state().a==='remounted');
+await page.evaluate(()=>window.__remove());await page.evaluate(()=>window.__run('2',{text:['survivor']}));await page.waitForFunction(()=>window.__state().b==='survivor');assert.deepEqual((await page.evaluate(()=>window.__state())).errors,[]);assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.__destroy()),{subs:0,iframe:false});
+console.log('PASS pinned extension controls; actual opaque iframe/worker text and size widget writes, literal adversarial/Unicode/empty/plain-string UI, isolated nodes, restored workflow values, remount/removal/destroy. QUALIFIED production bridge with graph/widget owner fixtures, not full app/cloud.');
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

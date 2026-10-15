@@ -1,0 +1,783 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "nodes": {
+    "HunyuanVideoSamplerSave": {
+      "module": "nodes",
+      "class": "HunyuanVideoSamplerSave",
+      "sdk_refs": true,
+      "permissions": [
+        "sample"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "HunyuanVideoSamplerSave",
+          "display_name": "Hunyuan Video Sampler Save",
+          "category": "sampling",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "MODEL",
+            "attrs": {
+              "id": "model",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "positive",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "CONDITIONING",
+            "attrs": {
+              "id": "negative",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "video_latents",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "seed",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 18446744073709551615,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "steps",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 20,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 10000,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "cfg",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 8,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 100,
+              "step": null,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "sampler_name",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "euler",
+                "euler_cfg_pp",
+                "euler_ancestral",
+                "euler_ancestral_cfg_pp",
+                "heun",
+                "heunpp2",
+                "exp_heun_2_x0",
+                "exp_heun_2_x0_sde",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "dpm_fast",
+                "dpm_adaptive",
+                "dpmpp_2s_ancestral",
+                "dpmpp_2s_ancestral_cfg_pp",
+                "dpmpp_sde",
+                "dpmpp_sde_gpu",
+                "dpmpp_2m",
+                "dpmpp_2m_cfg_pp",
+                "dpmpp_2m_sde",
+                "dpmpp_2m_sde_gpu",
+                "dpmpp_2m_sde_heun",
+                "dpmpp_2m_sde_heun_gpu",
+                "dpmpp_3m_sde",
+                "dpmpp_3m_sde_gpu",
+                "ddpm",
+                "lcm",
+                "ipndm",
+                "ipndm_v",
+                "deis",
+                "cfgpp_ud10_ab",
+                "res_multistep",
+                "res_multistep_cfg_pp",
+                "res_multistep_ancestral",
+                "res_multistep_ancestral_cfg_pp",
+                "gradient_estimation",
+                "gradient_estimation_cfg_pp",
+                "er_sde",
+                "seeds_2",
+                "seeds_3",
+                "sa_solver",
+                "sa_solver_pece",
+                "ddim",
+                "uni_pc",
+                "uni_pc_bh2"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "scheduler",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "simple",
+                "sgm_uniform",
+                "karras",
+                "exponential",
+                "ddim_uniform",
+                "beta",
+                "normal",
+                "linear_quadratic",
+                "kl_optimal"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "denoise",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0.6,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 1,
+              "step": 0.01,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_0_LATENT_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ResizeImageForHunyuan": {
+      "module": "nodes",
+      "class": "ResizeImageForHunyuan",
+      "sdk_refs": true,
+      "permissions": [
+        "inspect"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ResizeImageForHunyuan",
+          "display_name": "Resize Image For Hunyuan",
+          "category": "image/hunyuan",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "size_preset",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "1:1 (256x256)",
+                "1:1 (384x384)",
+                "1:1 (512x512)",
+                "1:1 (768x768)",
+                "16:9 (384x216)",
+                "16:9 (512x288)",
+                "16:9 (640x360)",
+                "16:9 (768x432)",
+                "4:3 (384x288)",
+                "4:3 (512x384)",
+                "4:3 (640x480)",
+                "4:3 (768x576)",
+                "3:2 (384x256)",
+                "3:2 (512x336)",
+                "3:2 (640x432)",
+                "3:2 (768x512)",
+                "2:1 (384x192)",
+                "2:1 (512x256)",
+                "2:1 (640x320)",
+                "2:1 (768x384)",
+                "9:16 (216x384)",
+                "9:16 (288x512)",
+                "9:16 (360x640)",
+                "9:16 (432x768)",
+                "3:4 (288x384)",
+                "3:4 (384x512)",
+                "3:4 (480x640)",
+                "3:4 (576x768)",
+                "2:3 (256x384)",
+                "2:3 (336x512)",
+                "2:3 (432x640)",
+                "2:3 (512x768)",
+                "1:2 (192x384)",
+                "1:2 (256x512)",
+                "1:2 (320x640)",
+                "1:2 (384x768)"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "upscale_method",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "nearest-exact",
+                "bilinear",
+                "area",
+                "bicubic"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "crop",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "disabled",
+                "center"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "EmptyVideoLatentForHunyuan": {
+      "module": "nodes",
+      "class": "EmptyVideoLatentForHunyuan",
+      "sdk_refs": false,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "EmptyVideoLatentForHunyuan",
+          "display_name": "Empty Video Latent For Hunyuan",
+          "category": "latent/video",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "COMBO",
+            "attrs": {
+              "id": "resolution",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": null,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiselect": false,
+              "options": [
+                "256x256 (1:1)",
+                "384x384 (1:1)",
+                "512x512 (1:1)",
+                "768x768 (1:1)",
+                "384x216 (16:9)",
+                "512x288 (16:9)",
+                "640x360 (16:9)",
+                "768x432 (16:9)",
+                "384x288 (4:3)",
+                "512x384 (4:3)",
+                "640x480 (4:3)",
+                "768x576 (4:3)",
+                "384x256 (3:2)",
+                "512x336 (3:2)",
+                "640x432 (3:2)",
+                "768x512 (3:2)",
+                "384x192 (2:1)",
+                "512x256 (2:1)",
+                "640x320 (2:1)",
+                "768x384 (2:1)",
+                "216x384 (9:16)",
+                "288x512 (9:16)",
+                "360x640 (9:16)",
+                "432x768 (9:16)",
+                "288x384 (3:4)",
+                "384x512 (3:4)",
+                "480x640 (3:4)",
+                "576x768 (3:4)",
+                "256x384 (2:3)",
+                "336x512 (2:3)",
+                "432x640 (2:3)",
+                "512x768 (2:3)",
+                "192x384 (1:2)",
+                "256x512 (1:2)",
+                "320x640 (1:2)",
+                "384x768 (1:2)"
+              ],
+              "control_after_generate": null,
+              "upload": null,
+              "image_folder": null,
+              "remote": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "length",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 25,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 16384,
+              "step": 4,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "batch_size",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 1,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 1,
+              "max": 4096,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "LATENT",
+            "attrs": {
+              "id": "_0_LATENT_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    },
+    "ImageMotionInfluance": {
+      "module": "nodes",
+      "class": "ImageMotionInfluance",
+      "sdk_refs": false,
+      "permissions": [
+        "raw"
+      ],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "ImageMotionInfluance",
+          "display_name": "Image Motion Influence",
+          "category": "image/animation",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "image",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "move_range_x",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": -150,
+              "max": 150,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "INT",
+            "attrs": {
+              "id": "frame_num",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 10,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 2,
+              "max": 500,
+              "step": null,
+              "control_after_generate": null,
+              "display_mode": null
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "FLOAT",
+            "attrs": {
+              "id": "zoom",
+              "display_name": null,
+              "optional": false,
+              "tooltip": null,
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": 0,
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "min": 0,
+              "max": 0.5,
+              "step": 0.05,
+              "round": null,
+              "display_mode": null,
+              "gradient_stops": null
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "kind": "standard",
+            "io_type": "IMAGE",
+            "attrs": {
+              "id": "_0_IMAGE_",
+              "display_name": null,
+              "tooltip": null,
+              "is_output_list": false
+            }
+          }
+        ],
+        "hidden": []
+      }
+    }
+  }
+}

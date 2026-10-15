@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../web/js/image_analysis_tools.js',import.meta.url),'utf8');
+const callbacks=[],messages=[];
+const context={comfy:Object.freeze({onReady(fn){callbacks.push(fn);return()=>{};}}),console:Object.freeze({log(m){messages.push(m);}})};
+for(const name of ['document','window','app','fetch','localStorage'])Object.defineProperty(context,name,{get(){throw Error('ambient '+name);}});
+vm.runInNewContext(source.replace(/^import .*;$/m,'').replace(/^export .*;$/m,''),context);
+assert.equal(callbacks.length,1);assert.deepEqual(messages,[]);
+callbacks[0]();assert.deepEqual(messages,['ComfyUI Image Analysis Tools Loaded']);
+assert.match(source,/comfy\.onReady/);assert.match(source,/comfyui\.image_analysis_tools/);
+console.log(JSON.stringify({startup_callbacks:1,exact_startup_message:true,ambient_dom_network_storage_access:0,js_only_nodes:0,scope:'startup module harness, not browser deployment'}));

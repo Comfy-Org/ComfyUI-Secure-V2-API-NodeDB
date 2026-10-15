@@ -1,0 +1,90 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "web_directory": "js",
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "nodes": {
+    "AivParam": {
+      "module": "_secure_nodes",
+      "class": "AivParamSecure",
+      "sdk_refs": true,
+      "permissions": [],
+      "methods": {
+        "validate_inputs": false,
+        "fingerprint_inputs": false,
+        "check_lazy_status": false
+      },
+      "schema": {
+        "attrs": {
+          "node_id": "AivParam",
+          "display_name": "Aiv Param",
+          "category": "utils",
+          "description": "",
+          "search_aliases": [],
+          "is_input_list": false,
+          "is_output_node": false,
+          "is_deprecated": false,
+          "is_experimental": false,
+          "is_dev_only": false,
+          "is_api_node": false,
+          "price_badge": null,
+          "not_idempotent": false,
+          "enable_expand": false,
+          "accept_all_inputs": false,
+          "essentials_category": null,
+          "has_intermediate_output": false
+        },
+        "inputs": [
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text_param",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "<\u8bf7\u5728\u6b64\u8f93\u5165\u9700\u8981\u8f93\u51fa\u7684\u53c2\u6570\u8bbe\u7f6e(json\u683c\u5f0f)>",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "[\n    {\"id\": 18, \"name\": \"clip\", \"title\": \"\u8fd9\u662f\u53c2\u6570\u4f8b\u5b50, \u8be6\u60c5\u53c2\u8003\u4e0b\u9762\u7684\u8bf4\u660e\",\"default\":\"\u4e00\u4e2a\u6f02\u4eae\u7684\u5973\u5b69\", \"option\": {\"type\": \"text\", \"multi\": true, \"tooltip\": \"\u8bf7\u5728\u6b64\u8f93\u5165\u63d0\u793a\u8bcd(\u4e2d\u6587)\"} }\n]\n",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": true
+            }
+          },
+          {
+            "kind": "standard",
+            "io_type": "STRING",
+            "attrs": {
+              "id": "text_note",
+              "display_name": null,
+              "optional": false,
+              "tooltip": "\u8fd9\u662f\u4f7f\u7528\u8bf4\u660e",
+              "lazy": null,
+              "extra_dict": {},
+              "rawLink": null,
+              "advanced": null,
+              "default": "\n    \u4e0a\u9762\u8f93\u5165\u6846\u586b\u5199\u683c\u5f0f: json\u683c\u5f0f\u6570\u7ec4,\u6bcf\u4e2a\u53c2\u6570\u4e00\u4e2a\u5bf9\u8c61\u5143\u7d20,\u4e4b\u95f4\u7528\u8c46\u53f7\",\"\u5206\u9694, \u53c2\u8003\u5982\u4e0b: \n    [\n        {\"id\": 18, \"name\": \"clip\", \"title\": \"\u63d0\u793a\u8bcd\", \"option\": {\"type\": \"text\", \"multi\": true, \"clear\": true, \"tooltip\": \"\u8bf7\u5728\u6b64\u8f93\u5165\u63d0\u793a\u8bcd\u5185\u5bb9(\u4e2d\u6587)\"} },\n        {\"id\": 30, \"name\": \"seed\", \"title\": \"\u79cd\u5b50\", \"default\": 512356789158, \"option\": {\"type\": \"seed\"} },\n        {\"id\": 21, \"name\": \"steps\", \"title\": \"\u6b65\u6570\", \"option\": {\"type\": \"number\", \"step\": 1, \"min\": 1, \"max\": 100} },\n        {\"id\": 21, \"name\": \"enabled\", \"title\": \"\u542f\u7528\", \"default\": true, \"option\": {\"type\": \"bool\", \"tooltip\": \"\u5f00\u542f\u4eba\u8138\u589e\u5f3a\u6548\u679c\"} },\n        {\"id\": 25, \"name\": \"model\", \"title\": \"\u6a21\u578b\", \"default\": \"GFPGANv1.4.pth\", \"order\": 10, \"option\": {\"type\": \"combo\", \"values\": [\"GFPGANv1.3.pth\", \"GFPGANv1.4.pth\",\"GPEN-BFR-512.onnx\"]} },\n        {\"id\": 117, \"name\": \"image\", \"title\": \"\u4e0a\u4f20\u5934\u50cf\", \"required\": true, \"option\": {\"type\": \"file\", \"min\": 1, \"max\": 2048, \"ext\": \".jpeg,.png,.webp\" } }\n        {\"id\": 119, \"name\": \"audio\", \"title\": \"\u4e0a\u4f20\u97f3\u9891\", \"required\": false, \"option\": {\"type\": \"file\", \"min\": 0, \"max\": 1024, \"ext\": \"$audio\", \"tooltip\": \"\u5982\u679c\u4e0d\u4e0a\u4f20\u97f3\u9891\u5219\u4f7f\u7528\u7cfb\u7edf\u9884\u8bbe\u503c\"} }\n\n    ]\n\n    \u6ce8\u610f\u4e8b\u9879\uff1a\n        - \u6bcf\u4e2a\u5de5\u4f5c\u6d41\u53ea\u80fd\u6709\u4e00\u4e2a Aiv Param \u8282\u70b9;\n        - \u6ce8\u610f\u68c0\u67e5 json \u683c\u5f0f\u662f\u5426\u6b63\u786e, \u53ef\u4ee5\u4f7f\u7528\u5728\u7ebf\u7f51\u7ad9\u68c0\u6d4b;\n        - \u53c2\u6570\u8bbe\u7f6e\u4e2d,\u5fc5\u9700\u5b57\u6bb5\u662f\"id\"\u3001\"name\",\u5176\u5b83\u53ef\u9009,\u9ed8\u8ba4\u662f'text'\u7c7b\u578b, \"id\"\u5bf9\u5e94ComfyUI\u8282\u70b9\u7684\u5e8f\u5217\u53f7(\u5982\u679c\u4e0d\u77e5\u9053\u5982\u4f55\u663e\u793aComfyUI\u8282\u70b9\u5e8f\u5217\u4e2d,\u8bf7\u4e0a\u7f51\u67e5\u8be2),\"name\"\u662f\u8282\u70b9\u7684\u53c2\u6570\u540d(\u5982\u679c\u4e0d\u77e5\u9053\u53c2\u6570\u540d,\u53ef\u4ee5\u5148\u4fdd\u5b58\u4e3ajson,\u518d\u6253\u5f00\u770b);\n        - \u53c2\u6570\u8bbe\u7f6e\u5c3d\u91cf\u6307\u5b9a\u53c2\u6570\u7c7b\u578b,\u652f\u6301\u7684\u7c7b\u578b\u6709: \"text\"\u3001\"number\"\u3001\"bool\"\u3001\"seed\"(\u79cd\u5b50)\u3001\"combo\"(\u4e0b\u62c9\u6846)\u3001\"file\"(\u6253\u5f00\u6587\u4ef6)\u7b49, \"option\"\u5b57\u6bb5\u53ef\u4ee5\u8bbe\u7f6e\u6570\u636e\u7c7b\u578b\u7684\u4e00\u4e9b\u5c5e\u6027;\n        - \"text\"\u7c7b\u578b\u53ef\u4ee5\u8bbe\u7f6e\"multi\"\u5355\u591a\u884c, \"clear\"\u4efb\u52a1\u542f\u52a8\u540e\u662f\u5426\u81ea\u52a8\u6e05\u9664,\u9ed8\u8ba4\u662f\u81ea\u52a8\u6e05\u9664\n        - \"order\"\u5b57\u6bb5\u5bf9\u53c2\u6570\u6392\u5e8f\u663e\u793a,\u5927\u503c\u6392\u524d\u9762(\u4e0d\u586b\u9ed8\u8ba4\u4e3a10); \"required\"\u6807\u8bc6\u662f\u5426\u5fc5\u586b\u53c2\u6570,\u672a\u8bbe\u7f6e\u9ed8\u8ba4\u4e3atrue;\n        - \u8bbe\u8ba1\u597d\u5de5\u4f5c\u6d41\u540e,\u4f7f\u7528ComfyUI\u7684 Workflow -> Export(API) \u83dc\u5355\u628a\u5de5\u4f5c\u6d41\u5bfc\u51fa\u4e3aAPI\u683c\u5f0f\u6587\u4ef6,\u5728AIV\u5e73\u53f0\u5199py\u4ee3\u7801\u8c03\u7528json\u6587\u4ef6\u5373\u53ef;\n        - \"file\"\u7c7b\u578b\u53c2\u6570\u53ef\u4ee5\u6307\u5b9a\u9650\u5236\u6587\u4ef6\u5927\u5c0f\u7684\"min\",\"max\" \u5c5e\u6027, \u4e5f\u53ef\u4ee5\u6307\u5b9a\u6587\u4ef6\u6269\u5c55\u540d \"ext\": \u6587\u4ef6\u6269\u5c55\u540d\u53ef\u4ee5\u6307\u5b9a\"$audio\"\u3001\"$image\"\u3001\"$video\"\u3001\"$text\"\u8fd9\u6837\u7684\u53d8\u91cf;\n",
+              "socketless": null,
+              "widget_type": null,
+              "force_input": null,
+              "multiline": true,
+              "placeholder": null,
+              "dynamic_prompts": true
+            }
+          }
+        ],
+        "outputs": [],
+        "hidden": []
+      }
+    }
+  }
+}
