@@ -1,0 +1,800 @@
+diff --git a/src/lib/litegraph/src/LGraphCanvas.ts b/src/lib/litegraph/src/LGraphCanvas.ts
+--- a/src/lib/litegraph/src/LGraphCanvas.ts
++++ b/src/lib/litegraph/src/LGraphCanvas.ts
+@@ -2,7 +2,10 @@
+ import { toString } from 'es-toolkit/compat'
+ import { toValue } from 'vue'
+ import { drawNodeCanvas } from '@/platform/nodeApi/nodeCanvas'
+-import { nodePresentation, passesPinnedPrimaryClick } from '@/platform/nodeApi/nodePresentation'
++import {
++  nodePresentation,
++  passesPinnedPrimaryClick
++} from '@/platform/nodeApi/nodePresentation'
+ 
+ import { isMiddleButtonEvent } from '@/base/pointerUtils'
+ import { MovingInputLink } from '@/lib/litegraph/src/canvas/MovingInputLink'
+@@ -2328,9 +2331,12 @@
+ 
+     if (!is_inside) return
+ 
+-    const isDoubleClick = e.detail > 1 || LiteGraph.getTime() - this.last_mouseclick < 300
+-    const hitNodes = this.visible_nodes.filter((candidate) =>
+-      !passesPinnedPrimaryClick(candidate, e.button, isDoubleClick))
++    const isDoubleClick =
++      e.detail > 1 || LiteGraph.getTime() - this.last_mouseclick < 300
++    const hitNodes = this.visible_nodes.filter(
++      (candidate) =>
++        !passesPinnedPrimaryClick(candidate, e.button, isDoubleClick)
++    )
+     let node = graph.getNodeOnPos(e.canvasX, e.canvasY, hitNodes) ?? undefined
+ 
+     // In Vue nodes mode, slots extend beyond node bounds due to CSS transforms.
+diff --git a/src/lib/litegraph/src/LGraphNode.ts b/src/lib/litegraph/src/LGraphNode.ts
+--- a/src/lib/litegraph/src/LGraphNode.ts
++++ b/src/lib/litegraph/src/LGraphNode.ts
+@@ -2438,8 +2438,14 @@
+     if (content) {
+       const left = Math.min(renderArea[0], this.pos[0] + content.x)
+       const top = Math.min(renderArea[1], this.pos[1] + content.y)
+-      const right = Math.max(renderArea[0] + renderArea[2], this.pos[0] + content.x + content.width)
+-      const bottom = Math.max(renderArea[1] + renderArea[3], this.pos[1] + content.y + content.height)
++      const right = Math.max(
++        renderArea[0] + renderArea[2],
++        this.pos[0] + content.x + content.width
++      )
++      const bottom = Math.max(
++        renderArea[1] + renderArea[3],
++        this.pos[1] + content.y + content.height
++      )
+       renderArea.set([left, top, right - left, bottom - top])
+     }
+   }
+@@ -3774,7 +3780,10 @@
+   }
+ 
+   get collapsed() {
+-    return nodePresentation(this.type).collapsible !== false && !!this.flags.collapsed
++    return (
++      nodePresentation(this.type).collapsible !== false &&
++      !!this.flags.collapsed
++    )
+   }
+ 
+   get collapsible() {
+diff --git a/src/platform/nodeApi/apiSurface.ts b/src/platform/nodeApi/apiSurface.ts
+--- a/src/platform/nodeApi/apiSurface.ts
++++ b/src/platform/nodeApi/apiSurface.ts
+@@ -417,5 +417,5 @@
+   'width',
+   'workflow',
+   'x',
+-  'y',
++  'y'
+ ])
+diff --git a/src/platform/nodeApi/defsRegistry.ts b/src/platform/nodeApi/defsRegistry.ts
+--- a/src/platform/nodeApi/defsRegistry.ts
++++ b/src/platform/nodeApi/defsRegistry.ts
+@@ -26,7 +26,10 @@
+ 
+ import { ComfyApiError } from './errors'
+ import { removeNodeCanvas } from './nodeCanvas'
+-import { registerNodePresentation, validateNodePresentation } from './nodePresentation'
++import {
++  registerNodePresentation,
++  validateNodePresentation
++} from './nodePresentation'
+ import type { NodePresentation } from './nodePresentation'
+ import type { NodeHandle, Size } from './nodeHandle'
+ import { slotShapeOf } from './slotHandle'
+@@ -1048,12 +1051,20 @@
+       )
+     }
+ 
+-    const presentation = definition.presentation === undefined
+-      ? undefined : validateNodePresentation(definition.presentation)
+-    if (presentation?.chrome === 'none' &&
+-        (definition.execution !== 'frontend' || definition.inputs?.length ||
+-         definition.outputs?.length || definition.widgets?.length)) {
+-      throw new TypeError('Chromeless content requires a frontend node without slots or widgets')
++    const presentation =
++      definition.presentation === undefined
++        ? undefined
++        : validateNodePresentation(definition.presentation)
++    if (
++      presentation?.chrome === 'none' &&
++      (definition.execution !== 'frontend' ||
++        definition.inputs?.length ||
++        definition.outputs?.length ||
++        definition.widgets?.length)
++    ) {
++      throw new TypeError(
++        'Chromeless content requires a frontend node without slots or widgets'
++      )
+     }
+     const raw: RawNodeDef = {
+       name: type,
+@@ -1072,8 +1083,10 @@
+     // The class is this layer's internal detail — the pack declared data, and
+     // litegraph happens to want a constructor behind a type name.
+     class Defined extends LGraphNode {
+-      static title_mode = presentation?.chrome === 'none' || presentation?.title === 'hidden'
+-        ? LiteGraph.NO_TITLE : undefined
++      static title_mode =
++        presentation?.chrome === 'none' || presentation?.title === 'hidden'
++          ? LiteGraph.NO_TITLE
++          : undefined
+       static collapsable = presentation?.collapsible
+       constructor() {
+         super(definition.title ?? type)
+@@ -1082,7 +1095,8 @@
+         // node's widget values were dropped from the saved workflow — silently,
+         // and only visible after a reload.
+         this.serialize_widgets = true
+-        if (presentation?.resizable !== undefined) this.resizable = presentation.resizable
++        if (presentation?.resizable !== undefined)
++          this.resizable = presentation.resizable
+         for (const input of definition.inputs ?? []) {
+           this.addInput(input.name, input.type)
+         }
+@@ -1141,7 +1155,8 @@
+     registry.applyTo(Defined, raw)
+     definedTypes.add(type)
+     const removePresentation = presentation
+-      ? registerNodePresentation(type, presentation) : undefined
++      ? registerNodePresentation(type, presentation)
++      : undefined
+     LiteGraph.registerNodeType(type, Defined)
+     const previousRemoved = Defined.prototype.onRemoved
+     Defined.prototype.onRemoved = function () {
+diff --git a/src/platform/nodeApi/nodeCanvas.test.ts b/src/platform/nodeApi/nodeCanvas.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/platform/nodeApi/nodeCanvas.test.ts
+@@ -0,0 +1,119 @@
++import { createTestingPinia } from '@pinia/testing'
++import { setActivePinia } from 'pinia'
++import { beforeEach, describe, expect, it, vi } from 'vitest'
++
++import { LGraphNode } from '@/lib/litegraph/src/litegraph'
++import { reportError } from '@/platform/telemetry/reportError'
++import { createMockCanvasRenderingContext2D } from '@/utils/__tests__/litegraphTestUtils'
++
++import { ComfyApiError } from './errors'
++import {
++  createNodeCanvas,
++  mountNodeCanvas,
++  nodeCanvasBounds
++} from './nodeCanvas'
++
++vi.mock('@/platform/telemetry/reportError', () => ({ reportError: vi.fn() }))
++
++describe('node canvas failure recovery', () => {
++  beforeEach(() => {
++    setActivePinia(createTestingPinia({ stubActions: false }))
++  })
++
++  const bounds = { x: 0, y: 0, width: 40, height: 20 }
++  const canvasPrototype: {
++    getContext(contextId: '2d'): CanvasRenderingContext2D | null
++  } = HTMLCanvasElement.prototype
++
++  it('retains the mounted surface when a replacement has no 2D context', () => {
++    const node = new LGraphNode('Drawing', 'Drawing')
++    const context = createMockCanvasRenderingContext2D()
++    const getContext = vi
++      .spyOn(canvasPrototype, 'getContext')
++      .mockReturnValue(context)
++    const draw = vi.fn()
++    const previous = createNodeCanvas(node, { bounds, draw })
++    const container = document.createElement('div')
++    const unmount = mountNodeCanvas(node, container)
++    const mounted = container.firstChild
++    const create = vi.spyOn(document, 'createElement')
++    const failedDraw = vi.fn()
++    getContext.mockReturnValueOnce(null)
++
++    expect(() => createNodeCanvas(node, { bounds, draw: failedDraw })).toThrow(
++      ComfyApiError
++    )
++    expect(nodeCanvasBounds(node)).toEqual(bounds)
++    expect(container.firstChild).toBe(mounted)
++    expect(create.mock.results.at(-1)?.value).toMatchObject({
++      width: 0,
++      height: 0,
++      parentElement: null
++    })
++    expect(failedDraw).not.toHaveBeenCalled()
++    previous.redraw()
++    expect(draw).toHaveBeenCalledTimes(2)
++    expect(reportError).toHaveBeenCalledWith(expect.any(ComfyApiError), {
++      errorType: 'node_canvas_context_unavailable',
++      context: { recovery: 'previous_surface_preserved' }
++    })
++    previous.remove()
++    unmount()
++  })
++
++  it('releases a replacement whose first draw fails and retains the old surface', () => {
++    const node = new LGraphNode('Drawing', 'Drawing')
++    vi.spyOn(canvasPrototype, 'getContext').mockReturnValue(
++      createMockCanvasRenderingContext2D()
++    )
++    const previous = createNodeCanvas(node, { bounds, draw: vi.fn() })
++    const container = document.createElement('div')
++    const unmount = mountNodeCanvas(node, container)
++    const mounted = container.firstChild
++    const create = vi.spyOn(document, 'createElement')
++    const error = new Error('Drawing failed')
++
++    expect(() =>
++      createNodeCanvas(node, {
++        bounds: { ...bounds, width: 60 },
++        draw() {
++          throw error
++        }
++      })
++    ).toThrow(error)
++    expect(nodeCanvasBounds(node)).toEqual(bounds)
++    expect(container.firstChild).toBe(mounted)
++    expect(create.mock.results.at(-1)?.value).toMatchObject({
++      width: 0,
++      height: 0,
++      parentElement: null
++    })
++    expect(reportError).toHaveBeenCalledWith(error, {
++      errorType: 'node_canvas_initial_draw_failed',
++      context: { recovery: 'previous_surface_preserved' }
++    })
++    previous.remove()
++    unmount()
++  })
++
++  it('reports a removed handle mutation without recreating its canvas', () => {
++    const node = new LGraphNode('Drawing', 'Drawing')
++    vi.spyOn(canvasPrototype, 'getContext').mockReturnValue(
++      createMockCanvasRenderingContext2D()
++    )
++    const draw = vi.fn()
++    const surface = createNodeCanvas(node, { bounds, draw })
++    surface.remove()
++
++    expect(() => surface.setBounds({ ...bounds, width: 60 })).toThrow(
++      ComfyApiError
++    )
++    expect(nodeCanvasBounds(node)).toBeUndefined()
++    surface.redraw()
++    expect(draw).toHaveBeenCalledTimes(1)
++    expect(reportError).toHaveBeenCalledWith(expect.any(ComfyApiError), {
++      errorType: 'node_canvas_surface_removed',
++      context: { recovery: 'mutation_rejected' }
++    })
++  })
++})
+diff --git a/src/platform/nodeApi/nodeCanvas.ts b/src/platform/nodeApi/nodeCanvas.ts
+--- a/src/platform/nodeApi/nodeCanvas.ts
++++ b/src/platform/nodeApi/nodeCanvas.ts
+@@ -1,4 +1,7 @@
+ import type { LGraphNode } from '@/lib/litegraph/src/LGraphNode'
++import { reportError } from '@/platform/telemetry/reportError'
++
++import { ComfyApiError } from './errors'
+ import type { Bounds } from './nodeHandle'
+ 
+ export interface NodeCanvasDef {
+@@ -31,18 +34,35 @@
+   if (!value || typeof value !== 'object' || Array.isArray(value)) {
+     throw new TypeError('Canvas bounds must be an object')
+   }
+-  if (Object.keys(value).some((key) => !['x', 'y', 'width', 'height'].includes(key)) ||
+-      !('x' in value) || !('y' in value) || !('width' in value) || !('height' in value)) {
++  if (
++    Object.keys(value).some(
++      (key) => !['x', 'y', 'width', 'height'].includes(key)
++    ) ||
++    !('x' in value) ||
++    !('y' in value) ||
++    !('width' in value) ||
++    !('height' in value)
++  ) {
+     throw new TypeError('Canvas bounds require x, y, width, and height')
+   }
+   const { x, y, width, height } = value
+-  if (typeof x !== 'number' || typeof y !== 'number' ||
+-      typeof width !== 'number' || typeof height !== 'number' ||
+-      ![x, y, width, height].every(Number.isFinite) ||
+-      Math.abs(x) > 8192 || Math.abs(y) > 8192 ||
+-      width < 1 || height < 1 || width > 8192 || height > 8192 ||
+-      Math.ceil(width) * Math.ceil(height) > 16_777_216) {
+-    throw new RangeError('Canvas bounds exceed finite coordinate or pixel limits')
++  if (
++    typeof x !== 'number' ||
++    typeof y !== 'number' ||
++    typeof width !== 'number' ||
++    typeof height !== 'number' ||
++    ![x, y, width, height].every(Number.isFinite) ||
++    Math.abs(x) > 8192 ||
++    Math.abs(y) > 8192 ||
++    width < 1 ||
++    height < 1 ||
++    width > 8192 ||
++    height > 8192 ||
++    Math.ceil(width) * Math.ceil(height) > 16_777_216
++  ) {
++    throw new RangeError(
++      'Canvas bounds exceed finite coordinate or pixel limits'
++    )
+   }
+   return Object.freeze({ x, y, width, height })
+ }
+@@ -61,31 +81,69 @@
+   notify(node)
+ }
+ 
+-export function createNodeCanvas(node: LGraphNode, def: NodeCanvasDef): NodeCanvasHandle {
+-  if (def.layer !== undefined && def.layer !== 'foreground') throw new TypeError('Invalid node canvas layer')
+-  if (typeof def.draw !== 'function') throw new TypeError('Canvas draw must be a function')
++export function createNodeCanvas(
++  node: LGraphNode,
++  def: NodeCanvasDef
++): NodeCanvasHandle {
++  if (def.layer !== undefined && def.layer !== 'foreground')
++    throw new TypeError('Invalid node canvas layer')
++  if (typeof def.draw !== 'function')
++    throw new TypeError('Canvas draw must be a function')
+   const bounds = validateNodeCanvasBounds(def.bounds)
+-  removeNodeCanvas(node)
++  const canvas = document.createElement('canvas')
++  const context = canvas.getContext('2d')
++  if (!context) {
++    canvas.width = canvas.height = 0
++    const error = new ComfyApiError('A 2D canvas context is unavailable')
++    reportError(error, {
++      errorType: 'node_canvas_context_unavailable',
++      context: { recovery: 'previous_surface_preserved' }
++    })
++    throw error
++  }
+   const surface: Surface = {
+-    node, bounds, draw: def.draw, canvas: document.createElement('canvas'), removed: false
+-  }
+-  surfaces.set(node, surface)
+-  function redraw() {
+-    if (surface.removed) return
++    node,
++    bounds,
++    draw: def.draw,
++    canvas,
++    removed: false
++  }
++  const drawFrame = () => {
+     const { x, y, width, height } = surface.bounds
+     surface.canvas.width = Math.ceil(width)
+     surface.canvas.height = Math.ceil(height)
+-    const context = surface.canvas.getContext('2d')
+-    if (!context) throw new Error('A 2D canvas context is unavailable')
+     context.setTransform(1, 0, 0, 1, -x, -y)
+     surface.draw(context)
++  }
++  function redraw() {
++    if (surface.removed) return
++    drawFrame()
+     notify(node)
+   }
+-  redraw()
++  try {
++    drawFrame()
++  } catch (error) {
++    canvas.width = canvas.height = 0
++    reportError(error, {
++      errorType: 'node_canvas_initial_draw_failed',
++      context: { recovery: 'previous_surface_preserved' }
++    })
++    throw error
++  }
++  removeNodeCanvas(node)
++  surfaces.set(node, surface)
++  notify(node)
+   return Object.freeze({
+     redraw,
+     setBounds(next: Bounds) {
+-      if (surface.removed) throw new Error('Canvas surface was removed')
++      if (surface.removed) {
++        const error = new ComfyApiError('Canvas surface was removed')
++        reportError(error, {
++          errorType: 'node_canvas_surface_removed',
++          context: { recovery: 'mutation_rejected' }
++        })
++        throw error
++      }
+       surface.bounds = validateNodeCanvasBounds(next)
+       redraw()
+     },
+@@ -95,18 +153,26 @@
+   })
+ }
+ 
+-export function drawNodeCanvas(node: LGraphNode, context: CanvasRenderingContext2D): void {
++export function drawNodeCanvas(
++  node: LGraphNode,
++  context: CanvasRenderingContext2D
++): void {
+   const surface = surfaces.get(node)
+   if (!surface || surface.removed) return
+   context.drawImage(surface.canvas, surface.bounds.x, surface.bounds.y)
+ }
+ 
+ /** Drawing may extend beyond the saved, unrotated interaction rectangle. */
+-export function nodeCanvasBounds(node: LGraphNode): Readonly<Bounds> | undefined {
++export function nodeCanvasBounds(
++  node: LGraphNode
++): Readonly<Bounds> | undefined {
+   return surfaces.get(node)?.bounds
+ }
+ 
+-export function mountNodeCanvas(node: LGraphNode, container: HTMLElement): () => void {
++export function mountNodeCanvas(
++  node: LGraphNode,
++  container: HTMLElement
++): () => void {
+   function update() {
+     const surface = surfaces.get(node)
+     if (!surface) {
+@@ -115,11 +181,15 @@
+     }
+     const { x, y, width, height } = surface.bounds
+     Object.assign(surface.canvas.style, {
+-      position: 'absolute', left: `${x}px`, top: `${y}px`,
+-      width: `${Math.ceil(width)}px`, height: `${Math.ceil(height)}px`,
++      position: 'absolute',
++      left: `${x}px`,
++      top: `${y}px`,
++      width: `${Math.ceil(width)}px`,
++      height: `${Math.ceil(height)}px`,
+       pointerEvents: 'none'
+     })
+-    if (surface.canvas.parentElement !== container) container.replaceChildren(surface.canvas)
++    if (surface.canvas.parentElement !== container)
++      container.replaceChildren(surface.canvas)
+   }
+   const set = listeners.get(node) ?? new Set<() => void>()
+   listeners.set(node, set)
+diff --git a/src/platform/nodeApi/nodeHandle.ts b/src/platform/nodeApi/nodeHandle.ts
+--- a/src/platform/nodeApi/nodeHandle.ts
++++ b/src/platform/nodeApi/nodeHandle.ts
+@@ -387,12 +387,19 @@
+           n.mode = mode
+         },
+         isCollapsed: (n) => n.flags.collapsed ?? false,
+-        setCollapsed: (n, ...args) => setFlag(n, 'collapsed',
+-          nodePresentation(n.type).collapsible === false ? false : Boolean(args[0])),
++        setCollapsed: (n, ...args) =>
++          setFlag(
++            n,
++            'collapsed',
++            nodePresentation(n.type).collapsible === false
++              ? false
++              : Boolean(args[0])
++          ),
+         isPinned: (n) => n.flags.pinned ?? false,
+         setPinned: (n, ...args) => setFlag(n, 'pinned', Boolean(args[0])),
+         setResizable: (n, ...args) => {
+-          if (typeof args[0] !== 'boolean') throw new TypeError('resizable must be boolean')
++          if (typeof args[0] !== 'boolean')
++            throw new TypeError('resizable must be boolean')
+           n.resizable = args[0]
+           n.setDirtyCanvas(true, true)
+         },
+diff --git a/src/platform/nodeApi/nodePresentation.ts b/src/platform/nodeApi/nodePresentation.ts
+--- a/src/platform/nodeApi/nodePresentation.ts
++++ b/src/platform/nodeApi/nodePresentation.ts
+@@ -15,13 +15,23 @@
+ const presentations = new Map<string, Readonly<NodePresentation>>()
+ const defaultPresentation: Readonly<NodePresentation> = Object.freeze({})
+ 
+-export function validateNodePresentation(value: unknown): Readonly<NodePresentation> {
++export function validateNodePresentation(
++  value: unknown
++): Readonly<NodePresentation> {
+   if (!value || typeof value !== 'object' || Array.isArray(value)) {
+     throw new TypeError('Node presentation must be an object')
+   }
+-  const allowed = new Set(['chrome', 'title', 'sizing', 'resizable', 'collapsible', 'pinnedInteraction'])
++  const allowed = new Set([
++    'chrome',
++    'title',
++    'sizing',
++    'resizable',
++    'collapsible',
++    'pinnedInteraction'
++  ])
+   for (const key of Object.keys(value)) {
+-    if (!allowed.has(key)) throw new TypeError(`Unknown presentation field '${key}'`)
++    if (!allowed.has(key))
++      throw new TypeError(`Unknown presentation field '${key}'`)
+   }
+   const result: {
+     chrome?: 'default' | 'none'
+@@ -52,12 +62,16 @@
+   for (const key of ['resizable', 'collapsible'] as const) {
+     if (key in value) {
+       const flag: unknown = Reflect.get(value, key)
+-      if (typeof flag !== 'boolean') throw new TypeError(`${key} must be boolean`)
++      if (typeof flag !== 'boolean')
++        throw new TypeError(`${key} must be boolean`)
+       result[key] = flag
+     }
+   }
+   if ('pinnedInteraction' in value) {
+-    if (value.pinnedInteraction !== 'default' && value.pinnedInteraction !== 'pass-through') {
++    if (
++      value.pinnedInteraction !== 'default' &&
++      value.pinnedInteraction !== 'pass-through'
++    ) {
+       throw new TypeError('Invalid pinned interaction')
+     }
+     result.pinnedInteraction = value.pinnedInteraction
+@@ -65,7 +79,10 @@
+   return Object.freeze(result)
+ }
+ 
+-export function registerNodePresentation(type: string, value: NodePresentation): () => void {
++export function registerNodePresentation(
++  type: string,
++  value: NodePresentation
++): () => void {
+   const presentation = validateNodePresentation(value)
+   presentations.set(type, presentation)
+   return () => {
+@@ -82,6 +99,10 @@
+   button: number,
+   doubleClick: boolean
+ ): boolean {
+-  return button === 0 && !doubleClick && node.flags.pinned === true &&
+-    nodePresentation(node.type).pinnedInteraction === 'pass-through'
++  return (
++    button === 0 &&
++    !doubleClick &&
++    nodePresentation(node.type).pinnedInteraction === 'pass-through' &&
++    node.flags.pinned === true
++  )
+ }
+diff --git a/src/platform/nodeApi/pinnedPointer.ts b/src/platform/nodeApi/pinnedPointer.ts
+--- a/src/platform/nodeApi/pinnedPointer.ts
++++ b/src/platform/nodeApi/pinnedPointer.ts
+@@ -5,7 +5,9 @@
+   doubleClick?(event: PointerEvent): void
+ }) {
+   let lastDown: { time: number; x: number; y: number } | undefined
+-  let active: { id: number; target?: Element; event: PointerEvent; editing: boolean } | undefined
++  let active:
++    | { id: number; target?: Element; event: PointerEvent; editing: boolean }
++    | undefined
+   let pendingClick: { target?: Element; editing: boolean } | undefined
+ 
+   function clear() {
+@@ -17,7 +19,9 @@
+     const pointerId = (event as PointerEvent).pointerId
+     // A recipient may capture the original pointer. Then its native release
+     // never bubbles through this node, but must still clear our routing state.
+-    queueMicrotask(() => { if (active?.id === pointerId) clear() })
++    queueMicrotask(() => {
++      if (active?.id === pointerId) clear()
++    })
+   }
+   function forward(event: PointerEvent) {
+     event.stopPropagation()
+@@ -35,17 +39,35 @@
+         if (event.button !== 0 || !options.enabled()) return false
+         const source = event.currentTarget
+         const delta = lastDown ? event.timeStamp - lastDown.time : Infinity
+-        const doubleClick = !!lastDown && delta >= 0 && delta < 300 &&
+-          Math.hypot(event.clientX - lastDown.x, event.clientY - lastDown.y) <= 5
+-        lastDown = doubleClick ? undefined : { time: event.timeStamp, x: event.clientX, y: event.clientY }
++        const doubleClick =
++          !!lastDown &&
++          delta >= 0 &&
++          delta < 300 &&
++          Math.hypot(event.clientX - lastDown.x, event.clientY - lastDown.y) <=
++            5
++        lastDown = doubleClick
++          ? undefined
++          : { time: event.timeStamp, x: event.clientX, y: event.clientY }
+         clear()
+-        const target = !doubleClick && source instanceof Element
+-          ? document.elementsFromPoint(event.clientX, event.clientY).find((element) => {
+-              const owner = element.closest('.lg-node[data-node-id]')
+-              return !source.contains(element) && !!owner &&
+-                owner.getAttribute('data-pinned-pass-through') !== 'true'
+-            }) : undefined
+-        active = { id: event.pointerId, target: target || undefined, event, editing: doubleClick }
++        const target =
++          !doubleClick && source instanceof Element
++            ? document
++                .elementsFromPoint(event.clientX, event.clientY)
++                .find((element) => {
++                  const owner = element.closest('.lg-node[data-node-id]')
++                  return (
++                    !source.contains(element) &&
++                    !!owner &&
++                    owner.getAttribute('data-pinned-pass-through') !== 'true'
++                  )
++                })
++            : undefined
++        active = {
++          id: event.pointerId,
++          target: target || undefined,
++          event,
++          editing: doubleClick
++        }
+         pendingClick = { target: target || undefined, editing: doubleClick }
+         document.addEventListener('pointerup', released, true)
+         document.addEventListener('pointercancel', released, true)
+@@ -54,14 +76,19 @@
+           // The first click may have been captured by a lower node, so the
+           // browser cannot reliably generate dblclick on this node itself.
+           if (source instanceof Element) {
+-            try { source.setPointerCapture(event.pointerId) } catch { /* detached/synthetic input */ }
++            try {
++              source.setPointerCapture(event.pointerId)
++            } catch {
++              /* detached/synthetic input */
++            }
+           }
+           options.doubleClick?.(event)
+         }
+         return true
+       }
+       if (!active || active.id !== event.pointerId) return false
+-      if (!['pointermove', 'pointerup', 'pointercancel'].includes(event.type)) return false
++      if (!['pointermove', 'pointerup', 'pointercancel'].includes(event.type))
++        return false
+       forward(event)
+       if (event.type === 'pointercancel') pendingClick = undefined
+       if (event.type !== 'pointermove') clear()
+diff --git a/src/renderer/extensions/vueNodes/components/LGraphNode.vue b/src/renderer/extensions/vueNodes/components/LGraphNode.vue
+--- a/src/renderer/extensions/vueNodes/components/LGraphNode.vue
++++ b/src/renderer/extensions/vueNodes/components/LGraphNode.vue
+@@ -8,14 +8,19 @@
+     :data-node-id="nodeData.id"
+     :data-collapsed="isCollapsed || undefined"
+     :data-ghost="nodeData.flags?.ghost || undefined"
+-    :data-pinned-pass-through="(nodeData.flags?.pinned && presentation.pinnedInteraction === 'pass-through') || undefined"
++    :data-pinned-pass-through="
++      (nodeData.flags?.pinned &&
++        presentation.pinnedInteraction === 'pass-through') ||
++      undefined
++    "
+     :class="
+       cn(
+         'group/node lg-node absolute isolate touch-none text-xs',
+         'flex flex-col contain-layout contain-style',
+-        !isCanvasNode && (isLightTheme
+-          ? 'drop-shadow-md drop-shadow-black/15'
+-          : 'drop-shadow-xl drop-shadow-black/40'),
++        !isCanvasNode &&
++          (isLightTheme
++            ? 'drop-shadow-md drop-shadow-black/15'
++            : 'drop-shadow-xl drop-shadow-black/40'),
+         isRerouteNode || isFixedPresentation
+           ? 'h-(--node-height)'
+           : 'min-h-(--node-height) min-w-(--min-node-width)',
+@@ -72,7 +77,11 @@
+         )
+       "
+     />
+-    <div ref="nodeCanvasContainer" class="absolute left-0 z-10 overflow-visible pointer-events-none" :style="{ top: `${presentationTitleOffset}px` }" />
++    <div
++      ref="nodeCanvasContainer"
++      class="pointer-events-none absolute left-0 z-10 overflow-visible"
++      :style="{ top: `${presentationTitleOffset}px` }"
++    />
+     <div
+       v-if="!isCanvasNode"
+       data-testid="node-inner-wrapper"
+@@ -270,7 +279,10 @@
+ import { TitleMode } from '@/lib/litegraph/src/types/globalEnums'
+ import { isCloud } from '@/platform/distribution/types'
+ import { mountNodeCanvas } from '@/platform/nodeApi/nodeCanvas'
+-import { nodePresentation, passesPinnedPrimaryClick } from '@/platform/nodeApi/nodePresentation'
++import {
++  nodePresentation,
++  passesPinnedPrimaryClick
++} from '@/platform/nodeApi/nodePresentation'
+ import { useSettingStore } from '@/platform/settings/settingStore'
+ import { useNodeDefStore } from '@/stores/nodeDefStore'
+ import { useTelemetry } from '@/platform/telemetry'
+@@ -376,9 +388,20 @@
+ 
+ const presentation = computed(() => nodePresentation(nodeData.type))
+ const isCanvasNode = computed(() => presentation.value.chrome === 'none')
+-const isFixedPresentation = computed(() => isCanvasNode.value || presentation.value.sizing === 'fixed')
+-const presentationTitleOffset = computed(() => isCanvasNode.value || presentation.value.title === 'hidden' ? 0 : LiteGraph.NODE_TITLE_HEIGHT)
+-const displayHeader = computed(() => !isCanvasNode.value && presentation.value.title !== 'hidden' && nodeData.titleMode !== TitleMode.NO_TITLE)
++const isFixedPresentation = computed(
++  () => isCanvasNode.value || presentation.value.sizing === 'fixed'
++)
++const presentationTitleOffset = computed(() =>
++  isCanvasNode.value || presentation.value.title === 'hidden'
++    ? 0
++    : LiteGraph.NODE_TITLE_HEIGHT
++)
++const displayHeader = computed(
++  () =>
++    !isCanvasNode.value &&
++    presentation.value.title !== 'hidden' &&
++    nodeData.titleMode !== TitleMode.NO_TITLE
++)
+ 
+ const isRerouteNode = computed(() => nodeData.type === 'Reroute')
+ 
+@@ -391,7 +414,11 @@
+   return !!nodeDef && !nodeDef.isCoreNode
+ })
+ 
+-const isCollapsed = computed(() => presentation.value.collapsible !== false && (nodeData.flags?.collapsed ?? false))
++const isCollapsed = computed(
++  () =>
++    presentation.value.collapsible !== false &&
++    (nodeData.flags?.collapsed ?? false)
++)
+ const bypassed = computed(
+   (): boolean => nodeData.mode === LGraphEventMode.BYPASS
+ )
+@@ -436,7 +463,10 @@
+       }
+ )
+ 
+-const { pointerHandlers } = useNodePointerInteractions(() => nodeData, dispatchNodeDoubleClick)
++const { pointerHandlers } = useNodePointerInteractions(
++  () => nodeData,
++  dispatchNodeDoubleClick
++)
+ const { onPointerdown, ...remainingPointerHandlers } = pointerHandlers
+ const { startDrag } = useNodeDrag()
+ const badges = usePartitionedBadges(nodeData)
+@@ -660,11 +690,14 @@
+ 
+ const lgraphNode = computed(resolveLGraphNode)
+ const nodeCanvasContainer = ref<HTMLElement>()
+-watchEffect((onCleanup) => {
+-  if (lgraphNode.value && nodeCanvasContainer.value) {
+-    onCleanup(mountNodeCanvas(lgraphNode.value, nodeCanvasContainer.value))
+-  }
+-}, { flush: 'post' })
++watchEffect(
++  (onCleanup) => {
++    if (lgraphNode.value && nodeCanvasContainer.value) {
++      onCleanup(mountNodeCanvas(lgraphNode.value, nodeCanvasContainer.value))
++    }
++  },
++  { flush: 'post' }
++)
+ 
+ // The legacy canvas dispatches these node callbacks; this renderer did not,
+ // so an extension using them worked under one renderer and silently did
+diff --git a/src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts b/src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts
+--- a/src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts
++++ b/src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts
+@@ -31,7 +31,10 @@
+   const agentNodeSelectionStore = useAgentNodeSelectionStore()
+   const isPinned = () => !!toValue(nodeStateRef).flags.pinned
+   const pinnedPointer = createPinnedPointerForwarder({
+-    enabled: () => isPinned() && nodePresentation(toValue(nodeStateRef).type).pinnedInteraction === 'pass-through',
++    enabled: () =>
++      isPinned() &&
++      nodePresentation(toValue(nodeStateRef).type).pinnedInteraction ===
++        'pass-through',
+     forwardToCanvas: forwardEventToCanvas,
+     doubleClick: onPinnedDoubleClick
+   })
+@@ -193,7 +196,9 @@
+   })
+ 
+   const pointerHandlers = {
+-    onClick: (event: MouseEvent) => { pinnedPointer.click(event) },
++    onClick: (event: MouseEvent) => {
++      pinnedPointer.click(event)
++    },
+     onPointerdown,
+     onPointermove,
+     onPointerup,

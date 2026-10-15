@@ -1,0 +1,203 @@
+{
+  "status": "FINAL_CHECKS_AND_BUILD_PASS",
+  "source_manifest": "SOURCE_MANIFEST.json",
+  "baseline_zip_sha256": "42a0137672670479268144fd1ca41486e8506b0a5b0659b7eff906f90af97253",
+  "baseline_manifest_sha256": "3f95c74a46c426e5a25bd2986a47030bb19799112d1755bf6024ef7de2ead8b0",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "resources": {
+    "memory_bytes": 8589934592,
+    "memory_swap_bytes": 8589934592,
+    "additional_swap_bytes": 0,
+    "node_heap_mib": 6144,
+    "cpus": 2,
+    "pids": 256,
+    "whole_sequence_seconds": 470,
+    "minimum_start_mem_available_bytes": 12884901888
+  },
+  "network": "none",
+  "dependency_install": false,
+  "installed_dependencies": {
+    "readonly_mount_count": 10,
+    "mount_targets": [
+      "/frontend/node_modules",
+      "/frontend/apps/website/node_modules",
+      "/frontend/packages/design-system/node_modules",
+      "/frontend/packages/ingest-types/node_modules",
+      "/frontend/packages/magic-patch-types/node_modules",
+      "/frontend/packages/model-repository-types/node_modules",
+      "/frontend/packages/object-info-parser/node_modules",
+      "/frontend/packages/shared-frontend-utils/node_modules",
+      "/frontend/packages/tailwind-utils/node_modules",
+      "/frontend/tools/test-recorder/node_modules"
+    ]
+  },
+  "cache_writes": "Private caches in the isolated attempt; installed dependencies remain read-only.",
+  "final_check_commands": [
+    {
+      "name": "format-owned-source",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/oxfmt/bin/oxfmt",
+        "--write",
+        "src/lib/litegraph/src/LGraphCanvas.ts",
+        "src/lib/litegraph/src/LGraphNode.ts",
+        "src/platform/nodeApi/apiSurface.ts",
+        "src/platform/nodeApi/defsRegistry.ts",
+        "src/platform/nodeApi/nodeCanvas.ts",
+        "src/platform/nodeApi/nodeHandle.ts",
+        "src/platform/nodeApi/nodePresentation.ts",
+        "src/platform/nodeApi/pinnedPointer.ts",
+        "src/platform/nodeApi/widgetHandle.ts",
+        "src/renderer/extensions/vueNodes/components/LGraphNode.vue",
+        "src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts",
+        "src/platform/nodeApi/nodeCanvas.test.ts"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "name": "typecheck",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/vue-tsc/bin/vue-tsc.js",
+        "--noEmit"
+      ],
+      "timeout_seconds": 150
+    },
+    {
+      "name": "affected-regressions",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/vitest/vitest.mjs",
+        "run",
+        "src/platform/nodeApi/nodeCanvas.test.ts",
+        "src/renderer/extensions/vueNodes/components/LGraphNode.test.ts",
+        "src/platform/nodeApi/apiDts.test.ts",
+        "src/platform/nodeApi/apiSurface.test.ts",
+        "--maxWorkers=1"
+      ],
+      "timeout_seconds": 140
+    },
+    {
+      "name": "affected-eslint",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/eslint/bin/eslint.js",
+        "src/lib/litegraph/src/LGraphCanvas.ts",
+        "src/lib/litegraph/src/LGraphNode.ts",
+        "src/platform/nodeApi/apiSurface.ts",
+        "src/platform/nodeApi/defsRegistry.ts",
+        "src/platform/nodeApi/nodeCanvas.ts",
+        "src/platform/nodeApi/nodeHandle.ts",
+        "src/platform/nodeApi/nodePresentation.ts",
+        "src/platform/nodeApi/pinnedPointer.ts",
+        "src/platform/nodeApi/widgetHandle.ts",
+        "src/renderer/extensions/vueNodes/components/LGraphNode.vue",
+        "src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts",
+        "src/platform/nodeApi/nodeCanvas.test.ts"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "name": "affected-format",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/oxfmt/bin/oxfmt",
+        "--check",
+        "src/lib/litegraph/src/LGraphCanvas.ts",
+        "src/lib/litegraph/src/LGraphNode.ts",
+        "src/platform/nodeApi/apiSurface.ts",
+        "src/platform/nodeApi/defsRegistry.ts",
+        "src/platform/nodeApi/nodeCanvas.ts",
+        "src/platform/nodeApi/nodeHandle.ts",
+        "src/platform/nodeApi/nodePresentation.ts",
+        "src/platform/nodeApi/pinnedPointer.ts",
+        "src/platform/nodeApi/widgetHandle.ts",
+        "src/renderer/extensions/vueNodes/components/LGraphNode.vue",
+        "src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts",
+        "src/platform/nodeApi/nodeCanvas.test.ts"
+      ],
+      "timeout_seconds": 30
+    }
+  ],
+  "build_commands": [
+    {
+      "name": "build-cloud",
+      "argv": [
+        "/node/bin/node",
+        "/frontend/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.config.mts"
+      ],
+      "timeout_seconds": 440,
+      "equivalent_package_script_argv": [
+        "pnpm",
+        "build:cloud"
+      ]
+    }
+  ],
+  "source_overlay_at_final_build": [
+    {
+      "path": "frontend/src/lib/litegraph/src/LGraphCanvas.ts",
+      "sha256": "e8610e21016e27eea2813796a65aa2b97e9636ef5b763d9c4582a019bf247fab"
+    },
+    {
+      "path": "frontend/src/lib/litegraph/src/LGraphNode.ts",
+      "sha256": "ab08fca71f711cf6f5abbf82947ae17d79dd07b1b65034428ad09bb83528ba98"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/apiSurface.ts",
+      "sha256": "4165120691f4ce7cb3168d25ac497861ff2ecfc22063a647070c2ff3a3560c17"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/defsRegistry.ts",
+      "sha256": "4c5e2eb778ef013b120efb13b3431a25a887b8f7cfe279323daf39d986d0997b"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/nodeCanvas.ts",
+      "sha256": "308fb55520cc8fb68bbf6409f5ca3f25d134fa35617627e21dbe3b5937150614"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/nodeHandle.ts",
+      "sha256": "ed518523c613b62891e57d89894364c52e70bb1bd15f1d645afce33799ea6274"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/nodePresentation.ts",
+      "sha256": "9f4a705ac9335558cd3ba2bfefc3898d48d57677d52db383df00ae050c8edfe6"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/pinnedPointer.ts",
+      "sha256": "702d2b00ce4ba0afcff2068566b21896623d1e404b0e665da7a9fa52226436d0"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/widgetHandle.ts",
+      "sha256": "b1dcfbbf91f0698e58677f4d18be9a7c51cb158f60944a99fc657d28342d8a65"
+    },
+    {
+      "path": "frontend/src/renderer/extensions/vueNodes/components/LGraphNode.vue",
+      "sha256": "5b80601b63e5825946424d1d8b66a756d51c7bdeea4e329ce655b4a08abfd1b3"
+    },
+    {
+      "path": "frontend/src/renderer/extensions/vueNodes/composables/useNodePointerInteractions.ts",
+      "sha256": "2c585e4b957f248c3990461fd630f5404f6892c6de0a22df12f849f29952843d"
+    },
+    {
+      "path": "frontend/src/platform/nodeApi/nodeCanvas.test.ts",
+      "sha256": "ab38ec32aab0440b3c4bf054ede8eb914932dd84069d3f876543d892c36821bc"
+    },
+    {
+      "path": "extension-host/guest.mjs",
+      "sha256": "b1aee9174fb35bbe913793f65a6201163154814425974649830b4709e2894689"
+    },
+    {
+      "path": "extension-host/host-entry.mjs",
+      "sha256": "0b3ddfc26321558fdff2ca0be71ba3b2004932fe1ffbdcfa8cbc7754957aedbf"
+    },
+    {
+      "path": "extension-host/sandbox-host.mjs",
+      "sha256": "07d3e5aa4f0e8955ee75f0494c4238cdc0da7d4202796b52f292185e070799ed"
+    }
+  ],
+  "baseline_outside_owned_overlay_unchanged_after_build": true,
+  "no_live_service_writes_by_child": true
+}

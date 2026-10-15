@@ -1,5 +1,5 @@
 {
-  "status": "CANDIDATE_NOT_YET_DEPLOYED",
+  "status": "SOURCE_CHECKS_AND_CLOUD_BUILD_PASS_INSTALLATION_BROWSER_PENDING",
   "owner": "MERVYN Label child",
   "definition_presentation": {
     "chrome": "optional: default | none",
@@ -11,7 +11,11 @@
   },
   "node_canvas": {
     "call": "node.canvas({ bounds: {x, y, width, height}, layer?: 'foreground', draw(context) })",
-    "handle": ["setBounds(bounds)", "redraw()", "remove()"],
+    "handle": [
+      "setBounds(bounds)",
+      "redraw()",
+      "remove()"
+    ],
     "ownership": "only a node type declared by the requesting pack",
     "chromeless_restriction": "chrome:none requires frontend execution without slots or widgets; foreground canvas also works with ordinary body and slots",
     "limits": "8192 coordinate/edge limit, 16 MiPixels per surface, 64 MiPixels/256 surfaces per pack"
@@ -19,5 +23,7 @@
   "node_resizable": "node.setResizable(boolean); leaves saved size unchanged and obeys a definition's fixed resizable policy if declared",
   "widget_label": "widget.getLabel(): string | undefined, reads only the explicit label; preserves empty string and does not substitute widget.name",
   "reroute_coordination": "Frontend child owns Reroute. Agreed presentation {title:'hidden', sizing:'fixed', collapsible:false}, node.setResizable(boolean), canvas layer:'foreground'. Sole shared API writer is this lane.",
-  "write_root": "coordination/rgthree-storm-20261015/lanes/label"
+  "write_root": "coordination/rgthree-storm-20261015/lanes/label",
+  "canvas_failure_recovery": "Allocation or initial draw failure preserves the previous mounted surface and releases the failed private canvas. Removed-handle mutations throw existing ComfyApiError and report stable errorType through actual reportError.",
+  "reroute_limitation": "This Label packet does not repair Vue socket position/geometry. Reroute acceptance remains in the separate non-Label lane."
 }
