@@ -92,6 +92,12 @@ function showProperties(node) {
   });
 }
 
+// Extensions must be registered before defining the type so their edit hooks
+// are installed on the generated node class.
+comfy.defs.extend(TYPE, (builder) => {
+  builder.onDoubleClick(showProperties);
+  builder.addMenuItem({ label: 'Edit label', run: showProperties });
+});
 comfy.defs.define({
   type: TYPE,
   title: TYPE,
@@ -99,14 +105,15 @@ comfy.defs.define({
   description: 'Floating text annotation. Double-click to edit its title and properties.',
   execution: 'frontend',
   presentation: { chrome: 'none', resizable: false, collapsible: false, pinnedInteraction: 'pass-through' },
-  onCreated: initialize,
+  onCreated(node, event) {
+    // Graph loading adds nodes before configuring their saved state. The
+    // worker receives that earlier snapshot asynchronously; writing defaults
+    // here would overwrite the properties already restored on the host.
+    if (!event?.loading) initialize(node);
+  },
   onConfigured: initialize,
   onPropertyChanged(node) { if (records.has(keyFor(node))) refresh(node); },
   onRemoved: remove,
-});
-comfy.defs.extend(TYPE, (builder) => {
-  builder.onDoubleClick(showProperties);
-  builder.addMenuItem({ label: 'Edit label', run: showProperties });
 });
 comfy.onNodeChanged(({ node, property }) => {
   if (node.type === TYPE && property === 'title') refresh(node);
