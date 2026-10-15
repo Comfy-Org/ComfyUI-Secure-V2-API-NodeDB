@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,204 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 21 of 21 converted; 18 tested (scoped), 1 converted but untested/partly tested,
 +> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -47,7 +47,7 @@
 +| LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 +| Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 +| Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
-+| Load Image Metadata (LoraManager) | partial | queue parity 3/3; deployed-SDK Guest image/mask parity and drift guard; 18-output secure-Guest workflow | animated/16-bit inputs; annotated names; lossy PIL/PyAV decode differences; piexif dependency profile admission |
++| Load Image Metadata (LoraManager) | partial | retained19-case managed decoder; 12 exact named-container and8 exact upstream12/10-bit PQ native comparisons on composed leaf; managed input/output/temp annotations; raw AVIF brob | compressed brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile; installed gVisor and browser/selector lifecycle |
 +
 +## Refused techniques (never do) and public replacements
 +
@@ -77,7 +77,7 @@
 +
 +## Open test gates
 +
-+- Load Image Metadata: animated/16-bit inputs, annotated input names, lossy decoder differences, admitted piexif profile.
++- Load Image Metadata: compressed AVIF brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile and installed gVisor/browser/selector lifecycle.
 +- Prompt/Text library lifecycle and persistence; LoRA Text Loader syntax/library/cache.
 +- TriggerWord Toggle and Stack Combiner restore/identity; Lora Pool edit and persistence.
 +- Debug Metadata and Metadata Overwrite with wired model/sampler fields.
@@ -136,7 +136,7 @@
 +- `pyproject.toml`: upstream's file with `requires-python = ">=3.13,<3.14"` added (the runtime declaration).
 +- Every other file is the upstream file unchanged. Internal review notes and private test harnesses are not published.
 +
-+## Revision 4 scoped evidence and limits
++## Revision 4 scoped evidence and limits (historical image decoder)
 +
 +Load Image Metadata uses deployed public asset loading and storage.get. Its first-frame mask uses the declared SDK raw tier and digest-bound managed bytes. Sampling names are pinned to Core `6257422` (45 samplers, 9 schedulers), with a drift test in `tests/test_core_sampling_names.py`. Exact 8-bit PNG pixel/mask parity and float-alpha tolerance are scoped separately; lossy PIL/PyAV differences remain measured gaps.
 +
@@ -145,6 +145,66 @@
 +These CPU pre-flights use secure Guest dispatch with sandbox=none. They do not establish installed gVisor behavior or whole-node certificates. TEST workflows v3 cover 18 of 21 nodes in nine cases (eight ready; CLIP Hook blocked); Lora Info and the two WanVideo nodes need separate UI/model coverage. Frontend and route work remains pending and is not included in this revision.
 +
 +Portable API prompts and asset instructions are included in `tests/workflows/`; weights and generated fixtures are not shipped.
++
++## Revision 5 private draft: bounded managed image decoder
++
++The image path now ports the pinned Core 6257422 image-only PyAV conversion and
++animated-WebP Pillow fallback over digest-verified managed bytes. IMAGE is created
++with public ImageRef.from_value and MASK through the existing declared raw tier.
++It preserves core precision, alpha, orientation and frame batches in the tested
++PNG/JPEG/WebP/TIFF/GIF profile. Nineteen image/mask comparisons were exactly equal
++through actual backend Guest execution on CPU (sandbox none). All nineteen image
++metadata field results matched the original pack reader. Seven pure decoder
++controls verify error and batch-limit rejection. The old first-frame, 16-bit and
++lossy-decoder limitations above describe revision 4; they are closed for these
++tested revision 5 cases, not for arbitrary containers or runtime configurations.
++
++Bounds: 16 MiB encoded input, 8192 per axis, 16,777,216 aggregate decoded pixels,
++256 frames. Oversized batches raise rather than return a truncated animation.
++Schema, RemoteOptions, permissions, validation and fingerprinting are unchanged.
++No model weights or catalogue fixtures were required. Tests emulate the piexif
++dependency profile; deployed admission and installed/gVisor/browser coverage stay
++open. This revision is a private review draft, not a registry acceptance. Node
++dispositions and whole-node certificate counts remain unchanged.
++
++## Revision6: managed names and scoped AVIF metadata
++
++Revision5 was a private draft, superseded by public revision6. The reviewed
++private revision6 source supplies this public evaluation revision; open gates
++and zero whole-node certificates remain unchanged.
++
++Five exact source leaves compose the proved managed input/output/temp name
++parser, AVIF pixel format gate, bounded raw brob metadata projection and native
++filename-extension selection over private revision5. No dependency, SDK method,
++schema, permission or RemoteOptions change is introduced. The brob scan follows
++the pinned finite32-bit box stop/first-box rules; valid raw objects suppress EXIF,
++while native fallback cases use ordinary metadata. Bounds reject excessive work:
++4096 boxes,1MiB raw JSON,16384 JSON items/depth16,262144 bytes per extracted field,
++plus existing encoded-image, geometry and decoded-frame/pixel limits.
++
++The exact composed leaf has12 named-container cases and8 pinned official libavif
++reference cases with native-equal IMAGE/MASK, managed fingerprints, metadata
++seeds and ExifUtils fields. Genuine12-bit and three10-bit PQ first-stream profiles
++were verified from decoded formats and transfer tags. Each test retains its
++source/runtime binding; earlier annotation/ordinary/raw-brob/19-image proofs are
++historical scoped evidence, not a new all-profile suite or whole-node certificate.
++
++AVIF sequence inputs in these tests return one frame through both native core
++LoadImage and the conversion. Full-sequence expectations FAILED and remain
++recorded. Separate native diagnostics isolate a multi-frame EXIF-rotation encoder
++segfault in Pillow11.3.0. Full/rotated animation and auxiliary-alpha reconstruction
++remain unqualified. PQ output parity does not qualify HDR display, colorimetric
++correctness or tone mapping. Compressed/binary brob, genuine JPEG XL, dependency
++admission, installed/gVisor/browser workflows and existing route/selector holds
++remain open. No reference image assets are added to the production pack.
++
++The per-node classifications remain18 tested(scoped),1 converted-untested and
++2 partial. Revision5's inherited MANIFEST counters16/3 were stale relative to
++that revision's own21-row status table; the new manifest reconciles the counters
++to existing classifications. Certificate and accepted-pack counts remain zero.
++Revision6 is approved for IN PROGRESS / UNVERIFIED evaluation publication.
++Registry admission and deployment are performed by the manager. Revision5 was
++private and is superseded by6; every original proof/failure artifact is preserved.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,110 +1,66 @@
@@ -14489,7 +14549,7 @@
 +            prev_hooks=kwargs.get('prev_hooks')))
 --- /dev/null
 +++ b/v2/secure_image_metadata_node.py
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,105 @@
 +"""Eighteen-output user-ID draft; native images, logical library identities.
 +
 +Main registration and authenticated authored-library/UI selection stay pending.
@@ -14503,48 +14563,8 @@
 +from .secure_algorithms.core_sampling_names import SAMPLERS, SCHEDULERS
 +from .secure_services.image_metadata_source import read_image_source, MAX_AXIS, MAX_ENCODED, MAX_PIXELS
 +from .secure_services.metadata_catalogue import read_metadata_catalogue
-+from .secure_services.managed_library import _logical
-+
-+
-+async def _first_frame_mask(asset, expected_digest):
-+    """Core LoadImage's MASK for the first frame, from the same managed bytes as the pixels.
-+
-+    Deployed core (6257422) LoadImage decodes with PyAV: a frame has alpha when its pixel format
-+    has an alpha component or is paletted (PNG tRNS applied), and the mask is 1 - alpha;
-+    otherwise it is a 64x64 zero mask. The deployed SDK's assets.load_image returns RGB pixels
-+    only (first frame, EXIF-transposed), so the mask is decoded here with the same orientation
-+    and returned through the SDK raw tier.
-+    """
-+    import hashlib
-+    from io import BytesIO
-+
-+    import numpy as np
-+    import torch
-+    from PIL import Image, ImageOps
-+
-+    size = await sdk.ctx().assets.size(asset)
-+    if type(size) is not int or not 0 < size <= MAX_ENCODED:
-+        raise ValueError('Encoded image exceeds the mask decode bound')
-+    data = await sdk.ctx().assets.read_range(asset, 0, size)
-+    if len(data) != size or hashlib.sha256(data).hexdigest() != expected_digest:
-+        raise ValueError('Image source changed during managed decoding')
-+    with Image.open(BytesIO(data)) as source:
-+        width, height = source.size
-+        if not 1 <= width <= MAX_AXIS or not 1 <= height <= MAX_AXIS or width * height > MAX_PIXELS:
-+            raise ValueError('Image geometry exceeds the mask decode bound')
-+        source.seek(0)
-+        frame = ImageOps.exif_transpose(source)
-+        if 'A' in frame.getbands():
-+            alpha = frame.getchannel('A')
-+        elif frame.mode == 'P' or 'transparency' in frame.info:
-+            alpha = frame.convert('RGBA').getchannel('A')
-+        else:
-+            alpha = None
-+        if alpha is None:
-+            mask = torch.zeros((64, 64), dtype=torch.float32)
-+        else:
-+            mask = 1.0 - torch.from_numpy(np.array(alpha, dtype=np.uint8)).float() / 255.0
-+    return await sdk.MaskRef._from_raw(mask.unsqueeze(0))
++from .secure_services.image_names import managed_image_name
++from .secure_services.image_pixels import load_managed_pixels
 +
 +
 +class LoadImageMetadata(io.ComfyNode):
@@ -14578,12 +14598,12 @@
 +    async def validate_inputs(cls, image, **kwargs):
 +        # Original VALIDATE_INPUTS(image, **kwargs): reject a missing image at queue time.
 +        # The remote image list has no static options, so core cannot check membership itself.
-+        # Annotated [input]/[output]/[temp] names are not supported by this conversion
-+        # (execute reads confined input names), so they are rejected here, not later.
++        # Preserve pinned input/output/temp annotations as managed identities.
++        # The shared name boundary rejects paths outside those managed folders.
 +        del kwargs
 +        try:
-+            name = _logical(image)
-+            exists = await sdk.ctx().assets.exists('input', name)
++            folder, name = managed_image_name(image)
++            exists = await sdk.ctx().assets.exists(folder, name)
 +        except ValueError:
 +            exists = False
 +        if not exists:
@@ -14592,7 +14612,8 @@
 +
 +    @classmethod
 +    async def fingerprint_inputs(cls, image, **kwargs):
-+        asset = await sdk.ctx().assets.resolve('input', _logical(image))
++        folder, name = managed_image_name(image)
++        asset = await sdk.ctx().assets.resolve(folder, name)
 +        return await sdk.ctx().assets.digest(asset)
 +
 +    @classmethod
@@ -14604,32 +14625,31 @@
 +        parse_overrides(overrides_json)
 +        if missing_settings not in ('strict', 'use_defaults'):
 +            raise ValueError('Invalid missing_settings policy')
-+        name = _logical(image)
-+        asset = await sdk.ctx().assets.resolve('input', name)
++        folder, name = managed_image_name(image)
++        asset = await sdk.ctx().assets.resolve(folder, name)
 +        initial_digest = await sdk.ctx().assets.digest(asset)
-+        pixels = await sdk.ctx().assets.load_image(asset)
-+        mask = await _first_frame_mask(asset, initial_digest)
++        pixels, mask = await load_managed_pixels(asset, initial_digest)
 +        height, width = await pixels.spatial_shape()
-+        # Metadata parsing uses managed bytes, not a second native pixel decoder.
++        # Pixel and metadata parsing use digest-verified managed bytes.
 +        # Distinct broker reads are not an atomic filesystem snapshot; reject
 +        # detected changes rather than silently binding unrelated metadata.
-+        source = await read_image_source(name, interpret=False)
++        source = await read_image_source(name, interpret=False, folder=folder)
 +        if source['sha256'] != initial_digest or await sdk.ctx().assets.digest(asset) != initial_digest:
 +            raise ValueError('Image source changed during managed decoding')
 +        # The deployed SDK has no sampling catalogue: names are pinned to the deployed core and
 +        # tests/test_core_sampling_names.py fails if core's KSampler lists drift.
 +        prepared = prepare_settings(source['fields'], image_width=width, image_height=height,
 +            samplers=list(SAMPLERS), schedulers=list(SCHEDULERS),
-+            diagnostics='Managed input: ' + source['name'] + '; SHA256: ' + source['sha256'],
++            diagnostics='Managed ' + folder + ': ' + source['name'] + '; SHA256: ' + source['sha256'],
 +            sampler_node_id=sampler_node_id, missing_settings=missing_settings, overrides_json=overrides_json,
 +            prefer_saved_image_metadata=prefer_saved_image_metadata)
 +        try:
 +            catalogue = await read_metadata_catalogue()
-+            recovered = finish_settings(prepared, catalogue, name)
++            recovered = finish_settings(prepared, catalogue, image)
 +        except PermissionError:
 +            raise
 +        except (ValueError, TypeError, KeyError, OSError) as error:
-+            recovered = finish_settings(prepared, [], name, library_error=str(error))
++            recovered = finish_settings(prepared, [], image, library_error=str(error))
 +        values = recovered['values']
 +        return io.NodeOutput(pixels, mask, values['positive'], values['negative'], values['model_name'],
 +            recovered['lora_stack'], recovered['lora_stack_text'], values['seed'], values['steps'],
@@ -15407,6 +15427,78 @@
 +    payload = await read_usage_tips(relative_path)
 +    syntax_format = await _syntax_format()
 +    return {'syntax_format': syntax_format, 'usage_response': payload}
+--- /dev/null
++++ b/v2/secure_services/avif_profile.py
+@@ -0,0 +1,69 @@
++"""Bounded raw AVIF brob metadata over managed image bytes.
++
++Compressed brob remains a dependency-profile gap. No decompressor is imported.
++"""
++from __future__ import annotations
++
++import json
++
++from ..secure_algorithms.bounds import bounded_json
++from .documents import _preflight_json_depth
++
++MAX_TOP_LEVEL_BOXES = 4096
++MAX_RAW_JSON_BYTES = 1024 * 1024
++
++
++def read_raw_avif_brob(data: bytes) -> dict[str, str | None] | None:
++    """Project the first raw comf box, preserving native EXIF fallback rules.
++
++    Match the pinned reader's finite 32-bit box scan, including its stop at
++    zero, short, extended-size and truncated boxes. The caller bounds encoded
++    bytes and identifies the image. Bounds reject rather than skip metadata.
++    """
++    offset = boxes = 0
++    first_brob: tuple[int, int] | None = None
++    avif_brand = False
++    while offset + 8 <= len(data):
++        size = int.from_bytes(data[offset:offset + 4], 'big')
++        if size < 8 or offset + size > len(data):
++            break
++        boxes += 1
++        if boxes > MAX_TOP_LEVEL_BOXES:
++            raise ValueError('AVIF metadata container exceeds box work bounds')
++        kind = data[offset + 4:offset + 8]
++        if kind == b'ftyp' and b'avif' in data[offset + 8:offset + size]:
++            avif_brand = True
++        if kind == b'brob' and first_brob is None:
++            first_brob = (offset + 8, offset + size)
++        offset += size
++    if len(data) < 16 or not avif_brand or first_brob is None:
++        return None
++    start, end = first_brob
++    if data[start:start + 4] != b'comf' or end - start < 4:
++        return None
++    start += 4
++    if end - start > MAX_RAW_JSON_BYTES:
++        raise ValueError('AVIF raw metadata exceeds encoded JSON bounds')
++    try:
++        text = data[start:end].decode('utf-8')
++    except UnicodeDecodeError as error:
++        raise NotImplementedError('AVIF brob compressed/binary metadata needs a qualified Brotli profile') from error
++    stripped = text.lstrip()
++    if stripped and stripped[0] not in '{["-0123456789tfn':
++        raise NotImplementedError('AVIF brob compressed/binary metadata needs a qualified Brotli profile')
++    _preflight_json_depth(text)
++    try:
++        meta = json.loads(text)
++    except (ValueError, RecursionError):
++        # The native reader falls back to ordinary EXIF on invalid raw JSON.
++        return None
++    bounded_json(meta)
++    result: dict[str, str | None] = dict.fromkeys(('parameters', 'prompt', 'workflow', 'comment'))
++    # Keep the original AttributeError for a valid non-object JSON root.
++    for key in ('prompt', 'workflow'):
++        value = meta.get(key)
++        if isinstance(value, (dict, list)):
++            result[key] = json.dumps(value)
++        elif isinstance(value, str):
++            result[key] = value
++    return result
 --- /dev/null
 +++ b/v2/secure_services/catalogue_cache.py
 @@ -0,0 +1,305 @@
@@ -16606,17 +16698,18 @@
 +    return factory
 --- /dev/null
 +++ b/v2/secure_services/image_metadata_source.py
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,142 @@
 +"""Managed image-byte input boundary; full eighteen-output node still pending.
 +
 +Decode only guest-owned BytesIO, never a path. Preserve the reviewed ordinary
-+PNG/JPEG/WebP/TIFF metadata precedence; AVIF/JXL Brotli containers stay pending.
++PNG/JPEG/WebP/TIFF/GIF/ordinary-AVIF precedence; compressed AVIF brob and JPEG XL stay pending.
 +"""
 +from __future__ import annotations
 +
 +import hashlib
 +from io import BytesIO
 +from dataclasses import asdict
++from typing import Any
 +
 +from PIL import Image
 +from comfy_api.latest import sdk
@@ -16625,6 +16718,7 @@
 +from ..secure_algorithms.bounds import bounded_json, MAX_STRING_BYTES
 +from .documents import _validate_tree, _preflight_json_depth
 +from .managed_library import _logical
++from .avif_profile import read_raw_avif_brob
 +
 +MAX_ENCODED = 16 * 1024**2
 +MAX_PIXELS = 16777216
@@ -16648,19 +16742,28 @@
 +    return value if isinstance(value, str) else str(value)
 +
 +
-+def fields_from_bytes(data):
++def fields_from_bytes(data: bytes, *, image_name: str | None = None) -> dict[str, Any]:
 +    # Imported at point of use so the node module (and its queue validator) load even
 +    # where the EXIF dependency is absent; decoding still requires it.
 +    import piexif
 +    if type(data) is not bytes or not 0 < len(data) <= MAX_ENCODED:
 +        raise ValueError('Encoded image metadata source exceeds bounds')
++    if image_name is not None:
++        image_name = _logical(image_name)
 +    metadata = dict.fromkeys(('parameters', 'prompt', 'workflow', 'comment'))
 +    with Image.open(BytesIO(data)) as image:
-+        if image.format not in ('PNG', 'JPEG', 'WEBP', 'TIFF'):
++        if image.format not in ('PNG', 'JPEG', 'WEBP', 'TIFF', 'GIF', 'AVIF'):
 +            raise NotImplementedError('Image container metadata branch is still pending')
 +        width, height = image.size
 +        if not 1 <= width <= MAX_AXIS or not 1 <= height <= MAX_AXIS or width * height > MAX_PIXELS:
 +            raise ValueError('Image geometry exceeds predecode bounds')
++        # Native ExifUtils selects brob by suffix. Managed reads always supply
++        # the logical name; identity-free byte callers retain format selection.
++        if image.format == 'AVIF' and (image_name is None or image_name.lower().endswith(('.avif', '.jxl'))):
++            brob_fields = read_raw_avif_brob(data)
++            if brob_fields is not None:
++                _validate_fields(brob_fields)
++                return {'fields': brob_fields, 'format': image.format, 'width': width, 'height': height}
 +        if image.format == 'PNG':
 +            image.load()  # Text after IDAT is populated only after load.
 +        info = image.info or {}
@@ -16717,14 +16820,15 @@
 +    return result
 +
 +
-+async def read_image_source(name, sampler_id='', prefer_saved_image_metadata=True, *, interpret=True):
-+    bounded_json([sampler_id, prefer_saved_image_metadata, interpret])
++async def read_image_source(name: str, sampler_id: str = '', prefer_saved_image_metadata: bool = True,
++                            *, interpret: bool = True, folder: str = 'input') -> dict[str, Any]:
++    bounded_json([sampler_id, prefer_saved_image_metadata, interpret, folder])
++    if type(folder) is not str or folder not in ('input', 'output', 'temp'):
++        raise ValueError('Image folder must be input, output or temp')
 +    if type(prefer_saved_image_metadata) is not bool or type(interpret) is not bool:
 +        raise ValueError('Image metadata selection flags must be Boolean')
 +    name = _logical(name)
-+    if name.lower().endswith(('.avif', '.jxl')):
-+        raise NotImplementedError('AVIF/JXL Brotli metadata branch is still pending')
-+    asset = await sdk.ctx().assets.resolve('input', name)
++    asset = await sdk.ctx().assets.resolve(folder, name)
 +    size = await sdk.ctx().assets.size(asset)
 +    if type(size) is not int or not 0 < size <= MAX_ENCODED:
 +        raise ValueError('Encoded image metadata source exceeds bounds')
@@ -16732,11 +16836,194 @@
 +    data = await sdk.ctx().assets.read_range(asset, 0, size)
 +    if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
 +        raise ValueError('Image source changed during managed read')
-+    source = fields_from_bytes(data)
-+    source.update({'name': name, 'sha256': digest, 'encoded_bytes': size})
++    source = fields_from_bytes(data, image_name=name)
++    source.update({'name': name, 'folder': folder, 'sha256': digest, 'encoded_bytes': size})
 +    if interpret:
 +        source['extracted'] = extract_fields(source['fields'], sampler_id, prefer_saved_image_metadata)
 +    return source
+--- /dev/null
++++ b/v2/secure_services/image_names.py
+@@ -0,0 +1,27 @@
++"""Pinned core image annotations expressed as confined managed asset identities."""
++from __future__ import annotations
++
++from .managed_library import _logical
++
++# Core 6257422 folder_paths.annotated_filepath removes the suffix plus one
++# separator character. Preserve that behavior even if the caller omitted a space.
++ANNOTATIONS: tuple[tuple[str, str, int], ...] = (
++    ('[output]', 'output', 9),
++    ('[input]', 'input', 8),
++    ('[temp]', 'temp', 7),
++)
++
++
++def managed_image_name(value: str) -> tuple[str, str]:
++    """Return only an input/output/temp folder and a confined logical name.
++
++    Unknown annotations remain literal input filenames, as in the pinned core.
++    Absolute paths, parent traversal and drive selectors remain outside the
++    managed-name profile and are rejected by the shared logical-name boundary.
++    """
++    if type(value) is not str:
++        raise ValueError('Image selection must be a managed logical name')
++    for suffix, folder, trim in ANNOTATIONS:
++        if value.endswith(suffix):
++            return folder, _logical(value[:-trim])
++    return 'input', _logical(value)
+--- /dev/null
++++ b/v2/secure_services/image_pixels.py
+@@ -0,0 +1,150 @@
++"""Bounded managed-byte image decode, pinned to core 6257422 LoadImage.
++
++This ports only the image frame conversion from VideoFromFile, followed by
++LoadImage's animated-WebP Pillow fallback. No paths, audio, video selectors,
++Comfy internals, or model operations enter this module.
++"""
++from io import BytesIO
++import hashlib
++
++from comfy_api.latest import sdk
++from .image_metadata_source import MAX_AXIS, MAX_ENCODED, MAX_PIXELS
++
++MAX_FRAMES = 256
++FORMATS = ('PNG', 'JPEG', 'WEBP', 'TIFF', 'GIF', 'AVIF')
++
++
++def _geometry(width, height, frames=1):
++    if not (1 <= width <= MAX_AXIS and 1 <= height <= MAX_AXIS
++            and 1 <= frames <= MAX_FRAMES and width * height * frames <= MAX_PIXELS):
++        raise ValueError('Image batch exceeds managed decode bounds')
++
++
++def decode_pixels(data):
++    """Return CPU BHWC RGB and BHW inverted alpha with core's precision.
++
++    Bounds apply to the complete batch. Crossing a bound raises rather than
++    silently returning a prefix of an animation.
++    """
++    import av
++    import numpy as np
++    import torch
++    from PIL import Image, ImageOps, ImageSequence
++
++    if type(data) is not bytes or not 0 < len(data) <= MAX_ENCODED:
++        raise ValueError('Encoded image exceeds managed decode bounds')
++    with Image.open(BytesIO(data)) as header:
++        if header.format not in FORMATS:
++            raise NotImplementedError('Image container pixel branch is still pending')
++        _geometry(*header.size)
++
++    frames, alphas = [], None
++    decoded_pixels = 0
++    image_format, integer_format, align_graph = None, False, None
++    with av.open(BytesIO(data), mode='r') as container:
++        stream = next((item for item in container.streams if item.type == 'video'), None)
++        if stream is None:
++            raise ValueError('Managed image has no decodable image stream')
++        # Animated WebP has an undecoded 0x0 AV stream. Its Pillow header
++        # was checked above; validate real frame dimensions if AV yields any.
++        if stream.width > 0 and stream.height > 0:
++            _geometry(stream.width, stream.height)
++        stream.thread_type = 'AUTO'
++        for packet in container.demux(stream):
++            try:
++                for frame in packet.decode():
++                    if frame.pts < 0:
++                        continue
++                    _geometry(frame.width, frame.height, len(frames) + 1)
++                    decoded_pixels += frame.width * frame.height
++                    if decoded_pixels > MAX_PIXELS:
++                        raise ValueError('Image batch exceeds managed decode bounds')
++                    if image_format is None:
++                        has_alpha = any(component.is_alpha or frame.format.name == 'pal8'
++                                        for component in frame.format.components)
++                        alphas = [] if has_alpha else None
++                        integer_format = frame.format.name in (
++                            'yuvj420p', 'yuvj422p', 'yuvj444p', 'rgb24', 'rgba', 'pal8')
++                        image_format = (('rgba' if has_alpha else 'rgb24') if integer_format
++                                        else ('gbrapf32le' if has_alpha else 'gbrpf32le'))
++                    # Match the pinned core's deterministic swscale alignment.
++                    if image_format in ('gbrpf32le', 'gbrapf32le') and frame.width % 32:
++                        if align_graph is None:
++                            pad_w = ((frame.width + 31) // 32) * 32
++                            pad_h = ((frame.height + 31) // 32) * 32
++                            graph = av.filter.Graph()
++                            source = graph.add_buffer(width=frame.width, height=frame.height,
++                                                      format=frame.format.name, time_base=stream.time_base)
++                            pad = graph.add('pad', f'{pad_w}:{pad_h}:0:0')
++                            fill = graph.add('fillborders',
++                                f'left=0:right={pad_w-frame.width}:top=0:bottom={pad_h-frame.height}:mode=smear')
++                            sink = graph.add('buffersink')
++                            source.link_to(pad)
++                            pad.link_to(fill)
++                            fill.link_to(sink)
++                            graph.configure()
++                            align_graph = (graph, source, sink)
++                        align_graph[1].push(frame)
++                        array = np.ascontiguousarray(align_graph[2].pull().to_ndarray(
++                            format=image_format)[:frame.height, :frame.width])
++                    else:
++                        array = frame.to_ndarray(format=image_format)
++                    rotation = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
++                    if rotation:
++                        array = np.rot90(array, k=rotation, axes=(0, 1)).copy()
++                    frames.append(torch.from_numpy(array if alphas is None else array[..., :-1]))
++                    if alphas is not None:
++                        alphas.append(torch.from_numpy(array[..., -1:]))
++            except av.error.InvalidDataError:
++                # Pinned core skips invalid packets, including all packets of an
++                # animated WebP, then uses Pillow when no frame was decoded.
++                continue
++    if frames:
++        images = torch.stack(frames)
++        if integer_format:
++            images = images.float() / 255.0
++        if alphas is None:
++            masks = torch.zeros((len(frames), 64, 64), dtype=torch.float32)
++        else:
++            alpha = torch.stack(alphas)
++            if integer_format:
++                alpha = alpha.float() / 255.0
++            masks = 1.0 - alpha[..., -1]
++        return images, masks
++
++    # Pinned LoadImage's fallback for animated WebP only when PyAV yielded no
++    # frames. It skips differently sized pages and respects EXIF orientation.
++    masks = []
++    first_size = None
++    with Image.open(BytesIO(data)) as source:
++        for index, page in enumerate(ImageSequence.Iterator(source)):
++            if index >= MAX_FRAMES:
++                raise ValueError('Image batch exceeds managed decode bounds')
++            _geometry(*page.size)
++            page = ImageOps.exif_transpose(page)
++            rgb = page.convert('RGB')
++            if first_size is None:
++                first_size = rgb.size
++            if rgb.size != first_size:
++                continue
++            _geometry(*rgb.size, len(frames) + 1)
++            frames.append(torch.from_numpy(np.array(rgb).astype(np.float32) / 255.0))
++            if 'A' in page.getbands():
++                alpha = np.array(page.getchannel('A')).astype(np.float32) / 255.0
++                masks.append(1.0 - torch.from_numpy(alpha))
++            else:
++                masks.append(torch.zeros((64, 64), dtype=torch.float32))
++    if not frames:
++        raise ValueError('Managed image has no decodable frames')
++    return torch.stack(frames), torch.stack(masks)
++
++
++async def load_managed_pixels(asset, expected_digest):
++    size = await sdk.ctx().assets.size(asset)
++    if type(size) is not int or not 0 < size <= MAX_ENCODED:
++        raise ValueError('Encoded image exceeds managed decode bounds')
++    data = await sdk.ctx().assets.read_range(asset, 0, size)
++    if len(data) != size or hashlib.sha256(data).hexdigest() != expected_digest:
++        raise ValueError('Image source changed during managed decoding')
++    pixels, mask = decode_pixels(data)
++    return await sdk.ImageRef.from_value(pixels), await sdk.MaskRef._from_raw(mask)
 --- /dev/null
 +++ b/v2/secure_services/image_result_body.py
 @@ -0,0 +1,25 @@
