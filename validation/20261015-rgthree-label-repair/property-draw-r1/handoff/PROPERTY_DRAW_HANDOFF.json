@@ -1,0 +1,73 @@
+{
+  "status": "SOURCE_REGRESSION_PASS_BROWSER_PENDING",
+  "summary": "Dispatch worker property-change hooks with a snapshot after synchronous property settlement.",
+  "changed_files": [
+    "extension-host/host-entry.mjs"
+  ],
+  "old_host_entry_sha256": "0b3ddfc26321558fdff2ca0be71ba3b2004932fe1ffbdcfa8cbc7754957aedbf",
+  "new_host_entry_sha256": "bbf1f186d8745624d0279241eb3cd4a8ece79c8f1a600e04dd1c07de8e879b6a",
+  "diagnosis": "defsRegistry intentionally invokes native property handlers before writing, to allow synchronous replacement/rejection and bound-widget synchronization. The old host bridge snapshotted during that phase. Actual Label63114 reread the old snapshot and submitted an accepted bitmap for the prior property; a later RPC reply refreshed cache without redrawing.",
+  "diagnostic": {
+    "receipt": "../evidence/run2/PROPERTY_DRAW_DIAGNOSTIC.json",
+    "checks": 20,
+    "stale_final_accepted_bitmaps": 6,
+    "cases": [
+      "host angle25 to-20",
+      "guest angle-20 to35",
+      "host angle35 to0",
+      "guest fontSize20 to31",
+      "host textAlign center to right",
+      "guest fontColor#ffffff to#eeddcc"
+    ],
+    "no_graph_restoration": true
+  },
+  "correction": "A shared host _sendNodeHook helper preserves synchronous dispatch for every other lifecycle hook. Property-change notifications alone are queued to a microtask and take their snapshot after native settlement completes. Deleted nodes and changed graph/document scopes cancel queued property notifications. The frontend registry and its synchronous setValue/reject behavior are unchanged.",
+  "semantics": {
+    "worker_event_value": "The originally proposed value remains in event.value; the snapshot/getProperties reflects committed state, including native replacement/rejection.",
+    "rapid_native_writes": "Every notification retains its event; after synchronous successive writes the snapshot reflects the then-current committed node state.",
+    "native_settlement": "Executed actual production LGraphNode.setProperty and defsRegistry; bound-widget replacement/rejection synchronization remains intact.",
+    "surface_lifecycle": "Property redraws retain one surface, close superseded bitmaps and dispose the final surface/bitmap on removal."
+  },
+  "validation": {
+    "status": "PASS",
+    "checks": 44,
+    "expected_old_source_failures": 5,
+    "terminal_exit_code": 0,
+    "oom": false,
+    "wall_seconds": 1.911479768998106,
+    "limits": {
+      "wall_seconds": 90,
+      "container_mib": 768,
+      "node_heap_mib": 512,
+      "cpus": 1,
+      "network": "none",
+      "install": false
+    },
+    "test_source_sha256": "8e53873fbd8f906222f26eb88c4d08215d316ed0791f041dd6583c9d042754cc",
+    "controller_sha256": "447841a21ebcad8388bf17943e9c795d49df4384b5b6f5c8903b3951ac13fdf9",
+    "receipt": "../evidence/run3/PROPERTY_DRAW_REGRESSION.json",
+    "terminal": "../evidence/run3/TERMINAL.json",
+    "scope": "Unmodified production registry and extracted native LGraphNode.setProperty, complete guest, unchanged Label source/layout/draw and actual host accepted-frame path. Only host-entry property notification timing changes. Exact drawing commands are carried by ImageBitmap fixtures; no pixel/raster acceptance is claimed.",
+    "historic_windows_attempt": "../evidence/run1/ADMISSION.json",
+    "historic_windows_note": "Windows actual free memory failed the4GiB admission floor; no runtime started. Linux diagnostic and successor runs passed independent actual-memory admission."
+  },
+  "unchanged": {
+    "label_js_sha256": "63114a2fa1ee3367d3e6df745a8ab8239dadeb694d5a37c13b83bbe86628de07",
+    "drawing_js_sha256": "4c0f6b8c28d546daf552759a47678522a154c9df939d5fea6f7e817adfe9de67",
+    "ui_renderer_sha256": "46882ce0fecfd4156abf927dc49a22cc911f3a84d6f3ad1de99893393ac17fb6",
+    "pack_registration": true,
+    "public_api_declarations": true,
+    "frontend_typescript_source": true
+  },
+  "operator_status": "PENDING_DANNY_BROWSER_ACCEPTANCE",
+  "operator_integration": [
+    "Verify current host-entry preimage0b3ddfc2 before applying only candidate/extension-host/host-entry.mjs; preserve independently proven ui-renderer46882.",
+    "Keep then-current selected frontend/index/login/pack-loading assets. No pack revision or frontend compiler rebuild is required by this host module delta. Root owns publication; DANNY owns deployment/browser.",
+    "Verify served host-entry successorbbf1f186, ui-renderer46882 and Label63114 bytes in fresh browser contexts.",
+    "In Classic and Vue load the original acceptance fixture and verify the visible drawing as well as all saved properties.",
+    "Edit angle25 to-20, font size, color, alignment, padding and radius; after blur verify actual visible drawing matches the final graph state without requiring another edit.",
+    "Verify dialog title/alignment remain correct after edits, reopen and save/reload; complete pinned click-through/doubleclick and drag acceptance."
+  ],
+  "minimal_patch": "../host-entry.patch",
+  "source_bindings": "SOURCE_BINDINGS.json"
+}

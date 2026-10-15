@@ -1,0 +1,61 @@
+--- a/host-entry.mjs
++++ b/host-entry.mjs
+@@ -2245,15 +2245,7 @@
+           // rebuilds a handle over the SNAPSHOT — state as data, true at
+           // dispatch — and mutations come back as explicit nodeop messages
+           // through the same policy table.
+-          this._host.send(pack, {
+-            t: 'hook',
+-            regId,
+-            hook,
+-            node: { id: String(node.id), type: node.type },
+-            snapshot: this._nodeSnapshot(node),
+-            ctx: this._gestureCtx(),
+-            arg: this._sanitizeReturn(arg),
+-          })
++          this._sendNodeHook(pack, regId, hook, node, arg)
+         })
+       }
+     })
+@@ -2298,18 +2290,34 @@
+     }
+   }
+ 
++  _sendNodeHook(pack, regId, hook, node, arg) {
++    const send = () => this._host.send(pack, {
++      t: 'hook', regId, hook,
++      node: { id: String(node.id), type: node.type },
++      snapshot: this._nodeSnapshot(node),
++      ctx: this._gestureCtx(),
++      arg: this._sanitizeReturn(arg),
++    })
++    if (hook !== 'onPropertyChanged') return send()
++
++    // Synchronous SDK handlers settle/reject before the property is written.
++    // Workers cannot settle that stack: snapshot their notification after it
++    // commits, including any native handler's replacement or rejection.
++    const graphId = node.graphId
++    const documentId = this.comfy.workflow?.documentId?.()
++    queueMicrotask(() => {
++      if (node.isDeleted || node.graphId !== graphId ||
++          this.comfy.workflow?.documentId?.() !== documentId) return
++      send()
++    })
++  }
++
+   _applyDefine(pack, { regId, def, hooks = [], hasSerialize = false,
+                        hasPromptSerialize = false, has = {} }) {
+     const definition = { ...def }
+     for (const hook of hooks) {
+       definition[hook] = (node, arg) => {
+-        this._host.send(pack, {
+-          t: 'hook', regId, hook,
+-          node: { id: String(node.id), type: node.type },
+-          snapshot: this._nodeSnapshot(node),
+-          ctx: this._gestureCtx(),
+-          arg: this._sanitizeReturn(arg),
+-        })
++        this._sendNodeHook(pack, regId, hook, node, arg)
+       }
+     }
+     if (hasSerialize) {

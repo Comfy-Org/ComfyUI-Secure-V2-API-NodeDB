@@ -1,0 +1,46 @@
+{
+  "status": "CLASSIC_PASS_VUE_EDIT_DETACHMENT_FAILURE_PRESERVED",
+  "runs": [
+    {
+      "run": "classic-attempt1",
+      "status": "FAILED",
+      "checks": 31,
+      "raw_report_sha256": "e4f6fde38ced9a28feda460f0799d246820a4a351bf160287d84aa1ce2c8679a",
+      "published_report_sha256": "2eaecb2d18ecd499fbc835b5d6c27a4950b61411b5913616cf6e78ea4bb365e4"
+    },
+    {
+      "run": "classic-attempt2",
+      "status": "INTERACTION_CHECKS_PASS_VISUAL_REVIEW_PENDING",
+      "checks": 43,
+      "raw_report_sha256": "e5a500f9670a10147432aa1c532ec03291d17f5882c66b56b0c506f98bbb22ea",
+      "published_report_sha256": "c75b40212f29883ff10bd9dc60de8b64ffb78017bc181b80373e5b0e624dc590"
+    },
+    {
+      "run": "vue-attempt1",
+      "status": "FAILED",
+      "checks": 18,
+      "raw_report_sha256": "03c860e38e125455563c29d735eeea7133f36ee45f03349a180ca1df6541074b",
+      "published_report_sha256": "73b3f1d86c508f7cf87794c1c59bc8a091ffd7ec3b8a3f31cd86014b50da59bb"
+    }
+  ],
+  "classic_visual_review": {
+    "status": "PASS",
+    "reviewer": "MERVYN",
+    "screenshots": [
+      "classic-attempt2/04-reloaded.png",
+      "classic-attempt2/05-pan-zoom.png",
+      "classic-attempt2/03-pinned-dialog.png"
+    ],
+    "observations": [
+      "Edited multiline text visibly rotates at-20 degrees and retains color, alignment, padding and rounded translucent background after reload.",
+      "Exposed pinned Label remains visible, has one working edit dialog and retains pinned state.",
+      "Real wheel zoom and middle-button pan preserve visible unclipped drawing."
+    ]
+  },
+  "classic_overlap_limit": "Native textarea overlays canvas content and receives events. The first attempt retains that observed doubleclick failure. The accepted run first proves primary click-through into the textarea, then moves the underlying node via real header drag to expose the pinned Label for editing/menu. Original Label also draws and hit-tests only through canvas; no graph values were restored to pass.",
+  "vue_failure": "Actual fields are detached while typing and pending edits are discarded; CDP box-model failure follows. Not accepted as a harness-only failure.",
+  "diagnosis": "Guest settling flush repeats identical markup; host update always replaces children despite the guest expecting unchanged markup to be a no-op. Isolated host successor is pending; no pack change claimed.",
+  "service_writes": false,
+  "render_or_conversion_submissions": 0,
+  "whole_pack_credit": false
+}
