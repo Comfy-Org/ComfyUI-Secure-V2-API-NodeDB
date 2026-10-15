@@ -7,10 +7,12 @@ unfinished; this source adapter is not a whole-node certificate.
 """
 from comfy_api.latest import io, sdk
 
+from .secure_services.managed_library import _logical
+
 
 class CheckpointLoader(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('models',)
+    SDK_PERMISSIONS = ('models', 'assets')
 
     @classmethod
     def define_schema(cls):
@@ -23,7 +25,7 @@ class CheckpointLoader(io.ComfyNode):
                             'control_after_generate to pick a random model on every run.',
                     control_after_generate=io.ControlAfterGenerate.fixed,
                     remote=io.RemoteOptions(
-                        route='/lora-manager/secure/checkpoints/standard-names',
+                        route='/models/checkpoints',
                         refresh_button=True)),
                 io.Combo.Input('base_model', options=['Any'], default='Any',
                     tooltip='Restrict the random selection pool to this base '
@@ -39,6 +41,21 @@ class CheckpointLoader(io.ComfyNode):
                             'to and from latent space.'),
             ],
         )
+
+    @classmethod
+    async def validate_inputs(cls, ckpt_name, base_model='Any'):
+        # The remote list has no static options, so core cannot check membership itself.
+        # Read-only existence check; base_model only narrows the frontend's random pick.
+        # Unsafe names are rejected locally: a host-side escape error would cross the wire
+        # as an operational failure, not as a validation result.
+        del base_model
+        try:
+            name = _logical(ckpt_name)
+        except ValueError:
+            return f"Value not in list: ckpt_name: '{ckpt_name}' is not an available checkpoint"
+        if not await sdk.ctx().assets.exists('checkpoints', name):
+            return f"Value not in list: ckpt_name: '{ckpt_name}' is not an available checkpoint"
+        return True
 
     @classmethod
     async def execute(cls, ckpt_name: str, base_model: str = 'Any'):

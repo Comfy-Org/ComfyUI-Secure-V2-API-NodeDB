@@ -9,7 +9,6 @@ import hashlib
 from io import BytesIO
 from dataclasses import asdict
 
-import piexif
 from PIL import Image
 from comfy_api.latest import sdk
 
@@ -41,6 +40,9 @@ def _decode_exif_text(value):
 
 
 def fields_from_bytes(data):
+    # Imported at point of use so the node module (and its queue validator) load even
+    # where the EXIF dependency is absent; decoding still requires it.
+    import piexif
     if type(data) is not bytes or not 0 < len(data) <= MAX_ENCODED:
         raise ValueError('Encoded image metadata source exceeds bounds')
     metadata = dict.fromkeys(('parameters', 'prompt', 'workflow', 'comment'))
