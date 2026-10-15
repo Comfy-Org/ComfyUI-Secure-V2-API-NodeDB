@@ -1,5 +1,5 @@
-> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: 37 of 40 upstream converted; 2 tested (scoped), 35 converted but untested/partly tested,
+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 2).
+> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 32 converted but untested/partly tested,
 > 3 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
@@ -7,25 +7,43 @@
 
 ## What this revision contains
 
-- **Base:** the registered Label revision (draft PR #6, commit `e7f5d08`). That is main `317175f` plus `label.js`, the new
-  `label_drawing.js`, and `comfy-api.d.ts`.
-- **Added:** 16 frontend files whose existing tests pass:
-  - 14 files from the first repair tranche, covered by 70 focused original-comparison cases:
-    - `web/comfyui/comfy_ui_bar.js`, `dialog_info.js`, `fast_groups_muter.js`, `power_conductor.js`, `power_lora_loader.js`,
-      `random_unmuter.js`, `rgthree.js`, `services/config_service.js`, `widget_controls.js`
-    - `web/common/model_info_service.js`, `model_info_storage.js`, `progress_bar.js`, `prompt_service.js`, `rgthree_api.js`
-  - `web/comfyui/display_any.js` (F14 output serialization, checked against the original as an oracle).
-  - `web/common/media/svgs.js`. Its logo now resolves against the module's own URL; that fixes an invalid-URL fetch in the
-    sandboxed worker (6 hermetic cases).
-- **Held back** (left at the PR #6 version and listed as open):
-  - the Reroute definition and the F01 connection-layout port, both waiting on host renderer prerequisites S01–S04;
-  - the optional Dynamic Context backend, waiting on the repeated-output API;
-  - the host-side `comfy.defs.onRefreshed` fix, which is a separate host deployment.
+- **Base:** in-progress revision 1, as published on corpus main (`b1e79f4e`). That revision was the registered Label revision
+  (draft PR #6) plus 16 tested frontend files:
+  - the 14-file first repair tranche;
+  - `display_any.js` (F14);
+  - `media/svgs.js`, the worker-safe logo URL.
+- **Changed in revision 2:**
+  - Backend (`py/secure_nodes.py`, `py/_secure.py`, `secure-nodes.json`). Three fixes found by original-comparison runs:
+    - Lora Loader Stack resolves the exact selected name and declares an input validator, so real selections pass prompt
+      validation and missing names are rejected there.
+    - SDXL Empty Latent Image builds its latent with the SDK's latent op and now carries `downscale_ratio_spacial`, as the
+      original does.
+    - Power Prompt and SDXL Power Prompt - Positive apply prompt-tag LoRA strengths outside ±100, as the original does.
+  - `secure-nodes.json` regenerated with the backend's manifest generator plus its `validation_inputs` fix, which is sent to
+    the backend owner for review. Lora Loader Stack now carries its validator's argument names. Every node also gains
+    `"loop_boundary": null`, which current Core's schema adds. Node schemas are otherwise unchanged.
+  - `web/common/rgthree_api.js`: `getLoras` reads the LoRA catalogue through the public models API
+    (`comfy.models.list('loras')`). The pack names the folder and the host chooses the route, instead of the pack fetching
+    the core route `/models/loras`, which a sandboxed pack may no longer reach. 1 negative control plus 4 hermetic cases.
+    The host must provide `comfy.models.list` for the list to load.
+  - This report:
+    - dispositions updated from the backend original-comparison runs;
+    - two refused-technique descriptions corrected (Power Puter; runtime writes in the pack folder);
+    - one technique added (the bundled host-update script).
+- **Held back** (unchanged from revision 1 and listed as open):
+  - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
+    pass their tests, but the deployed frontend does not yet carry S01–S03. A combined S01–S04 frontend patch against the
+    deployed sources is in preparation.
+  - The optional Dynamic Context backend, which waits on the repeated-output API.
+- **Resolved since revision 1:** the startup callback error (`comfy.defs.onRefreshed` inside the sandbox). The host fix is
+  deployed and passed browser acceptance on 2026-10-15: no DataCloneError at login, and a refresh reaches the pack's
+  worker.
 
 ## Provenance
 
 Upstream https://github.com/rgthree/rgthree-comfy at commit `6b76ee6f2c5a007710b5a16f97c94330d6ecc871`
-(key `x6b76ee6`). The pristine tree beside `v2/` is byte-exact at that commit (258 files). Upstream has
+(key `x6b76ee6`). The pristine tree beside `v2/` is byte-exact at that commit (258 files). `v2/src_web/` is an unchanged
+copy of upstream's TypeScript sources, kept for reference. The converted, served frontend is `v2/web/`. Upstream has
 40 node IDs: 37 enabled by default and 3 opt-in (Dynamic Context, Dynamic Context Switch, Power Conductor).
 Of the defaults, 24 have Python classes and 13 are frontend-only.
 
@@ -39,6 +57,9 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | --- | --- | --- |
 | `KSampler Config (rgthree)` | tested (scoped) | Backend native cases pass; no custom frontend. |
 | `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. |
+| `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
+| `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
+| `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
 | `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 connection layouts are not in this revision. |
 | `Context (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
 | `Context Big (rgthree)` | converted, partly tested | Backend native cases pass; F01 is open. |
@@ -53,19 +74,16 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Label (rgthree)` | converted, partly tested | Browser: Classic 7/9 edits persist, Vue 8/9. The remaining focus race is a host renderer fix, still pending. |
-| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Open: F01, F03, F04, F13, and the startup callback error until the host `defs.onRefreshed` fix is deployed. |
+| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. In revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 | `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 | `Random Unmuter (rgthree)` | converted, partly tested | The tested failed-attempt cleanup repair ships here. F07 (independent choice per batch item) and F01 are open. |
-| `SDXL Power Prompt - Positive (rgthree)` | converted, partly tested | Backend native cases pass. F01 is open, plus the startup callback error (host fix pending). |
+| `SDXL Power Prompt - Positive (rgthree)` | converted, partly tested | Backend native cases pass, including the revision-2 prompt-tag strength fix. F01 is open. |
 | `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
-| `Image Comparer (rgthree)` | converted, untested | Backend behaviour is not yet exercised; F01 is open. |
-| `Image Resize (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
-| `Lora Loader Stack (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
-| `SDXL Empty Latent Image (rgthree)` | converted, untested | Backend only; schema validated, behaviour not yet exercised. |
-| `Power Prompt (rgthree)` | converted, untested | Backend behaviour is not yet exercised. F01 is open, plus the startup callback error (host fix pending). |
-| `Power Prompt - Simple (rgthree)` | converted, untested | Same as Power Prompt. |
-| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, untested | Same as Power Prompt. |
+| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
+| `Power Prompt (rgthree)` | converted, partly tested | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. The frontend is untested, and F01 is open. |
+| `Power Prompt - Simple (rgthree)` | converted, partly tested | Backend native cases: 16/16 equal the original. The frontend is untested, and F01 is open. |
+| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, partly tested | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. The frontend is untested, and F01 is open. |
 | `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
 | `Fast Actions Button (rgthree)` | converted, untested | Frontend-only. F01 and F11 are open. |
 | `Fast Bypasser (rgthree)` | converted, untested | Frontend-only. F01 is open. |
@@ -74,7 +92,7 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Mute / Bypass Repeater (rgthree)` | converted, untested | Frontend-only. F01 is open. |
 | `Node Collector (rgthree)` | converted, untested | Frontend-only. F01 is open. |
 | `Node Combiner (rgthree)` | converted, untested | Legacy frontend-only node. F01 is open. |
-| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists: host prerequisites S01–S03 pass and S04 is in progress. F05 and F06 are open. |
+| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). They are not yet all in the deployed frontend. F05 and F06 are open. |
 | `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. |
 | `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 
@@ -110,15 +128,18 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
    *Replacement:* not yet; needs a host-owned link-gesture contribution (F05).
 7. **Enumerating other packs and calling their lifecycle callbacks** (`comfyapp.extensions.map(...)`,
    web/comfyui/rgthree.js:285–293). That interferes across packs. *Replacement:* none needed; the host runs each pack's own hooks.
-8. **Unrestricted evaluation in Power Puter**, reaching arbitrary attributes of live objects (`getattr(item, attr)`,
-   py/power_puter.py:569). That puts arbitrary code on the host. *Replacement:* the bounded evaluator in `v2/py/safe_puter.py`.
+8. **Unrestricted attribute access in Power Puter's expression interpreter.** It does not call `eval`, but it resolves arbitrary
+   attributes of live objects (`getattr(item, attr)`, py/power_puter.py:569), guarded only by a short blocklist. That exposes
+   host internals to workflow text. *Replacement:* the bounded evaluator in `v2/py/safe_puter.py`.
 9. **Host-wide VRAM purge** (`purge_vram` → `unload_all_models` / `soft_empty_cache`, py/power_puter.py:63–74, 152).
    This evicts other users' models. *Replacement:* none; the host manages memory.
-10. **Writing or deleting host files outside the pack**, and serving them from raw routes on the host server:
-    - `shutil.rmtree` of ComfyUI `web/extensions/rgthree*` at import (`__init__.py:86–92`);
-    - `rgthree_config.json` in the install directory (py/config.py:49,55);
-    - JSON writes and removes (py/utils.py:128,149; py/utils_userdata.py:21–29);
-    - model-info sidecars (py/server/utils_info.py:452);
+10. **Writing to the host's file system at runtime, and serving it from raw routes on the host server:**
+    - deleting ComfyUI's `web/extensions/rgthree*` with `shutil.rmtree` at import (`__init__.py:86–92`), which is outside the pack;
+    - writing `rgthree_config.json` into the pack's own install folder (py/config.py:49,55);
+    - JSON writes and removes (py/utils.py:128,149);
+    - userdata files under the pack's folder (py/utils_userdata.py:21–29). The path join there has no `..` check, so a
+      crafted name can reach outside the folder;
+    - model-info sidecars written next to model files (py/server/utils_info.py:452);
     - the `/rgthree/api/*` routes (py/server/*.py).
 
     *Replacements:* public settings and pack storage (`services/config_service.js`, `common/model_info_storage.js`) and core
@@ -128,6 +149,19 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
     names through the `assets` permission.
 12. **Unaudited network fetches by the pack** (Civitai via `requests`, py/server/utils_info.py:327–339; update
     check via `aiohttp`, py/pyproject.py:49–56). *Replacement:* not yet; needs an admitted metadata provider (F03).
+13. **Updating the host installation and other packs.** The bundled `__update_comfy__.py` script runs `git pull` across
+    ComfyUI and every custom node, and runs `git restore .` where local changes block the pull. That rewrites code the pack
+    does not own. *Replacement:* none needed in a pack. v2 never imports or runs the script (it is pristine-only); the host's
+    own tooling updates installations.
+
+## Accepted differences
+
+- **Lora Loader Stack.** An invalid LoRA name is reported as `custom_validation_failed` on all four selector inputs, with
+  the details prefixed `lora_0N - `. The original reports one `value_not_in_list` on the offending input. After the prefix,
+  the details text is the original's. Cause: Core reports a failing `validate_inputs` once per validator input.
+- **SDXL Power Prompt - Simple / Negative.** With CLIP width and height set, v2 returns the conditioning that the original
+  computes with its intended (pre-V3) SDXL encode. On current Core the original's call fails and returns no conditioning.
+  With an SD1 CLIP, v2 falls back to the plain encode described by the original's own log message.
 
 ## Pending items (not yet supported)
 
@@ -146,14 +180,14 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
 - F16 — delivery of the pack's model-browser and link-fixer pages.
 - Power Prompt LoRA and embedding insert combos when the model list exceeds the worker's definition bounds
   (needs a public model-catalogue read).
-- Startup callback errors (`comfy.defs.onRefreshed` inside the sandbox): a host fix is written and tested,
-  with 1 negative control plus 8 cases passing, and is awaiting review and deployment.
 
 ## Open test gates
 
-- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). S04 has one failure under diagnosis.
-- Backend behaviour runs for Image Comparer, Image Resize, Lora Loader Stack, Power Prompt, Power Prompt - Simple,
-  SDXL Empty Latent Image, and SDXL Power Prompt - Simple / Negative.
+- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. They still have
+  to be deployed together as one frontend patch.
+- Backend native cases running inside the Guest (sandboxed), and Core prompt validation at runtime for the Lora Loader Stack
+  validator. Its checks pass structurally and in the Guest.
+- Image Comparer with an empty image batch.
 - Original-comparison runs for the eight frontend-only nodes listed as untested.
 - Label browser acceptance after the host focus-race fix.
 - Live asset delivery and CORS for `/rgthree/*` static files, including the logo.

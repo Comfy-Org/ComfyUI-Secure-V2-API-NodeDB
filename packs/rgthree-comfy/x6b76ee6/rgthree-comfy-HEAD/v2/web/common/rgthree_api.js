@@ -5,9 +5,10 @@ import { readModelInfo, writeModelInfo, listModelInfo, ModelMetadataUnavailableE
  * The frontend slice of rgthree's former custom server API.
  *
  * Secure packs do not execute arbitrary Python route registration. The one
- * runtime dependency the converted nodes need—the LoRA catalogue—is already a
- * core authenticated route. Authored model-info fields use public storage;
- * metadata hydration still needs an admitted provider and reports unavailable.
+ * runtime dependency the converted nodes need—the LoRA catalogue—comes from the
+ * public models API: the pack names the folder and the host chooses the route.
+ * Authored model-info fields use public storage; metadata hydration still needs
+ * an admitted provider and reports unavailable.
  */
 class RgthreeApi {
     constructor() {
@@ -22,9 +23,8 @@ class RgthreeApi {
     }
     getLoras(force = false) {
         if (!this.getLorasPromise || force) {
-            this.getLorasPromise = this.fetchJson("/models/loras", {
-                cache: "no-store",
-            }).then((files) => (Array.isArray(files) ? files : [])
+            this.getLorasPromise = comfy.models.list('loras')
+                .then((files) => (Array.isArray(files) ? files : [])
                 .map((file) => ({ file: String(file) })));
         }
         return this.getLorasPromise;

@@ -100,11 +100,17 @@ async def read_save_resources(metadata, *, lora_source='pack-cache'):
             continue
         if folder == 'loras' and lora_source == 'pack-cache':
             result[scanner] = await pack_cache_lora_resources(labels)
-            continue
-        imported = await imported_save_resources(folder, labels)
-        if imported is not None:
-            result[scanner] = imported
-            continue
+            # The original's scanner indexes every library LoRA (sidecar or not) at server start;
+            # this pack cache fills only on an explicit refresh and cannot index sidecar-less files.
+            # Labels it lacks resolve as checkpoints do below: catalogue name -> digest -> record.
+            labels = [label for label in labels if label not in result[scanner]]
+            if not labels:
+                continue
+        else:
+            imported = await imported_save_resources(folder, labels)
+            if imported is not None:
+                result[scanner] = imported
+                continue
         catalogue = await sdk.ctx().assets.list(folder)
         if type(catalogue) is not list or len(catalogue) > 2048:
             raise ValueError('Save resource catalogue exceeds bounds')

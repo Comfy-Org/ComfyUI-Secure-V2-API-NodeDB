@@ -8,14 +8,56 @@ from comfy_api.latest import io, sdk
 
 from .secure_algorithms.metadata_recovery import parse_overrides, prepare_settings, finish_settings
 from .secure_algorithms.bounds import bounded_json
-from .secure_services.image_metadata_source import read_image_source
+from .secure_algorithms.core_sampling_names import SAMPLERS, SCHEDULERS
+from .secure_services.image_metadata_source import read_image_source, MAX_AXIS, MAX_ENCODED, MAX_PIXELS
 from .secure_services.metadata_catalogue import read_metadata_catalogue
 from .secure_services.managed_library import _logical
 
 
+async def _first_frame_mask(asset, expected_digest):
+    """Core LoadImage's MASK for the first frame, from the same managed bytes as the pixels.
+
+    Deployed core (6257422) LoadImage decodes with PyAV: a frame has alpha when its pixel format
+    has an alpha component or is paletted (PNG tRNS applied), and the mask is 1 - alpha;
+    otherwise it is a 64x64 zero mask. The deployed SDK's assets.load_image returns RGB pixels
+    only (first frame, EXIF-transposed), so the mask is decoded here with the same orientation
+    and returned through the SDK raw tier.
+    """
+    import hashlib
+    from io import BytesIO
+
+    import numpy as np
+    import torch
+    from PIL import Image, ImageOps
+
+    size = await sdk.ctx().assets.size(asset)
+    if type(size) is not int or not 0 < size <= MAX_ENCODED:
+        raise ValueError('Encoded image exceeds the mask decode bound')
+    data = await sdk.ctx().assets.read_range(asset, 0, size)
+    if len(data) != size or hashlib.sha256(data).hexdigest() != expected_digest:
+        raise ValueError('Image source changed during managed decoding')
+    with Image.open(BytesIO(data)) as source:
+        width, height = source.size
+        if not 1 <= width <= MAX_AXIS or not 1 <= height <= MAX_AXIS or width * height > MAX_PIXELS:
+            raise ValueError('Image geometry exceeds the mask decode bound')
+        source.seek(0)
+        frame = ImageOps.exif_transpose(source)
+        if 'A' in frame.getbands():
+            alpha = frame.getchannel('A')
+        elif frame.mode == 'P' or 'transparency' in frame.info:
+            alpha = frame.convert('RGBA').getchannel('A')
+        else:
+            alpha = None
+        if alpha is None:
+            mask = torch.zeros((64, 64), dtype=torch.float32)
+        else:
+            mask = 1.0 - torch.from_numpy(np.array(alpha, dtype=np.uint8)).float() / 255.0
+    return await sdk.MaskRef._from_raw(mask.unsqueeze(0))
+
+
 class LoadImageMetadata(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('assets', 'models', 'storage', 'raw')
+    SDK_PERMISSIONS = ('assets', 'storage', 'raw')
 
     @classmethod
     def define_schema(cls):
@@ -73,7 +115,8 @@ class LoadImageMetadata(io.ComfyNode):
         name = _logical(image)
         asset = await sdk.ctx().assets.resolve('input', name)
         initial_digest = await sdk.ctx().assets.digest(asset)
-        pixels, mask = await sdk.ctx().assets.load_image_and_mask(asset)
+        pixels = await sdk.ctx().assets.load_image(asset)
+        mask = await _first_frame_mask(asset, initial_digest)
         height, width = await pixels.spatial_shape()
         # Metadata parsing uses managed bytes, not a second native pixel decoder.
         # Distinct broker reads are not an atomic filesystem snapshot; reject
@@ -81,11 +124,10 @@ class LoadImageMetadata(io.ComfyNode):
         source = await read_image_source(name, interpret=False)
         if source['sha256'] != initial_digest or await sdk.ctx().assets.digest(asset) != initial_digest:
             raise ValueError('Image source changed during managed decoding')
-        names = await sdk.ctx().models.sampling_names()
-        if type(names) is not dict or set(names) != {'samplers', 'schedulers'}:
-            raise ValueError('Sampling catalogue response identity is invalid')
+        # The deployed SDK has no sampling catalogue: names are pinned to the deployed core and
+        # tests/test_core_sampling_names.py fails if core's KSampler lists drift.
         prepared = prepare_settings(source['fields'], image_width=width, image_height=height,
-            samplers=names['samplers'], schedulers=names['schedulers'],
+            samplers=list(SAMPLERS), schedulers=list(SCHEDULERS),
             diagnostics='Managed input: ' + source['name'] + '; SHA256: ' + source['sha256'],
             sampler_node_id=sampler_node_id, missing_settings=missing_settings, overrides_json=overrides_json,
             prefer_saved_image_metadata=prefer_saved_image_metadata)

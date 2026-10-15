@@ -288,7 +288,9 @@ def _lora_match(name: str, catalogue: list[str]) -> str | None:
     return next((item for item in catalogue if name in item), None)
 
 
-async def _apply_lora(model, clip, name, strength_model, strength_clip, catalogue):
+async def _apply_lora(
+    model, clip, name, strength_model, strength_clip, catalogue, *, extended=False
+):
     if model is None:
         return model, clip
     matched = _lora_match(name, catalogue)
@@ -297,19 +299,67 @@ async def _apply_lora(model, clip, name, strength_model, strength_clip, catalogu
     if clip is None:
         strength_clip = 0.0
     asset = await sdk.ctx().assets.resolve("loras", matched)
+    # Prompt-tag strengths are free text upstream and reach Core's LoraLoader
+    # without its widget range, so only the tag callers opt into that range.
+    options = {"allow_extended_strengths": True} if extended else {}
     return await model.apply_lora(
-        asset, clip, float(strength_model), float(strength_clip)
+        asset, clip, float(strength_model), float(strength_clip), **options
     )
 
 
+async def _validate_lora_stack(cls, lora_01, lora_02, lora_03, lora_04):
+    """Reject selections outside the host LoRA catalogue, as upstream's combo did.
+
+    The four selectors are remote catalogue combos whose static option list is
+    only ``None``. Declaring exactly these inputs makes Core skip that static
+    check (and only it) while the strengths keep Core's min/max checks. The
+    broker answers membership by logical name; no path is built here.
+    """
+    selections = (
+        ("lora_01", lora_01), ("lora_02", lora_02),
+        ("lora_03", lora_03), ("lora_04", lora_04),
+    )
+    if all(value == "None" for _, value in selections):
+        return True
+    assets = sdk.ctx().assets
+    try:
+        catalogue = list(await assets.list("loras"))
+    except ValueError:
+        catalogue = None  # larger than the broker will enumerate
+    for key, value in selections:
+        if value == "None":
+            continue
+        if catalogue is not None:
+            known = value in catalogue
+        else:
+            try:
+                known = isinstance(value, str) and await assets.exists("loras", value)
+            except ValueError:
+                known = False
+        if not known:
+            # Same text as Core's value_not_in_list details for this combo.
+            if catalogue is None:
+                listing = "(the LoRA catalogue)"
+            else:
+                options = ["None", *catalogue]
+                listing = (
+                    f"(list of length {len(options)})" if len(options) > 20
+                    else str(options)
+                )
+            return f"{key}: {value!r} not in {listing}"
+    return True
+
+
 async def _lora_stack(cls, model, clip, **kwargs):
-    catalogue = await sdk.ctx().assets.list("loras")
     for index in range(1, 5):
         name = kwargs[f"lora_{index:02d}"]
         strength = kwargs[f"strength_{index:02d}"]
         if name != "None" and float(strength) != 0.0:
-            model, clip = await _apply_lora(
-                model, clip, name, strength, strength, catalogue
+            # Upstream hands the exact selection to Core's LoraLoader, which
+            # raises for a missing file; it never fuzzy-matches this combo.
+            asset = await sdk.ctx().assets.resolve("loras", name)
+            model, clip = await model.apply_lora(
+                asset, clip, float(strength), float(strength)
             )
     return io.NodeOutput(model, clip)
 
@@ -409,6 +459,7 @@ async def _power_prompt_impl(
                     item["strength"],
                     item["strength"],
                     catalogue,
+                    extended=True,
                 )
     conditioning = await opt_clip.encode(prompt) if opt_clip is not None else None
     return conditioning, opt_model, opt_clip, prompt
@@ -505,6 +556,7 @@ async def _sdxl_positive(
                     item["strength"],
                     item["strength"],
                     catalogue,
+                    extended=True,
                 )
     conditioning = await _sdxl_encode(
         opt_clip,
@@ -551,13 +603,14 @@ async def _sdxl_empty_latent(cls, dimensions, clip_scale, batch_size):
     width_text, remainder = dimensions.split("x", 1)
     width = int(width_text.strip())
     height = int(remainder.strip().split(" ", 1)[0])
-    latent = {
-        "samples": torch.zeros(
-            [int(batch_size), 4, height // 8, width // 8], dtype=torch.float32
-        )
-    }
+    # Upstream calls Core's EmptyLatentImage, whose dictionary also records the
+    # 8x spatial ratio samplers use to adapt empty latents to other formats.
+    # The trusted SDK op builds that exact dictionary without raw tensor access.
+    latent = await sdk.LatentRef.empty(
+        width, height, int(batch_size), spatial_downscale_ratio=8
+    )
     return io.NodeOutput(
-        await sdk.LatentRef.from_value(latent),
+        latent,
         int(width * float(clip_scale)),
         int(height * float(clip_scale)),
     )
@@ -751,6 +804,7 @@ NODE_CLASS_MAPPINGS = {
     "Lora Loader Stack (rgthree)": node(
         "Lora Loader Stack (rgthree)", _lora_stack,
         class_name="RgthreeLoraLoaderStack", permissions=("assets",),
+        validate=_validate_lora_stack,
     ),
     "Power Lora Loader (rgthree)": node(
         "Power Lora Loader (rgthree)", _power_lora_loader,

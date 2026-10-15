@@ -1,7 +1,7 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: 21 of 21 converted; 16 tested (scoped), 3 converted but untested/partly tested,
+> Nodes: 21 of 21 converted; 18 tested (scoped), 1 converted but untested/partly tested,
 > 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
-> Status line: source 21/21 · scoped runtime 16/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
+> Status line: source 21/21 · scoped runtime 18/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
 
 # LoRA Manager — Secure V2 conversion (in progress)
 
@@ -28,12 +28,12 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Text (LoraManager) | tested (scoped) | shared gVisor workflow (R50) | wildcard/library lifecycle; frontend |
 | Lora Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55); queue validator native-vs-Guest parity 2/2 + permission-denial control | cache acquisition on all paths; opaque metadata; other model branches; frontend |
 | LoRA Text Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55) | syntax/library/cache/metadata; frontend |
-| Checkpoint Loader (LoraManager) | converted-untested | queue validator native-vs-Guest parity 3/3 and core queue path (existing accepted, missing/unsafe rejected) | real model load and consumer; extra scanner roots; base-model list |
-| Unet Loader (LoraManager) | partial | queue validator native-vs-Guest parity 3/3 and core queue path; weight_dtype still checked by core | GGUF path not implemented (rejected at queue time with a clear message); real diffusion-model load |
+| Checkpoint Loader (LoraManager) | tested (scoped) | queue parity 3/3; real SD1.5 + LCM bf16 CPU secure-Guest workflow | extra scanner roots; base-model list; installed gVisor workflow |
+| Unet Loader (LoraManager) | partial | queue parity 3/3; real extracted SD1.5 UNet bf16 CPU secure-Guest workflow | GGUF path not implemented (rejected clearly); installed gVisor workflow |
 | TriggerWord Toggle (LoraManager) | tested (scoped) | gVisor workflow (R6) | lifecycle/restore/state; transport identity |
 | Lora Stacker (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 8 cases, strict queue validator 28, metadata lifecycle 8 phases, stale-file deletion 2 | multi-root order; installed queue; frontend |
 | Lora Stack Combiner (LoraManager) | tested (scoped) | gVisor workflows (R6/R7) | tuple transport/identity; editor lifecycle |
-| Save Image (LoraManager) | tested (scoped) | gVisor (R72/R80); native parity: byte-identical PNGs from the real cache, 24 resource/formatter cases, 12 caught-error/WebP-continuation cases | multi-root; installed JPEG EXIF/HWC; WebP workflow metadata (pending SDK); recipe/no-counter/overwrite; frontend |
+| Save Image (LoraManager) | tested (scoped) | gVisor (R72/R80); native parity: byte-identical PNGs from the real cache, 24 resource/formatter cases, 12 caught-error/WebP-continuation cases; real SD1.5 + LCM CPU Guest run resolves LoRA hashes without sidecars, with and without prompt LoRA tags | multi-root; installed JPEG EXIF/HWC; WebP workflow metadata (pending SDK); recipe/no-counter/overwrite; frontend |
 | Debug Metadata (LoraManager) | tested (scoped) | gVisor workflow (R66) | wired opaque model/sampler fields; ancestry |
 | WanVideo Lora Select (LoraManager) | tested (scoped) | gVisor workflow (R78) | trained WAN consumer; discovery/multi-root; frontend |
 | WanVideo Lora Select From Text (LoraManager) | tested (scoped) | gVisor workflow (R78) | trained WAN consumer; discovery/multi-root; frontend |
@@ -41,10 +41,10 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Lora Randomizer (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 10 cases, strict queue validation 22 + 2 error controls, fixed mode 5 | full queue; global RNG; multi-root; frontend |
 | Lora Cycler (LoraManager) | tested (scoped) | native-vs-Guest parity: 14 cases | multi-root/tie order; mutation/cache; frontend index |
 | Lora Info (LoraManager) | converted-untested | - (backend is a no-op, as upstream) | frontend source selection; filename/notes |
-| LoRA Syntax → Path (LoraManager) | converted-untested | - | path rule approved (library-relative names); parser tests; negative test that no host path is emitted |
+| LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 | Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 | Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
-| Load Image Metadata (LoraManager) | partial | queue validator native-vs-Guest parity 3/3 with identical messages, and core queue path | annotated [input]/[output]/[temp] names unsupported (rejected at queue time); 18-output parity; catalogue lookup; EXIF decoding needs `piexif` in the runtime |
+| Load Image Metadata (LoraManager) | partial | queue parity 3/3; deployed-SDK Guest image/mask parity and drift guard; 18-output secure-Guest workflow | animated/16-bit inputs; annotated names; lossy PIL/PyAV decode differences; piexif dependency profile admission |
 
 ## Refused techniques (never do) and public replacements
 
@@ -74,16 +74,16 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 
 ## Open test gates
 
-- Load Image Metadata: catalogue lookup, 18-output parity with the original, annotated input names.
+- Load Image Metadata: animated/16-bit inputs, annotated input names, lossy decoder differences, admitted piexif profile.
 - Prompt/Text library lifecycle and persistence; LoRA Text Loader syntax/library/cache.
 - TriggerWord Toggle and Stack Combiner restore/identity; Lora Pool edit and persistence.
 - Debug Metadata and Metadata Overwrite with wired model/sampler fields.
 - Multi-root ordering for Stacker, Randomizer, Cycler and Save Image.
-- LoRA Syntax → Path parser tests and the no-host-path negative test.
-- Real model loads (CPU): Checkpoint Loader, Unet Loader.
+- LoRA Syntax → Path additional parser cases and installed workflow.
+- Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed).
 - Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 - Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
-- Dependency profile: `piexif` is imported lazily by metadata recovery and is not yet declared for the runtime.
+- Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. Deployed profile admission is not proved here.
 - Independent whole-pack review and certificate.
 
 ## Authority and permissions (declared per node)
@@ -110,7 +110,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | LoRA Syntax → Path (LoraManager) | assets |
 | Create Hook LoRA (LoraManager) | models, assets, storage |
 | Metadata Overwrite (LoraManager) | (none) |
-| Load Image Metadata (LoraManager) | assets, models, storage, raw |
+| Load Image Metadata (LoraManager) | assets, storage, raw |
 
 ## Assets and weights
 
@@ -132,3 +132,13 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
   `secure_web`, Python `>=3.13,<3.14`, no routes registered yet).
 - `pyproject.toml`: upstream's file with `requires-python = ">=3.13,<3.14"` added (the runtime declaration).
 - Every other file is the upstream file unchanged. Internal review notes and private test harnesses are not published.
+
+## Revision 4 scoped evidence and limits
+
+Load Image Metadata uses deployed public asset loading and storage.get. Its first-frame mask uses the declared SDK raw tier and digest-bound managed bytes. Sampling names are pinned to Core `6257422` (45 samplers, 9 schedulers), with a drift test in `tests/test_core_sampling_names.py`. Exact 8-bit PNG pixel/mask parity and float-alpha tolerance are scoped separately; lossy PIL/PyAV differences remain measured gaps.
+
+Save Image first uses the pack LoRA cache, then resolves only missing logical names through the closed asset catalogue and storage.get, matching its checkpoint resource path. No global metadata hook is installed. The real SD1.5/LCM CPU run produced the expected LoRA SHA256 prefix in both Save configurations.
+
+These CPU pre-flights use secure Guest dispatch with sandbox=none. They do not establish installed gVisor behavior or whole-node certificates. TEST workflows v3 cover 18 of 21 nodes in nine cases (eight ready; CLIP Hook blocked); Lora Info and the two WanVideo nodes need separate UI/model coverage. Frontend and route work remains pending and is not included in this revision.
+
+Portable API prompts and asset instructions are included in `tests/workflows/`; weights and generated fixtures are not shipped.
