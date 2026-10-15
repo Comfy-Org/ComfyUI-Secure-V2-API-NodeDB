@@ -67,6 +67,18 @@ async def read_document(key, kind):
     return {'revision': result['revision'], 'document': None if result['value'] is None else decode_record(result['value'])}
 
 
+async def read_document_value(key, kind):
+    """Read-only model record over the deployed storage API (get; no revision).
+
+    Where storage.read exists, get(key) is read(key)['value'] over the same key space. Writers need
+    compare-and-set (compare_and_set_document), which the deployed SDK does not provide.
+    """
+    if kind != 'model-edits':
+        raise ValueError('Durable adapter only admits model records')
+    value = await sdk.ctx().storage.get(key)
+    return None if value is None else decode_record(value)
+
+
 async def compare_and_set_document(key, kind, revision, document):
     if kind != 'model-edits':
         raise ValueError('Durable adapter only admits model records')

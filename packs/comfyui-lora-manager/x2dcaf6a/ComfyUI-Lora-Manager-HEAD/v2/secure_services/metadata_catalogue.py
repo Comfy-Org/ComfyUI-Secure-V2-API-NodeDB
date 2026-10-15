@@ -10,7 +10,7 @@ from comfy_api.latest import sdk
 
 from ..secure_algorithms.metadata_recovery import CATALOGUE_FOLDERS, validate_catalogue
 from .managed_library import _logical
-from .durable_model_records import read_document, validate_record
+from .durable_model_records import read_document_value, validate_record
 
 MAX_FOLDER_ROWS = 2048
 
@@ -34,8 +34,8 @@ async def read_metadata_catalogue():
                 continue
             if type(digest) is not str or not re.fullmatch('[0-9a-f]{64}', digest):
                 raise ValueError("Managed model identity is not SHA-256")
-            result = await read_document('model.digest.' + digest, 'model-edits')
-            record = result['document']
+            # Deployed storage API (get/set): read-only record lookup.
+            record = await read_document_value('model.digest.' + digest, 'model-edits')
             if record is not None:
                 validate_record(record, digest)
                 metadata = record['metadata']

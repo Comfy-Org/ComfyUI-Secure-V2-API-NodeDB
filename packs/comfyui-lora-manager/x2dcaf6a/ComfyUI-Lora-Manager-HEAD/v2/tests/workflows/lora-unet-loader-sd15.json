@@ -1,0 +1,100 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "Checkpoint Loader (LoraManager)",
+      "inputs": {
+        "ckpt_name": "v1-5-pruned-emaonly-fp16.safetensors",
+        "base_model": "Any"
+      }
+    },
+    "2": {
+      "class_type": "Unet Loader (LoraManager)",
+      "inputs": {
+        "unet_name": "sd15-unet-c925663b059e.safetensors",
+        "weight_dtype": "default",
+        "base_model": "Any"
+      }
+    },
+    "3": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "a photo of a red apple on a wooden table",
+        "clip": [
+          "1",
+          1
+        ]
+      }
+    },
+    "4": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "blurry, low quality",
+        "clip": [
+          "1",
+          1
+        ]
+      }
+    },
+    "5": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 256,
+        "height": 256,
+        "batch_size": 1
+      }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "seed": 1,
+        "steps": 4,
+        "cfg": 1.5,
+        "sampler_name": "lcm",
+        "scheduler": "sgm_uniform",
+        "positive": [
+          "3",
+          0
+        ],
+        "negative": [
+          "4",
+          0
+        ],
+        "latent_image": [
+          "5",
+          0
+        ],
+        "denoise": 1.0
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "6",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "8": {
+      "class_type": "Save Image (LoraManager)",
+      "inputs": {
+        "images": [
+          "7",
+          0
+        ],
+        "filename_prefix": "lm-test-unet",
+        "file_format": "png",
+        "save_with_metadata": true,
+        "add_counter_to_filename": true
+      }
+    }
+  }
+}

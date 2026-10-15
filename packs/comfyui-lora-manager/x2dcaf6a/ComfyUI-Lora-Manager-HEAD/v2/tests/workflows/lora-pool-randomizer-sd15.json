@@ -1,0 +1,177 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "Checkpoint Loader (LoraManager)",
+      "inputs": {
+        "ckpt_name": "v1-5-pruned-emaonly-fp16.safetensors",
+        "base_model": "Any"
+      }
+    },
+    "2": {
+      "class_type": "Lora Pool (LoraManager)",
+      "inputs": {
+        "pool_config": {
+          "version": 2,
+          "filters": {
+            "baseModels": [],
+            "tags": {
+              "include": [],
+              "exclude": []
+            },
+            "folders": {
+              "include": [],
+              "exclude": []
+            },
+            "license": {
+              "noCreditRequired": false,
+              "allowSelling": false
+            },
+            "namePatterns": {
+              "include": [
+                "lcm-sd15-lora"
+              ],
+              "exclude": [],
+              "useRegex": false
+            }
+          },
+          "preview": {
+            "matchCount": 1,
+            "lastUpdated": 0
+          }
+        }
+      }
+    },
+    "3": {
+      "class_type": "Lora Randomizer (LoraManager)",
+      "inputs": {
+        "pool_config": [
+          "2",
+          0
+        ],
+        "loras": {
+          "__value__": []
+        },
+        "randomizer_config": {
+          "count_mode": "fixed",
+          "count_fixed": 1,
+          "count_min": 1,
+          "count_max": 1,
+          "model_strength_min": 1.0,
+          "model_strength_max": 1.0,
+          "use_same_clip_strength": true,
+          "clip_strength_min": 1.0,
+          "clip_strength_max": 1.0,
+          "roll_mode": "always",
+          "last_used": [],
+          "use_recommended_strength": false,
+          "recommended_strength_scale_min": 0.5,
+          "recommended_strength_scale_max": 1,
+          "execution_seed": null,
+          "next_seed": null
+        }
+      }
+    },
+    "4": {
+      "class_type": "Lora Loader (LoraManager)",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "",
+        "loras": {
+          "__value__": []
+        },
+        "lora_stack": [
+          "3",
+          0
+        ]
+      }
+    },
+    "5": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "a photo of a red apple on a wooden table",
+        "clip": [
+          "4",
+          1
+        ]
+      }
+    },
+    "6": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "blurry, low quality",
+        "clip": [
+          "4",
+          1
+        ]
+      }
+    },
+    "7": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 256,
+        "height": 256,
+        "batch_size": 1
+      }
+    },
+    "8": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "4",
+          0
+        ],
+        "seed": 1,
+        "steps": 4,
+        "cfg": 1.5,
+        "sampler_name": "lcm",
+        "scheduler": "sgm_uniform",
+        "positive": [
+          "5",
+          0
+        ],
+        "negative": [
+          "6",
+          0
+        ],
+        "latent_image": [
+          "7",
+          0
+        ],
+        "denoise": 1.0
+      }
+    },
+    "9": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "8",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "10": {
+      "class_type": "Save Image (LoraManager)",
+      "inputs": {
+        "images": [
+          "9",
+          0
+        ],
+        "filename_prefix": "lm-test-randomizer",
+        "file_format": "png",
+        "save_with_metadata": true,
+        "add_counter_to_filename": true
+      }
+    }
+  }
+}

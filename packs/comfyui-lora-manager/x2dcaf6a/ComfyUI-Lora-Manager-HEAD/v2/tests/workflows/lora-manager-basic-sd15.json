@@ -1,0 +1,134 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "Checkpoint Loader (LoraManager)",
+      "inputs": {
+        "ckpt_name": "v1-5-pruned-emaonly-fp16.safetensors",
+        "base_model": "Any"
+      }
+    },
+    "2": {
+      "class_type": "Lora Loader (LoraManager)",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "<lora:lcm-sd15-lora:1>",
+        "loras": {
+          "__value__": [
+            {
+              "name": "lcm-sd15-lora",
+              "strength": 1.0,
+              "clipStrength": 1.0,
+              "active": true,
+              "expanded": false,
+              "locked": false
+            }
+          ]
+        }
+      }
+    },
+    "3": {
+      "class_type": "TriggerWord Toggle (LoraManager)",
+      "inputs": {
+        "group_mode": true,
+        "default_active": true,
+        "allow_strength_adjustment": false,
+        "trigger_words": [
+          "2",
+          2
+        ]
+      }
+    },
+    "4": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "a photo of a red apple on a wooden table",
+        "clip": [
+          "2",
+          1
+        ],
+        "trigger_words1": [
+          "3",
+          0
+        ]
+      }
+    },
+    "5": {
+      "class_type": "Prompt (LoraManager)",
+      "inputs": {
+        "text": "blurry, low quality",
+        "clip": [
+          "2",
+          1
+        ]
+      }
+    },
+    "6": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 256,
+        "height": 256,
+        "batch_size": 1
+      }
+    },
+    "7": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "seed": 1,
+        "steps": 4,
+        "cfg": 1.5,
+        "sampler_name": "lcm",
+        "scheduler": "sgm_uniform",
+        "positive": [
+          "4",
+          0
+        ],
+        "negative": [
+          "5",
+          0
+        ],
+        "latent_image": [
+          "6",
+          0
+        ],
+        "denoise": 1.0
+      }
+    },
+    "8": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "7",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "9": {
+      "class_type": "Save Image (LoraManager)",
+      "inputs": {
+        "images": [
+          "8",
+          0
+        ],
+        "filename_prefix": "lm-test-basic",
+        "file_format": "png",
+        "save_with_metadata": true,
+        "add_counter_to_filename": true
+      }
+    }
+  }
+}

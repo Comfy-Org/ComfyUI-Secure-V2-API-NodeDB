@@ -224,6 +224,7 @@ def node(
     class_name: str,
     permissions: tuple[str, ...] = (),
     fingerprint: Callable[..., Any] | None = None,
+    validate: Callable[..., Any] | None = None,
 ) -> type[io.ComfyNode]:
     """Create and bind one explicit SDK-ref node class."""
 
@@ -239,6 +240,8 @@ def node(
     }
     if fingerprint is not None:
         attrs["fingerprint_inputs"] = classmethod(fingerprint)
+    if validate is not None:
+        attrs["validate_inputs"] = classmethod(validate)
     generated = type(class_name, (io.ComfyNode,), attrs)
     owner = sys.modules.get(execute.__module__)
     if owner is not None:
