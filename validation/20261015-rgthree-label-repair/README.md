@@ -1,50 +1,47 @@
 # rgthree Label repair
 
-The corrected Label source passes its lifecycle regression and is staged for
-actual Classic and Vue browser retesting. The new source revision is
-`84e4001d5ed8a0525e931dd496288036c89942fc1dd49a43913a18aab0e51bf2`;
-its publication status is recorded separately from source qualification.
+The corrected Label source is registered in the local Docker service as revision
+`84e4001d5ed8a0525e931dd496288036c89942fc1dd49a43913a18aab0e51bf2`.
+The [independent authenticated readback](registration-r2/READBACK.json) verifies
+its complete public registry row and exact source/manifest identity.
+Actual browser retesting remains in progress before this PR is merged.
 
-This change restores the previously empty Label module through public frontend
-APIs. It supports text, eight saved formatting properties, drawing, editing and
-pinned interaction. Other rgthree repairs remain separate; no whole-pack
-completion is claimed.
+This change restores the empty Label module through public frontend APIs:
+text, eight saved formatting properties, drawing, editing and pinned interaction.
+Only three V2 pack files change; all258 original files are preserved. The
+[official replay](lifecycle-r2/DISTRIBUTION_REPLAY.json) reconstructs all226 V2
+files with exact bytes and modes. Other rgthree work is separate; whole-pack
+completion is not claimed.
 
-The first real browser runs loaded the exact R3 assets in both renderers but
-found that queued creation events reset saved formatting to defaults. The edit
-extension also registered after the node definition, so its hooks were ignored.
-Both failures are retained under [lifecycle-r2/browser-failure](lifecycle-r2/browser-failure).
-The correction skips creation initialization while graph loading is active,
-lets configuration initialize restored state, and registers edit hooks before
-the definition. Only `label.js` changes from the previous candidate.
+The first real Classic and Vue runs exposed queued creation events resetting
+saved settings and extension hooks registered too late. The pack correction
+skips initialization while graph loading is active and registers hooks before
+the node definition. It passes34 actual protocol checks, including four old-source
+negative controls, plus112 retained focused checks. The first fixture timeout
+and all earlier browser failures remain unchanged in the evidence tree.
 
-The [correction handoff](lifecycle-r2/handoff/LIFECYCLE_HANDOFF.json) records
-34 actual host/guest protocol assertions, including four old-source negative
-controls, and 112 focused checks (111 original assertions plus one parse check).
-The final bounded process exited successfully in 1.73 seconds. The first test
-attempt passed its assertions but timed out because fixture worker intervals
-remained active; its receipt remains unchanged. The successor only adds fixture
-timer cleanup. These are source/protocol tests, not browser acceptance.
+The corrected live source preserves saved properties and opens the nine-field
+editor. The real Vue trace confirms all nine edits reach the graph and unpinned
+dragging works. It then exposed a generic host defect: textarea/select live
+values were not restored from serialized attributes, leaving the displayed
+title empty and alignment left after initial rendering and updates.
 
-The generic frontend and extension-host prerequisites are unchanged from the
-[R3 integration handoff](INTEGRATION_HANDOFF.json). Its full typecheck, 28 actual
-Vitest cases, formatting, zero-error lint and production build remain applicable
-to those exact files. Lint retains four new architecture warnings and 15 baseline
-warnings. The selected source baseline contains 6,781 files and the distribution
-manifest binds 1,053 files. No frontend rebuild is required by this pack-only fix.
+The [host-only successor](dom-values-r1/handoff/DOM_VALUES_HANDOFF.json) restores
+those live values after sanitized children/options have been appended. It changes
+only `ui-renderer.mjs`; pack identity and compiled frontend remain unchanged.
+It passes26 actual production guest/host DOM checks against jsdom, including two
+old-source failures, edit event round trips, repeated updates, empty/escaped/
+unmatched values and unchanged unsafe-markup rejection. The bounded process
+exited0 without OOM in1.93seconds and its exact owned container was removed.
+This source/DOM evidence does not substitute for real Chromium acceptance.
 
-The [new distribution replay](lifecycle-r2/DISTRIBUTION_REPLAY.json) reconstructs
-all 226 V2 files with exact bytes and modes and preserves all 258 original files.
-[Registry identity](lifecycle-r2/REGISTRY_IDENTITY.json) and
-[complete-source proof](lifecycle-r2/COMPLETE_SOURCE.json) bind all 484 Git files.
-The [catalog candidate](lifecycle-r2/CATALOG_STAGE.json) preserves all existing
-rows and adds the corrected revision without backend execution or verification
-grants. It must be selected together with its matching frontend asset projection.
-The old `d9c88479` revision and its registry readback remain historical evidence.
+The unchanged R3 prerequisites retain their full typecheck,28 Vitest cases,
+formatting, zero-error lint (four new architecture and15 baseline warnings),
+production build and1053-file distribution binding. Apply the narrow host
+successor to that baseline; do not replace the selected rows frontend.
 
-DANNY owns publication and real browser retesting of the unchanged acceptance
-workflow. Drawing, nine-field editing, pinned interaction, save/reload and
-cleanup must pass in both Classic and Vue. Root owns the corpus source and
-registry identity. The existing fixture requires no model or queued render.
-The earlier source, build, test and failed-browser receipts remain indexed;
-none is relabeled as whole-pack acceptance.
+DANNY owns the final live host deployment and unchanged-workflow Classic/Vue
+checks for rendering, editor values, pinned interaction, save/reload and cleanup.
+No model or queued render is required. The corpus PR remains draft until those
+checks pass; source registration grants neither backend execution nor whole-pack
+verification.

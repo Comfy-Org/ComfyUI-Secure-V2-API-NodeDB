@@ -1,0 +1,16 @@
+--- a/ui-renderer.mjs
++++ b/ui-renderer.mjs
+@@ -77,6 +77,13 @@
+     for (const child of Array.from(src.childNodes)) {
+       const c = clean(child)
+       if (c) el.appendChild(c)
++    }
++    // The worker transports assigned form values as attributes. Unlike input,
++    // textarea and select do not reflect that attribute into their live value.
++    // Restore it after children so select can match the sanitized options;
++    // hasAttribute preserves an explicitly empty value as well.
++    if ((tag === 'textarea' || tag === 'select') && src.hasAttribute('value')) {
++      el.value = src.getAttribute('value')
+     }
+     return el
+   }
