@@ -29,10 +29,30 @@ export class PromptExecution {
     error(details) { this.errorDetails = details; }
 }
 
+// Queue members the sandbox cannot carry yet hand back a promise instead of their published
+// result (their callbacks would have to cross the worker boundary). Treat such a subscription as
+// unavailable — reported once — instead of failing: the progress bar then just shows less.
+function queueSubscription(what, register) {
+    try {
+        const off = register();
+        if (typeof off === 'function') return off;
+        if (off && typeof off.then === 'function') off.catch(() => { });
+    }
+    catch { }
+    console.warn(`[rgthree-comfy] progress bar: ${what} is not available in the sandbox yet.`);
+    return () => { };
+}
+
 export class PromptService extends EventTarget {
     constructor() {
         super(); this.promptsMap = new Map(); this.currentExecution = null;
-        this.lastQueueRemaining = comfy.queue.pending(); this.unsubscribers = [];
+        const pending = comfy.queue.pending();
+        this.lastQueueRemaining = typeof pending === 'number' ? pending : 0; this.unsubscribers = [];
+        if (pending && typeof pending.then === 'function') {
+            pending.then((value) => {
+                if (typeof value === 'number') { this.lastQueueRemaining = value; this.dispatchProgressUpdate(); }
+            }, () => { });
+        }
         const listen = (name, callback) => this.unsubscribers.push(comfy.backend.on(name, callback));
         this.unsubscribers.push(comfy.queue.onAfterRun((event) => {
             for (const submission of event.submissions ?? []) {
@@ -42,7 +62,8 @@ export class PromptService extends EventTarget {
             }
             this.dispatchProgressUpdate();
         }));
-        this.unsubscribers.push(comfy.queue.onPendingChanged((value) => { this.lastQueueRemaining = value; this.dispatchProgressUpdate(); }));
+        this.unsubscribers.push(queueSubscription('queue size updates (queue.onPendingChanged)',
+            () => comfy.queue.onPendingChanged((value) => { this.lastQueueRemaining = value; this.dispatchProgressUpdate(); })));
         listen('execution_start', (event) => {
             this.currentExecution = this.getOrMakePrompt(event.prompt_id);
             this.currentExecution.finished = false; this.dispatchProgressUpdate();
@@ -67,13 +88,13 @@ export class PromptService extends EventTarget {
         listen('execution_error', (event) => {
             this.forEvent(event.prompt_id).error(event); this.dispatchProgressUpdate();
         });
-        this.unsubscribers.push(comfy.queue.onInterrupted(() => {
+        this.unsubscribers.push(queueSubscription('interruption updates (queue.onInterrupted)', () => comfy.queue.onInterrupted(() => {
             if (this.currentExecution) {
                 this.currentExecution.error({ exception_type: 'Interrupted' });
                 this.currentExecution.finished = true;
             }
             this.dispatchProgressUpdate(); this.currentExecution = null;
-        }));
+        })));
     }
     forEvent(id) {
         if (id != null) {

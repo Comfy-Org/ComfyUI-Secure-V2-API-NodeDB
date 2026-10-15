@@ -1,4 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
+import { whereSupported } from "./sandbox_limits.js";
 import { tryToGetWorkflowDataFromEvent } from '../../rgthree/common/utils_workflow.js';
 import { configurePowerLoraValues } from './power_lora_loader.js';
 import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
@@ -62,6 +63,7 @@ async function importNode(node, event) {
 }
 
 comfy.defs.extend(/./, (builder) => {
-    builder.onDragOver((node) => enabled(node));
-    builder.onDrop(importNode);
+    // Applies to every node type, so the refusal is reported once for all of them.
+    whereSupported("all node types", "drop-to-import onto a node (onDragOver)", () => builder.onDragOver((node) => enabled(node)));
+    whereSupported("all node types", "drop-to-import onto a node (onDrop)", () => builder.onDrop(importNode));
 });

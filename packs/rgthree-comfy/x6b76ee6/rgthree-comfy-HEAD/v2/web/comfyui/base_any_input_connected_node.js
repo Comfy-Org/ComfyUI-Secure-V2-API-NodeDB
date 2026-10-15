@@ -1,5 +1,6 @@
 import { comfy } from '/comfy/api/v2.js';
 import { debounce } from "../../rgthree/common/shared_utils.js";
+import { whereSupported } from "./sandbox_limits.js";
 
 // The shared body of every rgthree node that grows an input as the last one fills:
 // Fast Muter, Fast Bypasser, Node Collector, Random Unmuter, Mute/Bypass Repeater and
@@ -257,9 +258,9 @@ export function defineAnyInputConnectedNode(config) {
     // Registered before `define`, which is the point at which extensions are applied.
     comfy.defs.extend(type, (b) => {
         for (const item of menuItems) {
-            b.addMenuItem(item);
+            whereSupported(type, `menu item "${typeof item.label === "string" ? item.label : "(dynamic label)"}"`, () => b.addMenuItem(item));
         }
-        b.onBeforeConnect((node, event) => {
+        whereSupported(type, "connection filtering (onBeforeConnect: loop guard and per-node rules)", () => b.onBeforeConnect((node, event) => {
             // `onConnectInput` refused a link from something already downstream;
             // `onConnectOutput` refused one into something already upstream. Same loop
             // from either end, and `event.side` says which end this is.
@@ -271,7 +272,7 @@ export function defineAnyInputConnectedNode(config) {
                 return false;
             }
             return beforeConnect ? beforeConnect(node, event) : true;
-        });
+        }));
     });
     return comfy.defs.define({
         type,

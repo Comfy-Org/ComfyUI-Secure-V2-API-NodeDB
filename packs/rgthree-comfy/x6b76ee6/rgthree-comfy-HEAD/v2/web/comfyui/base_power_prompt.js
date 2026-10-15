@@ -1,4 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
+import { whereSupported } from "./sandbox_limits.js";
 
 const SERVER_WIDGET_PREFIXES = ['insert_', 'target_', 'crop_', 'values_'];
 const states = new Map();
@@ -238,11 +239,11 @@ export function extendPowerPrompt(builder) {
         const state = states.get(stateKey(node));
         if (state) refreshCombos(state, comfy.defs.get(type) ?? state.def);
     });
-    builder.onBeforeConnect((node, event) => {
+    whereSupported(type, "output connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
         if (event.side !== 'output') return;
         const output = node.outputs.at(event.index);
         return !output || outputEnabled(node, output.type.toLowerCase());
-    });
+    }));
     builder.onRemoved(detach);
 }
 
