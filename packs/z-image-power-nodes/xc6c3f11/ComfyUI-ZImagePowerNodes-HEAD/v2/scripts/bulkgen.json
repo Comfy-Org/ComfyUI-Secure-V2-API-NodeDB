@@ -1,0 +1,743 @@
+{
+  "id": "f14c6566-993e-4413-bd11-9c7f2ca07fd1",
+  "revision": 0,
+  "last_node_id": 55,
+  "last_link_id": 88,
+  "nodes": [
+    {
+      "id": 38,
+      "type": "Reroute",
+      "pos": [
+        -670,
+        80
+      ],
+      "size": [
+        75,
+        26
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "",
+          "type": "*",
+          "link": 87
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "CLIP",
+          "links": [
+            63
+          ]
+        }
+      ],
+      "properties": {
+        "showOutputText": false,
+        "horizontal": false
+      }
+    },
+    {
+      "id": 40,
+      "type": "Reroute",
+      "pos": [
+        -670,
+        230
+      ],
+      "size": [
+        75,
+        26
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "",
+          "type": "*",
+          "link": 88
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "VAE",
+          "links": [
+            75
+          ]
+        }
+      ],
+      "properties": {
+        "showOutputText": false,
+        "horizontal": false
+      }
+    },
+    {
+      "id": 43,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        -410,
+        300
+      ],
+      "size": [
+        590,
+        980
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            64
+          ]
+        }
+      ],
+      "title": "String (Multiline) With Custom Styles",
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "\n\n>>>CUSTOM 1\nYOUR CONTEXT:\nYou are a documentary photographer capturing authentic moments beneath the surface.\nYour images prioritize realism and believability, focusing on natural light filtering through the water and the subtle movement of marine life. The water is clear, but not sterile, with visible particulate matter creating a sense of depth and atmosphere.\nLight beams and caustics dance across the scene, illuminating details and adding a dynamic quality. Colors are natural and muted, reflecting the underwater environment. The overall mood is grounded and immersive, inviting the viewer to experience the underwater world as it truly is.\nYOUR PHOTO:\n{$@}\n\n\n\n>>>Custom 2\nYOUR CONTEXT:\nA nearly completed jigsaw puzzle lying on a warm-toned wooden table. The puzzle pieces are made of glossy cardboard, reflecting the light from a nearby window. One puzzle piece is missing, and it rests beside the puzzle on the table. The scene is lit with soft, natural light.\nTHE PUZZLE IMAGE:\nA detailed, high-resolution image of {$@}. The image is vibrant and colorful, with sharp details.\nTHE MISSING PIECE:\nThe missing puzzle piece is lying on the table, slightly angled, showing its unprinted back.\nTHE TABLE & REFLECTIONS:\nA wooden table with a visible grain. The glossy surface of the puzzle reflects the light from a window, creating highlights and subtle distortions.\n\n\n\n>>>custom 3\nYOUR CONTEXT:\nYou are a visionary comic artist creating dense cosmic odysseys.\nYour illustration features {$spicy-content-with} chaotic aesthetic. The composition emphasizes verticality and deep perspective. The drawing style is rapid and fluid, with a thin contour line that prioritizes clarity and movement. Lighting is flat and overhead. Colors are vibrant and blended, with a painterly quality.\nYOUR IMAGE:\n{$@}"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159",
+      "shape": 1
+    },
+    {
+      "id": 32,
+      "type": "EmptyZImageLatentImage //ZImagePowerNodes",
+      "pos": [
+        530,
+        20
+      ],
+      "size": [
+        316.9362396240234,
+        130
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            78
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyZImageLatentImage //ZImagePowerNodes"
+      },
+      "widgets_values": [
+        false,
+        "3:2  (photo)",
+        "medium (recommended)",
+        1
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [
+        1220,
+        150
+      ],
+      "size": [
+        160,
+        50
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 79
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 75
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode",
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 31,
+      "type": "SaveImage //ZImagePowerNodes",
+      "pos": [
+        1400,
+        150
+      ],
+      "size": [
+        540,
+        760
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 47
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveImage //ZImagePowerNodes"
+      },
+      "widgets_values": [
+        "ZImage/%date:yyyy_MM_dd%/ZI",
+        true
+      ]
+    },
+    {
+      "id": 44,
+      "type": "Note",
+      "pos": [
+        -40,
+        -90
+      ],
+      "size": [
+        550,
+        230
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "README",
+      "properties": {},
+      "widgets_values": [
+        "This workflow demonstrates how to define custom styles by connecting through the \"customization\" input in the \"Style & Prompt Encoder\" node.\n\nA multi-line string must be defined using the following format:\nEach line starting with \">>>\" (three greater-than signs) defines the name of the style. From there, all subsequent lines until the next \">>>\" define the content of that style. Within this content, the tag \"{$@}\" will be replaced by the prompt.\n\nWhile the example shows all styles being defined as \"Custom <N>\", this method can be used to redefine any of the available styles in the style selector."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 48,
+      "type": "ZSamplerTurbo //ZImagePowerNodes",
+      "pos": [
+        890,
+        150
+      ],
+      "size": [
+        300,
+        680
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 76
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 77
+        },
+        {
+          "name": "latent_input",
+          "type": "LATENT",
+          "link": 78
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent_output",
+          "type": "LATENT",
+          "links": [
+            79
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ZSamplerTurbo //ZImagePowerNodes"
+      },
+      "widgets_values": [
+        1,
+        "fixed",
+        9,
+        1,
+        null,
+        "100%",
+        false
+      ]
+    },
+    {
+      "id": 54,
+      "type": "CLIPLoaderGGUF",
+      "pos": [
+        -1080,
+        80
+      ],
+      "size": [
+        380,
+        100
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            87
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoaderGGUF",
+        "cnr_id": "comfyui-gguf",
+        "aux_id": "city96/ComfyUI-GGUF",
+        "ver": "1.1.8"
+      },
+      "widgets_values": [
+        "Qwen3-4B.i1-Q5_K_S.gguf",
+        "lumina2"
+      ],
+      "color": "#322",
+      "bgcolor": "#533",
+      "shape": 1
+    },
+    {
+      "id": 55,
+      "type": "VAELoader",
+      "pos": [
+        -1080,
+        230
+      ],
+      "size": [
+        380,
+        90
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            88
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.3.75"
+      },
+      "widgets_values": [
+        "ae.safetensors"
+      ],
+      "color": "#322",
+      "bgcolor": "#533",
+      "shape": 1
+    },
+    {
+      "id": 47,
+      "type": "Reroute",
+      "pos": [
+        -670,
+        -60
+      ],
+      "size": [
+        75,
+        26
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "",
+          "type": "*",
+          "link": 86
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "MODEL",
+          "links": [
+            76
+          ]
+        }
+      ],
+      "properties": {
+        "showOutputText": false,
+        "horizontal": false
+      }
+    },
+    {
+      "id": 53,
+      "type": "UnetLoaderGGUF",
+      "pos": [
+        -1080,
+        -60
+      ],
+      "size": [
+        380,
+        90
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            86
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UnetLoaderGGUF",
+        "cnr_id": "comfyui-gguf",
+        "aux_id": "city96/ComfyUI-GGUF",
+        "ver": "1.1.8"
+      },
+      "widgets_values": [
+        "z_image_turbo-Q5_K_S.gguf"
+      ],
+      "color": "#322",
+      "bgcolor": "#533",
+      "shape": 1
+    },
+    {
+      "id": 49,
+      "type": "Note",
+      "pos": [
+        -1970,
+        -100
+      ],
+      "size": [
+        870,
+        560
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "REQUIREMENTS",
+      "properties": {},
+      "widgets_values": [
+        "Z-Image Power Nodes\n\n## Workflow Prerequisites ##\n\nThis workflow requires the following custom nodes, which can be obtained via ComfyUI-Manager:\n\n  * Z-Image Power Nodes: https://github.com/martin-rizzo/ComfyUI-ZImagePowerNodes\n  * ComfyUI-GGUF       : https://github.com/city96/ComfyUI-GGUF\n\n Additionally, ensure you have the following 3 models downloaded and placed in their respective\n directories within your ComfyUI installation:\n\n  z_image_turbo-Q5_K_S.gguf\n    * Download: https://huggingface.co/jayn7/Z-Image-Turbo-GGUF/blob/main/z_image_turbo-Q5_K_S.gguf\n    * Local Directory: `ComfyUI/models/diffusion_models/`\n\n  Qwen3-4B.i1-Q5_K_S.gguf\n    * Download: https://huggingface.co/mradermacher/Qwen3-4B-i1-GGUF/blob/main/Qwen3-4B.i1-Q5_K_S.gguf\n    * Local Directory: `ComfyUI/models/text_encoders/`\n\n  ae.safetensors\n    * Download: https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/vae/ae.safetensors\n    * Local Directory: `Comfyui/models/vae/`\n\n## More Info ##\n\n- https://github.com/martin-rizzo/ComfyUI-ZImagePowerNodes\n- https://civitai.com/models/2322533/z-image-power-nodes\n\nCreated by Martin Rizzo\n  GitHub : https://github.com/martin-rizzo\n  CivitAI: https://civitai.com/user/Photographer\n  Reddit : https://www.reddit.com/user/FotografoVirtual\n"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 45,
+      "type": "StylePromptEncoder2 //ZImagePowerNodes",
+      "pos": [
+        210,
+        200
+      ],
+      "size": [
+        660,
+        630
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 63
+        },
+        {
+          "name": "customization",
+          "shape": 7,
+          "type": "STRING",
+          "link": 64
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            77
+          ]
+        },
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StylePromptEncoder2 //ZImagePowerNodes"
+      },
+      "widgets_values": [
+        "\"Custom 1\"",
+        null,
+        null,
+        "A full-lipped Star Trek captain dressed in her signature tight-fitting uniform walks through a dense jungle. Her expression is one of fear. In the background, large cocoon-like structures are revealed to be the terrifying nests of giant spiders."
+      ],
+      "color": "#232",
+      "bgcolor": "#353",
+      "shape": 1
+    }
+  ],
+  "links": [
+    [
+      47,
+      8,
+      0,
+      31,
+      0,
+      "IMAGE"
+    ],
+    [
+      63,
+      38,
+      0,
+      45,
+      0,
+      "CLIP"
+    ],
+    [
+      64,
+      43,
+      0,
+      45,
+      1,
+      "STRING"
+    ],
+    [
+      75,
+      40,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      76,
+      47,
+      0,
+      48,
+      0,
+      "MODEL"
+    ],
+    [
+      77,
+      45,
+      0,
+      48,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      78,
+      32,
+      0,
+      48,
+      2,
+      "LATENT"
+    ],
+    [
+      79,
+      48,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      86,
+      53,
+      0,
+      47,
+      0,
+      "MODEL"
+    ],
+    [
+      87,
+      54,
+      0,
+      38,
+      0,
+      "CLIP"
+    ],
+    [
+      88,
+      55,
+      0,
+      40,
+      0,
+      "VAE"
+    ]
+  ],
+  "floatingLinks": [
+    {
+      "id": 2,
+      "origin_id": 47,
+      "origin_slot": 0,
+      "target_id": -1,
+      "target_slot": -1,
+      "type": "MODEL",
+      "parentId": 2
+    }
+  ],
+  "groups": [
+    {
+      "id": 3,
+      "title": "GGUF MODELS",
+      "bounding": [
+        -1090,
+        -120,
+        400,
+        580
+      ],
+      "color": "#b58b2a",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.751314800901578,
+      "offset": [
+        514.68201641793,
+        201.18975192959448
+      ]
+    },
+    "frontendVersion": "1.37.11",
+    "workflowRendererVersion": "LG",
+    "reroutes": [
+      {
+        "id": 2,
+        "pos": [
+          -360,
+          160
+        ],
+        "linkIds": [
+          76
+        ],
+        "floating": {
+          "slotType": "output"
+        }
+      },
+      {
+        "id": 3,
+        "pos": [
+          190,
+          250
+        ],
+        "linkIds": [
+          75
+        ]
+      },
+      {
+        "id": 4,
+        "parentId": 3,
+        "pos": [
+          200,
+          840
+        ],
+        "linkIds": [
+          75
+        ]
+      },
+      {
+        "id": 5,
+        "parentId": 8,
+        "pos": [
+          1210,
+          840
+        ],
+        "linkIds": [
+          75
+        ]
+      },
+      {
+        "id": 6,
+        "pos": [
+          -390,
+          210
+        ],
+        "linkIds": [
+          63
+        ]
+      },
+      {
+        "id": 7,
+        "parentId": 5,
+        "pos": [
+          1210,
+          300
+        ],
+        "linkIds": [
+          75
+        ]
+      },
+      {
+        "id": 8,
+        "parentId": 4,
+        "pos": [
+          700,
+          850
+        ],
+        "linkIds": [
+          75
+        ]
+      }
+    ],
+    "linkExtensions": [
+      {
+        "id": 63,
+        "parentId": 6
+      },
+      {
+        "id": 75,
+        "parentId": 7
+      },
+      {
+        "id": 76,
+        "parentId": 2
+      }
+    ]
+  },
+  "version": 0.4
+}
