@@ -53,8 +53,17 @@ async def _select(lora, strength, blocks, prev_lora, low_mem_load, merge_loras):
     if not lora or not _logical_name(lora):
         raise ValueError("Wan LoRA names must be confined logical catalogue names")
     context = sdk.current_context()
-    asset = await context.assets.resolve("loras", lora)
-    metadata = await _metadata(context, asset)
+    try:
+        asset = await context.assets.resolve("loras", lora)
+    except Exception:
+        # Native fallback (nodes_model_loading.py:415-418): a name the catalogue
+        # lacks becomes the descriptor path itself, so the failure surfaces
+        # downstream where native's did. Only a broker-confirmed absence takes
+        # this branch; the entry keeps the logical name, nothing is read or shown.
+        if await context.assets.exists("loras", lora):
+            raise
+        asset = None
+    metadata = {} if asset is None else await _metadata(context, asset)
     blocks = {} if blocks is None else blocks
     loras.append({"path": lora, "strength": strength, "name": posixpath.splitext(lora)[0],
                   "blocks": blocks.get("selected_blocks", {}), "layer_filter": blocks.get("layer_filter", ""),

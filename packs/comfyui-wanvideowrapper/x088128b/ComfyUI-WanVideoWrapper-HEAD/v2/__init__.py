@@ -1,4 +1,4 @@
-"""PRIVATE143 source candidate. No installable manifest or promotion claim."""
+"""PRIVATE145 source candidate. No installable manifest or promotion claim."""
 from .secure_schedule_nodes import CreateCFGScheduleFloatList as _node0
 from .secure_schedule_nodes import CreateScheduleFloatList as _node1
 from .secure_fantasytalking_nodes import DownloadAndLoadWav2VecModel as _node2
@@ -142,6 +142,8 @@ from .secure_wanmove_raster_nodes import WanVideoWanDrawWanMoveTracks as _node13
 from .secure_multitalk_wav2vec_nodes import Wav2VecModelLoader as _node140
 from .secure_whisper_nodes import WhisperModelLoader as _node141
 from .secure_set_loras_node import WanVideoSetLoRAs as _node142
+from .secure_control_loader_nodes import WanVideoControlnetLoader as _node143
+from .secure_control_loader_nodes import WanVideoUni3C_ControlnetLoader as _node144
 NODE_CLASS_MAPPINGS = {
     'CreateCFGScheduleFloatList': _node0,
     'CreateScheduleFloatList': _node1,
@@ -212,6 +214,7 @@ NODE_CLASS_MAPPINGS = {
     'WanVideoContextOptions': _node66,
     'WanVideoControlEmbeds': _node67,
     'WanVideoControlnet': _node68,
+    'WanVideoControlnetLoader': _node143,
     'WanVideoDecode': _node69,
     'WanVideoDecodeOviAudio': _node70,
     'WanVideoEasyCache': _node71,
@@ -274,6 +277,7 @@ NODE_CLASS_MAPPINGS = {
     'WanVideoTinyVAELoader': _node127,
     'WanVideoTorchCompileSettings': _node128,
     'WanVideoUltraVicoSettings': _node129,
+    'WanVideoUni3C_ControlnetLoader': _node144,
     'WanVideoUni3C_embeds': _node130,
     'WanVideoUniAnimateDWPoseDetector': _node131,
     'WanVideoUniAnimatePoseInput': _node132,

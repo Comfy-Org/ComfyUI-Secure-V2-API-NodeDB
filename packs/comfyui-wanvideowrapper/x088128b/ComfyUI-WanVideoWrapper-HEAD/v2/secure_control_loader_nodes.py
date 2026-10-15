@@ -22,7 +22,7 @@ class WanVideoControlnetLoader(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='WanVideoControlnetLoader', category='WanVideoWrapper',
+        return io.Schema(node_id='WanVideoControlnetLoader', display_name='WanVideo Controlnet Loader', category='WanVideoWrapper',
             description="Loads ControlNet model from 'https://huggingface.co/collections/TheDenk/wan21-controlnets-68302b430411dafc0d74d2fc'",
             inputs=[model_input(),
                 io.Combo.Input('base_precision', options=['fp32', 'bf16', 'fp16'], default='bf16'),
@@ -49,7 +49,7 @@ class WanVideoUni3C_ControlnetLoader(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='WanVideoUni3C_ControlnetLoader', category='WanVideoWrapper',
+        return io.Schema(node_id='WanVideoUni3C_ControlnetLoader', display_name='WanVideo Uni3C Controlnet Loader', category='WanVideoWrapper',
             inputs=[model_input(),
                 io.Combo.Input('base_precision', options=['fp32', 'bf16', 'fp16'], default='fp16'),
                 io.Combo.Input('quantization', options=['disabled', 'fp8_e4m3fn', 'fp8_e5m2'],
