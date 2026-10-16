@@ -18,6 +18,7 @@ export {
     fetchColorPaletteArray,
 };
 import { comfy } from '/comfy/api/v2.js';
+import { fetchOwnRoute } from './public/own_routes.js';
 import { GalleryWidgetDelegate }                from "./gallery_widget.js";
 import { GalleryDialog, GalleryDialogDelegate } from "./gallery_dialog.js";
 
@@ -78,7 +79,7 @@ async function fetchColorPaletteArray(endpoint)
     const fetchPromise = (async () => {
         try {
             // fetch the palettes for the given endpoint
-            const response = await comfy.backend.ownFetch(endpoint);
+            const response = await fetchOwnRoute(comfy, endpoint);
             if( !response.ok ) { throw new Error(`HTTP ${response.status}`); }
 
             // validate that the response is an actual array

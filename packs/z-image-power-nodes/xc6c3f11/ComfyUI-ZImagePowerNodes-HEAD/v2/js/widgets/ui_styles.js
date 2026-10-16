@@ -18,6 +18,7 @@ export {
     fetchVisualStyleArray,
 };
 import { comfy } from '/comfy/api/v2.js';
+import { fetchOwnRoute } from './public/own_routes.js';
 import { styleSamplePath } from './style_sample_path.js';
 import { GalleryWidgetDelegate }                from "./gallery_widget.js";
 import { GalleryDialog, GalleryDialogDelegate } from "./gallery_dialog.js";
@@ -94,7 +95,7 @@ async function fetchVisualStyleArray(endpoint)
     const fetchPromise = (async () => {
         try {
             // fetch the styles from the given endpoint
-            const response = await comfy.backend.ownFetch(endpoint);
+            const response = await fetchOwnRoute(comfy, endpoint);
             if( !response.ok ) { throw new Error(`HTTP ${response.status}`); }
 
             // validate that the response is an actual array
