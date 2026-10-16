@@ -2,11 +2,12 @@ import {createGalleryCatalogue} from './gallery_catalogue.js';
 import {createPublicGalleryDialogs} from './public_gallery_dialog.js';
 import {createGalleryDialogDelegates} from './gallery_dialog_delegates.js';
 import {styleSamplePath} from './style_sample_path.js';
+import {fetchOwnRoute} from './own_routes.js';
 
 export function createZImageGallerySources(comfy,{fetchEndpoint,stylesheetURL}={}) {
-    // In the secure guest this is the actual pack-owned route capability.
+    // The pack's own routes, by relative path through comfy.backend.fetch.
     // The direct public API test passes its actual BackendHandle.fetch caller.
-    const fetchOwned=fetchEndpoint ?? (endpoint=>comfy.backend.ownFetch(endpoint));
+    const fetchOwned=fetchEndpoint ?? (endpoint=>fetchOwnRoute(comfy,endpoint));
     function resolveImageURL(endpoint) {
         const url=new URL(endpoint,'https://pack.invalid/');
         if (url.pathname !== '/zi_power/styles/samples') return endpoint;

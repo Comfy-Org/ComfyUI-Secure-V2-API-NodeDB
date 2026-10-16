@@ -204,31 +204,79 @@ export function installTopStylesFrontend(comfy) {
         processChainMessage(record,{type:'deselectAllStyles',channel:record.node.widgets.get('output_to').getValue()});
     }
 
-    stops.push(comfy.defs.extend(def => [SELECTOR,EDITOR].includes(def.type),builder => {
-        builder.onCreated(node => queueMicrotask(() => bind(node)));
-        builder.onConfigured(configured);
-        builder.onConnectionsChanged(node => {
-            const record = bind(node);
-            if (record?.node.type === SELECTOR) syncSelector(record);
-        });
-        builder.onRemoved(node => drop(recordFor(node)));
-    }));
-    stops.push(comfy.onWorkflowLoaded(() => {
-        for (const record of [...records]) drop(record);
-        for (const node of comfy.graph.nodes()) bind(node);
-    }));
-    stops.push(comfy.queue.onAcceptedSubmission(event => {
-        if (!installed || event.documentId !== comfy.workflow.documentId()) return;
-        for (const node of comfy.graph.nodes()) if (node.type === SELECTOR) {
-            const record = recordFor(node);
-            if (record) advance(record);
+    // "next" advances once per prompt the backend accepted. The deployed host
+    // reports accepted prompts only through comfy.queue.onAfterRun: once per
+    // Run, AFTER the whole batch loop, and never when every submission was
+    // rejected. The original advanced inside that loop (afterQueued), so in a
+    // batch of N each later prompt was built from the advanced selection. Here
+    // all N prompts of a Run carry the selection the Run started with, then the
+    // N steps run, which leaves the original's final selection. Exact
+    // per-submission advancement needs a per-submission host hook.
+    function afterRun(event) {
+        if (!installed) return;
+        const accepted = Array.isArray(event?.promptIds) ? event.promptIds.length : 0;
+        for (let step = 0; step < accepted; step++) {
+            for (const node of comfy.graph.nodes()) if (node.type === SELECTOR) {
+                const record = recordFor(node);
+                if (record) advance(record);
+            }
         }
-    }));
-    for (const node of comfy.graph.nodes()) bind(node);
-    return {dispose() {
+    }
+
+    // Disposes everything registered so far; safe to call twice, and every
+    // unsubscribe runs even if an earlier one throws.
+    function release() {
         if (!installed) return;
         installed = false;
         for (const record of [...records]) drop(record);
-        for (const stop of stops.splice(0)) stop();
-    }};
+        for (const stop of stops.splice(0).reverse()) {
+            try { stop(); }
+            catch (error) { console.error('[ZImagePowerNodes] My Top-10 Styles: unsubscribe failed',error); }
+        }
+    }
+
+    // A failed subscription disables only this controller; the gallery
+    // widgets are installed separately and keep working.
+    function fail(what,error) {
+        if (!installed) return;
+        console.error(`[ZImagePowerNodes] My Top-10 Styles controller disabled: ${what} failed`,error);
+        release();
+    }
+
+    // Keeps an unsubscribe function for dispose. The sandbox acknowledges some
+    // registrations (comfy.defs.extend) with a promise instead: there is
+    // nothing to call later, the hooks are inert once `installed` is false,
+    // and a rejected acknowledgement is a failed registration.
+    function register(what,subscribe) {
+        const handle = subscribe();
+        if (typeof handle === 'function') stops.push(handle);
+        else if (typeof handle?.then === 'function') handle.then(undefined,error => fail(what,error));
+    }
+
+    // Installation never throws: on any failure every subscription registered
+    // before it is disposed and the controller stays off.
+    try {
+        register('comfy.defs.extend',() => comfy.defs.extend(def => [SELECTOR,EDITOR].includes(def.type),builder => {
+            builder.onCreated(node => queueMicrotask(() => bind(node)));
+            builder.onConfigured(configured);
+            builder.onConnectionsChanged(node => {
+                const record = bind(node);
+                if (record?.node.type === SELECTOR) syncSelector(record);
+            });
+            builder.onRemoved(node => drop(recordFor(node)));
+        }));
+        register('comfy.onWorkflowLoaded',() => comfy.onWorkflowLoaded(() => {
+            if (!installed) return;
+            for (const record of [...records]) drop(record);
+            for (const node of comfy.graph.nodes()) bind(node);
+        }));
+        register('comfy.queue.onAfterRun',() => comfy.queue.onAfterRun(afterRun));
+        for (const node of comfy.graph.nodes()) bind(node);
+    } catch (error) {
+        fail('installation',error);
+    }
+    return {
+        get active() { return installed; },
+        dispose: release,
+    };
 }
