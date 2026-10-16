@@ -53,6 +53,22 @@ def load_weights(transformer, sd=None, weight_dtype=None, base_dtype=None,
     load_plain_weights(transformer, sd, base_dtype)
 
 
+def resolve_cache_placement(cache_args):
+    """Resolve a V2 cache-settings placement label to this owned execution's devices.
+
+    The registered cache producers carry the original closed UI label ('main_device' or 'offload_device')
+    instead of a host device. The original producer resolved the label itself (main_device ->
+    mm.get_torch_device(), offload_device -> mm.unet_offload_device()); in this CPU-only owned scope both
+    labels resolve to the owned CPU devices. All other cache settings pass through unchanged.
+    """
+    if type(cache_args) is not dict or cache_args.get('cache_device') not in ('main_device', 'offload_device'):
+        raise ValueError('Wan cache placement must be main_device or offload_device')
+    from .wan_workflow_owned_execution import owned_cpu_devices
+    devices = owned_cpu_devices()
+    device = devices.main_device if cache_args['cache_device'] == 'main_device' else devices.offload_device
+    return dict(cache_args, cache_device=device)
+
+
 async def sample_workflow(context, model, image_embeds, **kwargs):
     import torch
     from .wan_workflow_math.nodes_sampler import WanVideoSampler
@@ -60,14 +76,17 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
         raise NotImplementedError('First staged trained workflow requires plain empty T2V conditioning')
     if image_embeds['control_embeds'] is not None:
         raise NotImplementedError('Control embeds await their reviewed execution slice')
-    unsupported = ('feta_args', 'context_options', 'cache_args', 'teacache_args',
-                   'flowedit_args', 'slg_args', 'loop_args', 'experimental_args',
+    unsupported = ('feta_args',
+                   'experimental_args',
                    'unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',
                    'multitalk_embeds', 'freeinit_args')
     if any(kwargs.get(key) is not None for key in unsupported):
         raise NotImplementedError('Advanced sampling inputs await their reviewed execution slices')
     if kwargs.get('batched_cfg', False):
         raise NotImplementedError('Batched CFG awaits its reviewed execution slice')
+    for key in ('cache_args', 'teacache_args'):
+        if kwargs.get(key) is not None:
+            kwargs = dict(kwargs, **{key: resolve_cache_placement(kwargs[key])})
     scheduler = kwargs['scheduler']
     if type(scheduler) is dict:
         if scheduler.get('format') != SCHEDULER_FORMAT:
@@ -97,7 +116,19 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
         def run():
             with torch.inference_mode():
                 return WanVideoSampler().process(model=execution, image_embeds=image_embeds, **kwargs)
-        with progress_scope(context):
-            # The event loop must continue serving actual SDK progress requests.
-            # Do not move the coroutine loop into this synchronous model call.
-            return await asyncio.to_thread(run)
+        try:
+            with progress_scope(context):
+                # The event loop must continue serving actual SDK progress requests.
+                # Do not move the coroutine loop into this synchronous model call.
+                return await asyncio.to_thread(run)
+        except BaseException as error:
+            # Finished frames on this error's traceback (the worker's sampler frame and the
+            # nested sampler closures it ran) would keep the owned NN alive after this owner
+            # exits. Release their scopes with the shared owned-execution helper (imported
+            # here because that module imports this one); the error itself (type, message,
+            # traceback lines) is re-raised unchanged.
+            from .wan_workflow_owned_execution import release_failed_call_frames
+            release_failed_call_frames(error.__traceback__)
+            raise
+        finally:
+            execution = pipeline = transformer = None

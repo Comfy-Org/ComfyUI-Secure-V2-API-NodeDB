@@ -11,7 +11,10 @@ from comfy_api.latest import io
 from ._wan_catalogue import valid_catalogue_name
 from .secure_tensor_nodes import _bound_payload, MAX_PAYLOAD_BYTES
 from .secure_whisper_runtime import loudness_norm
-from .secure_wav2vec_runtime import load_tencent_wav2vec, rebuild_wav2vec
+from .secure_wav2vec_runtime import load_tencent_wav2vec
+# Like the original, which accepts the WAV2VECMODEL of either loader (Wav2VecModelLoader or
+# DownloadAndLoadWav2VecModel), rebuild either owned recipe format through the shared dispatcher.
+from .secure_download_wav2vec_runtime import rebuild_fantasy_wav2vec as rebuild_any_wav2vec
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +98,7 @@ class MultiTalkWav2VecEmbeds(io.ComfyNode):
         if not 'tencent' in model_type.lower():
             raise ValueError('Only tencent wav2vec2 models supported by MultiTalk')
         _preflight(audio_1, audio_2, audio_3, audio_4, ref_target_masks, num_frames, fps)
-        wav2vec_model = await rebuild_wav2vec(wav2vec_model)
+        wav2vec_model = await rebuild_any_wav2vec(wav2vec_model)
         import torchaudio
         import numpy as np
         from einops import rearrange
