@@ -3,6 +3,7 @@ import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 import gc
+import os
 from threading import Event
 import traceback
 
@@ -33,6 +34,40 @@ def owned_cpu_devices():
     """The current main6 owner policy; never infer an accelerator fallback."""
     import torch
     return OwnedDevices(torch.device('cpu'), torch.device('cpu'))
+
+
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+
+def release_failed_call_frames(tb):
+    """Release what the finished frames of a failed owned call keep alive; the error is unchanged.
+
+    tb is the error's traceback as caught by the owner: its first entry is the owner's own, still
+    executing frame and every later entry is a finished frame of the failed call. frame.clear() drops
+    a frame's locals but not the function object it ran, and a nested function's closure keeps the
+    cells of its enclosing scope, so a raise inside a nested sampler closure (the vendored
+    predict_with_cfg) would still retain that scope, including the owned NN. For finished frames of
+    this package's own code (the vendored sampler math) the cell variables they created are therefore
+    emptied first (PEP 667 write-through frame locals, CPython 3.13+); then every finished frame is
+    cleared. Frames of other code (torch, diffusers, ...) are only cleared and never have cells
+    written, so closures a library keeps beyond the call are untouched. Free variables are never
+    written. The error's type, message and traceback lines are unchanged.
+    """
+    from inspect import CO_OPTIMIZED
+    if tb is None:
+        return
+    for frame, _ in traceback.walk_tb(tb.tb_next):
+        code = frame.f_code
+        if (code.co_flags & CO_OPTIMIZED and code.co_cellvars
+                and os.path.abspath(code.co_filename).startswith(_PACKAGE_DIR)):
+            scope = frame.f_locals
+            for name in code.co_cellvars:
+                if name in scope:
+                    scope[name] = None
+        try:
+            frame.clear()
+        except RuntimeError:
+            pass
 
 
 async def _finish_worker(task, cancelled):
@@ -122,10 +157,11 @@ async def run_owned_native_sampler(context, model, native_sampler, *, image_embe
                 task = asyncio.create_task(asyncio.to_thread(run))
                 return await _finish_worker(task, cancelled)
         except BaseException as error:
-            # Finished frames on this error's traceback (the worker's sampler frame and its
-            # closures) would keep the owned NN alive after this owner exits. Drop their
-            # locals; the error itself (type, message, traceback lines) is re-raised unchanged.
-            traceback.clear_frames(error.__traceback__)
+            # Finished frames on this error's traceback (the worker's sampler frame and the
+            # nested sampler closures it ran) would keep the owned NN alive after this owner
+            # exits. Release their scopes; the error itself (type, message, traceback lines)
+            # is re-raised unchanged.
+            release_failed_call_frames(error.__traceback__)
             raise
         finally:
             execution = transformer = pipeline = None
