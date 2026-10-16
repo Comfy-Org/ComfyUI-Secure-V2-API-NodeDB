@@ -1,5 +1,4 @@
 import { comfy } from '/comfy/api/v2.js';
-import { whereSupported } from "./sandbox_limits.js";
 import { NodeTypesString } from "./constants.js";
 const PROPERTY_HIDE_TYPE_SELECTOR = "hideTypeSelector";
 const PRIMITIVES = {
@@ -155,12 +154,22 @@ comfy.defs.extend(NodeTypesString.POWER_PRIMITIVE, (b) => {
     b.onRemoved((node) => {
         typeStateByNode.delete(node.id);
     });
-    whereSupported(b.def?.type ?? "Power Primitive", "show/hide type selector menu item (dynamic label)", () => b.addMenuItem({
-        label: (node) => `${node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR) ? "Show" : "Hide"} Type Selector Widget`,
-        run: (node) => {
-            node.setProperty(PROPERTY_HIDE_TYPE_SELECTOR, !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR));
-        },
-    }));
+    // The original's one entry read "Show …" or "Hide …" from the property, and a
+    // menu label must be a string: two fixed entries, each shown only in the state
+    // its label describes, so the menu reads exactly as before. Both toggle.
+    const toggleTypeSelector = (node) => {
+        node.setProperty(PROPERTY_HIDE_TYPE_SELECTOR, !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR));
+    };
+    b.addMenuItem({
+        label: "Hide Type Selector Widget",
+        when: (node) => !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR),
+        run: toggleTypeSelector,
+    });
+    b.addMenuItem({
+        label: "Show Type Selector Widget",
+        when: (node) => !!node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR),
+        run: toggleTypeSelector,
+    });
     b.addMenuItem({
         label: "Set type",
         items: Object.keys(PRIMITIVES).map((primitive) => ({
