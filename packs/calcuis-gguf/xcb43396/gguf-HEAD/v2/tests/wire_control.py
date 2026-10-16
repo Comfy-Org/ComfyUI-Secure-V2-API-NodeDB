@@ -54,7 +54,6 @@ class ExistingModelBoundaryControl(io.ComfyNode):
             ('gguf_service', lambda: sdk.ctx().models.load_gguf_model('synthetic.gguf')),
             ('gguf_device_argument', lambda: sdk.ctx().models.load_gguf_text_encoders(['synthetic.gguf'], 'stable_diffusion', device='cpu')),
             ('audio_public_member', lambda: sdk.ctx().models.load_audio_encoder('synthetic.safetensors')),
-            ('binary_public_member', lambda: sdk.ctx().output.save_binary('synthetic.gguf', b'GGUF')),
         )
         for name, call in attempts:
             try:

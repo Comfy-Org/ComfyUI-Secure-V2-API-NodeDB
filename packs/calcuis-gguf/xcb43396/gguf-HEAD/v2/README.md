@@ -10,9 +10,18 @@ range parsing/quantization, and exact pinned metadata text. The CUDA FP8 cutter
 retains its CUDA-only policy. The r3 focused fixture verifies real CUDA math
 and exact original native saved tensor bytes, including the native empty-input
 error. This does not qualify Cut's production guest output path.
-Single SafeTensors CLIP and non-GGUF VAE branches use existing typed services
-but have no trained-model evidence. Provider/audio/binary-output branches fail
-closed with an explicit prerequisite rather than returning a misleading value.
+The single SafeTensors CLIP branch uses the existing typed service but has no
+trained-model evidence. Model/CLIP provider branches fail closed with an
+explicit prerequisite rather than returning a misleading value.
+
+Revision 2: GGUFSave, GGUFRun, VaeGGUF and AudioEncoderLoaderGGUF use the
+Phase-1 SDK verbs (output.save_binary, assets.gguf_tensor_state,
+models.vae_from_state_dict, models.audio_encoder_from_state_dict). They are
+tested bit-exact against the original only on the Phase-1 SDK branch (core
+844d7d60 / backend 7f73734e; pending SDK deployment). On the current runtime
+they fail closed until the Phase-1 SDK ships. Operators must set
+COMFY_SECURE_MAX_GGUF_MAPPING_BYTES and COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES
+(tested with 256 MiB each; the default 0 refuses the guest verbs).
 
 See SECURE_CONVERSION.md for exact per-ID limitations, resource policies,
 output-name compatibility changes and persistence disposition. The draft

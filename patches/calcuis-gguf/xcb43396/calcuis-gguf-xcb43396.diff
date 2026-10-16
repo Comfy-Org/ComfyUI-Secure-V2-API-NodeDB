@@ -1,6 +1,6 @@
 --- a/README.md
 +++ b/v2/README.md
-@@ -1,125 +1,31 @@
+@@ -1,125 +1,40 @@
 -### gguf node for comfyui [![Static Badge](https://img.shields.io/badge/version-0.2.8-black?logo=github)](https://github.com/calcuis/gguf/releases)
 +# calcuis GGUF — Secure Nodes V2 technical draft
  
@@ -30,16 +30,20 @@
 +retains its CUDA-only policy. The r3 focused fixture verifies real CUDA math
 +and exact original native saved tensor bytes, including the native empty-input
 +error. This does not qualify Cut's production guest output path.
-+Single SafeTensors CLIP and non-GGUF VAE branches use existing typed services
-+but have no trained-model evidence. Provider/audio/binary-output branches fail
-+closed with an explicit prerequisite rather than returning a misleading value.
++The single SafeTensors CLIP branch uses the existing typed service but has no
++trained-model evidence. Model/CLIP provider branches fail closed with an
++explicit prerequisite rather than returning a misleading value.
  
 -#### for existing user/developer(s)
 -opt `2` to clone the gguf repo to the current directory (either navigate to `./ComfyUI/custom_nodes` first or drag and drop there after the clone)
-+See SECURE_CONVERSION.md for exact per-ID limitations, resource policies,
-+output-name compatibility changes and persistence disposition. The draft
-+secure-nodes.json describes registrations only; it is not a support certificate.
-+Standalone CLI/install/network tools are deliberately pristine-only.
++Revision 2: GGUFSave, GGUFRun, VaeGGUF and AudioEncoderLoaderGGUF use the
++Phase-1 SDK verbs (output.save_binary, assets.gguf_tensor_state,
++models.vae_from_state_dict, models.audio_encoder_from_state_dict). They are
++tested bit-exact against the original only on the Phase-1 SDK branch (core
++844d7d60 / backend 7f73734e; pending SDK deployment). On the current runtime
++they fail closed until the Phase-1 SDK ships. Operators must set
++COMFY_SECURE_MAX_GGUF_MAPPING_BYTES and COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES
++(tested with 256 MiB each; the default 0 refuses the guest verbs).
  
 -alternatively, you could execute the git clone command to perform that task (see below):
 -- navigate to `./ComfyUI/custom_nodes`
@@ -50,14 +54,18 @@
 -*same operation for the standalone pack; then you should be able to see it under `Add Node >`*
 -![screenshot](https://raw.githubusercontent.com/calcuis/comfy/master/gguf-node.png)
 -check the dropdown menu for `gguf`
++See SECURE_CONVERSION.md for exact per-ID limitations, resource policies,
++output-name compatibility changes and persistence disposition. The draft
++secure-nodes.json describes registrations only; it is not a support certificate.
++Standalone CLI/install/network tools are deliberately pristine-only.
+ 
+-🐷🐷📄 for the latest update, gguf-connector deployment copy is now attached to the node itself; don't need to clone it to site-packages; and, as the default setting in comfyui is sufficient; no dependencies needed right away 🙌 no extra step anymore
 +The r3 correction reads SafeTensors payloads one tensor at a time and removes
 +conversion-invented1GiB storage/output limits. Its real2.13GB checkpoint test
 +passed under a12GiB fixture grant with about8.7GiB peakRSS. Guest Boost/Undo
 +tests use genuine existing SDK brokers in four fresh subprocesses inside
 +constrained Docker units; normal gVisor admission remains unqualified here.
  
--🐷🐷📄 for the latest update, gguf-connector deployment copy is now attached to the node itself; don't need to clone it to site-packages; and, as the default setting in comfyui is sufficient; no dependencies needed right away 🙌 no extra step anymore
--
 -#### other(s): get it somewhere else trustworthy/reliable
 -you are also welcome to get the node through other available channels, i.e., comfy-cli, comfyui-manager (search `gguf` from the bar; and opt to install it there should be fine; see picture below), etc.
 -![screenshot](https://raw.githubusercontent.com/calcuis/comfy/master/comfyui-manager.png)
@@ -154,12 +162,109 @@
 +in SECURE_CONVERSION.md; all13 production nodes remain release-pending.
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,152 @@
-+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-+> Nodes: 13 of 13 upstream converted; 2 tested (scoped), 1 converted but untested/partly tested,
-+> 10 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+@@ -0,0 +1,249 @@
++> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-16 at the user's request.
++> Nodes: 13 of 13 upstream converted; 6 tested (scoped), 1 converted but untested/partly tested,
++> 6 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
++> (Revision 2. 4 of the 6 tested nodes — GGUFSave, GGUFRun, VaeGGUF, AudioEncoderLoaderGGUF — are tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment). On the CURRENT runtime they fail closed until the Phase-1 SDK ships; VaeGGUF's ordinary non-GGUF branch is unchanged from revision 1. Operators must set COMFY_SECURE_MAX_GGUF_MAPPING_BYTES and COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES: tested with 256 MiB each; the default 0 refuses.)
 +
 +<!-- secure-conversion-report-v1 -->
++# Secure Nodes V2 conversion report — calcuis GGUF (`calcuis-gguf`), revision 2
++
++The 6 model/CLIP loaders that remain "pending capability" are registered with their original IDs and schemas but fail closed with an explicit message until the host capability they need exists (see *Pending capabilities*).
++
++## Provenance
++
++Upstream https://github.com/calcuis/gguf at commit `cb433968a4d42c59fc344d659ad94200b6c16689` (key `xcb43396`). The pristine tree beside `v2/` is byte-exact at that commit (89 tracked files; SHA-256 values pinned in `v2/tests/pristine_sha256.json`). This is a different pack from City96 `comfyui-gguf`; City96 code is never substituted for Calcuis behaviour.
++
++Revision 2 = the committed revision-1 tree plus the Phase-1 pack differential (listed under *Revision 2 changes*). No test-only approvals are included; production admission stays closed.
++
++## Runtime requirement (read first)
++
++- GGUFSave, GGUFRun, VaeGGUF (`.gguf` branch) and AudioEncoderLoaderGGUF call SDK verbs that exist only in the Phase-1 SDK (draft core #17072 at 844d7d60, backend #31 at 7f73734e): `output.save_binary`, `assets.gguf_tensor_state`, `models.vae_from_state_dict`, `models.audio_encoder_from_state_dict`.
++- On the CURRENT runtime (any SDK without those verbs) these nodes fail closed: the missing SDK call raises before any output is published or any model object is returned. GGUFSave/GGUFRun read and encode their input, then stop at `output.save_binary`; no file is written. The pack still imports and registers all 13 nodes.
++- Operators must set `COMFY_SECURE_MAX_GGUF_MAPPING_BYTES` (guest `assets.gguf_tensor_state`) and `COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES` (guest `output.save_binary`). The default 0 refuses both verbs on the guest route. The differential used 268,435,456 bytes (256 MiB) for each.
++
++## Node dispositions
++
++Node IDs, display names and categories are the original's (mirror mode). Revision-2 evidence: each node ran in-process (registered node, SDK in-process runtime) and through an ordinary GuestSession, and each output was compared bit-exact with the genuine original pig.py on identical inputs (CPU, 1 thread, capped container, network none; guest sandbox kind none, not gVisor admission).
++
++| Node id | Display name | Disposition | Evidence or gap |
++| --- | --- | --- | --- |
++| `TENSORBoost` | TENSOR Booster | tested (scoped) | Output tensor bytes/dtypes equal the original native files (real Torch 2.8 + SafeTensors); real guest subprocesses ran it through installed SDK assets and managed output. A 2.13 GB SD1.5 checkpoint (1145 tensors) was verified under a 12 GiB fixture. The r5 helpers pass in actual gVisor. |
++| `GGUFUndo` | GGUF Convertor (Reverse) | tested (scoped) | Real guest subprocesses passed native dtypes/bytes, reverse metadata, empty outputs, collision-free counters, and raw/assets/output permission denials. |
++| `TENSORCut` | TENSOR Cutter (Beta) | converted, partly tested | The r3 fixture verified real CUDA math and exact native saved bytes, including the native empty-input error. The production guest output path on a CUDA worker is not qualified. |
++| `GGUFSave` | GGUF Convertor (Alpha) | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | Complete `.gguf` bytes equal the original pig.py output, in-process and through an ordinary GuestSession (MOE alpha fixture). On a non-diffusion state (SD1.5 VAE) all three refuse with the same `AssertionError: Unknown model architecture detected!` and publish nothing. The guest denial without `assets` named `assets`. The managed name `calcuis-gguf/<native stem>_<counter>_.gguf` replaces the legacy overwrite prompt. Evidence: `tests/gguf-phase1-r2-writers-inprocess-and-guest-vs-original-r1`. On runtimes without the Phase-1 SDK it fails closed at the missing SDK call. |
++| `GGUFRun` | GGUF Convertor (Zero) | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | Complete `.gguf` bytes equal the original pig.py output, in-process and guest, for the zero fixture, a mixed bf16/f16/f32/int32-scalar/empty state and a 167,325,504-byte SD1.5 VAE (also equal to an earlier original run: deterministic). The guest denial without `output` named `output` and published nothing. Evidence: `tests/gguf-phase1-r2-writers-inprocess-and-guest-vs-original-r1`. On runtimes without the Phase-1 SDK it fails closed at the missing SDK call. |
++| `LoaderGGUF` | GGUF Loader | pending capability | Needs an opaque `ModelRef` constructor that selects the retained Calcuis implementation (`calcuis-diffusion`). |
++| `LoaderGGUFAdvanced` | GGUF Loader (Advanced) | pending capability | `calcuis-diffusion`, including the dequant/patch dtype and `patch_on_device` semantics. |
++| `ClipLoaderGGUF` | GGUF CLIP Loader | pending capability | The GGUF branch needs Calcuis `ClipRef` construction (`calcuis-text`). The single-SafeTensors branch uses the existing typed service but has no trained-model evidence. |
++| `DualClipLoaderGGUF` | GGUF DualCLIP Loader | pending capability | `calcuis-text` (ordered assets, native device and type handling). |
++| `TripleClipLoaderGGUF` | GGUF TripleCLIP Loader | pending capability | `calcuis-text`. |
++| `QuadrupleClipLoaderGGUF` | GGUF QuadrupleCLIP Loader | pending capability | `calcuis-text`. |
++| `VaeGGUF` | GGUF VAE Loader | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | `.gguf` branch (an F16 GGUF made by the original GGUFRun) and the ordinary `.safetensors` branch: the constructed VAE state (248 tensors), a decode and an encode are bit-exact vs the original (`load_gguf_clip` / `load_torch_file` + `comfy.sd.VAE`), in-process and guest. Evidence: `tests/gguf-phase1-r3-vaegguf-inprocess-and-guest-vs-original-r1`. On runtimes without the Phase-1 SDK the `.gguf` branch fails closed at the missing SDK call; the ordinary branch is unchanged from revision 1 (`models.load_vae`). |
++| `AudioEncoderLoaderGGUF` | GGUF AudioEncoder Loader | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | `.gguf` and `.safetensors` branches with chinese-wav2vec2-base (fp16): the encoder state (211 tensors) and `encode_audio` of a fixed 1 s / 16 kHz waveform (every layer) are bit-exact vs the original (`load_gguf_clip` / `load_torch_file` + `load_audio_encoder_from_sd`), in-process and guest. Evidence: `tests/gguf-phase1-r4-audioencoderloadergguf-inprocess-and-guest-vs-original-r1`. On runtimes without the Phase-1 SDK it fails closed at the missing SDK call. |
++
++## Revision 2 changes
++
++| File | Change |
++| --- | --- |
++| `gguf_state.py` (new) | Calcuis `load_gguf_sd` + `load_gguf_clip` rules (prefix, architecture, `comfy.gguf.orig_shape`, sdxl squeeze, storage shapes) as a guest-built tensor table for host-owned GGUF storage; text-encoder architectures whose branch transforms keys or data refuse with a named scope error. Byte-exact re-chunking for `output.save_binary`. |
++| `nodes.py` | The four node bodies on the Phase-1 SDK verbs; permissions VaeGGUF `models, assets`, AudioEncoderLoaderGGUF `models, assets, raw`. The 6 model/CLIP loaders are unchanged. |
++| `secure-nodes.json` | Regenerated by the SDK codec (backend 7f73734 packmanifest) from this tree; the only drift vs revision 1 is the two permission rows above. |
++| `tests/test_pack_math.py` | The four nodes left the "pending branch fails closed" test (they are no longer pending). The 6 loaders stay in it. |
++| `tests/wire_control.py`, `tests/test_model_boundary_probe.py` | Removed the probe asserting that `output.save_binary` is absent: the pack now depends on that verb. The other probes are unchanged. |
++| `README.md` | Revision-2 status paragraph. |
++| `SECURE_CONVERSION.md` | This report. |
++
++## Refused techniques (never-do) and their public replacements
++
++No user-visible node or feature is refused. Only these techniques are:
++
++1. **Reading model files by absolute host path** (upstream `folder_paths.get_full_path` in `pig.py`). *Replacement:* logical asset names through published, confined asset ranges (TENSORBoost, TENSORCut, GGUFUndo, GGUFSave, GGUFRun); for VaeGGUF and AudioEncoderLoaderGGUF a guest-parsed tensor table, host-owned read-only GGUF storage (`assets.gguf_tensor_state`) and the typed constructors. Model/CLIP loaders: not yet.
++2. **Writing outputs straight into the host output directory** (upstream `get_output_directory()` with `save_file` / `GGUFWriter`). *Replacement:* managed publication — SafeTensors via `output.save_state_dict`; GGUF bytes via bounded `output.save_binary` (1 MiB chunks, atomic counter-suffixed names, no overwrite prompt).
++3. **Network downloads and file writes from the bundled CLI tools** (`gguf_connector`). *Replacement:* the tools stay pristine-only (v2 never imports them); models come from the managed catalogue.
++4. **Installing packages at runtime** (upstream README: `pip install gguf-node`). *Replacement:* the locked runtime base (Python >=3.13,<3.14) and declared dependencies.
++
++## Pending capabilities (not yet supported — nodes fail closed)
++
++- `calcuis-diffusion` — LoaderGGUF, LoaderGGUFAdvanced: not yet supported — needs an opaque `ModelRef` selecting the Calcuis loader (Phase-2 a1 is in preparation).
++- `calcuis-text` — ClipLoaderGGUF, DualClipLoaderGGUF, TripleClipLoaderGGUF, QuadrupleClipLoaderGGUF: not yet supported — needs Calcuis `ClipRef` construction.
++- Phase-1 SDK deployment — GGUFSave, GGUFRun, VaeGGUF (`.gguf` branch), AudioEncoderLoaderGGUF: converted and tested on the Phase-1 SDK branch; on the current runtime they fail closed until it ships.
++
++## Open test gates
++
++- Re-run the four Phase-1 differentials on the deployed SDK once it ships (they then count as live-tested).
++- Quantized (Q*) and BF16 VAE/audio GGUFs: the fixtures were F16; the non-2-D BF16 dequantization branch is source-checked only.
++- Normal gVisor admission for the revision-2 guest routes (the differential used sandbox kind none).
++- A model-capable normal-renderer TEST route with real GGUF assets, for the 6 loaders.
++- TENSORCut's production guest output on a CUDA worker.
++- Big-endian GGUF.
++- Whole-pack acceptance review and registry admission (kept out of every registry slot until the Phase-1 SDK is deployed).
++
++## Authority and permissions
++
++| Permissions | Nodes |
++| --- | --- |
++| `models` | ClipLoaderGGUF, DualClipLoaderGGUF, LoaderGGUF, LoaderGGUFAdvanced, QuadrupleClipLoaderGGUF, TripleClipLoaderGGUF |
++| `raw`, `assets`, `output` | GGUFRun, GGUFSave, GGUFUndo, TENSORBoost, TENSORCut |
++| `models`, `assets` | VaeGGUF |
++| `models`, `assets`, `raw` | AudioEncoderLoaderGGUF |
++
++`raw` on AudioEncoderLoaderGGUF: its ordinary branch turns the restricted `assets.load_state_dict` result into a `ValueRef` for the constructor. No network, host filesystem paths or subprocesses. Runtime: Python >=3.13,<3.14. Operator byte caps: see *Runtime requirement*.
++
++## Assets and weights
++
++No weights are committed. Users supply GGUF/SafeTensors models through the managed model catalogue (`unet`, `clip`, `vae`, `audio_encoders`, `diffusion_models`). Upstream points to example models at https://huggingface.co/calcuis; they are not bundled.
++
++Weights used by the revision-2 differential (never committed): SD1.5 VAE `moe-zimage-sd15-vae-0c324912599f.safetensors` (167,333,134 bytes, sha256 0c324912599f…b804) and `wav2vec2-chinese-base_fp16.safetensors` from Kijai/wav2vec2_safetensors@87847d3b (190,115,368 bytes, sha256 000813e44102…05b4); the GGUF fixtures were made from them by the original GGUFRun.
++
++---
++
++## Revision 1 report (retained; superseded above)
++
++(The revision-1 status banner and report marker are omitted here; the rest is verbatim.)
++
 +# Secure Nodes V2 conversion report — calcuis GGUF (`calcuis-gguf`)
 +
 +The 10 "partial" nodes are registered with their original IDs and schemas but fail closed with an
@@ -8449,6 +8554,110 @@
 +        return (dl * qs).reshape((n_blocks, -1))
 \ No newline at end of file
 --- /dev/null
++++ b/v2/gguf_state.py
+@@ -0,0 +1,101 @@
++"""calcuis load_gguf_sd + load_gguf_clip semantics for VAE/audio GGUFs, as a guest-built table for the host-owned
++GGUF storage views (sdk assets.gguf_tensor_state). Parsing and name rules stay here; payload bytes never cross
++the guest, and no host path is exposed.
++
++Mirrors pinned pig.py (cb433968):
++- load_gguf_sd: 'model.diffusion_model.' prefix kept/stripped only when any tensor carries it; general.architecture
++  (absent -> PIG_ARCH_LIST[0]; unknown -> ValueError); comfy.gguf.orig_shape.<name> (ARRAY of INT32) else reversed
++  dims, with the sdxl proj_in/proj_out trailing-1 squeeze; F32/F16 viewed to shape, BF16 non-2-D dequantized to F16
++  and the rest wrapped (done host-side by the published tensor_state).
++- load_gguf_clip: 'pig' (pig_work) and the final `else: pass` are identity. Branches that transform keys or tensor
++  data (t5/llama family/gemma/ideogram/cat/cow) are outside the VAE/audio constructor scope and refuse explicitly.
++"""
++import json
++from pathlib import Path
++
++from .gguf_math.const import GGML_QUANT_SIZES, GGMLQuantizationType, GGUFValueType
++from .range_reader import RangeReader
++
++ARRAYS = json.loads(Path(__file__).with_name('version.json').read_text())[0]
++PIG_ARCH_LIST = ARRAYS['PIG_ARCH_LIST']
++TXT_ARCH_LIST = ARRAYS['TXT_ARCH_LIST']
++HANDLE_PREFIX = 'model.diffusion_model.'
++TRANSFORMING = frozenset({'t5', 't5encoder', 'llama', 'qwen2vl', 'qwen3vl', 'qwen2', 'qwen3', 'gemma3', 'mistral3', 'dog',
++                          'gemma2', 'ideogram', 'ideogram4', 'cat', 'cow'})
++TABLE_FORMAT = 'gguf-tensor-table/1'
++
++
++class GGUFScopeError(RuntimeError):
++    """Explicit calcuis branch outside this constructor's exact scope; never approximated."""
++
++
++def _architecture(reader):
++    field = reader.reader_fields.get('general.architecture')
++    if field is None:
++        return PIG_ARCH_LIST[0]  # pig.py: accept gguf without any metadata
++    if field.types != [GGUFValueType.STRING]:
++        raise TypeError('general.architecture must be a GGUF string')
++    arch = field.contents()
++    if arch not in PIG_ARCH_LIST and arch not in TXT_ARCH_LIST:
++        raise ValueError(f'Unknown architecture: {arch!r}')
++    return arch
++
++
++def _orig_shape(reader, name):
++    key = f'comfy.gguf.orig_shape.{name}'
++    field = reader.reader_fields.get(key)
++    if field is None:
++        return None
++    if len(field.types) != 2 or field.types[0] != GGUFValueType.ARRAY or field.types[1] != GGUFValueType.INT32:
++        raise TypeError(f'Bad original shape metadata for {key}: Expected ARRAY of INT32, got {field.types}')
++    return tuple(int(v) for v in field.contents())
++
++
++def build_table(reader):
++    """The exact load_gguf_sd key/shape/storage decisions for every selected tensor (requires a parsed reader)."""
++    arch = _architecture(reader)
++    if arch in TRANSFORMING:
++        raise GGUFScopeError(f'calcuis {arch!r} GGUF applies text-encoder key/data transforms; outside the VAE/audio constructor scope')
++    has_prefix = any(desc.name.startswith(HANDLE_PREFIX) for desc in reader.tensors)
++    entries = []
++    for desc in reader.tensors:
++        key = desc.name
++        if has_prefix:
++            if not key.startswith(HANDLE_PREFIX):
++                continue
++            key = key[len(HANDLE_PREFIX):]
++        shape = _orig_shape(reader, desc.name)
++        if shape is None:
++            shape = tuple(desc.shape)  # RangeReader stores reversed GGUF dims (torch order)
++            if arch == 'sdxl' and desc.name.endswith(('.proj_in.weight', '.proj_out.weight')):
++                while len(shape) > 2 and shape[-1] == 1:
++                    shape = shape[:-1]
++        if desc.tensor_type in (GGMLQuantizationType.F32, GGMLQuantizationType.F16):
++            storage = tuple(desc.shape)
++        else:
++            block, itemsize = GGML_QUANT_SIZES[desc.tensor_type]
++            storage = (*desc.shape[:-1], desc.shape[-1] // block * itemsize)
++        entries.append({'name': key, 'offset': reader.data_offset + desc.offset, 'tensor_type': int(desc.tensor_type),
++                        'shape': list(shape), 'storage_shape': list(storage)})
++    return arch, {'format': TABLE_FORMAT, 'byteorder': 'little', 'tensors': entries}
++
++
++async def gguf_state(assets, asset):
++    """Host-owned tensor state ref for a confined GGUF asset (its byte size bounds the mapping)."""
++    size = await assets.size(asset)
++    reader = await RangeReader(assets, asset, size).parse()
++    _, table = build_table(reader)
++    return await assets.gguf_tensor_state(asset, table, max_bytes=size)
++
++
++async def rechunk(parts, size=1024 * 1024):
++    """Byte-exact re-chunking of a writer stream into 1..size non-empty pieces (save_binary's contract)."""
++    buffer = bytearray()
++    for part in parts:
++        if part:
++            buffer += part
++            while len(buffer) >= size:
++                yield bytes(buffer[:size])
++                del buffer[:size]
++    if buffer:
++        yield bytes(buffer)
+--- /dev/null
 +++ b/v2/metadata_fields.py
 @@ -0,0 +1,32 @@
 +"""Pinned immutable ReaderField projection; no filesystem or memmap constructor."""
@@ -8485,13 +8694,15 @@
 +        return None
 --- /dev/null
 +++ b/v2/nodes.py
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,243 @@
 +"""Full13 draft registrations; pending branches fail closed, never impersonate City96."""
 +from comfy_api.latest import io, sdk
 +from .bounds import logical_name, output_prefix, state_bounds
 +from .state_math import boost, cut
 +from .range_reader import RangeReader
 +from .safetensor_bytes import state_from_asset_ranges
++from .conversion_artifact import prepare_conversion
++from .gguf_state import gguf_state, rechunk
 +
 +DTYPES = ['default', 'target', 'float32', 'float16', 'bfloat16']
 +CLIP_TYPES = ['stable_diffusion', 'stable_cascade', 'sd3', 'stable_audio', 'mochi', 'ltxv', 'pixart', 'cosmos', 'lumina2', 'wan', 'hidream', 'chroma', 'ace', 'omnigen2', 'qwen_image', 'hunyuan_image', 'flux2', 'ovis', 'longcat_image', 'cogvideox', 'lens', 'pixeldit', 'ideogram4', 'boogu', 'krea2', 'joyimage', 'mage', 'minimax', 'yue2']
@@ -8601,7 +8812,7 @@
 +class VaeGGUF(io.ComfyNode):
 +    TITLE = 'GGUF VAE Loader'
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('models',)
++    SDK_PERMISSIONS = ('models', 'assets')
 +
 +    @classmethod
 +    def define_schema(cls):
@@ -8611,14 +8822,17 @@
 +    async def execute(cls, vae_name):
 +        logical_name(vae_name)
 +        if vae_name.endswith('.gguf'):
-+            raise ConversionPendingError('GGUF VAE state/provider has no proven canonical load path')
++            # pig.py: vae_gguf (the vae folders) -> load_gguf_clip -> comfy.sd.VAE(sd=sd)
++            assets = sdk.ctx().assets
++            state = await gguf_state(assets, await assets.resolve('vae', vae_name))
++            return io.NodeOutput(await sdk.ctx().models.vae_from_state_dict(state))
 +        return io.NodeOutput(await sdk.ctx().models.load_vae(vae_name))
 +
 +
 +class AudioEncoderLoaderGGUF(io.ComfyNode):
 +    TITLE = 'GGUF AudioEncoder Loader'
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('models',)
++    SDK_PERMISSIONS = ('models', 'assets', 'raw')
 +
 +    @classmethod
 +    def define_schema(cls):
@@ -8627,7 +8841,15 @@
 +    @classmethod
 +    async def execute(cls, audio_encoder_name):
 +        logical_name(audio_encoder_name)
-+        raise ConversionPendingError('typed audio encoder loader/ref and calcuis GGUF conversion pending')
++        # pig.py: encoder_gguf (the audio_encoders folders) -> load_gguf_clip, else load_torch_file(safe_load=True);
++        # then core load_audio_encoder_from_sd (which raises for an unsupported/invalid model).
++        assets = sdk.ctx().assets
++        asset = await assets.resolve('audio_encoders', audio_encoder_name)
++        if audio_encoder_name.endswith('.gguf'):
++            state = await gguf_state(assets, asset)
++        else:
++            state = await sdk.ValueRef.from_value(await assets.load_state_dict(asset))
++        return io.NodeOutput(await sdk.ctx().models.audio_encoder_from_state_dict(state))
 +
 +
 +async def safe_state(name, output_itemsize=4):
@@ -8672,15 +8894,25 @@
 +
 +class GGUFSave(TENSORBoost):
 +    TITLE = 'GGUF Convertor (Alpha)'
++    MODE = 'alpha'
 +
 +    @classmethod
 +    async def execute(cls, select_safetensors):
-+        logical_name(select_safetensors)
-+        raise ConversionPendingError('bounded managed GGUF binary artifact output unavailable; encoding math is tested separately')
++        artifact = prepare_conversion(await safe_state(select_safetensors), select_safetensors, mode=cls.MODE)
++        try:
++            # Native name <stem>-f16.gguf / -bf16.gguf; managed counter-suffixed publication replaces the legacy
++            # overwrite/input() prompt. Bytes are the native writer's, streamed in 1 MiB pieces.
++            suffix = artifact.filename[len(select_safetensors.rsplit('.', 1)[0]):-len('.gguf')]
++            await sdk.ctx().output.save_binary(rechunk(artifact.writer.iter_chunks()), output_prefix(select_safetensors, suffix),
++                                               max_bytes=artifact.writer.total_bytes, extension='.gguf')
++        finally:
++            artifact.close()
++        return io.NodeOutput()
 +
 +
 +class GGUFRun(GGUFSave):
 +    TITLE = 'GGUF Convertor (Zero)'
++    MODE = 'zero'
 +
 +
 +class GGUFUndo(TENSORBoost):
@@ -9141,7 +9373,7 @@
 +    buffer.extend(chunk)
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,1502 @@
+@@ -0,0 +1,1505 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "runtime": {
@@ -9156,12 +9388,14 @@
 +      "class": "AudioEncoderLoaderGGUF",
 +      "sdk_refs": true,
 +      "permissions": [
-+        "models"
++        "models",
++        "assets",
++        "raw"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9244,8 +9478,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9409,8 +9643,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9593,8 +9827,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9671,8 +9905,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9749,8 +9983,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9825,8 +10059,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -9909,8 +10143,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -10073,8 +10307,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -10261,8 +10495,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -10339,8 +10573,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -10415,8 +10649,8 @@
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -10563,12 +10797,13 @@
 +      "class": "VaeGGUF",
 +      "sdk_refs": true,
 +      "permissions": [
-+        "models"
++        "models",
++        "assets"
 +      ],
 +      "methods": {
 +        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
++        "check_lazy_status": false,
++        "fingerprint_inputs": false
 +      },
 +      "schema": {
 +        "attrs": {
@@ -11350,7 +11585,7 @@
 +    asyncio.run(run())
 --- /dev/null
 +++ b/v2/tests/test_model_boundary_probe.py
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,50 @@
 +"""Actual service/public guest-surface negatives, not inferred backing absence."""
 +import asyncio
 +import importlib.util
@@ -11397,14 +11632,13 @@
 +            assert 'city96/ComfyUI-GGUF' in observed['gguf_service']['message']
 +            assert observed['gguf_device_argument']['exception'] == 'TypeError' and 'device' in observed['gguf_device_argument']['message']
 +            assert observed['audio_public_member']['exception'] == 'AttributeError' and 'load_audio_encoder' in observed['audio_public_member']['message']
-+            assert observed['binary_public_member']['exception'] == 'AttributeError' and 'save_binary' in observed['binary_public_member']['message']
 +            print('GGUF_BOUNDARY_OBSERVED ' + json.dumps({'observations': observed, 'city96_explicitly_absent_fixture': True, 'no_weight_parse_or_inference': True, 'missing_member_not_absent_host_service_claim': True}))
 +        finally:
 +            await session.kill()
 +    asyncio.run(run())
 --- /dev/null
 +++ b/v2/tests/test_pack_math.py
-@@ -0,0 +1,222 @@
+@@ -0,0 +1,224 @@
 +import asyncio
 +import ast
 +import importlib.util
@@ -11623,7 +11857,9 @@
 +        logical_name(name)
 +
 +
-+@pytest.mark.parametrize('node_id,arguments', [('LoaderGGUF', {'gguf_name': 'synthetic.gguf'}), ('LoaderGGUFAdvanced', {'gguf_name': 'synthetic.gguf'}), ('ClipLoaderGGUF', {'clip_name': 'synthetic.gguf'}), ('DualClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'type': 'sdxl'}), ('TripleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf'}), ('QuadrupleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf', 'clip_name4': 'd.gguf'}), ('VaeGGUF', {'vae_name': 'a.gguf'}), ('AudioEncoderLoaderGGUF', {'audio_encoder_name': 'a.gguf'}), ('GGUFSave', {'select_safetensors': 'a.safetensors'}), ('GGUFRun', {'select_safetensors': 'a.safetensors'})])
++# Revision 2: VaeGGUF, AudioEncoderLoaderGGUF, GGUFSave and GGUFRun are no longer pending. They use the Phase-1 SDK
++# verbs and are differential-tested against the original (see SECURE_CONVERSION.md).
++@pytest.mark.parametrize('node_id,arguments', [('LoaderGGUF', {'gguf_name': 'synthetic.gguf'}), ('LoaderGGUFAdvanced', {'gguf_name': 'synthetic.gguf'}), ('ClipLoaderGGUF', {'clip_name': 'synthetic.gguf'}), ('DualClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'type': 'sdxl'}), ('TripleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf'}), ('QuadrupleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf', 'clip_name4': 'd.gguf'})])
 +def test_pending_branch_is_not_silent_provider_or_output_substitution(node_id, arguments):
 +    with pytest.raises(nodes.ConversionPendingError):
 +        asyncio.run(nodes.NODE_CLASS_MAPPINGS[node_id].execute(**arguments))
@@ -11729,7 +11965,7 @@
 +            assert mapped_label_only.filename is None and mapped_label_only._mmap is None
 --- /dev/null
 +++ b/v2/tests/wire_control.py
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,65 @@
 +"""Synthetic technical probes, NOT registered production nodes/model evidence."""
 +import json
 +import torch
@@ -11786,7 +12022,6 @@
 +            ('gguf_service', lambda: sdk.ctx().models.load_gguf_model('synthetic.gguf')),
 +            ('gguf_device_argument', lambda: sdk.ctx().models.load_gguf_text_encoders(['synthetic.gguf'], 'stable_diffusion', device='cpu')),
 +            ('audio_public_member', lambda: sdk.ctx().models.load_audio_encoder('synthetic.safetensors')),
-+            ('binary_public_member', lambda: sdk.ctx().output.save_binary('synthetic.gguf', b'GGUF')),
 +        )
 +        for name, call in attempts:
 +            try:

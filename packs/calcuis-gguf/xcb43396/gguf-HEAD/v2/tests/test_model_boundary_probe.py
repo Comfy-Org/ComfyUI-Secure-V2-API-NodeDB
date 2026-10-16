@@ -44,7 +44,6 @@ def test_actual_existing_model_broker_and_public_argument_boundaries(tmp_path, m
             assert 'city96/ComfyUI-GGUF' in observed['gguf_service']['message']
             assert observed['gguf_device_argument']['exception'] == 'TypeError' and 'device' in observed['gguf_device_argument']['message']
             assert observed['audio_public_member']['exception'] == 'AttributeError' and 'load_audio_encoder' in observed['audio_public_member']['message']
-            assert observed['binary_public_member']['exception'] == 'AttributeError' and 'save_binary' in observed['binary_public_member']['message']
             print('GGUF_BOUNDARY_OBSERVED ' + json.dumps({'observations': observed, 'city96_explicitly_absent_fixture': True, 'no_weight_parse_or_inference': True, 'missing_member_not_absent_host_service_claim': True}))
         finally:
             await session.kill()

@@ -4,6 +4,8 @@ from .bounds import logical_name, output_prefix, state_bounds
 from .state_math import boost, cut
 from .range_reader import RangeReader
 from .safetensor_bytes import state_from_asset_ranges
+from .conversion_artifact import prepare_conversion
+from .gguf_state import gguf_state, rechunk
 
 DTYPES = ['default', 'target', 'float32', 'float16', 'bfloat16']
 CLIP_TYPES = ['stable_diffusion', 'stable_cascade', 'sd3', 'stable_audio', 'mochi', 'ltxv', 'pixart', 'cosmos', 'lumina2', 'wan', 'hidream', 'chroma', 'ace', 'omnigen2', 'qwen_image', 'hunyuan_image', 'flux2', 'ovis', 'longcat_image', 'cogvideox', 'lens', 'pixeldit', 'ideogram4', 'boogu', 'krea2', 'joyimage', 'mage', 'minimax', 'yue2']
@@ -113,7 +115,7 @@ class QuadrupleClipLoaderGGUF(ClipLoaderGGUF):
 class VaeGGUF(io.ComfyNode):
     TITLE = 'GGUF VAE Loader'
     SDK_REFS = True
-    SDK_PERMISSIONS = ('models',)
+    SDK_PERMISSIONS = ('models', 'assets')
 
     @classmethod
     def define_schema(cls):
@@ -123,14 +125,17 @@ class VaeGGUF(io.ComfyNode):
     async def execute(cls, vae_name):
         logical_name(vae_name)
         if vae_name.endswith('.gguf'):
-            raise ConversionPendingError('GGUF VAE state/provider has no proven canonical load path')
+            # pig.py: vae_gguf (the vae folders) -> load_gguf_clip -> comfy.sd.VAE(sd=sd)
+            assets = sdk.ctx().assets
+            state = await gguf_state(assets, await assets.resolve('vae', vae_name))
+            return io.NodeOutput(await sdk.ctx().models.vae_from_state_dict(state))
         return io.NodeOutput(await sdk.ctx().models.load_vae(vae_name))
 
 
 class AudioEncoderLoaderGGUF(io.ComfyNode):
     TITLE = 'GGUF AudioEncoder Loader'
     SDK_REFS = True
-    SDK_PERMISSIONS = ('models',)
+    SDK_PERMISSIONS = ('models', 'assets', 'raw')
 
     @classmethod
     def define_schema(cls):
@@ -139,7 +144,15 @@ class AudioEncoderLoaderGGUF(io.ComfyNode):
     @classmethod
     async def execute(cls, audio_encoder_name):
         logical_name(audio_encoder_name)
-        raise ConversionPendingError('typed audio encoder loader/ref and calcuis GGUF conversion pending')
+        # pig.py: encoder_gguf (the audio_encoders folders) -> load_gguf_clip, else load_torch_file(safe_load=True);
+        # then core load_audio_encoder_from_sd (which raises for an unsupported/invalid model).
+        assets = sdk.ctx().assets
+        asset = await assets.resolve('audio_encoders', audio_encoder_name)
+        if audio_encoder_name.endswith('.gguf'):
+            state = await gguf_state(assets, asset)
+        else:
+            state = await sdk.ValueRef.from_value(await assets.load_state_dict(asset))
+        return io.NodeOutput(await sdk.ctx().models.audio_encoder_from_state_dict(state))
 
 
 async def safe_state(name, output_itemsize=4):
@@ -184,15 +197,25 @@ class TENSORCut(TENSORBoost):
 
 class GGUFSave(TENSORBoost):
     TITLE = 'GGUF Convertor (Alpha)'
+    MODE = 'alpha'
 
     @classmethod
     async def execute(cls, select_safetensors):
-        logical_name(select_safetensors)
-        raise ConversionPendingError('bounded managed GGUF binary artifact output unavailable; encoding math is tested separately')
+        artifact = prepare_conversion(await safe_state(select_safetensors), select_safetensors, mode=cls.MODE)
+        try:
+            # Native name <stem>-f16.gguf / -bf16.gguf; managed counter-suffixed publication replaces the legacy
+            # overwrite/input() prompt. Bytes are the native writer's, streamed in 1 MiB pieces.
+            suffix = artifact.filename[len(select_safetensors.rsplit('.', 1)[0]):-len('.gguf')]
+            await sdk.ctx().output.save_binary(rechunk(artifact.writer.iter_chunks()), output_prefix(select_safetensors, suffix),
+                                               max_bytes=artifact.writer.total_bytes, extension='.gguf')
+        finally:
+            artifact.close()
+        return io.NodeOutput()
 
 
 class GGUFRun(GGUFSave):
     TITLE = 'GGUF Convertor (Zero)'
+    MODE = 'zero'
 
 
 class GGUFUndo(TENSORBoost):

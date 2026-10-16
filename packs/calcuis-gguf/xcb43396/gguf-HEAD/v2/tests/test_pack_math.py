@@ -216,7 +216,9 @@ def test_path_authority_denied(name):
         logical_name(name)
 
 
-@pytest.mark.parametrize('node_id,arguments', [('LoaderGGUF', {'gguf_name': 'synthetic.gguf'}), ('LoaderGGUFAdvanced', {'gguf_name': 'synthetic.gguf'}), ('ClipLoaderGGUF', {'clip_name': 'synthetic.gguf'}), ('DualClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'type': 'sdxl'}), ('TripleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf'}), ('QuadrupleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf', 'clip_name4': 'd.gguf'}), ('VaeGGUF', {'vae_name': 'a.gguf'}), ('AudioEncoderLoaderGGUF', {'audio_encoder_name': 'a.gguf'}), ('GGUFSave', {'select_safetensors': 'a.safetensors'}), ('GGUFRun', {'select_safetensors': 'a.safetensors'})])
+# Revision 2: VaeGGUF, AudioEncoderLoaderGGUF, GGUFSave and GGUFRun are no longer pending. They use the Phase-1 SDK
+# verbs and are differential-tested against the original (see SECURE_CONVERSION.md).
+@pytest.mark.parametrize('node_id,arguments', [('LoaderGGUF', {'gguf_name': 'synthetic.gguf'}), ('LoaderGGUFAdvanced', {'gguf_name': 'synthetic.gguf'}), ('ClipLoaderGGUF', {'clip_name': 'synthetic.gguf'}), ('DualClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'type': 'sdxl'}), ('TripleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf'}), ('QuadrupleClipLoaderGGUF', {'clip_name1': 'a.gguf', 'clip_name2': 'b.gguf', 'clip_name3': 'c.gguf', 'clip_name4': 'd.gguf'})])
 def test_pending_branch_is_not_silent_provider_or_output_substitution(node_id, arguments):
     with pytest.raises(nodes.ConversionPendingError):
         asyncio.run(nodes.NODE_CLASS_MAPPINGS[node_id].execute(**arguments))
