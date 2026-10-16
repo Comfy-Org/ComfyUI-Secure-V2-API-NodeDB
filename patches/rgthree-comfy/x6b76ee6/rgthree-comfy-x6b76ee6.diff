@@ -1,9 +1,9 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,243 @@
-+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 3).
-+> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 13 converted but untested/partly tested,
-+> 22 partial or missing: 19 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
+@@ -0,0 +1,261 @@
++> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
++> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
++> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
 +> Not accepted: no whole-pack certificate. Open gates are listed below.
 +
 +<!-- secure-conversion-report-v1 -->
@@ -11,8 +11,27 @@
 +
 +## What this revision contains
 +
-+- **Base:** in-progress revision 2, as merged on corpus main. Revision 2 is kept in the corpus but held from the registry,
-+  because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixes that.
++- **Base:** in-progress revision 3, as merged on corpus main (PR #13). Revision 2 is kept in the corpus but held from the
++  registry, because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
++- **Changed in revision 4** (host-supported replacements for blocked behaviours):
++  - `web/comfyui/context.js`: the "Convert To …" menu item. The original's label was a function of the node's type, and
++    a sandboxed menu label must be a string. The item is registered per node type, so its label is the original's text
++    for that type, fixed. Where the builder is not handed its definition, there is one item per type, and a `when` shows
++    it only on that type. Either way, each Context node shows one item, with the original's label, and it runs the
++    original's replacement.
++  - `web/comfyui/power_primitive.js`: the original's single "Show/Hide Type Selector Widget" item is now two fixed-label
++    items, "Hide Type Selector Widget" and "Show Type Selector Widget". Each is shown only in the state its label
++    describes, and both toggle. The menu reads exactly as before.
++  - Both `when` predicates read only the node's type or property. They answer correctly on the live host, where
++    menu visibility is computed per node, and after the bridge-parity revision that evaluates each node's `when` for a
++    right-click on that node.
++  - **Tests:** `tests/rgthree_rev4_menus.test.mjs` runs the actual modules three ways:
++    - the original (revision 3's modules, where a label may be a function, as upstream);
++    - revision 3 under the sandbox's label rule. This is the negative control: both items are refused and missing;
++    - revision 4.
++    For every Context type, and for Power Primitive through hide → show → hide, the one revision-4 item a right-click
++    shows carries the label the original's function returns, and running it does what the original's run does. Every
++    other item is unchanged. Result: 1 negative control and 5 cases. All 5 mutants fail at their target case.
 +- **Changed in revision 3** (no frontend module may be lost because the host refuses one registration):
 +  - `web/comfyui/sandbox_limits.js` (new). Every registration the host refuses goes through `whereSupported`: a refused
 +    hook (`onBeforeConnect`, `onUnplacedLink`, `onDragOver`, `onDrop`) or a menu item with a label function costs only that
@@ -91,14 +110,14 @@
 +| `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 +| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
 +| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
++| `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass. Since revision 4 the "Show/Hide Type Selector Widget" entry is two fixed-label items, and a right-click shows exactly the one the original showed; a differential test against the original's label function covers both states and the toggle. "Set type" works. The rest of its frontend is untested. |
 +| `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
-+| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-+| `Power Primitive (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: the "Show/Hide Type Selector Widget" menu item, whose label depends on state (a fixed-label replacement is planned); "Set type" works. The rest of its frontend is untested. |
++| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node rules. F07 (independent choice per batch item) and F01 are open. |
 +| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
 +| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
@@ -192,7 +211,6 @@
 +| Connection filtering: the cycle guard ("time paradox") and per-node connection rules | A connection policy the host can evaluate without a synchronous worker call (F17) | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
 +| Refusing links from disabled outputs | Same as above (F17) | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
 +| Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
-+| Menu items whose label depends on node state | None. A replacement with fixed labels and `when` predicates is planned for the next revision. | the six Context nodes ("Convert to …"); Power Primitive ("Show/Hide Type Selector Widget") |
 +| Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
 +| Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
 +
@@ -16622,7 +16640,7 @@
  });
 --- a/web/comfyui/context.js
 +++ b/v2/web/comfyui/context.js
-@@ -1,322 +1,235 @@
+@@ -1,322 +1,244 @@
 -import { app } from "../../scripts/app.js";
 -import { IoDirection, addConnectionLayoutSupport, addMenuItem, matchLocalSlotsToServer, replaceNode, } from "./utils.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -16846,9 +16864,127 @@
 -            name: "Convert To Context Big",
 -            callback: (node) => {
 -                replaceNode(node, ContextBigNode.type);
--            },
--        });
--    }
++        const ctxName = normalizeName(ctx.name);
++        if (ctxName === slotName ||
++            (ctxName === "SEED" && slotName.includes("SEED")) ||
++            (ctxName === "STEP_REFINER" && slotName.includes("AT_STEP")) ||
++            (ctxName === "STEP_REFINER" && slotName.includes("REFINER_STEP"))) {
++            return true;
++        }
++        const says = (word) => peerType.includes(word) || peerTitle.includes(word);
++        if (says("POSITIVE") &&
++            ((ctxName === "POSITIVE" && slotType === "CONDITIONING") ||
++                (ctxName === "TEXT_POS_G" && slotName.includes("TEXT_G")) ||
++                (ctxName === "TEXT_POS_L" && slotName.includes("TEXT_L")))) {
++            return true;
++        }
++        if (says("NEGATIVE") &&
++            ((ctxName === "NEGATIVE" && slotType === "CONDITIONING") ||
++                (ctxName === "TEXT_NEG_G" && slotName.includes("TEXT_G")) ||
++                (ctxName === "TEXT_NEG_L" && slotName.includes("TEXT_L")))) {
++            return true;
++        }
++        return false;
++    });
++}
++/**
++ * Unpacks a context onto every slot of the peer that one of ours matches.
++ *
++ * The original replaced `connectByType` on LGraphNode.prototype to do this,
++ * which changed link routing for every node in the document. `onUnplacedLink`
++ * fires at the same moment — a link dropped on a node body that no single slot
++ * fits — and only for these types.
++ */
++function fanOut(node, event) {
++    const peer = comfy.graph.node(event.peerNodeId);
++    if (!peer)
++        return false;
++    const feeding = event.side === "output";
++    const ours = feeding ? node.outputs.all() : node.inputs.all();
++    const theirs = feeding ? peer.inputs.all() : peer.outputs.all();
++    return comfy.graph.batch(() => {
++        let wired = false;
++        for (const peerSlot of theirs) {
++            // Without the modifier, an already-wired slot is left alone; the
++            // original read ctrl from the pack's own key service, and the host
++            // now says which modifier means overwrite.
++            if (peerSlot.isConnected && !event.replaceExisting)
++                continue;
++            const index = findMatchingIndexByTypeOrName(peer, peerSlot, ours);
++            if (index === -1)
++                continue;
++            const source = feeding ? ours[index] : peerSlot;
++            const targetId = feeding ? peer.id : node.id;
++            const targetIndex = feeding ? peerSlot.index : ours[index].index;
++            source.connectTo(targetId, { index: targetIndex });
++            wired = true;
++        }
++        return wired;
++    });
++}
++comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
++    // The original read `nodeData.input.optional` for the input side. `b.def.inputs`
++    // merges required and optional in the order core itself builds the node's slots,
++    // which is the list the node should match; for these types, whose Python declares
++    // every input optional, the two are the same list.
++    function reconcileWithServerDef(node) {
++        matchLocalSlotsToServer(node.outputs, b.def.outputs);
++        if (!node.type.includes("Switch") && !node.type.includes("Merge")) {
++            matchLocalSlotsToServer(node.inputs, b.def.inputs);
++        }
++    }
++    b.onCreated((node) => {
++        fixBadConfigs(node);
++        reconcileWithServerDef(node);
++        // onCreated fires whenever the node joins a graph, which can happen more
++        // than once; the old constructor ran only at construction, and a second
++        // pass would append five more ctx_XX inputs to the serialized node.
++        if (MULTI_CTX_INPUT_TYPES.includes(node.type) &&
++            !node.inputs.names().some((name) => name.startsWith("ctx_"))) {
++            addContextInput(node, 5);
++        }
++    });
++    b.onConfigured((node) => {
++        fixBadConfigs(node);
++        reconcileWithServerDef(node);
++    });
++    b.onConnectionsChanged((node, event) => {
++        if (event.side !== "input" || !MULTI_CTX_INPUT_TYPES.includes(node.type)) {
++            return;
++        }
++        let stabilizer = stabilizersByNode.get(node.id);
++        if (!stabilizer) {
++            stabilizer = () => stabilize(node);
++            stabilizersByNode.set(node.id, stabilizer);
++        }
++        debounce(stabilizer, 64);
++    });
++    b.onRemoved((node) => {
++        stabilizersByNode.delete(node.id);
++    });
++    whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
++    // The original's label was a function of the node's type, and a menu label must
++    // be a string. This builder runs once per matching definition, so the label for
++    // `b.def.type` is that same text, fixed. Where the builder is not handed its
++    // definition, each type's item is registered with a `when` that shows it on that
++    // type only: one item per node either way, with the original's label.
++    const own = CONVERT_TO[b.def?.type];
++    const items = own ? [[b.def.type, own]] : Object.entries(CONVERT_TO);
++    for (const [type, { label }] of items) {
++        b.addMenuItem({
++            label,
++            ...(own ? {} : { when: (node) => node.type === type }),
++            run: (node) => {
++                // `comfy.graph.replace` is the original's whole routine: it carries the
++                // title the user gave the node, its position, properties and widget
++                // values, sizes the replacement to whichever of the two is larger, and
++                // re-makes every link by slot name — in one undo step, and without the
++                // original's ten-frame retry loop, which existed only because the
++                // server-node setup it waited on filled the node in asynchronously.
++                comfy.graph.replace(node.id, CONVERT_TO[node.type].type);
+             },
+         });
+     }
 -}
 -ContextNode.title = NodeTypesString.CONTEXT;
 -ContextNode.type = NodeTypesString.CONTEXT;
@@ -17027,118 +17163,6 @@
 -            }
 -        }
 -    },
-+        const ctxName = normalizeName(ctx.name);
-+        if (ctxName === slotName ||
-+            (ctxName === "SEED" && slotName.includes("SEED")) ||
-+            (ctxName === "STEP_REFINER" && slotName.includes("AT_STEP")) ||
-+            (ctxName === "STEP_REFINER" && slotName.includes("REFINER_STEP"))) {
-+            return true;
-+        }
-+        const says = (word) => peerType.includes(word) || peerTitle.includes(word);
-+        if (says("POSITIVE") &&
-+            ((ctxName === "POSITIVE" && slotType === "CONDITIONING") ||
-+                (ctxName === "TEXT_POS_G" && slotName.includes("TEXT_G")) ||
-+                (ctxName === "TEXT_POS_L" && slotName.includes("TEXT_L")))) {
-+            return true;
-+        }
-+        if (says("NEGATIVE") &&
-+            ((ctxName === "NEGATIVE" && slotType === "CONDITIONING") ||
-+                (ctxName === "TEXT_NEG_G" && slotName.includes("TEXT_G")) ||
-+                (ctxName === "TEXT_NEG_L" && slotName.includes("TEXT_L")))) {
-+            return true;
-+        }
-+        return false;
-+    });
-+}
-+/**
-+ * Unpacks a context onto every slot of the peer that one of ours matches.
-+ *
-+ * The original replaced `connectByType` on LGraphNode.prototype to do this,
-+ * which changed link routing for every node in the document. `onUnplacedLink`
-+ * fires at the same moment — a link dropped on a node body that no single slot
-+ * fits — and only for these types.
-+ */
-+function fanOut(node, event) {
-+    const peer = comfy.graph.node(event.peerNodeId);
-+    if (!peer)
-+        return false;
-+    const feeding = event.side === "output";
-+    const ours = feeding ? node.outputs.all() : node.inputs.all();
-+    const theirs = feeding ? peer.inputs.all() : peer.outputs.all();
-+    return comfy.graph.batch(() => {
-+        let wired = false;
-+        for (const peerSlot of theirs) {
-+            // Without the modifier, an already-wired slot is left alone; the
-+            // original read ctrl from the pack's own key service, and the host
-+            // now says which modifier means overwrite.
-+            if (peerSlot.isConnected && !event.replaceExisting)
-+                continue;
-+            const index = findMatchingIndexByTypeOrName(peer, peerSlot, ours);
-+            if (index === -1)
-+                continue;
-+            const source = feeding ? ours[index] : peerSlot;
-+            const targetId = feeding ? peer.id : node.id;
-+            const targetIndex = feeding ? peerSlot.index : ours[index].index;
-+            source.connectTo(targetId, { index: targetIndex });
-+            wired = true;
-+        }
-+        return wired;
-+    });
-+}
-+comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
-+    // The original read `nodeData.input.optional` for the input side. `b.def.inputs`
-+    // merges required and optional in the order core itself builds the node's slots,
-+    // which is the list the node should match; for these types, whose Python declares
-+    // every input optional, the two are the same list.
-+    function reconcileWithServerDef(node) {
-+        matchLocalSlotsToServer(node.outputs, b.def.outputs);
-+        if (!node.type.includes("Switch") && !node.type.includes("Merge")) {
-+            matchLocalSlotsToServer(node.inputs, b.def.inputs);
-+        }
-+    }
-+    b.onCreated((node) => {
-+        fixBadConfigs(node);
-+        reconcileWithServerDef(node);
-+        // onCreated fires whenever the node joins a graph, which can happen more
-+        // than once; the old constructor ran only at construction, and a second
-+        // pass would append five more ctx_XX inputs to the serialized node.
-+        if (MULTI_CTX_INPUT_TYPES.includes(node.type) &&
-+            !node.inputs.names().some((name) => name.startsWith("ctx_"))) {
-+            addContextInput(node, 5);
-+        }
-+    });
-+    b.onConfigured((node) => {
-+        fixBadConfigs(node);
-+        reconcileWithServerDef(node);
-+    });
-+    b.onConnectionsChanged((node, event) => {
-+        if (event.side !== "input" || !MULTI_CTX_INPUT_TYPES.includes(node.type)) {
-+            return;
-+        }
-+        let stabilizer = stabilizersByNode.get(node.id);
-+        if (!stabilizer) {
-+            stabilizer = () => stabilize(node);
-+            stabilizersByNode.set(node.id, stabilizer);
-+        }
-+        debounce(stabilizer, 64);
-+    });
-+    b.onRemoved((node) => {
-+        stabilizersByNode.delete(node.id);
-+    });
-+    whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
-+    whereSupported(b.def?.type ?? "Context", "convert menu item (dynamic label)", () => b.addMenuItem({
-+        label: (node) => CONVERT_TO[node.type].label,
-+        when: (node) => !!CONVERT_TO[node.type],
-+        run: (node) => {
-+            // `comfy.graph.replace` is the original's whole routine: it carries the
-+            // title the user gave the node, its position, properties and widget
-+            // values, sizes the replacement to whichever of the two is larger, and
-+            // re-makes every link by slot name — in one undo step, and without the
-+            // original's ten-frame retry loop, which existed only because the
-+            // server-node setup it waited on filled the node in asynchronously.
-+            comfy.graph.replace(node.id, CONVERT_TO[node.type].type);
-+        },
-+    }));
  });
 +// `matchLocalSlotsToServer` is converted (see utils.js) and called from both hooks
 +//   above, which are the original's `nodeCreated` and `loadedGraphNode`. The marker
@@ -24269,18 +24293,17 @@
 +});
 --- a/web/comfyui/power_primitive.js
 +++ b/v2/web/comfyui/power_primitive.js
-@@ -1,8 +1,6 @@
+@@ -1,8 +1,5 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
 +import { comfy } from '/comfy/api/v2.js';
-+import { whereSupported } from "./sandbox_limits.js";
  import { NodeTypesString } from "./constants.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
 -import { moveArrayItem } from "../../rgthree/common/shared_utils.js";
  const PROPERTY_HIDE_TYPE_SELECTOR = "hideTypeSelector";
  const PRIMITIVES = {
      STRING: "STRING",
-@@ -10,166 +8,180 @@
+@@ -10,166 +7,190 @@
      FLOAT: "FLOAT",
      BOOLEAN: "BOOLEAN",
  };
@@ -24582,12 +24605,22 @@
 +    b.onRemoved((node) => {
 +        typeStateByNode.delete(node.id);
 +    });
-+    whereSupported(b.def?.type ?? "Power Primitive", "show/hide type selector menu item (dynamic label)", () => b.addMenuItem({
-+        label: (node) => `${node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR) ? "Show" : "Hide"} Type Selector Widget`,
-+        run: (node) => {
-+            node.setProperty(PROPERTY_HIDE_TYPE_SELECTOR, !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR));
-+        },
-+    }));
++    // The original's one entry read "Show …" or "Hide …" from the property, and a
++    // menu label must be a string: two fixed entries, each shown only in the state
++    // its label describes, so the menu reads exactly as before. Both toggle.
++    const toggleTypeSelector = (node) => {
++        node.setProperty(PROPERTY_HIDE_TYPE_SELECTOR, !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR));
++    };
++    b.addMenuItem({
++        label: "Hide Type Selector Widget",
++        when: (node) => !node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR),
++        run: toggleTypeSelector,
++    });
++    b.addMenuItem({
++        label: "Show Type Selector Widget",
++        when: (node) => !!node.getProperty(PROPERTY_HIDE_TYPE_SELECTOR),
++        run: toggleTypeSelector,
++    });
 +    b.addMenuItem({
 +        label: "Set type",
 +        items: Object.keys(PRIMITIVES).map((primitive) => ({

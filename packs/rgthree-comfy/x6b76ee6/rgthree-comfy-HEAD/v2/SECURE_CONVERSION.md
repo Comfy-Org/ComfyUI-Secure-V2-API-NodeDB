@@ -1,6 +1,6 @@
-> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 3).
-> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 13 converted but untested/partly tested,
-> 22 partial or missing: 19 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
+> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
+> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
+> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
 > Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
@@ -8,8 +8,27 @@
 
 ## What this revision contains
 
-- **Base:** in-progress revision 2, as merged on corpus main. Revision 2 is kept in the corpus but held from the registry,
-  because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixes that.
+- **Base:** in-progress revision 3, as merged on corpus main (PR #13). Revision 2 is kept in the corpus but held from the
+  registry, because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
+- **Changed in revision 4** (host-supported replacements for blocked behaviours):
+  - `web/comfyui/context.js`: the "Convert To …" menu item. The original's label was a function of the node's type, and
+    a sandboxed menu label must be a string. The item is registered per node type, so its label is the original's text
+    for that type, fixed. Where the builder is not handed its definition, there is one item per type, and a `when` shows
+    it only on that type. Either way, each Context node shows one item, with the original's label, and it runs the
+    original's replacement.
+  - `web/comfyui/power_primitive.js`: the original's single "Show/Hide Type Selector Widget" item is now two fixed-label
+    items, "Hide Type Selector Widget" and "Show Type Selector Widget". Each is shown only in the state its label
+    describes, and both toggle. The menu reads exactly as before.
+  - Both `when` predicates read only the node's type or property. They answer correctly on the live host, where
+    menu visibility is computed per node, and after the bridge-parity revision that evaluates each node's `when` for a
+    right-click on that node.
+  - **Tests:** `tests/rgthree_rev4_menus.test.mjs` runs the actual modules three ways:
+    - the original (revision 3's modules, where a label may be a function, as upstream);
+    - revision 3 under the sandbox's label rule. This is the negative control: both items are refused and missing;
+    - revision 4.
+    For every Context type, and for Power Primitive through hide → show → hide, the one revision-4 item a right-click
+    shows carries the label the original's function returns, and running it does what the original's run does. Every
+    other item is unchanged. Result: 1 negative control and 5 cases. All 5 mutants fail at their target case.
 - **Changed in revision 3** (no frontend module may be lost because the host refuses one registration):
   - `web/comfyui/sandbox_limits.js` (new). Every registration the host refuses goes through `whereSupported`: a refused
     hook (`onBeforeConnect`, `onUnplacedLink`, `onDragOver`, `onDrop`) or a menu item with a label function costs only that
@@ -88,14 +107,14 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 | `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
 | `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
+| `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass. Since revision 4 the "Show/Hide Type Selector Widget" entry is two fixed-label items, and a right-click shows exactly the one the original showed; a differential test against the original's label function covers both states and the toggle. "Set type" works. The rest of its frontend is untested. |
 | `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
-| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18), and the "Convert to …" menu item, whose label depends on the node (a fixed-label replacement is planned). F01 is open. |
-| `Power Primitive (rgthree)` | converted, PARTIAL | Backend native cases pass. Blocked: the "Show/Hide Type Selector Widget" menu item, whose label depends on state (a fixed-label replacement is planned); "Set type" works. The rest of its frontend is untested. |
+| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node rules. F07 (independent choice per batch item) and F01 are open. |
 | `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
 | `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
@@ -189,7 +208,6 @@ only the behaviour below, never the module. Each one is reported once in the con
 | Connection filtering: the cycle guard ("time paradox") and per-node connection rules | A connection policy the host can evaluate without a synchronous worker call (F17) | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
 | Refusing links from disabled outputs | Same as above (F17) | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
 | Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
-| Menu items whose label depends on node state | None. A replacement with fixed labels and `when` predicates is planned for the next revision. | the six Context nodes ("Convert to …"); Power Primitive ("Show/Hide Type Selector Widget") |
 | Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
 | Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
 

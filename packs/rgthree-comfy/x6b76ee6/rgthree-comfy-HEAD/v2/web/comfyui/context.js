@@ -182,19 +182,28 @@ comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
         stabilizersByNode.delete(node.id);
     });
     whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
-    whereSupported(b.def?.type ?? "Context", "convert menu item (dynamic label)", () => b.addMenuItem({
-        label: (node) => CONVERT_TO[node.type].label,
-        when: (node) => !!CONVERT_TO[node.type],
-        run: (node) => {
-            // `comfy.graph.replace` is the original's whole routine: it carries the
-            // title the user gave the node, its position, properties and widget
-            // values, sizes the replacement to whichever of the two is larger, and
-            // re-makes every link by slot name — in one undo step, and without the
-            // original's ten-frame retry loop, which existed only because the
-            // server-node setup it waited on filled the node in asynchronously.
-            comfy.graph.replace(node.id, CONVERT_TO[node.type].type);
-        },
-    }));
+    // The original's label was a function of the node's type, and a menu label must
+    // be a string. This builder runs once per matching definition, so the label for
+    // `b.def.type` is that same text, fixed. Where the builder is not handed its
+    // definition, each type's item is registered with a `when` that shows it on that
+    // type only: one item per node either way, with the original's label.
+    const own = CONVERT_TO[b.def?.type];
+    const items = own ? [[b.def.type, own]] : Object.entries(CONVERT_TO);
+    for (const [type, { label }] of items) {
+        b.addMenuItem({
+            label,
+            ...(own ? {} : { when: (node) => node.type === type }),
+            run: (node) => {
+                // `comfy.graph.replace` is the original's whole routine: it carries the
+                // title the user gave the node, its position, properties and widget
+                // values, sizes the replacement to whichever of the two is larger, and
+                // re-makes every link by slot name — in one undo step, and without the
+                // original's ten-frame retry loop, which existed only because the
+                // server-node setup it waited on filled the node in asynchronously.
+                comfy.graph.replace(node.id, CONVERT_TO[node.type].type);
+            },
+        });
+    }
 });
 // `matchLocalSlotsToServer` is converted (see utils.js) and called from both hooks
 //   above, which are the original's `nodeCreated` and `loadedGraphNode`. The marker
