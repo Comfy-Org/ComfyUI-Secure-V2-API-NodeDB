@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-10-19T20:41:11Z",
+  "draft_digest": "a82acad8ea32c8b4c6dee857bab41091dd71975a6cf650e166d25c7db19c8d0b",
+  "id": "4c573ebbbcefbb899b1b2f02cf4db25a",
+  "result": {
+    "draft_digest": "a82acad8ea32c8b4c6dee857bab41091dd71975a6cf650e166d25c7db19c8d0b",
+    "duration_ms": 25954,
+    "error": {
+      "frames": [
+        {
+          "file": "<python>/__init__.py",
+          "function": "execute_node",
+          "line": 1455,
+          "source": "result = await _execute_node("
+        },
+        {
+          "file": "<python>/__init__.py",
+          "function": "_execute_node",
+          "line": 1498,
+          "source": "result = await adapter.invoke("
+        },
+        {
+          "file": "<python>/adapter.py",
+          "function": "invoke",
+          "line": 137,
+          "source": "result = await result"
+        },
+        {
+          "file": "v2/tests/size_test_oracles.py",
+          "function": "execute",
+          "line": 58,
+          "source": "value = await latent.value"
+        }
+      ],
+      "message": "object method can't be used in 'await' expression",
+      "type": "TypeError"
+    },
+    "format": "comfy-ephemeral-pack-test/1",
+    "guest_pid": 1,
+    "outputs": [],
+    "phase": "execute",
+    "policy": {
+      "allowed_capabilities": [
+        "assets",
+        "closures",
+        "graph.metadata",
+        "inspect",
+        "models",
+        "models.download",
+        "output",
+        "raw",
+        "sample",
+        "storage"
+      ],
+      "mode": "model-test"
+    },
+    "progress": [],
+    "sandbox": "gvisor",
+    "status": "failed",
+    "stderr": "WARNING:root:WARNING: You need pytorch with cu130 or higher to use optimized CUDA operations.\nWARNING WARNING WARNING\nIf you are on nvidia 20 series and above it is required that you update your pytorch to cu130 or higher.\n\nERROR:root:!!! Exception during processing !!! TypeError: object method can't be used in 'await' expression\nERROR:root:Traceback (most recent call last):\n  File \"/runtime/engine/execution.py\", line 772, in execute\n    output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/runtime/engine/execution.py\", line 566, in get_output_data\n    return_values = await _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, obj.FUNCTION, allow_interrupt=True, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/runtime/engine/execution.py\", line 540, in _async_map_node_over_list\n    await process_inputs(input_dict, i)\n  File \"/runtime/engine/execution.py\", line 510, in process_inputs\n    result = await _comfy_sdk.providers.execution_backend.dispatch(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        _sdk_plan, local_call, _sdk_runtime.runtime\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/overlay/backend/comfy_secure_nodes/drafttesting.py\", line 547, in dispatch\n    return await self.session.execute(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<4 lines>...\n    )\n    ^\n  File \"/overlay/backend/comfy_secure_nodes/transport/host.py\", line 5516, in execute\n    value = await asyncio.wait_for(\n            ^^^^^^^^^^^^^^^^^^^^^^^\n    ...<16 lines>...\n    )\n    ^\n  File \"/usr/local/lib/python3.13/asyncio/tasks.py\", line 507, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/overlay/backend/comfy_secure_nodes/transport/wire.py\", line 437, in call\n    return decode(await fut, invoker=self._invoke_remote_callback,\n                  ^^^^^^^^^\ncomfy_secure_nodes.transport.wire.WireError: TypeError: object method can't be used in 'await' expression\n\n",
+    "stdout": "",
+    "test_id": "4c573ebbbcefbb899b1b2f02cf4db25a",
+    "workflow_path": "v2/tests/positive.json"
+  },
+  "status": "failed",
+  "updated_at": "2026-10-19T20:41:40Z",
+  "workflow_path": "v2/tests/positive.json"
+}
