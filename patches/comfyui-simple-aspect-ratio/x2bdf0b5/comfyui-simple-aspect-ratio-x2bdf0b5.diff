@@ -1,0 +1,244 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,34 @@
++# Simple Aspect Ratio conversion
++
++Upstream: https://github.com/wwwins/ComfyUI-Simple-Aspect-Ratio at
++`2bdf0b5b8f86d09366536dd5437dae79e1e01a99`. All five original Git files
++and the MIT copyright/license are retained. One original node,
++`SimpleAspectRatio`, is converted with its original calculation module
++byte-identical. ID, display name, category, input names, eleven aspect ratios,
++two orientations, named integer outputs and native errors are preserved.
++
++The wrapper uses the existing public `ComfyExtension`, `io.ComfyNode`,
++`io.Schema`, `io.Combo`, `io.Int` and `io.NodeOutput` APIs. It has
++`SDK_REFS=False`, empty permissions and no models, assets, routes, frontend or
++private dependencies. It does not need the TinyTerra/Light URL SDK repairs.
++
++Validation on 2026-10-19: all 30 original-versus-actual-SDK cases passed
++(22 UI combinations, two additional successful direct calls, six exact
++exceptions), including schema, single registration, explicit extension and
++NodeOutput checks. These ran in the recorded Mac development environment;
++they do not imply general managed-runtime adoption. Normal manifest generation,
++canonical JSON/diff generation and independent pair/ZIP replays passed.
++
++The local PC Docker Node Pack Repository TEST service also executed the
++unchanged production node through gVisor. A TEST-only typed consumer asserted
++the two original width/height results and rendered 1024x576 and 512x768 PNGs.
++A deliberate wrong expected width failed with the exact expected AssertionError.
++The test helper and its extra manifest entry are not part of this release.
++Failed transport/fixture/declaration attempts remain in the validation record.
++
++Current receipts, exact scope and artifact hashes are under
++`validation/20261019-simple-aspect-ratio/` in the corpus. The public node
++manifest and every executable byte match the tested candidate; only this
++documentation was updated after the run and its canonical pair was regenerated
++and replayed. Normal catalogue registration and active installation are tracked
++separately and are not implied by the TEST session.
+--- a/__init__.py
++++ b/v2/__init__.py
+@@ -1,3 +1,23 @@
+-from .aspect_ratio_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
++from comfy_api.latest import ComfyExtension
+ 
+-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
++from .api_nodes import (
++    NODE_CLASS_MAPPINGS,
++    NODE_DISPLAY_NAME_MAPPINGS,
++    SimpleAspectRatio,
++)
++
++
++class SimpleAspectRatioExtension(ComfyExtension):
++    async def get_node_list(self):
++        return [SimpleAspectRatio]
++
++
++async def comfy_entrypoint():
++    return SimpleAspectRatioExtension()
++
++
++__all__ = [
++    "NODE_CLASS_MAPPINGS",
++    "NODE_DISPLAY_NAME_MAPPINGS",
++    "comfy_entrypoint",
++]
+--- /dev/null
++++ b/v2/api_nodes.py
+@@ -0,0 +1,34 @@
++"""Public SDK registration for the unchanged upstream aspect-ratio calculation."""
++
++from comfy_api.latest import io
++
++from .aspect_ratio_node import SimpleAspectRatio as _OriginalSimpleAspectRatio
++
++
++class SimpleAspectRatio(io.ComfyNode):
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        required = _OriginalSimpleAspectRatio.INPUT_TYPES()["required"]
++        return io.Schema(
++            node_id="SimpleAspectRatio",
++            display_name="Simple Aspect Ratio",
++            category=_OriginalSimpleAspectRatio.CATEGORY,
++            inputs=[
++                io.Combo.Input("aspectRatio", options=required["aspectRatio"][0]),
++                io.Combo.Input("orientation", options=required["orientation"][0]),
++            ],
++            outputs=[io.Int.Output("width"), io.Int.Output("height")],
++        )
++
++    @classmethod
++    def execute(cls, aspectRatio, orientation):
++        return io.NodeOutput(
++            *_OriginalSimpleAspectRatio().get_size(aspectRatio, orientation)
++        )
++
++
++NODE_CLASS_MAPPINGS = {"SimpleAspectRatio": SimpleAspectRatio}
++NODE_DISPLAY_NAME_MAPPINGS = {"SimpleAspectRatio": "Simple Aspect Ratio"}
+--- /dev/null
++++ b/v2/pyproject.toml
+@@ -0,0 +1,4 @@
++# Converter-selected runtime declaration, not upstream project/CNR metadata.
++# Confirmed retained Python3.13.7 target: MERVYN m_9828c1718f / NED readback.
++[project]
++requires-python = ">=3.13,<3.14"
+--- /dev/null
++++ b/v2/secure-nodes.json
+@@ -0,0 +1,132 @@
++{
++  "format": "comfy-secure-nodes-v1",
++  "nodes": {
++    "SimpleAspectRatio": {
++      "class": "SimpleAspectRatio",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "utils",
++          "description": "",
++          "display_name": "Simple Aspect Ratio",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "SimpleAspectRatio",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "aspectRatio",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "1:1 - 512x512",
++                "1:1 - 768x768",
++                "1:1 - 1024x1024",
++                "3:2 - 768x512",
++                "3:2 - 1216x832",
++                "4:3 - 768x576",
++                "4:3 - 1024x768",
++                "4:3 - 1152x896",
++                "8:5 - 1216x768",
++                "16:9 - 1024x576",
++                "16:9 - 1344x768"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "orientation",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "landscape",
++                "portrait"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "width",
++              "id": "width",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "height",
++              "id": "height",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": false
++    }
++  },
++  "runtime": {
++    "python": {
++      "requires": ">=3.13,<3.14",
++      "resolved": "3.13"
++    }
++  }
++}
