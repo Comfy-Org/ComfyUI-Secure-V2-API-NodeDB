@@ -1,9 +1,10 @@
 <!-- secure-conversion-report-v1 -->
 
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: all 2 upstream nodes and 1 frontend extension converted. Historical conversion tests passed
-> (see "Verification results"), but the final independent acceptance was not recovered and has not been
-> re-run on the current SDK. Not accepted: no whole-pack certificate.
+> Native backend differential and genuine normal-manifest evidence was verified on 2026-10-19.
+> The older conversion suites below are historical and unrefreshed; they are not claimed to pass
+> unchanged on the current SDK. Frontend, Guest/public executor and service acceptance remain open.
+> Not accepted: no whole-pack certificate.
 
 # Secure Nodes V2 conversion report — comfy-join-prompt
 
@@ -33,21 +34,32 @@ The frontend targets only `jupo.JoinPrompt.JoinPrompt`. A typed node menu and se
 
 Approved deliberate placement difference: the legacy selection-toolbox chrome and node-relative modal coordinates are not reproduced; equivalent configuration access is through `Open Config Dialog` and `jupo.JoinPrompt.OpenConfigDialog`. No identical-chrome/full-browser-parity claim. The host owns modal layout/overlay and keyboard focus; Escape is dialog-scoped, no global key interception.
 
-## Verification results
+## Current native evidence (2026-10-19)
+
+The actual selected Mac attempt used Python 3.13.14, installed SDK 0.42.0/API141, Core `44564d0279c275eef52b11750a9d76349f4e7a88` and backend `59bd3e1acba6520bb32717ad03833f6ab2967ecc`. The genuine full original package and candidate completed 704 value/error comparisons plus 704 unchanged-component crosschecks, 7 resource guard denials and 6 detected comparator controls. Genuine normal encoding, canonical pair/bundle generation and both pristine-tree replays passed. Exact returned evidence and missing-purpose qualification are published separately under `validation/20261019-moe-resolution-join-native/joinprompt2`. This proves the recorded native backend and artifact subset; it does not exercise the current frontend, isolated Guest/Core public executor or shared service.
+
+This publication successor changes only this report and regenerates its canonical patch artifacts with byte/mode checks. Runtime code, the genuine normal manifest and prior native evidence remain byte-identical; the native scientific tests were not rerun for these prose changes.
+
+## Historical verification results (unrefreshed)
+
+All test counts, paths and environment hashes in this section describe older observations. The retained Python test builds its expected manifest by hand and includes `frontend_permissions: []`; the current genuine encoder omits that empty field. Consequently these historical tests are not represented as currently passing unchanged. The genuine SDK differential and normal-generation evidence above stands separately; it does not refresh this whole historical suite.
 
 - Test source: `tests/test_join_prompt_secure_conversion.py` and `tests/frontend_harness.mjs`.
 - Initial observed check: 52 passing cases (3 release/executor tests excluded pending artifacts), including 200 generated differential inputs, exact malformed paths and real zero-capability guests in original/recreated pack filesystems.
 - Frontend evidence: recording typed facade + owned DOM elements, no ambient document/window. This tests operations/lifecycle/state, not physical browser chrome or visual placement.
 - Observed pre-artifact gate: 56 passed / 0 failed, including actual public outer executor for BOTH STRING nodes with core-finalized autogrow keys, typed contract compilation and complete pinned-file hash inventory.
-- Observed full release gate: **57 passed / 0 failed twice**, 8.01s and 7.84s. Captured completion logs: `/Users/ben/popbot/raw-chats/outputs/jack-oct6-join-FO1sbS/jack-join-gate1.log` and `jack-join-gate2.log`. Final report/artifact refresh is repeated before handoff; coordinator reviews actual logs, not this declaration alone.
+- Observed full release gate: **57 passed / 0 failed twice**, 8.01s and 7.84s. Captured completion logs: `/Users/ben/popbot/raw-chats/outputs/jack-oct6-join-FO1sbS/jack-join-gate1.log` and `jack-join-gate2.log`. Those historical logs are retained as provenance; this successor does not claim that suite was refreshed.
 - Reproduction from pack-db root: `PYTHONDONTWRITEBYTECODE=1 /Users/ben/comfy/ComfyUI/.venv/bin/python -m pytest -p no:cacheprovider --confcutdir=packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2 --rootdir=packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2 -q packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2/tests/test_join_prompt_secure_conversion.py --tb=short`.
 
-## Release integrity
+## Current manifest and historical release integrity
 
-- Frozen/current canonical d.ts SHA-256: `4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3`.
-- Frozen/current canonical pyi SHA-256: `50848a56eaf4f798de1a4f11faa7e3bd9b6254c2c61a94b5a9907aaa2b0cac78`.
+- Current genuine normal manifest SHA-256: `fdaced83feb6523a1e4d0903313c3a8f716022bbbf786478172a5d16f0f6ce94`.
+- Other stub/runtime hashes below are retained historical environment identifiers, not current pins.
+
+- Historical canonical d.ts SHA-256: `4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3`.
+- Historical canonical pyi SHA-256: `50848a56eaf4f798de1a4f11faa7e3bd9b6254c2c61a94b5a9907aaa2b0cac78`.
 - Exact schema retained including autogrow prefix/min/max, optional prev/options, force-input, multiline and advanced attributes.
-- Manifest SHA-256: `29fce6f7fdaf711ef8f6174fc48cea55a8bd5360b89fda3c92c6837396ea8a69`.
+- Historical handwritten manifest SHA-256 (superseded): `29fce6f7fdaf711ef8f6174fc48cea55a8bd5360b89fda3c92c6837396ea8a69`.
 - Core HEAD exercised: `233c894a295faeb9c4e7c10b9860990c55ba0891`; `_sdk.py` SHA-256 `9313967d03f461d8c9d62eec710513b4a2f2b9d30b8e52123bb8fd2447c0573f`.
 - Secure runtime HEAD: `f57f065d8500506cb8e148348079db722684306c`; `transport/host.py` SHA-256 `a8b74d8e115e2c8cda729883d7f7a6597be6987a07f4774a83c2818ee682963b`, `packdb.py` SHA-256 `07efb519392ad421a10e20fc749f10d90fa3ac825eed69affe4d06b162d9e528`. Unrelated worktree changes were not modified.
 - Pristine source is immutable; MIT LICENSE retained byte-for-byte. No models/weights/credentials/external integrations or extra runtime dependencies.
