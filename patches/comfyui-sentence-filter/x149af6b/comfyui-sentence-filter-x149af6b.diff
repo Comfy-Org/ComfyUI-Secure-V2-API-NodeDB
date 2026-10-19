@@ -1,0 +1,326 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,37 @@
++# Sentence Filter conversion
++
++Upstream: https://github.com/Slartibart23/comfyui-sentence-filter at
++`149af6b01cb810d8d514ae154c2edcbfed1a809a`. The eight original Git files
++and MIT license are retained. One original node, `SentenceFilterNode`, is
++converted. Its calculation module is byte-identical to the original. The
++adapter preserves the text input, four optional inputs, defaults, labels,
++placeholders and three STRING/INT/INT outputs, including native errors.
++
++The wrapper uses public ComfyExtension and io APIs with SDK_REFS=True and
++empty permissions. It requires no models, routes or external dependencies.
++Normal manifest generation and canonical JSON/diff and ZIP replays passed.
++
++Validation on 2026-10-19: 32 original-versus-actual-SDK cases passed in the
++recorded Mac development environment: 28 values and four exact exceptions,
++with schema, registration and NodeOutput checks. This is scoped development
++evidence; it does not establish general managed-runtime adoption.
++
++The local PC Docker Node Pack Repository TEST service executed the unchanged
++production node through gVisor. A TEST-only typed STRING consumer checked 27
++valid UI cases against fixed strings from the original and forwarded the
++seed image to a 64x64 PNG. Deliberately changing one expected string produced
++the exact expected AssertionError. One direct null-optionals case and the
++four invalid/null exception cases are not claimed as Core UI cases. The
++TEST helper and augmented declaration are absent from this release.
++
++Only this document changed after testing. Production source and the normal
++node declaration remain identical to the tested candidate. The final pair
++was regenerated and both pair/ZIP replays checked on genuine POSIX0644 files.
++Evidence and scope are in validation/20261019-sentence-filter in the corpus.
++The earlier source-generation monitor captured two of five tool process
++groups; three short-lived group IDs were unobserved. That limit is retained;
++all five canonical commands returned zero and their artifacts were verified.
++No generation rerun or retrospective all-groups-absent claim was made.
++
++Normal catalogue registration and active installation are tracked separately;
++the TEST session does not establish either.
+--- a/__init__.py
++++ b/v2/__init__.py
+@@ -1,13 +1,19 @@
+-"""
+-ComfyUI Custom Node: Sentence Filter
+-=====================================
+-Filters sentences from a text prompt based on user-defined trigger words.
+-Supports deletion and replacement of matched sentences.
++"""Sentence Filter: scalar V3 extension preserving the pinned original algorithm."""
+ 
+-Installation:
+-    Copy this folder into ComfyUI/custom_nodes/ and restart ComfyUI.
+-"""
++from comfy_api.latest import ComfyExtension
+ 
+-from .sentence_filter_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
++from .secure_sentence_filter import SentenceFilterNode
+ 
+-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
++NODE_CLASS_MAPPINGS = {"SentenceFilterNode": SentenceFilterNode}
++NODE_DISPLAY_NAME_MAPPINGS = {"SentenceFilterNode": "Sentence Filter ✂️"}
++
++__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "comfy_entrypoint"]
++
++
++class SentenceFilterExtension(ComfyExtension):
++    async def get_node_list(self):
++        return [SentenceFilterNode]
++
++
++async def comfy_entrypoint():
++    return SentenceFilterExtension()
+--- /dev/null
++++ b/v2/pyproject.toml
+@@ -0,0 +1,4 @@
++# Converter-selected runtime declaration, not upstream project/CNR metadata.
++# Confirmed retained Python3.13.7 target: MERVYN m_9828c1718f / NED readback.
++[project]
++requires-python = ">=3.13,<3.14"
+--- /dev/null
++++ b/v2/secure-nodes.json
+@@ -0,0 +1,183 @@
++{
++  "format": "comfy-secure-nodes-v1",
++  "nodes": {
++    "SentenceFilterNode": {
++      "class": "SentenceFilterNode",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "secure_sentence_filter",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "text/processing",
++          "description": "",
++          "display_name": "Sentence Filter \u2702\ufe0f",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "SentenceFilterNode",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": "",
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": "Input text from workflow",
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": "",
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "delete_words",
++              "lazy": null,
++              "multiline": false,
++              "optional": true,
++              "placeholder": "Words to delete sentence, e.g. \"Watermark\" or \"blonde, straight, young\"",
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": "",
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "replace_words",
++              "lazy": null,
++              "multiline": false,
++              "optional": true,
++              "placeholder": "Words to find sentence for replacement, e.g. \"blonde, straight\"",
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": "",
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "replacement_sentence",
++              "lazy": null,
++              "multiline": true,
++              "optional": true,
++              "placeholder": "Replacement sentence (used when replace_words match)",
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": false,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "case_sensitive",
++              "label_off": "Case Insensitive",
++              "label_on": "Case Sensitive",
++              "lazy": null,
++              "optional": true,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "BOOLEAN",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "text",
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "sentences_deleted",
++              "id": "_1_INT_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "sentences_replaced",
++              "id": "_2_INT_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    }
++  },
++  "runtime": {
++    "python": {
++      "requires": ">=3.13,<3.14",
++      "resolved": "3.13"
++    }
++  }
++}
+--- /dev/null
++++ b/v2/secure_sentence_filter.py
+@@ -0,0 +1,58 @@
++"""Scalar IO adapter; computation, diagnostics and errors remain upstream's."""
++
++from comfy_api.latest import io
++
++from .sentence_filter_node import SentenceFilterNode as _OriginalSentenceFilterNode
++
++
++class SentenceFilterNode(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls) -> io.Schema:
++        return io.Schema(
++            node_id="SentenceFilterNode",
++            display_name="Sentence Filter ✂️",
++            category="text/processing",
++            inputs=[
++                io.String.Input(
++                    "text", multiline=True, default="",
++                    placeholder="Input text from workflow",
++                ),
++                io.String.Input(
++                    "delete_words", optional=True, multiline=False, default="",
++                    placeholder='Words to delete sentence, e.g. "Watermark" or "blonde, straight, young"',
++                ),
++                io.String.Input(
++                    "replace_words", optional=True, multiline=False, default="",
++                    placeholder='Words to find sentence for replacement, e.g. "blonde, straight"',
++                ),
++                io.String.Input(
++                    "replacement_sentence", optional=True, multiline=True, default="",
++                    placeholder="Replacement sentence (used when replace_words match)",
++                ),
++                io.Boolean.Input(
++                    "case_sensitive", optional=True, default=False,
++                    label_on="Case Sensitive", label_off="Case Insensitive",
++                ),
++            ],
++            outputs=[
++                io.String.Output(display_name="text"),
++                io.Int.Output(display_name="sentences_deleted"),
++                io.Int.Output(display_name="sentences_replaced"),
++            ],
++        )
++
++    @classmethod
++    def execute(
++        cls,
++        text: str,
++        delete_words: str = "",
++        replace_words: str = "",
++        replacement_sentence: str = "",
++        case_sensitive: bool = False,
++    ) -> io.NodeOutput:
++        return io.NodeOutput(*_OriginalSentenceFilterNode().filter_text(
++            text, delete_words, replace_words, replacement_sentence, case_sensitive,
++        ))
