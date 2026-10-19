@@ -1,0 +1,11 @@
+ImageAutotone existing source: native verification
+
+The exact seven-file original and eleven-file converted tree at upstream `f83a94b5d696e53f20a3a9d853f8e594981e438b` received one selected native Mac attempt. Its 24 ordinary RGB comparisons matched original CPU float32 output values, shape and dtype exactly through genuine public input refs and real returned refs using stock SDK components. RGBA alpha retains original clipping/uint8 quantization, rather than unquantized float alpha.
+
+Hex colors are an intentional correction of an original crash. Leading whitespace and leading plus are additional existing parser acceptances. These three diagnostics are explicitly nonparity, each checked against the original equivalent comma RGB output. Two original histogram errors retain exact type/message. Four meta-tensor cases qualify only direct resource validation; they prove neither large image execution nor SDK admission/isolation. A corrupted actual returned RGB pixel was rejected by the same comparator.
+
+All six serial native commands passed: fixture, actual normal encoder, canonical pair, bundle, pair replay and ZIP replay. Both pristine replays match every generated V2 byte/mode and preserve all seven originals. Publication copies those artifacts without rerunning any native, generator, or replay command. Production code/runtime metadata are unchanged; only the disposable generated manifest result replaces the historical manifest in the staged conversion. Existing test files are retained unchanged and were not rerun or credited as fresh Guest/manifest-suite proof.
+
+Selected SDK/Core/backend/dependency maps and separately bound full site84917/component96/config maps remain unchanged. The reviewed owner reports aggregate RSS265322496bytes in3.304588667seconds; all six worker groups and the outer group are absent in the verified records. The RSS check is sampled, not a hard quota.
+
+This is native component/schema/source authoring evidence. Core public executor, Guest, managed runtime, service/admission, registry activation and whole-pack acceptance remain unqualified. The original pack has no frontend extensions, routes or settings, and its referenced license file is absent. PURPOSE_ROWS.json records each purpose and qualification boundary. Root owns Git/PR publication.
