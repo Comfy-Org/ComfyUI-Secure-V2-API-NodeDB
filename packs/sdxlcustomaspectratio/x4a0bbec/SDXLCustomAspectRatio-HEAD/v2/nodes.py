@@ -1,5 +1,7 @@
 """Bounded scalar preset parsing, using the exact pack-owned algorithm."""
 
+import re
+
 from comfy_api.latest import ComfyExtension, io
 
 from . import algorithm
@@ -7,6 +9,14 @@ from . import algorithm
 MAX_TEXT_BYTES = 65_536
 MAX_DIMENSION_VALUE = 0x7FFFFFFFFFFFFFFF
 OPTIONS = tuple(algorithm.SDXLAspectRatio.INPUT_TYPES()["required"]["aspectRatio"][0])
+
+
+def _parse_dimensions(text):
+    # The earliest native match starts at a decimal digit-run boundary.
+    match = re.search(r"(?<!\d)(\d+)\s*[xX]\s*(\d+)", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return 1024, 1024
 
 
 class SDXLAspectRatio(io.ComfyNode):
@@ -32,7 +42,7 @@ class SDXLAspectRatio(io.ComfyNode):
             raise TypeError("aspectRatio must be a string")
         if len(aspectRatio.encode("utf-8")) > MAX_TEXT_BYTES:
             raise ValueError("aspectRatio exceeds 64 KiB UTF-8")
-        result = algorithm.SDXLAspectRatio().SDXL_AspectRatio(aspectRatio)
+        result = _parse_dimensions(aspectRatio)
         if any(value > MAX_DIMENSION_VALUE for value in result):
             raise ValueError("parsed integer exceeds the bounded output range")
         return io.NodeOutput(*result)
