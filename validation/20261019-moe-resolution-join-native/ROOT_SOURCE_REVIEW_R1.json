@@ -1,0 +1,196 @@
+{
+  "all_archive_git_modes": "100644",
+  "archive_bytes": 943788,
+  "archive_files": 87,
+  "archive_sha256": "1bff4f3955bc4f51a43af7044947c6a63aa5c54b0196003e58e9d82162a3c96e",
+  "canonical_commit_plan": {
+    "existing_files_modified": 6,
+    "existing_unchanged_v2_files": 24,
+    "files_copied_from_packet": 85,
+    "new_pack_identities": 0,
+    "new_validation_files": 55,
+    "note": "Exclude the two delivery bundle ZIPs. Do not remove existing historical ZIPs or apply the V1-to-V2 recipe against canonical originals.",
+    "pristine_source_changes": 0,
+    "registry_or_service_actions": 0
+  },
+  "delivery_only_excluded_zip_paths": [
+    "patches/comfy-join-prompt/x0832089/comfy-join-prompt-x0832089.zip",
+    "patches/comfyui_resolution-and-ratio/x58769e5/comfyui_resolution-and-ratio-x58769e5.zip"
+  ],
+  "findings": [
+    {
+      "blocks_scoped_source_publication": false,
+      "file": "packs/comfyui_resolution-and-ratio/x58769e5/ComfyUI_Resolution-and-Ratio-HEAD/v2/tests/test_resolution_ratio_secure_conversion.py",
+      "id": "RJ-TEST-1",
+      "issue": "Retained historical integrity test requires exact equality with a manual manifest containing frontend_permissions:[], but the newly generated manifest omits that field. Its Resolution definition also omits the newly encoded validation_inputs. This assertion cannot pass against the current manifest unchanged; this is a static source finding, not a test execution.",
+      "line": 181,
+      "manifest_builder_line": 69,
+      "narrow_fix": "Record this stale historical test as an explicit open gate in the manager publication note. Before whole-pack completion, align the expected metadata with the actual normal manifest encoder, preserve independent behavior assertions, regenerate the affected pair, and qualify that changed source. Preserve this exact returned evidence and do not claim the historical full-suite totals apply to the new manifest.",
+      "required_before_whole_pack_completion": true,
+      "severity": "P2"
+    },
+    {
+      "blocks_scoped_source_publication": false,
+      "file": "packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2/tests/test_join_prompt_secure_conversion.py",
+      "id": "RJ-TEST-2",
+      "issue": "Retained historical integrity test requires exact equality with a manual manifest containing frontend_permissions:[], but the newly generated manifest omits that field. This assertion cannot pass against the current manifest unchanged; this is a static source finding, not a test execution.",
+      "line": 258,
+      "manifest_builder_line": 81,
+      "narrow_fix": "Record this stale historical test as an explicit open gate in the manager publication note. Before whole-pack completion, align the expected metadata with the actual normal manifest encoder, preserve independent behavior assertions, regenerate the affected pair, and qualify that changed source. Preserve this exact returned evidence and do not claim the historical full-suite totals apply to the new manifest.",
+      "required_before_whole_pack_completion": true,
+      "severity": "P2"
+    },
+    {
+      "blocks_scoped_source_publication": false,
+      "file": "packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2/SECURE_CONVERSION.md",
+      "id": "RJ-DOC-1",
+      "issue": "Frozen Release integrity section labels the previous 29fce6f7fdaf711ef8f6174fc48cea55a8bd5360b89fda3c92c6837396ea8a69 manifest hash without saying it is historical. Published actual normal manifest is fdaced83feb6523a1e4d0903313c3a8f716022bbbf786478172a5d16f0f6ce94. New qualification has a generic historical note but does not explicitly reconcile these two hashes.",
+      "line": 50,
+      "narrow_fix": "Preserve frozen tested production bytes and exact returned pair. Add a manager publication annotation identifying line 50 as the historical pre-generation hash, binding the current manifest fdaced83... and the ce667055... receipt. A future source report refresh can relabel it and regenerate its pair; no runtime acceptance is inferred.",
+      "severity": "P2"
+    }
+  ],
+  "handoff_sha256": "f8ea2e3b7a5079db99474ac101c75a058be2a2671f61b69ce876b1fedfe14653",
+  "packs": [
+    {
+      "actual_receipt_sha256": "b8d10c626e51ca5963773426c2fc4f5fbd37ae1255c8b54ffed85eb3533eb5ef",
+      "normal_manifest_metadata_delta": [
+        {
+          "after": "<absent>",
+          "before": [],
+          "path": "/frontend_permissions"
+        },
+        {
+          "after": null,
+          "before": "<absent>",
+          "path": "/nodes/ResolutionAndRatio/schema/attrs/loop_boundary"
+        },
+        {
+          "after": {
+            "args": [
+              "cls",
+              "width",
+              "height"
+            ],
+            "kwargs": true
+          },
+          "before": "<absent>",
+          "path": "/nodes/ResolutionAndRatio/validation_inputs"
+        }
+      ],
+      "normal_manifest_sha256": "047b4a54cb22b673ab2f2a910045c9b935969d5d9a53d7f046124dbe808e0f5e",
+      "only_v2_delta": [
+        "secure-nodes.json"
+      ],
+      "open_gates": [
+        {
+          "gate": "Current real frontend/browser/native graph",
+          "purpose": "Verify current production host/guest/renderer and real browser event/DOM continuity, held drag/outside release, presets, independent node state and workflow reload.",
+          "reason": "Native scalar source tests do not execute ratio,scale,preset editing or JS rounding. Historical harness used old absolute paths and explicit host graph/widget doubles."
+        },
+        {
+          "gate": "Selected Guest/public executor and shared service admission",
+          "purpose": "Verify actual validator kwargs/preset admission and six meaningful dimension/image/UI cases plus wrong-width control in the target boundary.",
+          "reason": "This job used direct genuine selected SDK execution plus normal metadata, not Guest dispatch or service prompt validation. Shared service is separately held and has a different selected installation."
+        }
+      ],
+      "original_only_deletes_apply_only_to_derived_v2_recipe": true,
+      "pack_id": "comfyui_resolution-and-ratio/x58769e5",
+      "pair_data_reconstructs_v2_exactly": true,
+      "patch_operation_counts": {
+        "add": 6,
+        "convert": 4,
+        "copy": 2,
+        "delete": 1
+      },
+      "post_candidate_map_is_frozen_pre_generation_input": true,
+      "returned_observations_not_reexecuted": {
+        "controls": 3,
+        "execution_comparisons": 1033,
+        "guard_denials": 33,
+        "validator_comparisons": 1033
+      },
+      "returned_pristine_and_v2_trees_equal": 3,
+      "sealed_preparation_status_is_historical_not_result": true,
+      "unchanged_pristine_files": 7,
+      "v2_files": 12,
+      "whole_pack_accepted": false
+    },
+    {
+      "actual_receipt_sha256": "ce66705545c196f3a467f6930dbf0b8716884f2e621754150168c8456b36c557",
+      "normal_manifest_metadata_delta": [
+        {
+          "after": "<absent>",
+          "before": [],
+          "path": "/frontend_permissions"
+        },
+        {
+          "after": null,
+          "before": "<absent>",
+          "path": "/nodes/jupo.JoinPrompt.JoinPrompt/schema/attrs/loop_boundary"
+        },
+        {
+          "after": null,
+          "before": "<absent>",
+          "path": "/nodes/jupo.JoinPrompt.JoinStrings/schema/attrs/loop_boundary"
+        }
+      ],
+      "normal_manifest_sha256": "fdaced83feb6523a1e4d0903313c3a8f716022bbbf786478172a5d16f0f6ce94",
+      "only_v2_delta": [
+        "secure-nodes.json"
+      ],
+      "open_gates": [
+        {
+          "gate": "Actual selected Guest and public autogrow executor",
+          "purpose": "Verify flattened texts.text_N keys finalize into correctly ordered Autogrow values and both STRING node outputs cross the real isolated/public execution boundary.",
+          "reason": "704 direct value/error comparisons and genuine full original import do not run Core public input finalization or sandbox Guest transport."
+        },
+        {
+          "gate": "Current real frontend/browser/native graph",
+          "purpose": "Verify eligible selection/menu commands, hidden options widget/socket, real DOM change and cleanup events, bounded JSON, workflow reload and graph/node isolation on the current bridge.",
+          "reason": "Historical frontend harness replaces facade and DOM with recording doubles; the actual dialog/menu/serialization path was not executed in this job."
+        },
+        {
+          "gate": "Shared service admission and meaningful output consumers",
+          "purpose": "Verify intended autogrow/text/options serialization and exact real STRING outputs including malformed options fallback,50row boundary and deliberate wrong-output execute control.",
+          "reason": "No service TEST/render/admission was performed; independent service release and genuine current helper metadata remain necessary."
+        }
+      ],
+      "original_only_deletes_apply_only_to_derived_v2_recipe": true,
+      "pack_id": "comfy-join-prompt/x0832089",
+      "pair_data_reconstructs_v2_exactly": true,
+      "patch_operation_counts": {
+        "add": 11,
+        "convert": 2,
+        "copy": 1,
+        "delete": 40
+      },
+      "post_candidate_map_is_frozen_pre_generation_input": true,
+      "returned_observations_not_reexecuted": {
+        "controls": 6,
+        "guard_denials": 7,
+        "primary_full_original_comparisons": 704,
+        "scoped_component_crosschecks": 704
+      },
+      "returned_pristine_and_v2_trees_equal": 3,
+      "sealed_preparation_status_is_historical_not_result": true,
+      "unchanged_pristine_files": 43,
+      "v2_files": 14,
+      "whole_pack_accepted": false
+    }
+  ],
+  "publication_only_changes": [
+    "packs/comfyui_resolution-and-ratio/x58769e5/ComfyUI_Resolution-and-Ratio-HEAD/v2/secure-nodes.json",
+    "patches/comfyui_resolution-and-ratio/x58769e5/comfyui_resolution-and-ratio-x58769e5.json",
+    "patches/comfyui_resolution-and-ratio/x58769e5/comfyui_resolution-and-ratio-x58769e5.diff",
+    "packs/comfy-join-prompt/x0832089/comfy-join-prompt-HEAD/v2/secure-nodes.json",
+    "patches/comfy-join-prompt/x0832089/comfy-join-prompt-x0832089.json",
+    "patches/comfy-join-prompt/x0832089/comfy-join-prompt-x0832089.diff"
+  ],
+  "review_method": "Only stdlib data/CRC/hash/unified-diff interpretation and immutable Git object reads. No SDK, science, original imports, supplied script, runtime test, generator, replay, Docker, network, credential or producer mutation.",
+  "reviewed_main": "a648d923f96a9d69a977dab5eb4b4e433c32bdfc",
+  "source_base": "b3512a66da5db6029cf1490847eda405bf2298a2",
+  "source_publication_integrity": "CLEARED",
+  "status": "FINDINGS",
+  "whole_pack_accepted": false
+}

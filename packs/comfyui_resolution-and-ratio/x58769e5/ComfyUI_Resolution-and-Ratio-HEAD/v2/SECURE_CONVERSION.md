@@ -1,9 +1,10 @@
 <!-- secure-conversion-report-v1 -->
 
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: all 1 upstream node and 1 frontend extension converted. Historical conversion tests passed
-> (see "Verification results"), but the final independent acceptance was not recovered and has not been
-> re-run on the current SDK. Not accepted: no whole-pack certificate.
+> Native backend differential and genuine normal-manifest evidence was verified on 2026-10-19.
+> The older conversion suites below are historical and unrefreshed; they are not claimed to pass
+> unchanged on the current SDK. Frontend, Guest/public executor and service acceptance remain open.
+> Not accepted: no whole-pack certificate.
 
 # Secure Nodes V2 conversion report — comfyui_resolution-and-ratio
 
@@ -24,7 +25,7 @@ Actual pristine entrypoint imports without mocks: exactly 1 Python ID, `Resoluti
 | --- | --- | --- | --- |
 | `ResolutionAndRatio` | supported | yes | Bounded backend/frontend behavior; coordinator integration gates recorded separately. |
 
-No backend nodes rejected or removed. Backend and frontend behavior gates pass under the generalized renderer fix described below. Coordinator review and serial integration remain required; this report does not itself increment the daily completed count.
+No backend nodes rejected or removed. Historical backend and frontend observations under the older generalized renderer fix are described below; current frontend acceptance is open. Coordinator review and serial integration remain required; this report does not itself increment the daily completed count.
 
 The scalar algorithm stays in the pack. Reset precedes swap; Python banker's rounding, 8–32 free sizes, 32-grid rounding/clamping and direct ordinary out-of-schema scalar clamping match pristine. Ratio, scale and presets are frontend computation; the Python method intentionally does not recompute them.
 
@@ -34,9 +35,17 @@ The scalar algorithm stays in the pack. Reset precedes swap; Python banker's rou
 - V2: one public definition extension for `ResolutionAndRatio`; no backend routes.
 - Scoped mounted width/height editors write the original schema widgets through `setValue`. Other controls retain native widgets. There is no graph/prototype monkey-patching, backend fetch, browser persistence, ambient DOM, global keyboard interception, CDN or installation.
 - Native `activate` fires on every user callback, including moves; it is NOT used as a dimension release event. Mounted pointer events distinguish live movement, release and cancellation.
-- Pack-side code removes listeners, cancels reset/swap/deferred-preset timers, clears drag state and mounted children on removal/reconstruction. Instance keys include graph/node identity. The production bridge exercises these paths, including removal while a reset timer is pending. Remount retains the stable host widget/UI key and replaces its guest tree rather than detaching the host renderer container.
+- Pack-side code removes listeners, cancels reset/swap/deferred-preset timers, clears drag state and mounted children on removal/reconstruction. Instance keys include graph/node identity. The historical production bridge fixture exercised these paths, including removal while a reset timer is pending. Remount retains the stable host widget/UI key and replaces its guest tree rather than detaching the host renderer container.
 
-## Verification results
+## Current native evidence (2026-10-19)
+
+The actual selected Mac attempt used Python 3.13.14, installed SDK 0.42.0/API141, Core `44564d0279c275eef52b11750a9d76349f4e7a88` and backend `59bd3e1acba6520bb32717ad03833f6ab2967ecc`. The unchanged original and candidate completed 1033 output and 1033 validator comparisons, 33 bound/type guard denials and 3 detected comparator controls. Genuine normal encoding, canonical pair/bundle generation and both pristine-tree replays passed. Exact returned evidence and missing-purpose qualification are published separately under `validation/20261019-moe-resolution-join-native/resolution`. This proves the recorded native backend and artifact subset; it does not exercise the current frontend, isolated Guest/Core public executor or shared service.
+
+This publication successor changes only this report and regenerates its canonical patch artifacts with byte/mode checks. Runtime code, the genuine normal manifest and prior native evidence remain byte-identical; the native scientific tests were not rerun for these prose changes.
+
+## Historical verification results (unrefreshed)
+
+All test counts, paths and environment hashes in this section describe older observations. The retained Python test builds its expected manifest by hand and includes `frontend_permissions: []`; the current genuine encoder omits that empty field. Its handwritten builder also omits the current node `validation_inputs` signature. Consequently these historical tests are not represented as currently passing unchanged. The genuine SDK differential and normal-generation evidence above stands separately; it does not refresh this whole historical suite.
 
 Observed preflight command (2026-10-06), from the isolated pack-db worktree:
 
@@ -58,17 +67,20 @@ Uses actual SecureExtensionHost, guest worker, `allow-scripts` opaque-origin ifr
 
 Log: `/Users/ben/popbot/raw-chats/outputs/ned-oct6-resolution-ratio-bridge-preflight.log`, SHA-256 `0904d7d4cf422e1082aec44cec9f1f0846bb4bd861502d15c1923f4d53cddb32`.
 
-After the coordinator's generalized renderer fix, the expanded production bridge passes. It executes the pinned original JavaScript in a separate VM as a differential oracle for native callback behavior, presets/syntax/dedup/floor, ratio changes, scale/noncompounding base, swap/reset and edited dimension snapping. A real mouse drag held over 250ms settling intervals preserves element identity/capture and snaps to 864 on release outside. An explicit synthetic PointerEvent tests cancellation through the actual host/guest event channel; it is not substituted for the real mouse release test. Focus, malformed/oversized/adversarial text, serializable schema state, new-page/new-worker reconstruction, independently keyed nodes/graphs, remount subscriptions and pending-removal timer cleanup are exercised. The host-double's removed container may remain in the host UI cache, but it is detached, has no controls/event listeners and receives no further pack writes; no whole-host cache lifecycle claim is made.
+After the coordinator's older generalized renderer fix, the historical expanded production bridge fixture passed. It executes the pinned original JavaScript in a separate VM as a differential oracle for native callback behavior, presets/syntax/dedup/floor, ratio changes, scale/noncompounding base, swap/reset and edited dimension snapping. A real mouse drag held over 250ms settling intervals preserves element identity/capture and snaps to 864 on release outside. An explicit synthetic PointerEvent tests cancellation through the actual host/guest event channel; it is not substituted for the real mouse release test. Focus, malformed/oversized/adversarial text, serializable schema state, new-page/new-worker reconstruction, independently keyed nodes/graphs, remount subscriptions and pending-removal timer cleanup are exercised. The host-double's removed container may remain in the host UI cache, but it is detached, has no controls/event listeners and receives no further pack writes; no whole-host cache lifecycle claim is made.
 
-Two expanded full-gate runs observed **53 passed** each (15.67s / 16.66s), including production bridge and exact byte reconstruction. Those ran while the coordinator was refining the generic renderer; they are preliminary rather than immutable dependency-pinned final evidence. Final command uses the same explicit core/bytecode settings above, omitting `-k`, and runs all 53 tests against the frozen dependency below. Final durable outputs are `outputs/ned-oct6-resolution-ratio-frozen-gate-1.log` and `outputs/ned-oct6-resolution-ratio-frozen-gate-2.log`; observed dependency hashes and final results are supplied in `outputs/ned-oct6-resolution-ratio-handoff.json`. No test-source-only claim or historical failing gate is promoted into a pass.
+Two expanded full-gate runs observed **53 passed** each (15.67s / 16.66s), including production bridge and exact byte reconstruction. Those ran while the coordinator was refining the generic renderer; they are preliminary rather than immutable dependency-pinned final evidence. The historical final command used the same explicit core/bytecode settings above, omitting `-k`, for the 53-test suite and older dependency below; it has not been refreshed here. Final durable outputs are `outputs/ned-oct6-resolution-ratio-frozen-gate-1.log` and `outputs/ned-oct6-resolution-ratio-frozen-gate-2.log`; observed dependency hashes and final results are supplied in `outputs/ned-oct6-resolution-ratio-handoff.json`. No test-source-only claim or historical failing gate is promoted into a pass.
 
-## Release integrity
+## Current manifest and historical release integrity
+
+- Current genuine normal manifest SHA-256: `047b4a54cb22b673ab2f2a910045c9b935969d5d9a53d7f046124dbe808e0f5e`.
+- Other stub/runtime hashes below are retained historical environment identifiers, not current pins.
 
 - Canonical stub origin: KJ V2 composite in central corpus `packs/comfyui-kjnodes/x3f20054/ComfyUI-KJNodes-HEAD/v2`.
 - d.ts SHA-256 `4a49be64d7396d115ebda49eecf05898b59aa3e98dfa398ec4f472ae139de5f3`.
 - pyi SHA-256 `50848a56eaf4f798de1a4f11faa7e3bd9b6254c2c61a94b5a9907aaa2b0cac78`.
 - No shared stub/generator changes. Explicit canonical `COMFY_CORE_ROOT` and bytecode-disabled test imports. Pristine remains byte-identical to pinned source; no cache artifacts.
-- Patch reconstruction is an integrity check, not a behavior certificate. The pair includes this report and the pack-local tests; regenerate after any byte changes, then run the final-byte gate twice.
+- Patch reconstruction is an integrity check, not a behavior certificate. The pair includes this report and the pack-local tests; regenerate after any byte changes, then verify byte/mode reconstruction. The older behavior gate is unrefreshed in this documentation successor.
 
 ## Authority and assets
 
@@ -83,7 +95,7 @@ Authored `custom_presets`, selected preset, dimensions/ratio/scale/flags are **w
 
 Pinned upstream quirks retained: backend banker's ties differ from JS `Math.round`; restoration sets the scale base from the restored displayed dimensions even if its scale widget is not 100; flags remain true for 200ms, so queuing during the transient flag window has upstream reset/swap semantics. Resource/type bounds intentionally narrow malformed/unbounded inputs; these are not security rejections of useful node intent.
 
-## Resolved generalized runtime dependency
+## Historical generalized runtime dependency
 
 `frontend/src/ui-renderer.mjs` update clears listeners and executes `root.replaceChildren(next)` for every UI flush. `host-entry.mjs` dispatch calls `ui.update` unconditionally. Non-media keyed controls lose identity, pointer capture and potentially focus. Reproduction proves the captured element is disconnected, different from its replacement and no longer captured.
 
