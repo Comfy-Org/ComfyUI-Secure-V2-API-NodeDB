@@ -1,0 +1,6285 @@
+{
+  "ttN tinyLoader": {
+    "module": "main",
+    "class": "ttN_tinyLoader",
+    "inputs": {
+      "required": {
+        "ckpt_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "sampling": [
+          [
+            "Default",
+            "eps",
+            "v_prediction",
+            "lcm",
+            "x0"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "zsnr": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ],
+        "cfg_rescale_mult": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "clip_skip": [
+          "INT",
+          {
+            "default": -1,
+            "min": -24,
+            "max": 0,
+            "step": 1
+          }
+        ],
+        "empty_latent_aspect": [
+          [
+            "width x height [custom]",
+            "512 x 512 [S] 1:1",
+            "768 x 768 [S] 1:1",
+            "910 x 910 [S] 1:1",
+            "512 x 682 [P] 3:4",
+            "512 x 768 [P] 2:3",
+            "512 x 910 [P] 9:16",
+            "682 x 512 [L] 4:3",
+            "768 x 512 [L] 3:2",
+            "910 x 512 [L] 16:9",
+            "1024 x 1024 [S] 1:1",
+            "512 x 1024 [P] 1:2",
+            "1024 x 512 [L] 2:1",
+            "640 x 1536 [P] 9:21",
+            "704 x 1472 [P] 9:19",
+            "768 x 1344 [P] 9:16",
+            "768 x 1216 [P] 5:8",
+            "832 x 1216 [P] 2:3",
+            "896 x 1152 [P] 3:4",
+            "1536 x 640 [L] 21:9",
+            "1472 x 704 [L] 19:9",
+            "1344 x 768 [L] 16:9",
+            "1216 x 768 [L] 8:5",
+            "1216 x 832 [L] 3:2",
+            "1152 x 896 [L] 4:3"
+          ],
+          {
+            "default": "512 x 512 [S] 1:1"
+          }
+        ],
+        "empty_latent_width": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "empty_latent_height": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 64
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "ttNnodeVersion": "1.1.0",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "MODEL",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "INT",
+      "INT"
+    ],
+    "names": [
+      "model",
+      "latent",
+      "vae",
+      "clip",
+      "width",
+      "height"
+    ],
+    "category": "🌏 tinyterra/base",
+    "function": "miniloader",
+    "output_node": false,
+    "version": "1.1.0",
+    "id": "ttN_tinyLoader_c80deffd6042c4a897866d79",
+    "display_name": "tinyLoader"
+  },
+  "ttN conditioning": {
+    "module": "main",
+    "class": "ttN_conditioning",
+    "inputs": {
+      "required": {
+        "model": [
+          "MODEL"
+        ],
+        "clip": [
+          "CLIP"
+        ],
+        "loras": [
+          "STRING",
+          {
+            "placeholder": "<lora:loraName:weight:optClipWeight>",
+            "multiline": true
+          }
+        ],
+        "positive": [
+          "STRING",
+          {
+            "default": "Positive",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "positive_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "positive_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "Negative",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "negative_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "negative_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "zero_out_empty": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ]
+      },
+      "optional": {
+        "optional_lora_stack": [
+          "LORA_STACK"
+        ],
+        "prepend_positive": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "prepend_negative": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.2",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "CLIP",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "model",
+      "positive",
+      "negative",
+      "clip",
+      "pos_string",
+      "neg_string"
+    ],
+    "category": "🌏 tinyterra/base",
+    "function": "condition",
+    "output_node": false,
+    "version": "1.0.2",
+    "id": "ttN_conditioning_00ee7fb58d6217b61d28ffda",
+    "display_name": "tinyConditioning"
+  },
+  "ttN KSampler_v2": {
+    "module": "main",
+    "class": "ttN_KSampler_v2",
+    "inputs": {
+      "required": {
+        "model": [
+          "MODEL"
+        ],
+        "positive": [
+          "CONDITIONING"
+        ],
+        "negative": [
+          "CONDITIONING"
+        ],
+        "latent": [
+          "LATENT"
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "[latent] nearest-exact",
+            "[latent] bilinear",
+            "[latent] area",
+            "[latent] bicubic",
+            "[latent] lanczos",
+            "[latent] bislerp",
+            "[hiresFix] nearest-exact",
+            "[hiresFix] bilinear",
+            "[hiresFix] area",
+            "[hiresFix] bicubic",
+            "[hiresFix] lanczos",
+            "[hiresFix] bislerp"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "upscale_model_name": [
+          [
+            "@catalog:upscale_models",
+            "None"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "rescale": [
+          [
+            "by percentage",
+            "to Width/Height",
+            "to longer side - maintain aspect",
+            "None"
+          ]
+        ],
+        "percent": [
+          "INT",
+          {
+            "default": 50,
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "longer_side": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SD1",
+            "AYS SDXL",
+            "AYS SVD",
+            "GITS SD1"
+          ]
+        ],
+        "denoise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save",
+            "Disabled"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "optional": {
+        "clip": [
+          "CLIP"
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "input_image_override": [
+          "IMAGE"
+        ],
+        "adv_xyPlot": [
+          "ADV_XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "2.3.1"
+      }
+    },
+    "returns": [
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT",
+      "IMAGE"
+    ],
+    "names": [
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "images",
+      "seed",
+      "plot_image"
+    ],
+    "category": "🌏 tinyterra/base",
+    "function": "sample",
+    "output_node": true,
+    "version": "2.3.1",
+    "id": "ttN_KSampler_v2_b96111c6c532990ae4d2a22d",
+    "display_name": "tinyKSampler"
+  },
+  "ttN pipeLoader_v2": {
+    "module": "main",
+    "class": "ttN_pipeLoader_v2",
+    "inputs": {
+      "required": {
+        "ckpt_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "clip_skip": [
+          "INT",
+          {
+            "default": -1,
+            "min": -24,
+            "max": 0,
+            "step": 1
+          }
+        ],
+        "loras": [
+          "STRING",
+          {
+            "placeholder": "<lora:loraName:weight:optClipWeight>",
+            "multiline": true
+          }
+        ],
+        "positive": [
+          "STRING",
+          {
+            "default": "Positive",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "positive_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "positive_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "Negative",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "negative_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "negative_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "empty_latent_aspect": [
+          [
+            "width x height [custom]",
+            "512 x 512 [S] 1:1",
+            "768 x 768 [S] 1:1",
+            "910 x 910 [S] 1:1",
+            "512 x 682 [P] 3:4",
+            "512 x 768 [P] 2:3",
+            "512 x 910 [P] 9:16",
+            "682 x 512 [L] 4:3",
+            "768 x 512 [L] 3:2",
+            "910 x 512 [L] 16:9",
+            "512 x 1024 [P] 1:2",
+            "1024 x 512 [L] 2:1",
+            "1024 x 1024 [S] 1:1"
+          ],
+          {
+            "default": "512 x 512 [S] 1:1"
+          }
+        ],
+        "empty_latent_width": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "empty_latent_height": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 64
+          }
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "optional": {
+        "model_override": [
+          "MODEL"
+        ],
+        "clip_override": [
+          "CLIP"
+        ],
+        "optional_lora_stack": [
+          "LORA_STACK"
+        ],
+        "optional_controlnet_stack": [
+          "CONTROL_NET_STACK"
+        ],
+        "prepend_positive": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "prepend_negative": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "ttNnodeVersion": "2.1.0",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "INT",
+      "INT",
+      "INT",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "seed",
+      "width",
+      "height",
+      "pos_string",
+      "neg_string"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "adv_pipeloader",
+    "output_node": false,
+    "version": "2.1.0",
+    "id": "ttN_pipeLoader_v2_58246dfb20bdc0271e2f0da1",
+    "display_name": "pipeLoader"
+  },
+  "ttN pipeKSampler_v2": {
+    "module": "main",
+    "class": "ttN_pipeKSampler_v2",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "[latent] nearest-exact",
+            "[latent] bilinear",
+            "[latent] area",
+            "[latent] bicubic",
+            "[latent] lanczos",
+            "[latent] bislerp",
+            "[hiresFix] nearest-exact",
+            "[hiresFix] bilinear",
+            "[hiresFix] area",
+            "[hiresFix] bicubic",
+            "[hiresFix] lanczos",
+            "[hiresFix] bislerp"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "upscale_model_name": [
+          [
+            "@catalog:upscale_models",
+            "None"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "rescale": [
+          [
+            "by percentage",
+            "to Width/Height",
+            "to longer side - maintain aspect",
+            "None"
+          ]
+        ],
+        "percent": [
+          "INT",
+          {
+            "default": 50,
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "longer_side": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SD1",
+            "AYS SDXL",
+            "AYS SVD",
+            "GITS SD1"
+          ]
+        ],
+        "denoise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save",
+            "Disabled"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "optional": {
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ],
+        "input_image_override": [
+          "IMAGE"
+        ],
+        "adv_xyPlot": [
+          "ADV_XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "2.3.1"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT",
+      "IMAGE"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "images",
+      "seed",
+      "plot_image"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "sample",
+    "output_node": true,
+    "version": "2.3.1",
+    "id": "ttN_pipeKSampler_v2_384e6bf1e6bdf16dab3403be",
+    "display_name": "pipeKSampler"
+  },
+  "ttN pipeKSamplerAdvanced_v2": {
+    "module": "main",
+    "class": "ttN_pipeKSamplerAdvanced_v2",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "[latent] nearest-exact",
+            "[latent] bilinear",
+            "[latent] area",
+            "[latent] bicubic",
+            "[latent] lanczos",
+            "[latent] bislerp",
+            "[hiresFix] nearest-exact",
+            "[hiresFix] bilinear",
+            "[hiresFix] area",
+            "[hiresFix] bicubic",
+            "[hiresFix] lanczos",
+            "[hiresFix] bislerp"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "upscale_model_name": [
+          [
+            "@catalog:upscale_models",
+            "None"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "rescale": [
+          [
+            "by percentage",
+            "to Width/Height",
+            "to longer side - maintain aspect",
+            "None"
+          ]
+        ],
+        "percent": [
+          "INT",
+          {
+            "default": 50,
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "longer_side": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "add_noise": [
+          [
+            "enable",
+            "disable"
+          ]
+        ],
+        "noise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "start_at_step": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "end_at_step": [
+          "INT",
+          {
+            "default": 10000,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SD1",
+            "AYS SDXL",
+            "AYS SVD",
+            "GITS SD1"
+          ]
+        ],
+        "return_with_leftover_noise": [
+          [
+            "disable",
+            "enable"
+          ]
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save",
+            "Disabled"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "optional": {
+        "noise_seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ],
+        "input_image_override": [
+          "IMAGE"
+        ],
+        "adv_xyPlot": [
+          "ADV_XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "2.3.0"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT",
+      "IMAGE"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "images",
+      "seed",
+      "plot_image"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "adv_sample",
+    "output_node": true,
+    "version": "2.3.0",
+    "id": "ttN_pipeKSamplerAdvanced_v2_0bde6a2fc6fd2b1f3148c941",
+    "display_name": "pipeKSamplerAdvanced"
+  },
+  "ttN pipeLoaderSDXL_v2": {
+    "module": "main",
+    "class": "ttN_pipeLoaderSDXL_v2",
+    "inputs": {
+      "required": {
+        "ckpt_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "clip_skip": [
+          "INT",
+          {
+            "default": -2,
+            "min": -24,
+            "max": 0,
+            "step": 1
+          }
+        ],
+        "loras": [
+          "STRING",
+          {
+            "placeholder": "Loras - <lora:loraName:weight:optClipWeight>",
+            "multiline": true
+          }
+        ],
+        "refiner_ckpt_name": [
+          [
+            "None",
+            "@catalog:checkpoints"
+          ]
+        ],
+        "refiner_config_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "positive_g": [
+          "STRING",
+          {
+            "placeholder": "Linguistic Positive (positive_g)",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "positive_l": [
+          "STRING",
+          {
+            "placeholder": "Supporting Terms (positive_l)",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "negative_g": [
+          "STRING",
+          {
+            "placeholder": "negative_g",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "negative_l": [
+          "STRING",
+          {
+            "placeholder": "negative_l",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ],
+        "conditioning_aspect": [
+          [
+            "width x height [custom]",
+            "1x Empty Latent Aspect",
+            "2x Empty Latent Aspect",
+            "3x Empty Latent Aspect",
+            "4x Empty Latent Aspect",
+            "5x Empty Latent Aspect",
+            "6x Empty Latent ASpect",
+            "7x Empty Latent Aspect",
+            "8x Empty Latent Aspect"
+          ],
+          {
+            "default": "1x Empty Latent Aspect"
+          }
+        ],
+        "conditioning_width": [
+          "INT",
+          {
+            "default": 2048.0,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "conditioning_height": [
+          "INT",
+          {
+            "default": 2048.0,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop_width": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 16384
+          }
+        ],
+        "crop_height": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 16384
+          }
+        ],
+        "target_aspect": [
+          [
+            "width x height [custom]",
+            "1x Empty Latent Aspect",
+            "2x Empty Latent Aspect",
+            "3x Empty Latent Aspect",
+            "4x Empty Latent Aspect",
+            "5x Empty Latent Aspect",
+            "6x Empty Latent ASpect",
+            "7x Empty Latent Aspect",
+            "8x Empty Latent Aspect"
+          ],
+          {
+            "default": "1x Empty Latent Aspect"
+          }
+        ],
+        "target_width": [
+          "INT",
+          {
+            "default": 1024.0,
+            "min": 0,
+            "max": 16384
+          }
+        ],
+        "target_height": [
+          "INT",
+          {
+            "default": 1024.0,
+            "min": 0,
+            "max": 16384
+          }
+        ],
+        "positive_ascore": [
+          "INT",
+          {
+            "default": 6.0,
+            "min": 0,
+            "step": 0.1
+          }
+        ],
+        "negative_ascore": [
+          "INT",
+          {
+            "default": 2.0,
+            "min": 0,
+            "step": 0.1
+          }
+        ],
+        "empty_latent_aspect": [
+          [
+            "width x height [custom]",
+            "1024 x 1024 [S] 1:1",
+            "640 x 1536 [P] 9:21",
+            "704 x 1472 [P] 9:19",
+            "768 x 1344 [P] 9:16",
+            "768 x 1216 [P] 5:8",
+            "832 x 1216 [P] 2:3",
+            "896 x 1152 [P] 3:4",
+            "1536 x 640 [L] 21:9",
+            "1472 x 704 [L] 19:9",
+            "1344 x 768 [L] 16:9",
+            "1216 x 768 [L] 8:5",
+            "1216 x 832 [L] 3:2",
+            "1152 x 896 [L] 4:3"
+          ],
+          {
+            "default": "1024 x 1024 [S] 1:1"
+          }
+        ],
+        "empty_latent_width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "empty_latent_height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 64
+          }
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "optional": {
+        "model_override": [
+          "MODEL"
+        ],
+        "clip_override": [
+          "CLIP"
+        ],
+        "optional_lora_stack": [
+          "LORA_STACK"
+        ],
+        "optional_controlnet_stack": [
+          "CONTROL_NET_STACK"
+        ],
+        "refiner_model_override": [
+          "MODEL"
+        ],
+        "refiner_clip_override": [
+          "CLIP"
+        ],
+        "prepend_positive_g": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "prepend_positive_l": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "prepend_negative_g": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "prepend_negative_l": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "ttNnodeVersion": "2.1.0",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE_SDXL",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "VAE",
+      "CLIP",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "CLIP",
+      "LATENT",
+      "INT",
+      "INT",
+      "INT",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "sdxl_pipe",
+      "model",
+      "positive",
+      "negative",
+      "vae",
+      "clip",
+      "refiner_model",
+      "refiner_positive",
+      "refiner_negative",
+      "refiner_clip",
+      "latent",
+      "seed",
+      "width",
+      "height",
+      "pos_string",
+      "neg_string"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "sdxl_pipeloader",
+    "output_node": false,
+    "version": "2.1.0",
+    "id": "ttN_pipeLoaderSDXL_v2_2315fee49000ac73ed2b4205",
+    "display_name": "pipeLoaderSDXL"
+  },
+  "ttN pipeKSamplerSDXL_v2": {
+    "module": "main",
+    "class": "ttN_pipeKSamplerSDXL_v2",
+    "inputs": {
+      "required": {
+        "sdxl_pipe": [
+          "PIPE_LINE_SDXL"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "[latent] nearest-exact",
+            "[latent] bilinear",
+            "[latent] area",
+            "[latent] bicubic",
+            "[latent] lanczos",
+            "[latent] bislerp",
+            "[hiresFix] nearest-exact",
+            "[hiresFix] bilinear",
+            "[hiresFix] area",
+            "[hiresFix] bicubic",
+            "[hiresFix] lanczos",
+            "[hiresFix] bislerp"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "upscale_model_name": [
+          [
+            "@catalog:upscale_models",
+            "None"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "rescale": [
+          [
+            "by percentage",
+            "to Width/Height",
+            "to longer side - maintain aspect",
+            "None"
+          ]
+        ],
+        "percent": [
+          "INT",
+          {
+            "default": 50,
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "longer_side": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "base_steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "denoise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "refiner_steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "refiner_cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "refiner_denoise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal",
+            "AYS SD1",
+            "AYS SDXL",
+            "AYS SVD",
+            "GITS SD1"
+          ]
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save",
+            "Disabled"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "optional": {
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_refiner_model": [
+          "MODEL"
+        ],
+        "optional_refiner_positive": [
+          "CONDITIONING"
+        ],
+        "optional_refiner_negative": [
+          "CONDITIONING"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ],
+        "input_image_override": [
+          "IMAGE"
+        ],
+        "adv_xyPlot": [
+          "ADV_XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "2.3.1"
+      }
+    },
+    "returns": [
+      "PIPE_LINE_SDXL",
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT",
+      "IMAGE"
+    ],
+    "names": [
+      "sdxl_pipe",
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "refiner_model",
+      "refiner_positive",
+      "refiner_negative",
+      "latent",
+      "vae",
+      "clip",
+      "images",
+      "seed",
+      "plot_image"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "sample",
+    "output_node": true,
+    "version": "2.3.1",
+    "id": "ttN_pipeKSamplerSDXL_v2_d7a835b65f8b639485e83a20",
+    "display_name": "pipeKSamplerSDXL"
+  },
+  "ttN advanced xyPlot": {
+    "module": "main",
+    "class": "ttN_advanced_XYPlot",
+    "inputs": {
+      "required": {
+        "grid_spacing": [
+          "INT",
+          {
+            "min": 0,
+            "max": 500,
+            "step": 5,
+            "default": 0
+          }
+        ],
+        "save_individuals": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ],
+        "flip_xy": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ],
+        "x_plot": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "placeholder": "X_PLOT\nExample:\n\n<axis number:label1>\n[node_ID:widget_Name='value']\n\n<axis number2:label2>\n[node_ID:widget_Name='value2']\n[node_ID:widget2_Name='value']\n[node_ID2:widget_Name='value']\n\netc...",
+            "pysssss.autocomplete": false
+          }
+        ],
+        "y_plot": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "placeholder": "Y_PLOT\nExample:\n\n<axis number:label1>\n[node_ID:widget_Name='value']\n\n<axis number2:label2>\n[node_ID:widget_Name='value2']\n[node_ID:widget2_Name='value']\n[node_ID2:widget_Name='value']\n\netc...",
+            "pysssss.autocomplete": false
+          }
+        ],
+        "z_plot": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "placeholder": "Z_PLOT\nExample:\n\n<axis number:label1>\n[node_ID:widget_Name='value']\n\n<axis number2:label2>\n[node_ID:widget_Name='value2']\n[node_ID:widget2_Name='value']\n[node_ID2:widget_Name='value']\n\netc...",
+            "pysssss.autocomplete": false
+          }
+        ],
+        "invert_background": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ]
+      },
+      "hidden": {
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.2.1"
+      }
+    },
+    "returns": [
+      "ADV_XYPLOT"
+    ],
+    "names": [
+      "adv_xyPlot"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": false,
+    "version": "1.2.1",
+    "id": "ttN_advanced_xyPlot_5660b5693fff3e6a7b6ac6be",
+    "display_name": "advanced xyPlot"
+  },
+  "ttN advPlot images": {
+    "module": "main",
+    "class": "ttN_advPlot_images",
+    "inputs": {
+      "required": {
+        "enabled": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ],
+        "image": [
+          "IMAGE",
+          {}
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save",
+            "Disabled"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "optional": {
+        "adv_xyPlot": [
+          "ADV_XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "IMAGE",
+      "IMAGE"
+    ],
+    "names": [
+      "images",
+      "plot_image"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": true,
+    "version": "1.0.0",
+    "id": "ttN_advPlot_images_9464f7f009faedbbe64f8aee",
+    "display_name": "advPlot images"
+  },
+  "ttN advPlot range": {
+    "module": "main",
+    "class": "ttN_advPlot_range",
+    "inputs": {
+      "required": {
+        "node": [
+          [
+            "Connect to xyPlot for options"
+          ],
+          {}
+        ],
+        "widget": [
+          [
+            "Select node for options"
+          ],
+          {}
+        ],
+        "range_mode": [
+          [
+            "step_int",
+            "num_steps_int",
+            "step_float",
+            "num_steps_float"
+          ],
+          {}
+        ],
+        "start": [
+          "FLOAT",
+          {
+            "min": -18446744073709551615,
+            "max": 18446744073709551615,
+            "step": 0.01,
+            "default": 1
+          }
+        ],
+        "step": [
+          "FLOAT",
+          {
+            "min": -18446744073709551615,
+            "max": 18446744073709551615,
+            "step": 0.01,
+            "default": 1
+          }
+        ],
+        "stop": [
+          "FLOAT",
+          {
+            "min": -18446744073709551615,
+            "max": 18446744073709551615,
+            "step": 0.01,
+            "default": 5
+          }
+        ],
+        "include_stop": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ],
+        "num_steps": [
+          "INT",
+          {
+            "min": 1,
+            "max": 1000,
+            "step": 1,
+            "default": 5
+          }
+        ],
+        "label_type": [
+          [
+            "Values",
+            "Title and Values",
+            "ID, Title and Values"
+          ],
+          {
+            "default": "Values"
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "plot_text"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": true,
+    "version": "1.1.0",
+    "id": "ttN_advPlot_range_ae4d61a6cbdb5c6824e46a98",
+    "display_name": "advPlot range"
+  },
+  "ttN advPlot string": {
+    "module": "main",
+    "class": "ttN_advPlot_string",
+    "inputs": {
+      "required": {
+        "node": [
+          [
+            "Connect to xyPlot for options"
+          ],
+          {}
+        ],
+        "widget": [
+          [
+            "Select node for options"
+          ],
+          {}
+        ],
+        "replace_mode": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ],
+        "search_string": [
+          "STRING",
+          {
+            "default": ""
+          }
+        ],
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true
+          }
+        ],
+        "delimiter": [
+          "STRING",
+          {
+            "default": "\\n",
+            "multiline": false
+          }
+        ],
+        "label_type": [
+          [
+            "Values",
+            "Title and Values",
+            "ID, Title and Values"
+          ],
+          {
+            "default": "Values"
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "plot_text"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": true,
+    "version": "1.1.0",
+    "id": "ttN_advPlot_string_abb8997c9782d24ce63175fb",
+    "display_name": "advPlot string"
+  },
+  "ttN advPlot combo": {
+    "module": "main",
+    "class": "ttN_advPlot_combo",
+    "inputs": {
+      "required": {
+        "node": [
+          [
+            "Connect to xyPlot for options"
+          ],
+          {}
+        ],
+        "widget": [
+          [
+            "Select node for options"
+          ],
+          {}
+        ],
+        "mode": [
+          [
+            "all",
+            "range",
+            "select"
+          ]
+        ],
+        "start_from": [
+          [
+            "Select widget for options"
+          ]
+        ],
+        "end_with": [
+          [
+            "Select widget for options"
+          ]
+        ],
+        "select": [
+          [
+            "Select widget for options"
+          ]
+        ],
+        "selection": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true
+          }
+        ],
+        "label_type": [
+          [
+            "Values",
+            "Title and Values",
+            "ID, Title and Values"
+          ],
+          {
+            "default": "Values"
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0",
+        "prompt": "PROMPT"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "plot_text"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": true,
+    "version": "1.0.0",
+    "id": "ttN_advPlot_combo_2175b2f2a4848cce66909124",
+    "display_name": "advPlot combo"
+  },
+  "ttN advPlot merge": {
+    "module": "main",
+    "class": "ttN_advPlot_merge",
+    "inputs": {
+      "required": {
+        "label_type": [
+          [
+            "Values",
+            "Title and Values",
+            "ID, Title and Values"
+          ],
+          {
+            "default": "Values"
+          }
+        ]
+      },
+      "optional": {
+        "plot_text1": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ],
+        "plot_text2": [
+          "STRING",
+          {
+            "forceInput": true
+          }
+        ]
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "plot_text"
+    ],
+    "category": "🌏 tinyterra/xyPlot",
+    "function": "plot",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_advPlot_merge_174e015dbe69c2712c571e31",
+    "display_name": "advPlot merge"
+  },
+  "ttN pipeEDIT": {
+    "module": "main",
+    "class": "ttN_pipe_EDIT",
+    "inputs": {
+      "required": {},
+      "optional": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "model": [
+          "MODEL"
+        ],
+        "pos": [
+          "CONDITIONING"
+        ],
+        "neg": [
+          "CONDITIONING"
+        ],
+        "latent": [
+          "LATENT"
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "clip": [
+          "CLIP"
+        ],
+        "image": [
+          "IMAGE"
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615,
+            "forceInput": true
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.1",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "pos",
+      "neg",
+      "latent",
+      "vae",
+      "clip",
+      "image",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "flush",
+    "output_node": false,
+    "version": "1.1.1",
+    "id": "ttN_pipeEDIT_aa5a200004e9fb4314a1b528",
+    "display_name": "pipeEDIT"
+  },
+  "ttN pipe2BASIC": {
+    "module": "main",
+    "class": "ttN_pipe_2BASIC",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "BASIC_PIPE",
+      "PIPE_LINE"
+    ],
+    "names": [
+      "basic_pipe",
+      "pipe"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "flush",
+    "output_node": false,
+    "version": "1.1.0",
+    "id": "ttN_pipe2BASIC_748c46ff86c489ba345bbb37",
+    "display_name": "pipe > basic_pipe"
+  },
+  "ttN pipe2DETAILER": {
+    "module": "main",
+    "class": "ttN_pipe_2DETAILER",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "bbox_detector": [
+          "BBOX_DETECTOR"
+        ],
+        "wildcard": [
+          "STRING",
+          {
+            "multiline": true,
+            "placeholder": "wildcard spec: if kept empty, this option will be ignored"
+          }
+        ]
+      },
+      "optional": {
+        "sam_model_opt": [
+          "SAM_MODEL"
+        ],
+        "segm_detector_opt": [
+          "SEGM_DETECTOR"
+        ],
+        "detailer_hook": [
+          "DETAILER_HOOK"
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.2.0"
+      }
+    },
+    "returns": [
+      "DETAILER_PIPE",
+      "PIPE_LINE"
+    ],
+    "names": [
+      "detailer_pipe",
+      "pipe"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "flush",
+    "output_node": false,
+    "version": "1.2.0",
+    "id": "ttN_pipe2DETAILER_fb799f9f4e6a3a0b893bacef",
+    "display_name": "pipe > detailer_pipe"
+  },
+  "ttN pipeEncodeConcat": {
+    "module": "main",
+    "class": "ttN_pipeEncodeConcat",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "toggle": [
+          [
+            true,
+            false
+          ]
+        ]
+      },
+      "optional": {
+        "positive": [
+          "STRING",
+          {
+            "default": "Positive",
+            "multiline": true
+          }
+        ],
+        "positive_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "positive_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "Negative",
+            "multiline": true
+          }
+        ],
+        "negative_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "negative_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "optional_positive_from": [
+          "CONDITIONING"
+        ],
+        "optional_negative_from": [
+          "CONDITIONING"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.2",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "CONDITIONING",
+      "CONDITIONING",
+      "CLIP"
+    ],
+    "names": [
+      "pipe",
+      "positive",
+      "negative",
+      "clip"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "concat",
+    "output_node": true,
+    "version": "1.0.2",
+    "id": "ttN_pipeEncodeConcat_7974130fa1ef7a3d6966bb0a",
+    "display_name": "pipeEncodeConcat"
+  },
+  "ttN pipeLoraStack": {
+    "module": "main",
+    "class": "ttN_pipeLoraStack",
+    "inputs": {
+      "required": {
+        "toggle": [
+          [
+            true,
+            false
+          ]
+        ],
+        "mode": [
+          [
+            "simple",
+            "advanced"
+          ]
+        ],
+        "num_loras": [
+          "INT",
+          {
+            "default": 1,
+            "min": 0,
+            "max": 20
+          }
+        ]
+      },
+      "optional": {
+        "optional_pipe": [
+          "PIPE_LINE",
+          {
+            "default": null
+          }
+        ],
+        "model_override": [
+          "MODEL"
+        ],
+        "clip_override": [
+          "CLIP"
+        ],
+        "optional_lora_stack": [
+          "LORA_STACK"
+        ],
+        "lora_1_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_1_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_1_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_1_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_2_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_2_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_2_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_2_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_3_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_3_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_3_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_3_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_4_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_4_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_4_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_4_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_5_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_5_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_5_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_5_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_6_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_6_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_6_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_6_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_7_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_7_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_7_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_7_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_8_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_8_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_8_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_8_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_9_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_9_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_9_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_9_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_10_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_10_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_10_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_10_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_11_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_11_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_11_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_11_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_12_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_12_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_12_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_12_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_13_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_13_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_13_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_13_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_14_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_14_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_14_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_14_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_15_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_15_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_15_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_15_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_16_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_16_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_16_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_16_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_17_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_17_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_17_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_17_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_18_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_18_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_18_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_18_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_19_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_19_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_19_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_19_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_20_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "lora_20_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_20_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_20_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.1"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "LORA_STACK"
+    ],
+    "names": [
+      "optional_pipe",
+      "lora_stack"
+    ],
+    "category": "🌏 tinyterra/pipe",
+    "function": "stack",
+    "output_node": false,
+    "version": "1.1.1",
+    "id": "ttN_pipeLoraStack_2ec4cdc8dd3715945346a19e",
+    "display_name": "pipeLoraStack"
+  },
+  "ttN multiModelMerge": {
+    "module": "main",
+    "class": "ttN_multiModelMerge",
+    "inputs": {
+      "required": {
+        "ckpt_A_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_A_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "ckpt_B_name": [
+          [
+            "None",
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_B_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "ckpt_C_name": [
+          [
+            "None",
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_C_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "model_interpolation": [
+          [
+            "Weighted sum = (  A*(1-M) + B*M  )",
+            "Add difference = (  A + (B-C)*M  )",
+            "A Only"
+          ]
+        ],
+        "model_multiplier": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "clip_interpolation": [
+          [
+            "Follow model interp",
+            "Weighted sum = (  A*(1-M) + B*M  )",
+            "Add difference = (  A + (B-C)*M  )",
+            "A Only",
+            "B Only",
+            "C Only"
+          ]
+        ],
+        "clip_multiplier": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ]
+      },
+      "optional": {
+        "model_A_override": [
+          "MODEL"
+        ],
+        "model_B_override": [
+          "MODEL"
+        ],
+        "model_C_override": [
+          "MODEL"
+        ],
+        "clip_A_override": [
+          "CLIP"
+        ],
+        "clip_B_override": [
+          "CLIP"
+        ],
+        "clip_C_override": [
+          "CLIP"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "ttNnodeVersion": "1.1.0",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "MODEL",
+      "CLIP"
+    ],
+    "names": [
+      "model",
+      "clip"
+    ],
+    "category": "🌏 tinyterra",
+    "function": "mergificate",
+    "output_node": false,
+    "version": "1.1.0",
+    "id": "ttN_multiModelMerge_9930284c5606dcc14e190be2",
+    "display_name": "multiModelMerge"
+  },
+  "ttN debugInput": {
+    "module": "main",
+    "class": "ttN_debugInput",
+    "inputs": {
+      "required": {
+        "print_to_console": [
+          "BOOLEAN"
+        ],
+        "console_title": [
+          "STRING",
+          {
+            "default": "ttN debug:"
+          }
+        ],
+        "console_color": [
+          [
+            "Black",
+            "Red",
+            "Green",
+            "Yellow",
+            "Blue",
+            "Violet",
+            "Cyan",
+            "White",
+            "Grey",
+            "LightRed",
+            "LightGreen",
+            "LightYellow",
+            "LightBlue",
+            "LightViolet",
+            "LightCyan",
+            "LightWhite"
+          ],
+          {
+            "default": "Red"
+          }
+        ]
+      },
+      "optional": {
+        "debug": [
+          "*",
+          {
+            "default": null
+          }
+        ]
+      }
+    },
+    "returns": [],
+    "names": [],
+    "category": "🌏 tinyterra/util",
+    "function": "debug",
+    "output_node": true,
+    "version": "1.0.0",
+    "id": "ttN_debugInput_b1bdfd3890f7007c8f93b9a5",
+    "display_name": "debugInput"
+  },
+  "ttN text": {
+    "module": "main",
+    "class": "ttN_text",
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "dynamicPrompts": true
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "conmeow",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_text_17f67ffa52c37f580bb94011",
+    "display_name": "text"
+  },
+  "ttN textDebug": {
+    "module": "main",
+    "class": "ttN_textDebug",
+    "inputs": {
+      "required": {
+        "print_to_console": [
+          [
+            false,
+            true
+          ]
+        ],
+        "console_title": [
+          "STRING",
+          {
+            "default": ""
+          }
+        ],
+        "execute": [
+          [
+            "Always",
+            "On Change"
+          ]
+        ],
+        "text": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "forceInput": true,
+            "dynamicPrompts": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.0."
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "write",
+    "output_node": true,
+    "version": "1.0.",
+    "id": "ttN_textDebug_0be2c3c83aa3a0e9be121654",
+    "display_name": "textDebug"
+  },
+  "ttN concat": {
+    "module": "main",
+    "class": "ttN_concat",
+    "inputs": {
+      "required": {
+        "text1": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text2": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text3": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "delimiter": [
+          "STRING",
+          {
+            "default": ",",
+            "multiline": false
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "concat"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "conmeow",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_concat_98a12dae0cccc980d9c7b338",
+    "display_name": "textConcat"
+  },
+  "ttN text3BOX_3WAYconcat": {
+    "module": "main",
+    "class": "ttN_text3BOX_3WAYconcat",
+    "inputs": {
+      "required": {
+        "text1": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text2": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text3": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "delimiter": [
+          "STRING",
+          {
+            "default": ",",
+            "multiline": false
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "text1",
+      "text2",
+      "text3",
+      "1 & 2",
+      "1 & 3",
+      "2 & 3",
+      "concat"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "conmeow",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_text3BOX_3WAYconcat_d6bfacdd1e94a341253109a6",
+    "display_name": "3x TXT Loader MultiConcat"
+  },
+  "ttN text7BOX_concat": {
+    "module": "main",
+    "class": "ttN_text7BOX_concat",
+    "inputs": {
+      "required": {
+        "text1": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text2": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text3": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text4": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text5": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text6": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "text7": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "delimiter": [
+          "STRING",
+          {
+            "default": ",",
+            "multiline": false
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING",
+      "STRING"
+    ],
+    "names": [
+      "text1",
+      "text2",
+      "text3",
+      "text4",
+      "text5",
+      "text6",
+      "text7",
+      "concat"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "conmeow",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_text7BOX_concat_e768585a58ce525b0095c15f",
+    "display_name": "7x TXT Loader Concat"
+  },
+  "ttN textCycleLine": {
+    "module": "main",
+    "class": "ttN_textCycleLine",
+    "inputs": {
+      "required": {
+        "text": [
+          "STRING",
+          {
+            "multiline": true,
+            "default": "",
+            "dynamicPrompts": true
+          }
+        ],
+        "index": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "index_control": [
+          [
+            "increment",
+            "decrement",
+            "randomize",
+            "fixed"
+          ]
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "STRING"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "cycle",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_textCycleLine_07efecfd0109e56a0112fcc3",
+    "display_name": "textCycleLine"
+  },
+  "ttN textOutput": {
+    "module": "main",
+    "class": "ttN_textOUPUT",
+    "inputs": {
+      "required": {
+        "text_output": [
+          [
+            "Preview",
+            "Save"
+          ],
+          {
+            "default": "Preview"
+          }
+        ],
+        "text": [
+          "STRING",
+          {
+            "multiline": true
+          }
+        ],
+        "output_path": [
+          "STRING",
+          {
+            "default": "output",
+            "multiline": false
+          }
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "number_padding": [
+          [
+            "None",
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          {
+            "default": 5
+          }
+        ],
+        "file_type": [
+          [
+            "txt",
+            "md",
+            "rtf",
+            "log",
+            "ini",
+            "csv"
+          ],
+          {
+            "default": "txt"
+          }
+        ],
+        "overwrite_existing": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.2.0"
+      }
+    },
+    "returns": [
+      "STRING"
+    ],
+    "names": [
+      "text"
+    ],
+    "category": "🌏 tinyterra/text",
+    "function": "output",
+    "output_node": true,
+    "version": "1.0.1",
+    "id": "ttN_textOutput_561c7568d7a8609efb4c9c40",
+    "display_name": "textOutput"
+  },
+  "ttN imageOutput": {
+    "module": "main",
+    "class": "ttN_imageOUPUT",
+    "inputs": {
+      "required": {
+        "image": [
+          "IMAGE"
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ],
+          {
+            "default": "Preview"
+          }
+        ],
+        "output_path": [
+          "STRING",
+          {
+            "default": "output",
+            "multiline": false
+          }
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "number_padding": [
+          [
+            "None",
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          {
+            "default": 5
+          }
+        ],
+        "file_type": [
+          [
+            "png",
+            "jpg",
+            "jpeg",
+            "tiff",
+            "tif",
+            "webp",
+            "bmp"
+          ],
+          {
+            "default": "png"
+          }
+        ],
+        "overwrite_existing": [
+          "BOOLEAN",
+          {
+            "default": false
+          }
+        ],
+        "embed_workflow": [
+          "BOOLEAN",
+          {
+            "default": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.2.0"
+      }
+    },
+    "returns": [
+      "IMAGE"
+    ],
+    "names": [
+      "image"
+    ],
+    "category": "🌏 tinyterra/image",
+    "function": "output",
+    "output_node": true,
+    "version": "1.2.0",
+    "id": "ttN_imageOutput_9d7e52569d2d64b9e9e58352",
+    "display_name": "imageOutput"
+  },
+  "ttN imageREMBG": {
+    "module": "main",
+    "class": "ttN_imageREMBG",
+    "inputs": {
+      "required": {
+        "image": [
+          "IMAGE"
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ],
+          {
+            "default": "Preview"
+          }
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "IMAGE",
+      "MASK"
+    ],
+    "names": [
+      "image",
+      "mask"
+    ],
+    "category": "🌏 tinyterra/image",
+    "function": "remove_background",
+    "output_node": true,
+    "version": "1.0.0",
+    "id": "ttN_imageREMBG_d75ef8a3e919f3bfc66f9795",
+    "display_name": "imageRemBG"
+  },
+  "ttN hiresfixScale": {
+    "module": "main",
+    "class": "ttN_modelScale",
+    "inputs": {
+      "required": {
+        "model_name": [
+          [
+            "@catalog:upscale_models"
+          ]
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "image": [
+          "IMAGE"
+        ],
+        "rescale_after_model": [
+          [
+            false,
+            true
+          ],
+          {
+            "default": true
+          }
+        ],
+        "rescale_method": [
+          [
+            "nearest-exact",
+            "bilinear",
+            "area",
+            "bicubic",
+            "lanczos",
+            "bislerp"
+          ]
+        ],
+        "rescale": [
+          [
+            "by percentage",
+            "to Width/Height",
+            "to longer side - maintain aspect"
+          ]
+        ],
+        "percent": [
+          "INT",
+          {
+            "default": 50,
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        ],
+        "width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "longer_side": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ],
+        "output_latent": [
+          [
+            false,
+            true
+          ],
+          {
+            "default": true
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "LATENT",
+      "IMAGE"
+    ],
+    "names": [
+      "latent",
+      "image"
+    ],
+    "category": "🌏 tinyterra/image",
+    "function": "upscale",
+    "output_node": true,
+    "version": "1.1.0",
+    "id": "ttN_hiresfixScale_30b24f506f9af9321f1ae901",
+    "display_name": "hiresfixScale"
+  },
+  "ttN int": {
+    "module": "main",
+    "class": "ttN_INT",
+    "inputs": {
+      "required": {
+        "int": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "INT",
+      "FLOAT",
+      "STRING"
+    ],
+    "names": [
+      "int",
+      "float",
+      "text"
+    ],
+    "category": "🌏 tinyterra/util",
+    "function": "convert",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_int_3b12e0212a0b8b0be03416b7",
+    "display_name": "int"
+  },
+  "ttN float": {
+    "module": "main",
+    "class": "ttN_FLOAT",
+    "inputs": {
+      "required": {
+        "float": [
+          "FLOAT",
+          {
+            "default": 0.0,
+            "min": 0.0,
+            "max": 18446744073709551615,
+            "step": 0.01
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "FLOAT",
+      "INT",
+      "STRING"
+    ],
+    "names": [
+      "float",
+      "int",
+      "text"
+    ],
+    "category": "🌏 tinyterra/util",
+    "function": "convert",
+    "output_node": false,
+    "version": "1.0.0",
+    "id": "ttN_float_135744bce0eed7150cbe9f22",
+    "display_name": "float"
+  },
+  "ttN seed": {
+    "module": "main",
+    "class": "ttN_SEED",
+    "inputs": {
+      "required": {
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.0.0"
+      }
+    },
+    "returns": [
+      "INT"
+    ],
+    "names": [
+      "seed"
+    ],
+    "category": "🌏 tinyterra/util",
+    "function": "plant",
+    "output_node": true,
+    "version": "1.0.0",
+    "id": "ttN_seed_0fffce90a3d1a81a1e11489e",
+    "display_name": "seed"
+  },
+  "ttN xyPlot": {
+    "module": "legacy",
+    "class": "ttN_XYPlot",
+    "inputs": {
+      "required": {
+        "grid_spacing": [
+          "INT",
+          {
+            "min": 0,
+            "max": 500,
+            "step": 5,
+            "default": 0
+          }
+        ],
+        "latent_id": [
+          "INT",
+          {
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "default": 0
+          }
+        ],
+        "output_individuals": [
+          [
+            "False",
+            "True"
+          ],
+          {
+            "default": "False"
+          }
+        ],
+        "flip_xy": [
+          [
+            "False",
+            "True"
+          ],
+          {
+            "default": "False"
+          }
+        ],
+        "x_axis": [
+          [
+            "None",
+            "---------------------",
+            "sampler: lora_name",
+            "sampler: lora_model_strength",
+            "sampler: lora_clip_strength",
+            "sampler: lora_model&clip_strength",
+            "sampler: steps",
+            "sampler: cfg",
+            "sampler: sampler_name",
+            "sampler: scheduler",
+            "sampler: denoise",
+            "sampler: seed",
+            "---------------------",
+            "loader: ckpt_name",
+            "loader: vae_name",
+            "loader: clip_skip",
+            "loader: lora1_name",
+            "loader: lora1_model_strength",
+            "loader: lora1_clip_strength",
+            "loader: lora1_model&clip_strength",
+            "loader: lora2_name",
+            "loader: lora2_model_strength",
+            "loader: lora2_clip_strength",
+            "loader: lora2_model&clip_strength",
+            "loader: lora3_name",
+            "loader: lora3_model_strength",
+            "loader: lora3_clip_strength",
+            "loader: lora3_model&clip_strength",
+            "loader: positive",
+            "loader: positive_token_normalization",
+            "loader: positive_weight_interpretation",
+            "loader: negative",
+            "loader: negative_token_normalization",
+            "loader: negative_weight_interpretation"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "x_values": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "placeholder": "insert values seperated by \"; \""
+          }
+        ],
+        "y_axis": [
+          [
+            "None",
+            "---------------------",
+            "sampler: lora_name",
+            "sampler: lora_model_strength",
+            "sampler: lora_clip_strength",
+            "sampler: lora_model&clip_strength",
+            "sampler: steps",
+            "sampler: cfg",
+            "sampler: sampler_name",
+            "sampler: scheduler",
+            "sampler: denoise",
+            "sampler: seed",
+            "---------------------",
+            "loader: ckpt_name",
+            "loader: vae_name",
+            "loader: clip_skip",
+            "loader: lora1_name",
+            "loader: lora1_model_strength",
+            "loader: lora1_clip_strength",
+            "loader: lora1_model&clip_strength",
+            "loader: lora2_name",
+            "loader: lora2_model_strength",
+            "loader: lora2_clip_strength",
+            "loader: lora2_model&clip_strength",
+            "loader: lora3_name",
+            "loader: lora3_model_strength",
+            "loader: lora3_clip_strength",
+            "loader: lora3_model&clip_strength",
+            "loader: positive",
+            "loader: positive_token_normalization",
+            "loader: positive_weight_interpretation",
+            "loader: negative",
+            "loader: negative_token_normalization",
+            "loader: negative_weight_interpretation"
+          ],
+          {
+            "default": "None"
+          }
+        ],
+        "y_values": [
+          "STRING",
+          {
+            "default": "",
+            "multiline": true,
+            "placeholder": "insert values seperated by \"; \""
+          }
+        ]
+      },
+      "hidden": {
+        "plot_dict": [
+          {
+            "lora_name": [
+              "None",
+              "@catalog:loras"
+            ],
+            "lora_model_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora_clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora_model&clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "steps": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            },
+            "cfg": {
+              "min": 0.0,
+              "max": 100.0,
+              "step": 1.0
+            },
+            "sampler_name": [
+              "euler",
+              "euler_cfg_pp",
+              "euler_ancestral",
+              "euler_ancestral_cfg_pp",
+              "heun",
+              "heunpp2",
+              "exp_heun_2_x0",
+              "exp_heun_2_x0_sde",
+              "dpm_2",
+              "dpm_2_ancestral",
+              "lms",
+              "dpm_fast",
+              "dpm_adaptive",
+              "dpmpp_2s_ancestral",
+              "dpmpp_2s_ancestral_cfg_pp",
+              "dpmpp_sde",
+              "dpmpp_sde_gpu",
+              "dpmpp_2m",
+              "dpmpp_2m_cfg_pp",
+              "dpmpp_2m_sde",
+              "dpmpp_2m_sde_gpu",
+              "dpmpp_2m_sde_heun",
+              "dpmpp_2m_sde_heun_gpu",
+              "dpmpp_3m_sde",
+              "dpmpp_3m_sde_gpu",
+              "ddpm",
+              "lcm",
+              "ipndm",
+              "ipndm_v",
+              "deis",
+              "cfgpp_ud10_ab",
+              "res_multistep",
+              "res_multistep_cfg_pp",
+              "res_multistep_ancestral",
+              "res_multistep_ancestral_cfg_pp",
+              "gradient_estimation",
+              "gradient_estimation_cfg_pp",
+              "er_sde",
+              "seeds_2",
+              "seeds_3",
+              "sa_solver",
+              "sa_solver_pece",
+              "ddim",
+              "uni_pc",
+              "uni_pc_bh2"
+            ],
+            "scheduler": [
+              "simple",
+              "sgm_uniform",
+              "karras",
+              "exponential",
+              "ddim_uniform",
+              "beta",
+              "normal",
+              "linear_quadratic",
+              "kl_optimal"
+            ],
+            "denoise": {
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01
+            },
+            "seed": [
+              "increment",
+              "decrement",
+              "randomize"
+            ],
+            "ckpt_name": [
+              "@catalog:checkpoints"
+            ],
+            "vae_name": [
+              "Baked-VAE",
+              "@catalog:vae"
+            ],
+            "clip_skip": {
+              "min": -24,
+              "max": -1,
+              "step": 1
+            },
+            "lora1_name": [
+              "None",
+              "@catalog:loras"
+            ],
+            "lora1_model_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora1_clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora1_model&clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora2_name": [
+              "None",
+              "@catalog:loras"
+            ],
+            "lora2_model_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora2_clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora2_model&clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora3_name": [
+              "None",
+              "@catalog:loras"
+            ],
+            "lora3_model_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora3_clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "lora3_model&clip_strength": {
+              "min": -4.0,
+              "max": 4.0,
+              "step": 0.01
+            },
+            "positive": [],
+            "positive_token_normalization": [
+              "none",
+              "mean",
+              "length",
+              "length+mean"
+            ],
+            "positive_weight_interpretation": [
+              "comfy",
+              "A1111",
+              "compel",
+              "comfy++"
+            ],
+            "negative": [],
+            "negative_token_normalization": [
+              "none",
+              "mean",
+              "length",
+              "length+mean"
+            ],
+            "negative_weight_interpretation": [
+              "comfy",
+              "A1111",
+              "compel",
+              "comfy++"
+            ]
+          }
+        ],
+        "ttNnodeVersion": "1.2.0"
+      }
+    },
+    "returns": [
+      "XYPLOT"
+    ],
+    "names": [
+      "xyPlot"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "plot",
+    "output_node": false,
+    "version": "1.2.0",
+    "id": "ttN_xyPlot_544de9d62d33978b709f2eee",
+    "display_name": "xyPlot"
+  },
+  "ttN pipeIN": {
+    "module": "legacy",
+    "class": "ttN_pipe_IN",
+    "inputs": {
+      "required": {
+        "model": [
+          "MODEL"
+        ],
+        "pos": [
+          "CONDITIONING"
+        ],
+        "neg": [
+          "CONDITIONING"
+        ],
+        "latent": [
+          "LATENT"
+        ],
+        "vae": [
+          "VAE"
+        ],
+        "clip": [
+          "CLIP"
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "optional": {
+        "image": [
+          "IMAGE"
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "PIPE_LINE"
+    ],
+    "names": [
+      "pipe"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "flush",
+    "output_node": false,
+    "version": "1.1.0",
+    "id": "ttN_pipeIN_0f4a584cca428eb3e2db18ec",
+    "display_name": "pipeIN (Legacy)"
+  },
+  "ttN pipeOUT": {
+    "module": "legacy",
+    "class": "ttN_pipe_OUT",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ]
+      },
+      "hidden": {
+        "ttNnodeVersion": "1.1.0"
+      }
+    },
+    "returns": [
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT",
+      "PIPE_LINE"
+    ],
+    "names": [
+      "model",
+      "pos",
+      "neg",
+      "latent",
+      "vae",
+      "clip",
+      "image",
+      "seed",
+      "pipe"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "flush",
+    "output_node": false,
+    "version": "1.1.0",
+    "id": "ttN_pipeOUT_ddb0379afad4f093ff872f5d",
+    "display_name": "pipeOUT (Legacy)"
+  },
+  "ttN pipeLoader": {
+    "module": "legacy",
+    "class": "ttN_TSC_pipeLoader",
+    "inputs": {
+      "required": {
+        "ckpt_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "config_name": [
+          [
+            "Default",
+            "@catalog:configs"
+          ],
+          {
+            "default": "Default"
+          }
+        ],
+        "vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "clip_skip": [
+          "INT",
+          {
+            "default": -1,
+            "min": -24,
+            "max": 0,
+            "step": 1
+          }
+        ],
+        "lora1_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora1_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora1_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora2_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora2_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora2_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora3_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora3_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora3_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "positive": [
+          "STRING",
+          {
+            "default": "Positive",
+            "multiline": true
+          }
+        ],
+        "positive_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "positive_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "Negative",
+            "multiline": true
+          }
+        ],
+        "negative_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "negative_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "empty_latent_width": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "empty_latent_height": [
+          "INT",
+          {
+            "default": 512,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 64
+          }
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "optional": {
+        "model_override": [
+          "MODEL"
+        ],
+        "clip_override": [
+          "CLIP"
+        ],
+        "optional_lora_stack": [
+          "LORA_STACK"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "ttNnodeVersion": "1.1.2",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "INT"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "adv_pipeloader",
+    "output_node": false,
+    "version": "1.1.2",
+    "id": "ttN_pipeLoader_b6c51abd124a0a79c7ba8c93",
+    "display_name": "pipeLoader v1 (Legacy)"
+  },
+  "ttN pipeKSampler": {
+    "module": "legacy",
+    "class": "ttN_TSC_pipeKSampler",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "nearest-exact",
+            "bilinear",
+            "area",
+            "bicubic",
+            "lanczos",
+            "bislerp"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "sampler_state": [
+          [
+            "Sample",
+            "Hold"
+          ]
+        ],
+        "steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal"
+          ]
+        ],
+        "denoise": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ]
+      },
+      "optional": {
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ],
+        "xyPlot": [
+          "XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "embeddingsList": [
+          [
+            "@catalog:embeddings"
+          ]
+        ],
+        "ttNnodeVersion": "1.0.5"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "image",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "sample",
+    "output_node": true,
+    "version": "1.0.5",
+    "id": "ttN_pipeKSampler_aab002d291a2f516b9550bf3",
+    "display_name": "pipeKSampler v1 (Legacy)"
+  },
+  "ttN pipeKSamplerAdvanced": {
+    "module": "legacy",
+    "class": "ttN_pipeKSamplerAdvanced",
+    "inputs": {
+      "required": {
+        "pipe": [
+          "PIPE_LINE"
+        ],
+        "lora_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "nearest-exact",
+            "bilinear",
+            "area",
+            "bicubic",
+            "lanczos",
+            "bislerp"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "sampler_state": [
+          [
+            "Sample",
+            "Hold"
+          ]
+        ],
+        "add_noise": [
+          [
+            "enable",
+            "disable"
+          ]
+        ],
+        "steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal"
+          ]
+        ],
+        "start_at_step": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "end_at_step": [
+          "INT",
+          {
+            "default": 10000,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "return_with_leftover_noise": [
+          [
+            "disable",
+            "enable"
+          ]
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ]
+      },
+      "optional": {
+        "noise_seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ],
+        "xyPlot": [
+          "XYPLOT"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "embeddingsList": [
+          [
+            "@catalog:embeddings"
+          ]
+        ],
+        "ttNnodeVersion": "1.0.5"
+      }
+    },
+    "returns": [
+      "PIPE_LINE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "LATENT",
+      "VAE",
+      "CLIP",
+      "IMAGE",
+      "INT"
+    ],
+    "names": [
+      "pipe",
+      "model",
+      "positive",
+      "negative",
+      "latent",
+      "vae",
+      "clip",
+      "image",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "sample",
+    "output_node": true,
+    "version": "1.0.5",
+    "id": "ttN_pipeKSamplerAdvanced_ba5a6ba9874ab2faac51c05a",
+    "display_name": "pipeKSamplerAdvanced v1 (Legacy)"
+  },
+  "ttN pipeLoaderSDXL": {
+    "module": "legacy",
+    "class": "ttN_pipeLoaderSDXL",
+    "inputs": {
+      "required": {
+        "ckpt_name": [
+          [
+            "@catalog:checkpoints"
+          ]
+        ],
+        "vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "lora1_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora1_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora1_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora2_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "lora2_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "lora2_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "refiner_ckpt_name": [
+          [
+            "None",
+            "@catalog:checkpoints"
+          ]
+        ],
+        "refiner_vae_name": [
+          [
+            "Baked VAE",
+            "@catalog:vae"
+          ]
+        ],
+        "refiner_lora1_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "refiner_lora1_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "refiner_lora1_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "refiner_lora2_name": [
+          [
+            "None",
+            "@catalog:loras"
+          ]
+        ],
+        "refiner_lora2_model_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "refiner_lora2_clip_strength": [
+          "FLOAT",
+          {
+            "default": 1.0,
+            "min": -10.0,
+            "max": 10.0,
+            "step": 0.01
+          }
+        ],
+        "clip_skip": [
+          "INT",
+          {
+            "default": -2,
+            "min": -24,
+            "max": 0,
+            "step": 1
+          }
+        ],
+        "positive": [
+          "STRING",
+          {
+            "default": "Positive",
+            "multiline": true
+          }
+        ],
+        "positive_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "positive_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "negative": [
+          "STRING",
+          {
+            "default": "Negative",
+            "multiline": true
+          }
+        ],
+        "negative_token_normalization": [
+          [
+            "none",
+            "mean",
+            "length",
+            "length+mean"
+          ]
+        ],
+        "negative_weight_interpretation": [
+          [
+            "comfy",
+            "A1111",
+            "compel",
+            "comfy++",
+            "down_weight"
+          ]
+        ],
+        "empty_latent_width": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "empty_latent_height": [
+          "INT",
+          {
+            "default": 1024,
+            "min": 64,
+            "max": 16384,
+            "step": 8
+          }
+        ],
+        "batch_size": [
+          "INT",
+          {
+            "default": 1,
+            "min": 1,
+            "max": 64
+          }
+        ],
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "ttNnodeVersion": "1.1.2",
+        "my_unique_id": "UNIQUE_ID"
+      }
+    },
+    "returns": [
+      "PIPE_LINE_SDXL",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "VAE",
+      "CLIP",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "VAE",
+      "CLIP",
+      "LATENT",
+      "INT"
+    ],
+    "names": [
+      "sdxl_pipe",
+      "model",
+      "positive",
+      "negative",
+      "vae",
+      "clip",
+      "refiner_model",
+      "refiner_positive",
+      "refiner_negative",
+      "refiner_vae",
+      "refiner_clip",
+      "latent",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "adv_pipeloader",
+    "output_node": false,
+    "version": "1.1.2",
+    "id": "ttN_pipeLoaderSDXL_48a01436a42cd167b68fb47f",
+    "display_name": "pipeLoaderSDXL v1 (Legacy)"
+  },
+  "ttN pipeKSamplerSDXL": {
+    "module": "legacy",
+    "class": "ttN_pipeKSamplerSDXL",
+    "inputs": {
+      "required": {
+        "sdxl_pipe": [
+          "PIPE_LINE_SDXL"
+        ],
+        "upscale_method": [
+          [
+            "None",
+            "nearest-exact",
+            "bilinear",
+            "area",
+            "bicubic",
+            "lanczos",
+            "bislerp"
+          ]
+        ],
+        "factor": [
+          "FLOAT",
+          {
+            "default": 2,
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.25
+          }
+        ],
+        "crop": [
+          [
+            "disabled",
+            "center"
+          ]
+        ],
+        "sampler_state": [
+          [
+            "Sample",
+            "Hold"
+          ]
+        ],
+        "base_steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 1,
+            "max": 10000
+          }
+        ],
+        "refiner_steps": [
+          "INT",
+          {
+            "default": 20,
+            "min": 0,
+            "max": 10000
+          }
+        ],
+        "cfg": [
+          "FLOAT",
+          {
+            "default": 8.0,
+            "min": 0.0,
+            "max": 100.0
+          }
+        ],
+        "sampler_name": [
+          [
+            "euler",
+            "euler_cfg_pp",
+            "euler_ancestral",
+            "euler_ancestral_cfg_pp",
+            "heun",
+            "heunpp2",
+            "exp_heun_2_x0",
+            "exp_heun_2_x0_sde",
+            "dpm_2",
+            "dpm_2_ancestral",
+            "lms",
+            "dpm_fast",
+            "dpm_adaptive",
+            "dpmpp_2s_ancestral",
+            "dpmpp_2s_ancestral_cfg_pp",
+            "dpmpp_sde",
+            "dpmpp_sde_gpu",
+            "dpmpp_2m",
+            "dpmpp_2m_cfg_pp",
+            "dpmpp_2m_sde",
+            "dpmpp_2m_sde_gpu",
+            "dpmpp_2m_sde_heun",
+            "dpmpp_2m_sde_heun_gpu",
+            "dpmpp_3m_sde",
+            "dpmpp_3m_sde_gpu",
+            "ddpm",
+            "lcm",
+            "ipndm",
+            "ipndm_v",
+            "deis",
+            "cfgpp_ud10_ab",
+            "res_multistep",
+            "res_multistep_cfg_pp",
+            "res_multistep_ancestral",
+            "res_multistep_ancestral_cfg_pp",
+            "gradient_estimation",
+            "gradient_estimation_cfg_pp",
+            "er_sde",
+            "seeds_2",
+            "seeds_3",
+            "sa_solver",
+            "sa_solver_pece",
+            "ddim",
+            "uni_pc",
+            "uni_pc_bh2"
+          ]
+        ],
+        "scheduler": [
+          [
+            "simple",
+            "sgm_uniform",
+            "karras",
+            "exponential",
+            "ddim_uniform",
+            "beta",
+            "normal",
+            "linear_quadratic",
+            "kl_optimal"
+          ]
+        ],
+        "image_output": [
+          [
+            "Hide",
+            "Preview",
+            "Save",
+            "Hide/Save"
+          ]
+        ],
+        "save_prefix": [
+          "STRING",
+          {
+            "default": "ComfyUI"
+          }
+        ]
+      },
+      "optional": {
+        "seed": [
+          "INT",
+          {
+            "default": 0,
+            "min": 0,
+            "max": 18446744073709551615
+          }
+        ],
+        "optional_model": [
+          "MODEL"
+        ],
+        "optional_positive": [
+          "CONDITIONING"
+        ],
+        "optional_negative": [
+          "CONDITIONING"
+        ],
+        "optional_vae": [
+          "VAE"
+        ],
+        "optional_refiner_model": [
+          "MODEL"
+        ],
+        "optional_refiner_positive": [
+          "CONDITIONING"
+        ],
+        "optional_refiner_negative": [
+          "CONDITIONING"
+        ],
+        "optional_refiner_vae": [
+          "VAE"
+        ],
+        "optional_latent": [
+          "LATENT"
+        ],
+        "optional_clip": [
+          "CLIP"
+        ]
+      },
+      "hidden": {
+        "prompt": "PROMPT",
+        "extra_pnginfo": "EXTRA_PNGINFO",
+        "my_unique_id": "UNIQUE_ID",
+        "embeddingsList": [
+          [
+            "@catalog:embeddings"
+          ]
+        ],
+        "ttNnodeVersion": "1.0.2"
+      }
+    },
+    "returns": [
+      "PIPE_LINE_SDXL",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "VAE",
+      "MODEL",
+      "CONDITIONING",
+      "CONDITIONING",
+      "VAE",
+      "LATENT",
+      "CLIP",
+      "IMAGE",
+      "INT"
+    ],
+    "names": [
+      "sdxl_pipe",
+      "model",
+      "positive",
+      "negative",
+      "vae",
+      "refiner_model",
+      "refiner_positive",
+      "refiner_negative",
+      "refiner_vae",
+      "latent",
+      "clip",
+      "image",
+      "seed"
+    ],
+    "category": "🌏 tinyterra/legacy",
+    "function": "sample",
+    "output_node": true,
+    "version": "1.0.2",
+    "id": "ttN_pipeKSamplerSDXL_a19bff1409f78f89af7781cd",
+    "display_name": "pipeKSamplerSDXL v1 (Legacy)"
+  },
+  "ttN compareInput": {
+    "module": "dev",
+    "class": "ttN_compareInput",
+    "inputs": {
+      "required": {
+        "console_title": [
+          "STRING",
+          {
+            "default": "ttN INPUT COMPARE"
+          }
+        ]
+      },
+      "optional": {
+        "debug": [
+          "",
+          {
+            "default": null
+          }
+        ],
+        "debug2": [
+          "",
+          {
+            "default": null
+          }
+        ]
+      }
+    },
+    "returns": [],
+    "names": [],
+    "category": "🌏 tinyterra/dev",
+    "function": "debug",
+    "output_node": true,
+    "version": null,
+    "id": "ttN_compareInput_0cbbb1699b9e429b0a797dde",
+    "display_name": "compareInput"
+  }
+}
