@@ -45,10 +45,10 @@ def produce_scheduler(scheduler,steps,start_step,end_step,shift,sigmas=None,enha
     """
     parameters=_parameters(scheduler,steps,start_step,end_step,shift,enhance_hf)
     sigmas=_sigmas(sigmas)
-    solver,timesteps,_,_=get_scheduler(scheduler,steps,start_step,end_step,shift,
+    solver,timesteps,start_idx,end_idx=get_scheduler(scheduler,steps,start_step,end_step,shift,
         torch.device('cpu'),sigmas=sigmas,log_timesteps=True,enhance_hf=enhance_hf)
     recipe={'format':FORMAT,'source_identity':SOURCE_ID,'parameters':parameters,'sigmas':sigmas}
-    actual={'sample_scheduler':solver,'timesteps':timesteps}
+    actual={'sample_scheduler':solver,'timesteps':timesteps,'start_idx':start_idx,'end_idx':end_idx}
     return (sigmas,steps,shift,recipe,start_step,end_step),actual
 
 
