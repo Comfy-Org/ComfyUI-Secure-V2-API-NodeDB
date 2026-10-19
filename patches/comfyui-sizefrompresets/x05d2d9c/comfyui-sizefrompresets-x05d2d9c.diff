@@ -1,0 +1,1485 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,73 @@
++# SizeFromPresets conversion and observed validation
++
++Source: `nkchocoai/ComfyUI-SizeFromPresets`, commit
++`05d2d9cd430c64e303a2561b0d9b6e49fec1bbea`, canonical identity
++`cnr:comfyui-sizefrompresets`. All thirteen original files, the upstream GPL
++license, existing project name/version1.0.0 and publisher are retained.
++
++The ten original node IDs, categories, display names, CSV choices, defaults,
++integer limits and output names are preserved. Preset CSVs remain pack-local
++files, read once at import. Seed selection uses the actual original NumPy RNG.
++Reported dimensions retain their original values, including716x403 and403x716;
++latent dimensions retain floor division by8. The original batch maximum4096
++is preserved in schemas and is not a tested allocation size.
++
++The existing public SDK supplies `io.ComfyNode`, schemas, `io.NodeOutput`,
++`sdk.ImageRef` and `sdk.LatentRef`. Six nodes declare SDK_REFS, including the
++image-inspection scalar node. Only the five latent producers request `raw`.
++The other five nodes request no permissions. No models, routes, network,
++custom frontend, private SDK methods or runtime installs are introduced.
++Latent allocation is explicitly CPU. Adoption in a different engine profile
++requires its own CPU-intermediate selection evidence; non-CPU parity is not
++claimed. The only project metadata addition is requires-python>=3.13,<3.14
++in the isolated converted copy; other original project metadata is preserved.
++
++## Actual evidence from2026-10-19
++
++The actual Mac differential used the recorded installed SDK0.42.0,
++Python3.13.14, Core44564d0, NumPy2.4.6 and Torch2.13.0. It passed120 cases:
++ten schemas,109 execution comparisons and one import-time CSV snapshot check.
++It covered all fourteen preset choices, repeated seeds0/1/max64, batch1/2,
++float32/float64 defaults and first-row tie selection. All four negative controls
++were detected: swapped dimensions, rounded reported dimensions, wrong seed
++stream and reversed first-row tie. This was an in-process local CPU fixture.
++
++The real approved generator and canonical tooling then generated the ten-node
++normal manifest, official pair and ZIP, and replayed both. All five commands
++passed; generated and replayed fifteen-file converted trees matched bytes and
++Git modes, with all thirteen pristine files unchanged. API141/Core1384,
++scientific-source4/backend83 and frozen-candidate14 aftermaps matched their
++selected inputs. The normal manifest SHA256 is
++`397ea4fdd91b8f7783294196a9a83b9f9b7d916c1f2494c2fa48b09fc5ea01d8`.
++
++Actual service5175 gVisor TEST `18145b11892f37130676764b16edde5e`
++executed all ten nodes and produced ten PNG outputs. Their dimensions and every
++pixel were independently checked. All five latent consumers returned actual
++shape, batch1, CPU, float32 and nonzero-count0 facts, including the odd-size
++403x716 latent shape[1,4,89,50]. A deliberate wrong-width expectation in
++TEST `8679016a84c8530a60b794dc8daffa19` failed at the expected execution
++assertion and returned no successful output. The actual service used its
++selected Python3.13.7/Torch2.8.0+cu128 environment and a captured--cpu worker;
++it is a distinct environment from the Mac comparison.
++
++The first service attempt failed because a TEST-only helper awaited a method
++object. That real failure is retained. The helper was corrected to
++`await latent.value()`; production code and its normal manifest were unchanged.
++Helper metadata came from the genuine selected encoder. All helpers and their
++two additive declarations are outside the canonical pack. Exact CSV/license/
++binary bytes were seeded into only a private editor fixture because the editor
++text API excludes those files; no CSV was renamed. That fixture was closed,
++and matching TEST workers were absent after completion. The actual service
++policy was model-test; these workflows requested no models.
++
++Validation records, the preserved failure, helper correction, actual outputs
++and exact source/profile limits accompany the corpus handoff under
++`validation/20261019-sizefrompresets/`. The successful corrected ephemeral ZIP
++was retired before copying; only the preserved first snapshot plus the exact
++corrected-request delta is claimed. These notes were added after the observed
++tests. The final notes-only pair and both replays are regenerated separately
++on genuine POSIX0644 files; no production algorithm or normal-manifest byte
++changes and no additional SDK/service tests are required for that file delta.
++
++No non-CPU path, service batch above1, real allocation at4096, general target
++engine/managed-runtime adoption or registry admission is certified here.
+--- a/__init__.py
++++ b/v2/__init__.py
+@@ -1,6 +1,4 @@
+-from .nodes.node import *
+-from .nodes.random import *
+-from .nodes.similar_resolution import *
++from .api_nodes import *
+ 
+ NODE_CLASS_MAPPINGS = {
+     "SizeFromPresetsSD15": SizeFromPresetsSD15,
+--- /dev/null
++++ b/v2/api_nodes.py
+@@ -0,0 +1,181 @@
++"""Normal SDK schemas; all ten upstream purposes are retained.
++
++The five latent nodes target an explicitly selected CPU-intermediate profile.
++The trusted deployment must verify engine intermediate_device() == CPU before
++adoption. Non-CPU profiles are unqualified. No schema batch range is clamped.
++"""
++from comfy_api.latest import io
++from .nodes import node as sizes
++from .nodes import random as randomized
++from .nodes import similar_resolution as similar
++
++class SizeFromPresetsSD15(io.ComfyNode):
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='SizeFromPresetsSD15', display_name='Size From Presets (SD1.5)',
++            category='SizeFromPresets',
++            inputs=[io.Combo.Input("preset", options=sizes.SizeFromPresetsSD15.SIZE_PRESETS_INPUT)],
++            outputs=[io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    def execute(cls, preset):
++        return io.NodeOutput(*sizes.SizeFromPresetsSD15().get_size(preset))
++
++class SizeFromPresetsSDXL(io.ComfyNode):
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='SizeFromPresetsSDXL', display_name='Size From Presets (SDXL)',
++            category='SizeFromPresets',
++            inputs=[io.Combo.Input("preset", options=sizes.SizeFromPresetsSDXL.SIZE_PRESETS_INPUT)],
++            outputs=[io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    def execute(cls, preset):
++        return io.NodeOutput(*sizes.SizeFromPresetsSDXL().get_size(preset))
++
++class EmptyLatentImageFromPresetsSD15(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ('raw',)
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='EmptyLatentImageFromPresetsSD15', display_name='Empty Latent Image From Presets (SD1.5)',
++            category='SizeFromPresets',
++            inputs=[io.Combo.Input("preset", options=sizes.EmptyLatentImageFromPresetsSD15.SIZE_PRESETS_INPUT), io.Int.Input("batch_size", default=1, min=1, max=4096)],
++            outputs=[io.Latent.Output('latent'), io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, preset, batch_size=1):
++        return io.NodeOutput(*await sizes.EmptyLatentImageFromPresetsSD15().generate(preset, batch_size=batch_size))
++
++class EmptyLatentImageFromPresetsSDXL(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ('raw',)
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='EmptyLatentImageFromPresetsSDXL', display_name='Empty Latent Image From Presets (SDXL)',
++            category='SizeFromPresets',
++            inputs=[io.Combo.Input("preset", options=sizes.EmptyLatentImageFromPresetsSDXL.SIZE_PRESETS_INPUT), io.Int.Input("batch_size", default=1, min=1, max=4096)],
++            outputs=[io.Latent.Output('latent'), io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, preset, batch_size=1):
++        return io.NodeOutput(*await sizes.EmptyLatentImageFromPresetsSDXL().generate(preset, batch_size=batch_size))
++
++class RandomSizeFromPresetsSD15(io.ComfyNode):
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='RandomSizeFromPresetsSD15', display_name='Random Size From Presets (SD1.5)',
++            category='SizeFromPresets',
++            inputs=[io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff)],
++            outputs=[io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    def execute(cls, seed):
++        return io.NodeOutput(*randomized.RandomSizeFromPresetsSD15().get_size(seed))
++
++class RandomSizeFromPresetsSDXL(io.ComfyNode):
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='RandomSizeFromPresetsSDXL', display_name='Random Size From Presets (SDXL)',
++            category='SizeFromPresets',
++            inputs=[io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff)],
++            outputs=[io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    def execute(cls, seed):
++        return io.NodeOutput(*randomized.RandomSizeFromPresetsSDXL().get_size(seed))
++
++class RandomEmptyLatentImageFromPresetsSD15(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ('raw',)
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='RandomEmptyLatentImageFromPresetsSD15', display_name='Random Empty Latent Image From Presets (SD1.5)',
++            category='SizeFromPresets',
++            inputs=[io.Int.Input("batch_size", default=1, min=1, max=4096), io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff)],
++            outputs=[io.Latent.Output('latent'), io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, seed, batch_size=1):
++        return io.NodeOutput(*await randomized.RandomEmptyLatentImageFromPresetsSD15().generate(seed, batch_size=batch_size))
++
++class RandomEmptyLatentImageFromPresetsSDXL(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ('raw',)
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='RandomEmptyLatentImageFromPresetsSDXL', display_name='Random Empty Latent Image From Presets (SDXL)',
++            category='SizeFromPresets',
++            inputs=[io.Int.Input("batch_size", default=1, min=1, max=4096), io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff)],
++            outputs=[io.Latent.Output('latent'), io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, seed, batch_size=1):
++        return io.NodeOutput(*await randomized.RandomEmptyLatentImageFromPresetsSDXL().generate(seed, batch_size=batch_size))
++
++class GetSimilarResolution(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='GetSimilarResolution', display_name='Get Similar Resolution',
++            category='SizeFromPresets',
++            inputs=[io.Image.Input("image"), io.Boolean.Input("is_sdxl", default=True)],
++            outputs=[io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, image, is_sdxl):
++        return io.NodeOutput(*await similar.GetSimilarResolution().get_size(image, is_sdxl))
++
++class GetSimilarResolutionEmptyLatent(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ('raw',)
++
++    @classmethod
++    def define_schema(cls):
++        return io.Schema(
++            node_id='GetSimilarResolutionEmptyLatent', display_name='Get Similar Resolution Empty Latent',
++            category='SizeFromPresets',
++            inputs=[io.Image.Input("image"), io.Boolean.Input("is_sdxl", default=True), io.Int.Input("batch_size", default=1, min=1, max=4096)],
++            outputs=[io.Latent.Output('latent'), io.Int.Output('w'), io.Int.Output('h')],
++        )
++
++    @classmethod
++    async def execute(cls, image, is_sdxl, batch_size):
++        return io.NodeOutput(*await similar.GetSimilarResolutionEmptyLatent().get_size(image, is_sdxl, batch_size))
++
+--- a/nodes/node.py
++++ b/v2/nodes/node.py
+@@ -3,12 +3,12 @@
+ 
+ import torch
+ 
+-import folder_paths
++from comfy_api.latest import sdk
+ 
+-import comfy.model_management
+ 
+-custom_nodes_dir = folder_paths.get_folder_paths("custom_nodes")[0]
+-presets_dir = os.path.join(custom_nodes_dir, "ComfyUI-SizeFromPresets", "presets")
++
++# Read only this installed pack; preserve the original import-time CSV snapshot.
++presets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "presets")
+ 
+ def load_size_presets_input(file_name,digit):
+     with open(os.path.join(presets_dir, file_name),'r') as f:
+@@ -49,7 +49,8 @@
+ 
+ class EmptyLatentImageFromPresetsBase:
+     def __init__(self):
+-        self.device = comfy.model_management.intermediate_device()
++        # Selected CPU-intermediate profile only. Adoption requires trusted engine readback.
++        self.device = "cpu"
+ 
+     @classmethod
+     def INPUT_TYPES(cls):
+@@ -65,10 +66,10 @@
+ 
+     CATEGORY = "SizeFromPresets"
+ 
+-    def generate(self, preset, batch_size=1):
++    async def generate(self, preset, batch_size=1):
+         w,h = [int(v.strip()) for v in preset.split('x')]
+         latent = torch.zeros([batch_size, 4, h // 8, w // 8], device=self.device)
+-        return ({"samples":latent}, w, h)
++        return (await sdk.LatentRef.from_value({"samples":latent}), w, h)
+     
+ class EmptyLatentImageFromPresetsSD15(EmptyLatentImageFromPresetsBase):
+     SIZE_PRESETS_INPUT = load_size_presets_input('sd15.csv',3)
+--- a/nodes/random.py
++++ b/v2/nodes/random.py
+@@ -4,12 +4,12 @@
+ import numpy as np
+ import torch
+ 
+-import folder_paths
++from comfy_api.latest import sdk
+ 
+-import comfy.model_management
+ 
+-custom_nodes_dir = folder_paths.get_folder_paths("custom_nodes")[0]
+-presets_dir = os.path.join(custom_nodes_dir, "ComfyUI-SizeFromPresets", "presets")
++
++# Read only this installed pack; preserve the original import-time CSV snapshot.
++presets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "presets")
+ 
+ def load_size_presets_input(file_name,digit):
+     with open(os.path.join(presets_dir, file_name),'r') as f:
+@@ -52,7 +52,8 @@
+ 
+ class RandomEmptyLatentImageFromPresetsBase:
+     def __init__(self):
+-        self.device = comfy.model_management.intermediate_device()
++        # Selected CPU-intermediate profile only. Adoption requires trusted engine readback.
++        self.device = "cpu"
+ 
+     @classmethod
+     def INPUT_TYPES(cls):
+@@ -68,12 +69,12 @@
+ 
+     CATEGORY = "SizeFromPresets"
+ 
+-    def generate(self, seed, batch_size=1):
++    async def generate(self, seed, batch_size=1):
+         random_gen = np.random.default_rng(seed)
+         preset = random_gen.choice(self.SIZE_PRESETS_INPUT)
+         w,h = [int(v.strip()) for v in preset.split('x')]
+         latent = torch.zeros([batch_size, 4, h // 8, w // 8], device=self.device)
+-        return ({"samples":latent}, w, h)
++        return (await sdk.LatentRef.from_value({"samples":latent}), w, h)
+     
+ class RandomEmptyLatentImageFromPresetsSD15(RandomEmptyLatentImageFromPresetsBase):
+     SIZE_PRESETS_INPUT = load_size_presets_input('sd15.csv',3)
+--- a/nodes/similar_resolution.py
++++ b/v2/nodes/similar_resolution.py
+@@ -3,11 +3,11 @@
+ 
+ import torch
+ 
+-import folder_paths
+-import comfy.model_management
++from comfy_api.latest import sdk
+ 
+-custom_nodes_dir = folder_paths.get_folder_paths("custom_nodes")[0]
+-presets_dir = os.path.join(custom_nodes_dir, "ComfyUI-SizeFromPresets", "presets")
++
++# Read only this installed pack; preserve the original import-time CSV snapshot.
++presets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "presets")
+ 
+ 
+ def load_size_presets(file_name):
+@@ -23,8 +23,8 @@
+ sdxl_size_presets = load_size_presets("sdxl.csv")
+ 
+ 
+-def get_similar_resolution(image, size_presets):
+-    width, height = image[0].shape[1], image[0].shape[0]
++async def get_similar_resolution(image, size_presets):
++    height, width = await image.spatial_shape()
+     aspect_src = width / height
+ 
+     similar_res_w, similar_res_h = None, None
+@@ -63,15 +63,16 @@
+ 
+     CATEGORY = "SizeFromPresets"
+ 
+-    def get_size(self, image, is_sdxl):
++    async def get_size(self, image, is_sdxl):
+         size_presets = sdxl_size_presets if is_sdxl else sd15_size_presets
+-        width, height = get_similar_resolution(image, size_presets)
++        width, height = await get_similar_resolution(image, size_presets)
+         return (width, height)
+ 
+ 
+ class GetSimilarResolutionEmptyLatent:
+     def __init__(self):
+-        self.device = comfy.model_management.intermediate_device()
++        # Selected CPU-intermediate profile only. Adoption requires trusted engine readback.
++        self.device = "cpu"
+ 
+     @classmethod
+     def INPUT_TYPES(cls):
+@@ -90,10 +91,10 @@
+ 
+     CATEGORY = "SizeFromPresets"
+ 
+-    def get_size(self, image, is_sdxl, batch_size):
++    async def get_size(self, image, is_sdxl, batch_size):
+         size_presets = sdxl_size_presets if is_sdxl else sd15_size_presets
+-        width, height = get_similar_resolution(image, size_presets)
++        width, height = await get_similar_resolution(image, size_presets)
+         latent = torch.zeros(
+             [batch_size, 4, height // 8, width // 8], device=self.device
+         )
+-        return ({"samples": latent}, width, height)
++        return (await sdk.LatentRef.from_value({"samples": latent}), width, height)
+--- a/pyproject.toml
++++ b/v2/pyproject.toml
+@@ -1,5 +1,6 @@
+ [project]
+ name = "comfyui-sizefrompresets"
++requires-python = ">=3.13,<3.14"
+ description = "Add a node that outputs width and height of the size selected from the preset (.csv)."
+ version = "1.0.0"
+ license = { file = "LICENSE" }
+--- /dev/null
++++ b/v2/secure-nodes.json
+@@ -0,0 +1,1054 @@
++{
++  "format": "comfy-secure-nodes-v1",
++  "nodes": {
++    "EmptyLatentImageFromPresetsSD15": {
++      "class": "EmptyLatentImageFromPresetsSD15",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [
++        "raw"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Empty Latent Image From Presets (SD1.5)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "EmptyLatentImageFromPresetsSD15",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "preset",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "512 x 512",
++                "768 x 512",
++                "512 x 768",
++                "716 x 403",
++                "403 x 716"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 1,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "batch_size",
++              "lazy": null,
++              "max": 4096,
++              "min": 1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "latent",
++              "id": "latent",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "LATENT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "EmptyLatentImageFromPresetsSDXL": {
++      "class": "EmptyLatentImageFromPresetsSDXL",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [
++        "raw"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Empty Latent Image From Presets (SDXL)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "EmptyLatentImageFromPresetsSDXL",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "preset",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "1024 x 1024",
++                "1152 x  896",
++                " 896 x 1152",
++                "1216 x  832",
++                " 832 x 1216",
++                "1344 x  768",
++                " 768 x 1344",
++                "1536 x  640",
++                " 640 x 1536"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 1,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "batch_size",
++              "lazy": null,
++              "max": 4096,
++              "min": 1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "latent",
++              "id": "latent",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "LATENT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "GetSimilarResolution": {
++      "class": "GetSimilarResolution",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Get Similar Resolution",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "GetSimilarResolution",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "display_name": null,
++              "extra_dict": {},
++              "id": "image",
++              "lazy": null,
++              "optional": false,
++              "rawLink": null,
++              "tooltip": null
++            },
++            "io_type": "IMAGE",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": true,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "is_sdxl",
++              "label_off": null,
++              "label_on": null,
++              "lazy": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "BOOLEAN",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "GetSimilarResolutionEmptyLatent": {
++      "class": "GetSimilarResolutionEmptyLatent",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [
++        "raw"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Get Similar Resolution Empty Latent",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "GetSimilarResolutionEmptyLatent",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "display_name": null,
++              "extra_dict": {},
++              "id": "image",
++              "lazy": null,
++              "optional": false,
++              "rawLink": null,
++              "tooltip": null
++            },
++            "io_type": "IMAGE",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": true,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "is_sdxl",
++              "label_off": null,
++              "label_on": null,
++              "lazy": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "BOOLEAN",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 1,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "batch_size",
++              "lazy": null,
++              "max": 4096,
++              "min": 1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "latent",
++              "id": "latent",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "LATENT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "RandomEmptyLatentImageFromPresetsSD15": {
++      "class": "RandomEmptyLatentImageFromPresetsSD15",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [
++        "raw"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Random Empty Latent Image From Presets (SD1.5)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "RandomEmptyLatentImageFromPresetsSD15",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 1,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "batch_size",
++              "lazy": null,
++              "max": 4096,
++              "min": 1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": 18446744073709551615,
++              "min": 0,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "latent",
++              "id": "latent",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "LATENT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "RandomEmptyLatentImageFromPresetsSDXL": {
++      "class": "RandomEmptyLatentImageFromPresetsSDXL",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [
++        "raw"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Random Empty Latent Image From Presets (SDXL)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "RandomEmptyLatentImageFromPresetsSDXL",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 1,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "batch_size",
++              "lazy": null,
++              "max": 4096,
++              "min": 1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": 18446744073709551615,
++              "min": 0,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "latent",
++              "id": "latent",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "LATENT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "RandomSizeFromPresetsSD15": {
++      "class": "RandomSizeFromPresetsSD15",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Random Size From Presets (SD1.5)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "RandomSizeFromPresetsSD15",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": 18446744073709551615,
++              "min": 0,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": false
++    },
++    "RandomSizeFromPresetsSDXL": {
++      "class": "RandomSizeFromPresetsSDXL",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Random Size From Presets (SDXL)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "RandomSizeFromPresetsSDXL",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": 18446744073709551615,
++              "min": 0,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": false
++    },
++    "SizeFromPresetsSD15": {
++      "class": "SizeFromPresetsSD15",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Size From Presets (SD1.5)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "SizeFromPresetsSD15",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "preset",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "512 x 512",
++                "768 x 512",
++                "512 x 768",
++                "716 x 403",
++                "403 x 716"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": false
++    },
++    "SizeFromPresetsSDXL": {
++      "class": "SizeFromPresetsSDXL",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "api_nodes",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "SizeFromPresets",
++          "description": "",
++          "display_name": "Size From Presets (SDXL)",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "SizeFromPresetsSDXL",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "preset",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "1024 x 1024",
++                "1152 x  896",
++                " 896 x 1152",
++                "1216 x  832",
++                " 832 x 1216",
++                "1344 x  768",
++                " 768 x 1344",
++                "1536 x  640",
++                " 640 x 1536"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "w",
++              "id": "w",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "h",
++              "id": "h",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": false
++    }
++  },
++  "runtime": {
++    "python": {
++      "requires": ">=3.13,<3.14",
++      "resolved": "3.13"
++    }
++  }
++}
