@@ -13,6 +13,6 @@ byte cap: split materializes all pieces before slicing twelve. The 4 MiB
 bound is finite test admission only. No new production cap is introduced.
 
 This change updates only the report, actual normal manifest and canonical
-patch pair. Rebuild delivery ZIPs from that pair; older checked-in ZIPs are
-historical derived artifacts. No ZIP, SDK, permission, registry, service or
+patch pair. Delivery ZIPs are derived and stay outside this source commit;
+rebuild them from the current pair. No ZIP, SDK, permission, registry, service or
 runtime profile is changed or qualified by this source publication.
