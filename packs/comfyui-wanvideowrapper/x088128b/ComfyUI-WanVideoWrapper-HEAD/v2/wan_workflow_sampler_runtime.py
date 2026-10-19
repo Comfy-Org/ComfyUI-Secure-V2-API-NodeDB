@@ -79,7 +79,7 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
     unsupported = ('feta_args',
                    'experimental_args',
                    'unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',
-                   'multitalk_embeds', 'freeinit_args')
+                   'multitalk_embeds')
     if any(kwargs.get(key) is not None for key in unsupported):
         raise NotImplementedError('Advanced sampling inputs await their reviewed execution slices')
     if kwargs.get('batched_cfg', False):
