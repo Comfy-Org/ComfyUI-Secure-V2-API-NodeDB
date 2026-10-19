@@ -29,12 +29,17 @@ def batch_prompts(prepend: str = "", prompts: str = "", append: str = "") -> lis
         return [""]
     if len(prompt_list) > MAX_PROMPTS:
         raise ValueError(f"prompts contains more than {MAX_PROMPTS} non-empty lines")
+    affix_bytes = (
+        len(prepend.encode("utf-8")) + (2 if prepend else 0)
+        + len(append.encode("utf-8")) + (2 if append else 0)
+    )
+    output_bytes = sum(len(prompt.encode("utf-8")) for prompt in prompt_list) + len(prompt_list) * affix_bytes
+    if output_bytes > MAX_OUTPUT_BYTES:
+        raise ValueError("batched prompt output is too large")
     prompt_list = [
         f"{prepend}{', ' if prepend else ''}{prompt}{', ' if append else ''}{append}"
         for prompt in prompt_list
     ]
-    if sum(len(prompt.encode("utf-8")) for prompt in prompt_list) > MAX_OUTPUT_BYTES:
-        raise ValueError("batched prompt output is too large")
     print(f"[Prompt Batcher] 📋 Batching {len(prompt_list)} prompts:")
     for index, prompt in enumerate(prompt_list, 1):
         preview = prompt[:60] + "..." if len(prompt) > 60 else prompt
