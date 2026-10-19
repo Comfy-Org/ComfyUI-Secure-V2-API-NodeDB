@@ -35,7 +35,7 @@ async def _is_none(value: Any) -> bool:
         return True
     materialized = await _materialize(value)
     if (
-        type(materialized) is dict
+        isinstance(materialized, dict)
         and "model" in materialized
         and "clip" in materialized
     ):
@@ -46,24 +46,24 @@ async def _is_none(value: Any) -> bool:
 
 
 def _latent_details(value: Any) -> tuple[Any, Any, bool, Any]:
-    if type(value) is not dict:
+    if not isinstance(value, dict):
         return None, None, False, None
     samples = value.get("samples")
     nested = bool(getattr(samples, "is_nested", False))
     ndim = getattr(samples, "ndim", None)
-    # NestedTensor deliberately raises when its shape property is read. The
-    # upstream accepts nested AV values before formatting diagnostics, so do
-    # the same and never probe that unsupported property.
+    # Accepted nested AV audio must not read shape. Rejection diagnostics
+    # read it separately, preserving the original native shape exception.
     shape = None if nested else getattr(samples, "shape", None)
     return samples, ndim, nested, shape
 
 
 def _describe_latent(value: Any, index: int) -> str:
-    if type(value) is not dict:
+    if not isinstance(value, dict):
         return f"input{index:02d}=non-latent:{type(value).__name__}"
     samples, ndim, nested, shape = _latent_details(value)
     if samples is None:
         return f"input{index:02d}=latent-without-samples"
+    shape = getattr(samples, "shape", None)
     latent_type = value.get("type", "unknown")
     return (
         f"input{index:02d}=type:{latent_type},nested:{nested},"
@@ -112,7 +112,7 @@ class SimpleLatentSwitch(io.ComfyNode):
             candidate = inputs.get(name)
             if isinstance(candidate, sdk.LatentRef):
                 return io.NodeOutput(candidate)
-            if type(candidate) is dict and candidate.get("samples") is not None:
+            if isinstance(candidate, dict) and candidate.get("samples") is not None:
                 return io.NodeOutput(candidate)
         return io.NodeOutput(None)
 

@@ -85,20 +85,62 @@
 +storage, subprocess, UI, or host-global authority.
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,13 @@
-+# Secure Nodes V2 conversion
+@@ -0,0 +1,55 @@
++# Secure Nodes V2 conversion evidence
 +
-+- Upstream: <https://github.com/boobkake22/ComfyUI-SimpleSwitch>
-+- Pinned commit: `5a4f403a2f4aac076cee89ffe8ff4e93511c9acc`
-+- Census: 4 Python nodes, 0 frontend extensions, 0 routes
-+- Supported: 4 Python nodes; rejected: 0; pending: 0
++This is a source revision of the existing four-node SimpleSwitch conversion.
++Upstream: https://github.com/boobkake22/ComfyUI-SimpleSwitch
++Commit: 5a4f403a2f4aac076cee89ffe8ff4e93511c9acc (x5a4f403).
++Tree: d8e50f29423d592f2390231e902a0eb2a4315819.
++All seven original files and their 100644 Git modes match independently fetched
++upstream objects. The four registered IDs are SimpleSwitch, SimpleLatentSwitch,
++SimpleAudioLatentSwitch and SimpleVideoLatentSwitch; there are no frontend
++extensions or routes. The six optional sockets remain ordered input01..input06,
++with the original wildcard/latent types, output name and Simple Switch category.
 +
-+The conversion retains the exact node IDs, display names, category, optional
-+socket order, wildcard/latent types, first-match behavior, audio/video subtype
-+rules, and diagnostic failures. Opaque values and latent refs are passed
-+through without replacement. The two subtype-aware switches use only the
-+permissioned `raw` tier to inspect latent shape and the `type`/`sample_rate`
-+markers required by upstream behavior. No generalized API gap was found.
++The reviewed nodes.py repair restores dictionary-subclass handling through
++isinstance(value, dict). All-None model/clip context subclasses are skipped by
++the generic switch; latent subclasses remain eligible for first-match selection.
++Nested audio remains accepted before shape access. Rejected nested video reads
++shape while constructing the original diagnostic, preserving the native
++RuntimeError and its full message, including before a later valid input. No
++exception text is synthesized. Returned native objects and genuine reference
++wrappers retain identity; no clone, coercion, schema or permission change occurs.
++SDK_REFS remains true for all four nodes. Generic/audio/video retain the raw
++permission; the plain latent switch has no permissions.
++
++The first selected actual attempt remains FAILED with five native differences:
++three dictionary-subclass selections and two nested-video diagnostic outcomes.
++Its worker result and exact errors remain in the retained failed R1 evidence.
++The separately authorized corrective R2 ran the same 95 native cases and 24
++genuine default-provider reference cases, with unchanged scientific harness,
++fixtures and controls. All 119 matched, including all five former differences.
++All tensor/dictionary/metadata identity and content fingerprints were unchanged.
++Four schemas, normal manifest generation, canonical pair and bundle, two
++pristine byte/mode replays, wrong-selection and changed-base controls passed.
++No automatic retry occurred.
++
++Actual archive SHA256:
++17fd558c5f6de0c681205210537c540d5f4433016cde4e9853b712856dca397f
++Independent strict intake SHA256:
++7ee25bc724ade5021eaf509a1558af35cea67dcff9bbcbecd986b9315695d9a3
++The run took 2.4883 monotonic seconds. Observed aggregate RSS peaked at
++358,924,288 bytes under a 1 GiB watchdog; this is not a hard memory quota.
++All input, runtime, full-site (84,917 files), component (96 files) and
++configuration before/after maps matched. Both owned process groups were
++independently absent twice after cleanup. There were no fixture/lifecycle errors.
++
++The actual four-node secure-nodes.json is retained byte-exact. Only this evidence
++document changes after the native run. Final canonical file-only pair/bundle
++generation and two fresh pristine replays verify the final source bytes and
++explicit 100644 modes. No SDK, node or normal manifest-generator rerun occurs.
++Derived ZIPs and large raw logs are excluded from the publication inventory.
++
++Qualification covers the tested native/default-provider components. It does not
++establish Guest transport, raw-capability enforcement, shared TEST, service,
++managed deployment or whole installed readiness. Root owns final PR32 review,
++publication and registry handoff. Historical tests retained in v2 are source
++reference material, not an additional current acceptance claim.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,22 +1,3 @@
@@ -4988,7 +5030,7 @@
 +        return True
 +    materialized = await _materialize(value)
 +    if (
-+        type(materialized) is dict
++        isinstance(materialized, dict)
 +        and "model" in materialized
 +        and "clip" in materialized
 +    ):
@@ -4999,24 +5041,24 @@
 +
 +
 +def _latent_details(value: Any) -> tuple[Any, Any, bool, Any]:
-+    if type(value) is not dict:
++    if not isinstance(value, dict):
 +        return None, None, False, None
 +    samples = value.get("samples")
 +    nested = bool(getattr(samples, "is_nested", False))
 +    ndim = getattr(samples, "ndim", None)
-+    # NestedTensor deliberately raises when its shape property is read. The
-+    # upstream accepts nested AV values before formatting diagnostics, so do
-+    # the same and never probe that unsupported property.
++    # Accepted nested AV audio must not read shape. Rejection diagnostics
++    # read it separately, preserving the original native shape exception.
 +    shape = None if nested else getattr(samples, "shape", None)
 +    return samples, ndim, nested, shape
 +
 +
 +def _describe_latent(value: Any, index: int) -> str:
-+    if type(value) is not dict:
++    if not isinstance(value, dict):
 +        return f"input{index:02d}=non-latent:{type(value).__name__}"
 +    samples, ndim, nested, shape = _latent_details(value)
 +    if samples is None:
 +        return f"input{index:02d}=latent-without-samples"
++    shape = getattr(samples, "shape", None)
 +    latent_type = value.get("type", "unknown")
 +    return (
 +        f"input{index:02d}=type:{latent_type},nested:{nested},"
@@ -5065,7 +5107,7 @@
 +            candidate = inputs.get(name)
 +            if isinstance(candidate, sdk.LatentRef):
 +                return io.NodeOutput(candidate)
-+            if type(candidate) is dict and candidate.get("samples") is not None:
++            if isinstance(candidate, dict) and candidate.get("samples") is not None:
 +                return io.NodeOutput(candidate)
 +        return io.NodeOutput(None)
 +
@@ -5178,7 +5220,7 @@
  Repository = "https://github.com/boobkake22/ComfyUI-SimpleSwitch"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,541 @@
+@@ -0,0 +1,545 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -5208,6 +5250,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "SimpleAudioLatentSwitch",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -5339,6 +5382,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "SimpleLatentSwitch",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -5472,6 +5516,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "SimpleSwitch",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -5605,6 +5650,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "SimpleVideoLatentSwitch",
 +          "not_idempotent": false,
 +          "price_badge": null,
