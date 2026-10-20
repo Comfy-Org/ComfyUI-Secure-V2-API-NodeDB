@@ -1,0 +1,439 @@
+"""Prepared finite Prompt Combinator three-node worker, never run during preparation."""
+import argparse
+import asyncio
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path, PurePosixPath
+import random
+import re
+import shutil
+import stat
+import sys
+import time
+import traceback
+
+HERE = Path(__file__).resolve().parent
+IDS = ['PromptCombinator', 'PromptCombinatorMerger', 'PromptCombinatorRandomPrompt']
+START = time.monotonic()
+RESULT = {'status': 'FAILED_PROMPT_COMBINATOR_THREE_COMBINED', 'stage': 'entry', 'rows': [], 'controls': [], 'commands': [], 'native_cases': 0, 'Guest_dispatches': 0, 'Guest_instances': 0, 'cleanup_errors': [], 'external_model_weights_downloaded': 0, 'model_forwards': 0, 'browser_frontend_or_public_graph_runs': 0}
+
+def require(value, message):
+    if not value: raise AssertionError(message)
+
+
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def load(path): return json.loads(Path(path).read_bytes())
+
+
+def save(path, data): path.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n')
+
+
+def module(name, path, package=False):
+    require(name not in sys.modules, 'Duplicate source module mount')
+    spec=importlib.util.spec_from_file_location(name,path,submodule_search_locations=[str(path.parent)] if package else None)
+    require(spec is not None and spec.loader is not None, 'Source module unavailable')
+    value=importlib.util.module_from_spec(spec);sys.modules[name]=value;spec.loader.exec_module(value)
+    return value
+
+
+def inventory(root):
+    result={}
+    for p in sorted(root.rglob('*')):
+        require(not p.is_symlink(), 'Unexpected source symlink')
+        if p.is_file(): result[p.relative_to(root).as_posix()]={'sha256':sha(p),'mode':stat.S_IMODE(p.stat().st_mode)}
+    return result
+
+
+def verify_packet(expected):
+    require(sha(HERE/'INPUTS.json')==expected,'Packet manifest differs')
+    pins=load(HERE/'INPUTS.json')['files']
+    require(len({r['path'] for r in pins})==len(pins),'Duplicate packet pins')
+    for row in pins:
+        name=PurePosixPath(row['path']);p=HERE/name
+        require(not name.is_absolute() and '..' not in name.parts and ':' not in str(name) and '\\' not in str(name),'Unsafe pin')
+        require(p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(HERE),'Unsafe source')
+        require(p.stat().st_size==row['bytes'] and sha(p)==row['sha256'],'Packet source differs: '+str(name))
+    require({p.relative_to(HERE).as_posix() for p in HERE.rglob('*') if p.is_file()}=={r['path'] for r in pins}|{'INPUTS.json'},'Packet has extra files')
+    return pins
+
+
+def runtime_source_checks():
+    profile=load(HERE/'inputs/ACTUAL_MAC_PROFILE.json')
+    backend=load(HERE/'inputs/SELECTED_BACKEND_INVENTORY.json')
+    binding=load(HERE/'inputs/NORMAL_SITE_BINDING.json')
+    require(sys.platform=='darwin' and sys.version_info[:3]==(3,13,14),'Selected Darwin Python required')
+    require(sys.flags.isolated and not sys.flags.no_site and sys.dont_write_bytecode,'Trusted Host must use normal-site -I -B (never -S)')
+    require(str(Path(sys.executable))==profile['python'] and sha(Path(sys.executable).resolve())==profile['python_sha256'],'Selected interpreter differs')
+    require(Path(sys.prefix).resolve()==Path(profile['python']).parent.parent.resolve(),'Selected normal-site prefix differs')
+    require(sha(Path(sys.prefix)/'pyvenv.cfg')==binding['pyvenv_cfg_sha256'],'Selected pyvenv.cfg differs')
+    site,core=Path(profile['common_site_packages']),Path(profile['core_source'])
+    require({p.name for p in site.glob('*.pth')}==set(binding['pth']),'Startup .pth set differs')
+    pins=[]
+    for root,table in [(site,profile['sdk_files']),(core,profile['core_files'])]:
+        for name,digest in table.items():
+            p=root/name
+            require(p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(root.resolve()) and sha(p)==digest,'Runtime source changed: '+name)
+            pins.append((p,digest))
+    backend_root=Path(backend['backend_source_root'])
+    require(backend['overlay_head']=='59bd3e1acba6520bb32717ad03833f6ab2967ecc','Selected backend differs')
+    names=set()
+    for name,row in backend['files'].items():
+        rel=name.removeprefix('backend/');p=backend_root/rel
+        require(p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(backend_root.resolve()) and sha(p)==row['sha256'],'Backend source changed')
+        pins.append((p,row['sha256']));names.add(rel)
+    for p in (backend_root/'comfy_secure_nodes').rglob('*'):
+        if p.is_file() and '__pycache__' not in p.parts and p.suffix in ('.py','.so','.dylib'):
+            require(p.relative_to(backend_root).as_posix() in names,'Extra backend importable source')
+    for name,digest in binding['pth'].items():
+        require(sha(site/name)==digest,'Startup hook changed');pins.append((site/name,digest))
+    for name,digest in load(HERE/'inputs/SCIENCE_BINDING.json')['site_file_pins'].items():
+        require(sha(site/name)==digest,'Science source changed');pins.append((site/name,digest))
+    pins.append((Path(sys.prefix)/'pyvenv.cfg',binding['pyvenv_cfg_sha256']))
+    require(os.environ.get('COMFY_SECURE_SANDBOX_MODE')=='required' and os.environ.get('COMFY_SECURE_SANDBOX_BACKEND')=='seatbelt','Required genuine Guest confinement missing')
+    sys.path[:0]=[str(backend_root),str(site),str(core)]
+    return profile,backend_root,pins
+
+
+def stage_sources(output):
+    node_root = output/'node-root'
+    snapshot = node_root/'packs/comfyui-prompt-combinator/x3576ace'
+    pack = snapshot/'ComfyUI-Prompt-Combinator-HEAD'
+    modes = load(HERE/'FILE_MODES.json')
+    for part, target in [('original', pack), ('candidate', pack/'v2')]:
+        for source in sorted((HERE/part).rglob('*')):
+            if source.is_file():
+                name = source.relative_to(HERE/part).as_posix()
+                destination = target/name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(source.read_bytes())
+                destination.chmod(0o755 if modes[part+'/'+name] == '100755' else 0o644)
+    shutil.copyfile(HERE/'rng_fixture.py', node_root/'rng_fixture.py')
+    (node_root/'rng_fixture.py').chmod(0o644)
+    verification = load(HERE/'reference/SOURCE_VERIFICATION.json')
+    require(verification['tracked_files'] == 302, 'Full original tree differs')
+    for row in verification['files']:
+        require(sha(pack/row['path']) == row['sha256'], 'Original bytes differ')
+    return snapshot, pack
+
+
+def schemas(original, candidate):
+    rows = []
+    expected = {row['node_id']: row for row in load(HERE/'SOURCE_PORT.json')['rows']}
+    for name in IDS:
+        old, new = getattr(original, name), candidate.NODE_CLASS_MAPPINGS[name]
+        schema = new.GET_SCHEMA()
+        require(schema.node_id == name and schema.category == old.CATEGORY, 'Schema identity/category differs')
+        require(schema.display_name == expected[name]['display_name'], 'Original display name differs')
+        declaration = old.INPUT_TYPES()
+        inputs = [(key, value, section == 'optional') for section in ('required', 'optional')
+                  for key, value in declaration.get(section, {}).items()]
+        require(len(schema.inputs) == len(inputs), 'Input count differs')
+        for inp, (key, kind, optional) in zip(schema.inputs, inputs):
+            require(inp.id == key and bool(inp.optional) == optional, 'Input order/optional flag differs')
+            if type(kind[0]) is list:
+                require(list(inp.options) == kind[0], 'Ordered combo values differ')
+            else:
+                require(str(inp.io_type) == kind[0], 'Input type differs')
+            for field, value in (kind[1] if len(kind) > 1 else {}).items():
+                require(getattr(inp, {'forceInput': 'force_input'}.get(field, field)) == value, 'Input metadata differs: '+field)
+        require(bool(schema.is_input_list) == bool(getattr(old, 'INPUT_IS_LIST', False)), 'Input-list flag differs')
+        require(bool(schema.is_output_node) == bool(getattr(old, 'OUTPUT_NODE', False)), 'Output-node flag differs')
+        require(len(schema.outputs) == len(old.RETURN_TYPES) == 3, 'Output arity differs')
+        flags = getattr(old, 'OUTPUT_IS_LIST', (False, False, False))
+        for out, kind, label, flag in zip(schema.outputs, old.RETURN_TYPES, old.RETURN_NAMES, flags):
+            require(str(out.io_type) == kind and out.display_name == label, 'Output type/name differs')
+            require(bool(out.is_output_list) == flag, 'Output-list flag differs')
+        require(new.SDK_REFS is True and new.SDK_PERMISSIONS == () and new.__module__.endswith('.nodes'), 'Public defining-module boundary differs')
+        rows.append({'node': name, 'ordered_schema_exact': True, 'inputs': len(inputs), 'outputs': 3,
+                     'input_is_list': bool(schema.is_input_list), 'output_is_list': list(flags)})
+    return rows
+
+
+def freeze(value):
+    if value is None or type(value) in (str, bool, int, float):
+        return {'kind': type(value).__name__, 'value': value}
+    if type(value) in (list, tuple):
+        return {'kind': type(value).__name__, 'items': [freeze(v) for v in value]}
+    if type(value) is dict:
+        return {'kind': 'dict', 'items': [[freeze(k), freeze(v)] for k, v in value.items()]}
+    raise TypeError('Unexpected non-string/scalar/container result: ' + type(value).__name__)
+
+
+def ordinary_equal(left, right):
+    return type(left) is dict and type(right) is dict and left.get('outcome') == right.get('outcome') == 'return' and left == right
+
+
+def canonical_replays(snapshot, pack, output, packpatch):
+    final = inventory(pack)
+    pristine = {name: row for name, row in final.items() if not name.startswith('v2/')}
+    destination = output / 'patches/comfyui-prompt-combinator/x3576ace'
+    pair = destination / 'comfyui-prompt-combinator-x3576ace'
+    require(packpatch.main(['generate', str(snapshot), str(destination)]) == 0, 'Canonical pair failed')
+    require(packpatch.main(['bundle', str(pair), str(pair.with_suffix('.zip'))]) == 0, 'Canonical bundle failed')
+    for kind, action, artifact in [('pair', 'apply', pair), ('bundle', 'apply-zip', pair.with_suffix('.zip'))]:
+        replay = output / ('replay-' + kind) / 'comfyui-prompt-combinator/x3576ace'
+        target = replay / pack.name
+        for name, row in pristine.items():
+            path = target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((pack / name).read_bytes())
+            path.chmod(row['mode'])
+        require(packpatch.main([action, str(replay), str(artifact)]) == 0 and inventory(target) == final, 'Pristine replay bytes/modes differ')
+        broken = output / ('changed-base-' + kind) / 'comfyui-prompt-combinator/x3576ace'
+        target = broken / pack.name
+        for name, row in pristine.items():
+            path = target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((pack / name).read_bytes())
+            path.chmod(row['mode'])
+        path = target / '__init__.py'
+        path.write_bytes(path.read_bytes() + b'\n# deliberate changed-base control\n')
+        before = inventory(broken)
+        save(output / ('CHANGED-BASE-' + kind + '-BEFORE.json'), before)
+        try:
+            packpatch.main([action, str(broken), str(artifact)])
+        except packpatch.PackPatchError as error:
+            message = str(error)
+            require('base file does not match the manifest' in message and '__init__.py' in message, 'Unrelated failure is not a changed-base refusal')
+        else:
+            raise AssertionError('Changed-base control was accepted')
+        after = inventory(broken)
+        save(output / ('CHANGED-BASE-' + kind + '-AFTER.json'), after)
+        require(after == before, 'Refused replay changed source')
+        RESULT['commands'].append({'pristine_replay': kind, 'all_bytes_modes_equal': True,
+                                   'changed_base_refused': {'exception': 'PackPatchError', 'message': message},
+                                   'raw_before_and_after_inventories_retained': True})
+
+
+async def seed_real_guest_rng(session, fixture, seed, guest_pid):
+    from comfy_api.latest import io, _sdk
+    plan = _sdk.ExecutionPlan(prompt_id='ned-prompt-combinator', node_id='rng-fixture-'+str(len(RESULT.setdefault('rng_fixture_rows', []))),
+        node_type=fixture.__name__, node_module=fixture.__module__, method='execute', input_mode='refs',
+        inputs={'seed': seed}, permissions=())
+    refs = _sdk.InProcessRefResolver()
+    runtime = _sdk.Runtime(refs=refs, ctx=_sdk.InProcessCtxProvider().build(plan), ops=_sdk.InProcessOps())
+    event = {'seed': seed, 'kind': 'test-only-global-RNG-initialization-not-production-dispatch',
+             'Guest_PID': guest_pid, 'returned': False}
+    RESULT['rng_fixture_rows'].append(event)
+    try:
+        actual = await session.execute(plan, runtime, capabilities=(), tenant='ned-prompt-combinator-owned')
+        require(type(actual) is io.NodeOutput and type(actual.result) is tuple and actual.result == (seed,), 'RNG fixture did not acknowledge exact seed')
+        require(session.last_guest_pid == guest_pid and session.sandbox_kind == 'seatbelt', 'Fixture escaped selected genuine Guest')
+        event.update(returned=True, actual_acknowledgement=freeze(actual.result), source='rng_fixture.py')
+    except BaseException as error:
+        event.update(error_type=type(error).__name__, error=str(error))
+        raise
+    finally:
+        require(refs.clear() == 0, 'Fixture retained an unexpected Host ref')
+
+
+def valid_three_outputs(node, result):
+    if type(result) is not tuple or len(result) != 3:
+        return False
+    if node == 'PromptCombinatorRandomPrompt':
+        return (type(result[0]) is str and type(result[1]) is list
+                and all(type(item) is str for item in result[1]) and type(result[2]) is str)
+    return (type(result[0]) is type(result[1]) is type(result[2]) is list
+            and len(result[0]) == len(result[1]) == len(result[2])
+            and all(type(item) is str for item in result[0]+result[2])
+            and all(type(item) is list and all(type(value) is str for value in item) for item in result[1]))
+
+
+async def exercise(output, snapshot, pack, profile, pins):
+    RESULT['stage'] = 'actual-runtime-imports'
+    dirs = {name: output / name for name in ['base', 'user', 'models', 'frontend', 'input', 'output', 'temporary', 'work']}
+    for path in dirs.values():
+        path.mkdir()
+    sys.argv = ['ned-prompt-combinator', '--cpu', '--offline', '--disable-assets', '--disable-all-custom-nodes', '--base-directory', str(dirs['base']), '--user-directory', str(dirs['user']), '--models-directory', str(dirs['models']), '--front-end-root', str(dirs['frontend']), '--database-url', 'sqlite:///:memory:']
+    import comfy.options
+    comfy.options.enable_args_parsing()
+    import folder_paths
+    folder_paths.set_user_directory(str(dirs['user']))
+    folder_paths.set_input_directory(str(dirs['input']))
+    folder_paths.set_output_directory(str(dirs['output']))
+    folder_paths.set_temp_directory(str(dirs['temporary']))
+    from comfy_api.latest import io, _sdk
+    from comfy_secure_nodes import packdb, packpatch
+    from comfy_secure_nodes.transport.host import GuestSession
+    RESULT['runtime'] = {'python': sys.version, 'prefix': sys.prefix, 'Host_normal_site': not sys.flags.no_site,
+                         'SDK_sha256': sha(_sdk.__file__)}
+    # Import the genuine unchanged computation module; package registration is checked separately.
+    old_path = list(sys.path)
+    try:
+        original = module('_ned_prompt_combinator_original', pack / 'prompt_combinator.py')
+    finally:
+        sys.path[:] = old_path
+    candidate = packdb.load('ned_prompt_combinator_actual', pack / 'v2', 'nodes')
+    RESULT['schemas'] = schemas(original, candidate)
+    RESULT['stage'] = 'normal-generator'
+    generator = module('_ned_prompt_combinator_generator', HERE / 'generate_popular_pack_manifest.py')
+    generator.PROFILES['prompt-combinator'] = {'nodes': 3, 'node_ids': IDS, 'extension_entrypoint': False}
+    generated = generator.build(pack / 'v2', 'prompt-combinator')
+    require(set(generated['nodes']) == set(IDS) and generated.get('web_directory') is None, 'Normal generated census differs')
+    for name, row in generated['nodes'].items():
+        require(row['module'] == 'nodes' and row['class'] == name and row['sdk_refs'] and row['permissions'] == [], 'Generated public defining-module boundary differs')
+    save(pack / 'v2/secure-nodes.json', generated)
+    (pack / 'v2/secure-nodes.json').chmod(0o644)
+    RESULT['manifest'] = {'normal_generator_runs': 1, 'sha256': sha(pack / 'v2/secure-nodes.json')}
+    frozen = inventory(pack)
+    cases = load(HERE / 'CASES.json')
+    require(len(cases) == 100, 'Finite case count differs')
+    fixture = module('_ned_prompt_combinator_rng_fixture', output / 'node-root/rng_fixture.py').SeedGlobalRandomFixture
+    session = observer = guest_pid = socket = None
+    try:
+        session = GuestSession('ned-prompt-combinator', runtime=None, tenant='ned-prompt-combinator-owned', work_root=dirs['work'], guest_runtime_root=output / 'node-root')
+        observed = module('_ned_prompt_combinator_observer', HERE / 'guest_startup_observer.py')
+        observer = observed.GuestStartupObserver(output, load(HERE / 'inputs/OBSERVER_BINDING.json')['subprocess_source'])
+        observer.begin_creation()
+        try:
+            await session.start()
+        finally:
+            observer.end_creation()
+            RESULT['creation_observation'] = observer.snapshot()
+        RESULT['actual_startup'] = observer.verify_session(session)
+        require(session.sandbox_kind == 'seatbelt', 'Actual Guest confinement differs')
+        guest_pid, socket = session.pid, Path(session._sockdir)
+        require(session._pgid == guest_pid and guest_pid != os.getpid(), 'Actual Guest group differs')
+        RESULT['Guest_instances'] = 1
+        for case in cases:
+            before = freeze(case['inputs'])
+            old_cls = getattr(original, case['node'])
+            if case['node'] == 'PromptCombinatorRandomPrompt':
+                host_state = random.getstate()
+                try:
+                    random.seed(case['fixture_seed'])
+                    native = getattr(old_cls(), old_cls.FUNCTION)(**case['inputs'])
+                finally:
+                    random.setstate(host_state)
+                await seed_real_guest_rng(session, fixture, case['fixture_seed'], guest_pid)
+            else:
+                native = getattr(old_cls(), old_cls.FUNCTION)(**case['inputs'])
+            if type(native) is dict:
+                require(set(native) == {'ui', 'result'}, 'Native custom UI contract changed')
+                native_result, native_ui = native['result'], native['ui']
+            else:
+                native_result, native_ui = native, None
+            require(valid_three_outputs(case['node'], native_result), 'Native ordinary purpose did not return its three typed outputs')
+            expected = {'outcome': 'return', 'result': freeze(native_result), 'ui': freeze(native_ui)}
+            RESULT['native_cases'] += 1
+            cls = candidate.NODE_CLASS_MAPPINGS[case['node']]
+            plan = _sdk.ExecutionPlan(prompt_id='ned-prompt-combinator', node_id=case['case_id'], node_type=cls.__name__, node_module=cls.__module__, method='execute', input_mode='refs', inputs=case['inputs'], permissions=())
+            refs = _sdk.InProcessRefResolver()
+            runtime = _sdk.Runtime(refs=refs, ctx=_sdk.InProcessCtxProvider().build(plan), ops=_sdk.InProcessOps())
+            try:
+                RESULT['Guest_dispatches'] += 1
+                actual = await session.execute(plan, runtime, capabilities=(), tenant='ned-prompt-combinator-owned')
+                require(type(actual) is io.NodeOutput and type(actual.result) is tuple and actual.expand is actual.block_execution is None, 'Actual Guest output differs')
+                received = {'outcome': 'return', 'result': freeze(actual.result), 'ui': freeze(actual.ui)}
+                unchanged = before == freeze(case['inputs'])
+                require(unchanged and session.last_guest_pid == guest_pid and session.last_stdout == session.last_stderr == '', 'Inputs/Guest/streams differ')
+                RESULT['rows'].append({'case_id': case['case_id'], 'node': case['node'], 'native': expected, 'Guest': received,
+                                       'equal': ordinary_equal(expected, received), 'inputs_unchanged': unchanged,
+                                       'ignored_seed_pair': case.get('ignored_seed_pair'), 'fixture_seed': case.get('fixture_seed')})
+                save(output / 'PARTIAL_ROWS.json', RESULT['rows'])
+            finally:
+                require(refs.clear() == 0, 'Unexpected Host reference retained')
+        sample = RESULT['rows'][0]['native']
+        bad = copy.deepcopy(sample)
+        bad['result']['items'] = []
+        bad_ui = copy.deepcopy(sample)
+        bad_ui['ui'] = freeze({'different-key': ['text']})
+        for name, left, right in [
+            ('wrong-output-arity', sample, bad),
+            ('wrong-custom-ui', sample, bad_ui),
+            ('changed-scalar-type', {'outcome': 'return', 'result': freeze('')}, {'outcome': 'return', 'result': freeze(None)}),
+            ('ordinary-versus-error', sample, {'outcome': 'error', 'exception': 'TypeError'}),
+            ('paired-matching-errors', {'outcome': 'error', 'exception': 'TypeError'}, {'outcome': 'error', 'exception': 'TypeError'}),
+        ]:
+            require(not ordinary_equal(left, right), 'Poisoned comparator accepted: ' + name)
+            RESULT['controls'].append({'name': name, 'refused': True})
+    finally:
+        if session is not None:
+            try:
+                await asyncio.wait_for(session.kill(), 3)
+            except BaseException as error:
+                RESULT['cleanup_errors'].append('Guest kill: ' + repr(error))
+        if guest_pid is not None:
+            try:
+                try:
+                    os.killpg(guest_pid, 0)
+                except ProcessLookupError:
+                    RESULT['normal_path_guest_group_absent'] = True
+                else:
+                    raise AssertionError('Guest group remains')
+                require(socket is not None and not socket.exists(), 'Guest socket remains')
+            except BaseException as error:
+                RESULT['cleanup_errors'].append('Guest retirement: ' + repr(error))
+        if observer is not None:
+            try:
+                RESULT['creation_observation'] = observer.snapshot()
+                require(not observer.errors, 'Guest observation errors')
+                observer.close()
+            except BaseException as error:
+                RESULT['cleanup_errors'].append('Observer: ' + repr(error))
+        if inventory(pack) != frozen:
+            RESULT['cleanup_errors'].append('Pack source changed')
+        for path, digest in pins:
+            if sha(path) != digest:
+                RESULT['cleanup_errors'].append('Runtime source changed: ' + str(path))
+        require(not RESULT['cleanup_errors'], 'Cleanup/source preservation failed')
+    require(len(RESULT['rows']) == RESULT['native_cases'] == RESULT['Guest_dispatches'] == 100, 'Finite coverage incomplete')
+    require(len(RESULT.get('rng_fixture_rows', [])) == 32 and all(r['returned'] for r in RESULT['rng_fixture_rows']), 'RNG fixture coverage incomplete')
+    RESULT['all_actual_Guest_dispatches'] = RESULT['Guest_dispatches'] + len(RESULT['rng_fixture_rows'])
+    require(RESULT['all_actual_Guest_dispatches'] == 132, 'Total genuine dispatch count differs')
+    pairs = {}
+    for row in RESULT['rows']:
+        if row['ignored_seed_pair']:
+            pairs.setdefault(row['ignored_seed_pair'], []).append(row)
+    require(len(pairs) == 16 and all(len(rows) == 2 and rows[0]['native'] == rows[1]['native'] and rows[0]['Guest'] == rows[1]['Guest'] for rows in pairs.values()), 'Ignored production seed invariant differs')
+    RESULT['ignored_seed_pairs_confirmed'] = 16
+    RESULT['ordinary_mismatches'] = [row['case_id'] for row in RESULT['rows'] if not row['equal']]
+    RESULT['stage'] = 'canonical-pair-bundle-pristine-replays'
+    canonical_replays(snapshot, pack, output, packpatch)
+    require(not RESULT['ordinary_mismatches'], 'Required ordinary results/UI differ')
+    RESULT.update(status='PASS_PROMPT_COMBINATOR_THREE_NATIVE_GENUINE_GUEST_NORMALGEN_REPLAYS_ONLY', stage='complete',
+                  browser_frontend_or_public_graph_runs=0, whole_pack_service_or_managed_acceptance=False)
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--execute',action='store_true');parser.add_argument('--input-manifest-sha256',required=True)
+    parser.add_argument('--authorization-message',required=True);parser.add_argument('--output',type=Path,required=True)
+    args=parser.parse_args()
+    require(args.execute,'SOURCE_ONLY_UNRUN; no execution selected')
+    require(re.fullmatch('m_[0-9a-f]+',args.authorization_message) and args.authorization_message not in {'m_43f11db206','m_ff2bb911a4','m_5f73d0de77','m_6343c0acc0','m_5490a86b18','m_f80019c5e5','m_f6aa008b69','m_1e86db3d4a','m_1afb348675','m_cfdc69fbd1','m_da23687fd1','m_f518999f05'},'Future finite runtime selection required')
+    pins=verify_packet(args.input_manifest_sha256)
+    output=args.output
+    require(output.is_absolute() and not output.exists() and not output.is_symlink(),'Fresh owned output required')
+    output.parent.resolve(strict=True)
+    require(not output.resolve().is_relative_to(HERE) and not HERE.is_relative_to(output.resolve()),'Output overlaps packet')
+    spec=load(HERE/'JOB_SPEC.json')
+    for raw in spec['protected_reference_roots']:
+        root=Path(raw).resolve();require(not output.resolve().is_relative_to(root) and not root.is_relative_to(output.resolve()),'Output overlaps runtime')
+    output.mkdir(mode=0o700)
+    RESULT['authorization_message']=args.authorization_message
+    try:
+        helper=module('_ned_prompt_combinator_join_runner_reference',HERE/'reference/run_join_boundary.py')
+        RESULT['actual_constructor']=helper.verify_constructor(load(HERE/'inputs/OBSERVER_BINDING.json'))
+        profile,backend,runtime_pins=runtime_source_checks()
+        snapshot,pack=stage_sources(output)
+        asyncio.run(exercise(output,snapshot,pack,profile,runtime_pins))
+    except BaseException as error:
+        RESULT.update(error_type=type(error).__name__,error=str(error)[:4096],traceback=traceback.format_exc()[-16384:])
+    finally:
+        changed=[row['path'] for row in pins if sha(HERE/row['path'])!=row['sha256']]
+        if changed: RESULT.update(status='FAILED_PACKET_INPUT_PRESERVATION',changed_inputs=changed)
+        RESULT.update(elapsed_monotonic_seconds=time.monotonic()-START,automatic_retries=0)
+        save(output/'WORKER_RESULT.json',RESULT)
+        save(output/'RESULT.json',RESULT)
+        print(json.dumps({'status':RESULT['status'],'stage':RESULT['stage'],'rows':len(RESULT['rows']),'error':RESULT.get('error')}),flush=True)
+    return 0 if RESULT['status']=='PASS_PROMPT_COMBINATOR_THREE_NATIVE_GENUINE_GUEST_NORMALGEN_REPLAYS_ONLY' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,519 @@
+{
+  "last_node_id": 81,
+  "last_link_id": 184,
+  "nodes": [
+    {
+      "id": 71,
+      "type": "CLIPTextEncode",
+      "pos": [
+        920,
+        700
+      ],
+      "size": {
+        "0": 210,
+        "1": 70
+      },
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 171,
+          "slot_index": 0
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 170,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            174
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 75,
+      "type": "VAEDecode",
+      "pos": [
+        1650,
+        420
+      ],
+      "size": {
+        "0": 210,
+        "1": 46
+      },
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 176
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 177,
+          "slot_index": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            182
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 77,
+      "type": "Note",
+      "pos": [
+        1260,
+        540
+      ],
+      "size": {
+        "0": 320,
+        "1": 90
+      },
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "It is recommended to set a fixed seed to be able to retry exporting if export gallery fails"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 74,
+      "type": "EmptyLatentImage",
+      "pos": [
+        870,
+        410
+      ],
+      "size": {
+        "0": 315,
+        "1": 106
+      },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            175
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyLatentImage"
+      },
+      "widgets_values": [
+        512,
+        512,
+        1
+      ]
+    },
+    {
+      "id": 70,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        550,
+        180
+      ],
+      "size": {
+        "0": 270,
+        "1": 100
+      },
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            181
+          ],
+          "shape": 3
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            171,
+            172
+          ],
+          "shape": 3
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            177
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "sd1.5/dreamshaper_8.safetensors"
+      ]
+    },
+    {
+      "id": 78,
+      "type": "PromptCombinatorExportGallery",
+      "pos": [
+        1940,
+        340
+      ],
+      "size": {
+        "0": 550,
+        "1": 950
+      },
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 182
+        },
+        {
+          "name": "combination_ids",
+          "type": "PROMPTCOMBINATORIDS",
+          "link": 183
+        },
+        {
+          "name": "prompts",
+          "type": "STRING",
+          "link": 184,
+          "widget": {
+            "name": "prompts"
+          }
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PromptCombinatorExportGallery"
+      },
+      "widgets_values": [
+        "gallery",
+        ".webp lossy 90",
+        true,
+        ""
+      ]
+    },
+    {
+      "id": 73,
+      "type": "KSampler",
+      "pos": [
+        1260,
+        690
+      ],
+      "size": {
+        "0": 320,
+        "1": 470
+      },
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 181,
+          "slot_index": 0
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 174
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 173
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 175
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            176
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        45,
+        "fixed",
+        25,
+        7,
+        "dpmpp_2m_sde",
+        "karras",
+        1
+      ]
+    },
+    {
+      "id": 57,
+      "type": "PromptCombinator",
+      "pos": [
+        110,
+        330
+      ],
+      "size": {
+        "0": 390,
+        "1": 1030
+      },
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "prompts",
+          "type": "STRING",
+          "links": [
+            170,
+            184
+          ],
+          "shape": 6,
+          "slot_index": 0
+        },
+        {
+          "name": "combination_ids",
+          "type": "PROMPTCOMBINATORIDS",
+          "links": [
+            183
+          ],
+          "shape": 6,
+          "slot_index": 1
+        },
+        {
+          "name": "filenames",
+          "type": "STRING",
+          "links": [],
+          "shape": 6,
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PromptCombinator"
+      },
+      "widgets_values": [
+        "@",
+        "#",
+        "space",
+        "colorful@colorful\nblack and white@black and white\npsychedelic@psychedelic",
+        "picture@picture of\npencil@simple pencil sketch of\nwatercolor@watercolor painting of\ncartoon@animated cartoon still of\nblueprint@blueprint in orthographic projection of\n3d render@3d render of",
+        "dog@a dog\nman@a man\nmonster@a monster\nairplane@an airplane",
+        "umbrella@holding an umbrella\nicecream@eating icecream\nbook@reading a book\nflying@flying through the sky",
+        "",
+        "\n",
+        "",
+        ""
+      ]
+    },
+    {
+      "id": 72,
+      "type": "CLIPTextEncode",
+      "pos": [
+        890,
+        830
+      ],
+      "size": {
+        "0": 260,
+        "1": 90
+      },
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 172,
+          "slot_index": 0
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            173
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "text, watermark, ugly"
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    }
+  ],
+  "links": [
+    [
+      170,
+      57,
+      0,
+      71,
+      1,
+      "STRING"
+    ],
+    [
+      171,
+      70,
+      1,
+      71,
+      0,
+      "CLIP"
+    ],
+    [
+      172,
+      70,
+      1,
+      72,
+      0,
+      "CLIP"
+    ],
+    [
+      173,
+      72,
+      0,
+      73,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      174,
+      71,
+      0,
+      73,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      175,
+      74,
+      0,
+      73,
+      3,
+      "LATENT"
+    ],
+    [
+      176,
+      73,
+      0,
+      75,
+      0,
+      "LATENT"
+    ],
+    [
+      177,
+      70,
+      2,
+      75,
+      1,
+      "VAE"
+    ],
+    [
+      181,
+      70,
+      0,
+      73,
+      0,
+      "MODEL"
+    ],
+    [
+      182,
+      75,
+      0,
+      78,
+      0,
+      "IMAGE"
+    ],
+    [
+      183,
+      57,
+      1,
+      78,
+      1,
+      "PROMPTCOMBINATORIDS"
+    ],
+    [
+      184,
+      57,
+      0,
+      78,
+      2,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8264462809917356,
+      "offset": [
+        35.5607096711351,
+        2.188134272183487
+      ]
+    }
+  },
+  "version": 0.4
+}
