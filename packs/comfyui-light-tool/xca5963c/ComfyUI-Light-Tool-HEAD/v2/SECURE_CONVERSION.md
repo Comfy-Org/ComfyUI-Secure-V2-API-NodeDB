@@ -140,3 +140,69 @@ remain open under their recorded dispositions.
 
 Compact evidence: [strict receipt](../../../../../validation/20261020-light-seven-crop-data/VERIFIED_RESULT_RECEIPT.json)
 and [source/scope binding](../../../../../validation/20261020-light-seven-crop-data/SOURCE_AND_SCOPE_BINDING.json).
+
+
+## Original image-body repairs and scoped native twenty-eight-purpose qualification (2026-10-20)
+
+The published runtime now contains the exact candidate exercised by the accepted
+Light28 attempt. Four methods restore the pristine original AST bodies:
+BoundingBoxCropping.image_crop, MaskBoundingBoxCropping.mask_image_crop,
+ImageOverlay.combine_images and MaskContourExtractor.contour_extractor.
+The module uses genuine cv2 and torchvision.transforms.functional imports.
+Eighteen execute wrappers use the existing _light_eight_runtime.run typed
+boundary helper instead of the generic run helper; neither helper is changed.
+GetImageSize.image_size restores the original numeric stdout line while keeping
+the existing in-memory PNG adaptation. Native temporary PNGs were observed and
+removed by the selected owner; filesystem trace equivalence is not claimed.
+These are tested runtime source repairs, not a documentation-only change.
+
+One separately selected Mac attempt passed strict intake for 128 bounded native
+comparisons across28 original purposes:109 ordinary returns and19 exact original
+exception class/message matches. Four comparator controls are separate. Two
+additional observations are explicit NONPARITY diagnostics and add no pass:
+ShowAnything preserves a numpy.bool rather than the original builtin bool;
+ShowText's opaque-object UI contains an OpaqueRef rather than the original
+object. Both contracts remain incomplete. KeyValue's previously retained
+empty-result disagreement also remains incomplete.
+
+Together with the previous28 five-purpose and42 crop/data comparisons, AMY's
+retained reconciliation records198 current-profile scoped comparisons across40
+unique original IDs. These are finite exercised domains, not40 completed node
+contracts. The separate55-ID table under validation is informational evidence;
+it is not a canonical pack status sidecar or a new registration declaration.
+
+The actual28 observed schemas match the saved55-node secure-nodes.json. That
+manifest is byte-identical to the prior publication; no normal SDK manifest
+generator ran for this update. Historical generator origin-file hashes are not
+claimed fresh after runtime source repairs. The original30 files, tested runtime
+and helper bytes, permissions, IDs and existing genuine Python/TypeScript
+authoring contracts are preserved. A separate one-line pyproject packaging
+correction declares torchvision; previously neither that dependency list nor
+pristine requirements.txt declared it. This declaration-only addition did not
+rerun normal generation or change the tested computation.
+
+The accepted actual normal-site profile recorded torchvision package and
+transforms/functional.py origins and hashes. Its unchanged full-SITE map pins
+torch-2.13.0 and torchvision-0.28.0 distribution metadata and the native _C.so.
+Those versions are retained installed-distribution metadata, not an invented
+__version__ probe. Deployment requires a locked exact-target matched Torch,
+Torchvision and native ABI profile; an unversioned declaration alone is not
+that lock, a new installation, or managed dependency admission. The accepted
+site root was core-test-venv/lib/python3.13/site-packages. Exact origin/metadata
+pins are retained in validation/DEPENDENCY_QUALIFICATION_BINDING.json.
+
+Strict intake records unchanged input/site/component/runtime/operator maps,
+four recorded PIDs and three process groups absent twice, an empty deadline
+marker,36.655 seconds whole-owner time and383,680,512 sampled RSS bytes. These
+observations do not establish exhaustive transient-child capture, hard memory
+or CPU quotas, live cancellation or every cleanup branch. Earlier failed
+attempts remain failed; no failed result is retroactively credited.
+
+No Guest, browser/UI-codec, public-graph/default/list scheduling, model,
+HTTP/media/Aliyun integration, service/registry adoption, full-contract or
+whole-pack acceptance follows. The remaining purposes and the three incomplete
+contracts require their own source disposition and separately selected tests.
+
+Compact evidence: [strict receipt](../../../../../validation/20261020-light-twenty-eight-native-component/VERIFIED_RESULT_RECEIPT.json),
+[actual retained output](../../../../../validation/20261020-light-twenty-eight-native-component/ACTUAL_TWENTY_EIGHT_RESULT.json)
+and [source/scope binding](../../../../../validation/20261020-light-twenty-eight-native-component/SOURCE_AND_SCOPE_BINDING.json).

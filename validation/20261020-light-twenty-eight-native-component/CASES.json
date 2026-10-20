@@ -1,0 +1,1866 @@
+{
+  "schema": "light-remaining-finite-cases/1",
+  "authority": "m_de1b81ed30",
+  "parity_cases": [
+    {
+      "id": "Hex2RGB/black",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "#000000"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "Hex2RGB/lower-white",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "#ffffff"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "Hex2RGB/mixed",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "#A1b2C3"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "Hex2RGB/no-hash",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "1234ef"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "Hex2RGB/bad-hex",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "#gg1234"
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "Hex2RGB/short",
+      "purpose": "Hex2RGB",
+      "inputs": {
+        "color_hex": "#12"
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "RGB2Hex/black",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": 0,
+        "G": 0,
+        "B": 0
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2Hex/mixed",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": 1,
+        "G": 127,
+        "B": 254
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2Hex/white",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": 255,
+        "G": 255,
+        "B": 255
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2Hex/range-low",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": -1,
+        "G": 2,
+        "B": 3
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "RGB2Hex/range-high",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": 1,
+        "G": 256,
+        "B": 3
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "RGB2Hex/extreme-mix",
+      "purpose": "RGB2Hex",
+      "inputs": {
+        "R": 0,
+        "G": 255,
+        "B": 16
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/literal",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "A a A",
+        "search": "A",
+        "replace": "x",
+        "use_regex": false,
+        "case_sensitive": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/casefold",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "AbC abc",
+        "search": "abc",
+        "replace": "Z",
+        "use_regex": false,
+        "case_sensitive": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/empty",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "keep\n二",
+        "search": "",
+        "replace": "x",
+        "use_regex": false,
+        "case_sensitive": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/unicode",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "猫-cat-猫",
+        "search": "猫",
+        "replace": "犬",
+        "use_regex": false,
+        "case_sensitive": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/regex-dotall",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "a\nb",
+        "search": "a.b",
+        "replace": "X",
+        "use_regex": true,
+        "case_sensitive": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/regex-case",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "Ab aB",
+        "search": "ab",
+        "replace": "X",
+        "use_regex": true,
+        "case_sensitive": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "TextReplace/bad-regex",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "abc",
+        "search": "[",
+        "replace": "X",
+        "use_regex": true,
+        "case_sensitive": true
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "TextReplace/grouped-regex",
+      "purpose": "TextReplace",
+      "inputs": {
+        "text": "ab ab",
+        "search": "(a)(b)",
+        "replace": "X",
+        "use_regex": true,
+        "case_sensitive": true
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "ShowText/simple",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          "one",
+          "二"
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowText/first-list",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          [
+            "first",
+            "second"
+          ],
+          "ignored"
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowText/mixed",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          42,
+          false
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowText/mapping",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          {
+            "n": [
+              1,
+              "二"
+            ]
+          }
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowText/tensor",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          {
+            "$fixture": "rgb3x5"
+          }
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowText/empty",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": []
+      },
+      "expected_error_type": "builtins.IndexError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "ShowText/null-list",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          null,
+          ""
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/unicode",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": "二\nline"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/mapping",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": {
+          "n": [
+            1,
+            false,
+            null
+          ],
+          "s": "二"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/list",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": [
+          1,
+          "two",
+          null
+        ]
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/int",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": 17
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/bool",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/null",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": null
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/tensor",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": {
+          "$fixture": "rgb3x5"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/nested-tensor",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": {
+          "pixels": {
+            "$fixture": "rgb3x5"
+          },
+          "tag": "t"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ShowAnything/opaque",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": {
+          "$opaque": "bounded-opaque-7"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageMaskApply/rgb-mask",
+      "purpose": "ImageMaskApply",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "mask": {
+          "$fixture": "gray9x11"
+        },
+        "invert": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageMaskApply/invert",
+      "purpose": "ImageMaskApply",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "mask": {
+          "$fixture": "gray9x11"
+        },
+        "invert": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageMaskApply/zip-shortest",
+      "purpose": "ImageMaskApply",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "mask": {
+          "$fixture": "gray17x19"
+        },
+        "invert": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageMaskApply/size-error",
+      "purpose": "ImageMaskApply",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "mask": {
+          "$fixture": "gray3x5"
+        },
+        "invert": false
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "MaskToImage/ramp",
+      "purpose": "MaskToImage",
+      "inputs": {
+        "mask": {
+          "$fixture": "mask9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskToImage/binary",
+      "purpose": "MaskToImage",
+      "inputs": {
+        "mask": {
+          "$fixture": "mask-shape9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskToImage/batch",
+      "purpose": "MaskToImage",
+      "inputs": {
+        "mask": {
+          "$fixture": "mask-batch2-9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskToImage/transposed",
+      "purpose": "MaskToImage",
+      "inputs": {
+        "mask": {
+          "$fixture": "mask-transpose9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageToMask/red",
+      "purpose": "ImageToMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "channel": "red"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageToMask/blue",
+      "purpose": "ImageToMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "channel": "blue"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageToMask/rgba-alpha",
+      "purpose": "ImageToMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "channel": "alpha"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageToMask/batch-green",
+      "purpose": "ImageToMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "channel": "green"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskImageToTransparent/rgb",
+      "purpose": "MaskImageToTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskImageToTransparent/gray",
+      "purpose": "MaskImageToTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskImageToTransparent/rgba",
+      "purpose": "MaskImageToTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskImageToTransparent/batch",
+      "purpose": "MaskImageToTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "InvertMask/rgb",
+      "purpose": "InvertMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "InvertMask/gray",
+      "purpose": "InvertMask",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "InvertMask/rgba",
+      "purpose": "InvertMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "InvertMask/batch",
+      "purpose": "InvertMask",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2RGBA/rgb",
+      "purpose": "RGB2RGBA",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2RGBA/gray",
+      "purpose": "RGB2RGBA",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2RGBA/rgba",
+      "purpose": "RGB2RGBA",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGB2RGBA/batch",
+      "purpose": "RGB2RGBA",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGBA2RGB/rgb",
+      "purpose": "RGBA2RGB",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGBA2RGB/gray",
+      "purpose": "RGBA2RGB",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGBA2RGB/rgba",
+      "purpose": "RGBA2RGB",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "RGBA2RGB/batch",
+      "purpose": "RGBA2RGB",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "BoundingBoxCropping/bounded-alpha",
+      "purpose": "BoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "alpha-shape9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "BoundingBoxCropping/opaque-rgb",
+      "purpose": "BoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "BoundingBoxCropping/rgba-ramp",
+      "purpose": "BoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "BoundingBoxCropping/empty-alpha",
+      "purpose": "BoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "alpha-empty9x11"
+        }
+      },
+      "expected_error_type": "cv2.error",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "MaskBoundingBoxCropping/bounded-mask",
+      "purpose": "MaskBoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskBoundingBoxCropping/ramp",
+      "purpose": "MaskBoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskBoundingBoxCropping/rgb",
+      "purpose": "MaskBoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskBoundingBoxCropping/rgba",
+      "purpose": "MaskBoundingBoxCropping",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackground/hex",
+      "purpose": "AddBackground",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "color_hex": "#1234AB",
+        "use_hex": true,
+        "R": 13,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackground/rgb",
+      "purpose": "AddBackground",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "color_hex": "#ignored",
+        "use_hex": false,
+        "R": 13,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackground/bad-hex",
+      "purpose": "AddBackground",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "color_hex": "bad",
+        "use_hex": true,
+        "R": 13,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "AddBackground/native-rgb-error",
+      "purpose": "AddBackground",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "color_hex": "#112233",
+        "use_hex": true,
+        "R": 13,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": "builtins.IndexError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "ImageOverlay/ramp",
+      "purpose": "ImageOverlay",
+      "inputs": {
+        "origin_image": {
+          "$fixture": "rgb9x11"
+        },
+        "overlay_image": {
+          "$fixture": "rgb9x11"
+        },
+        "overlay_mask": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageOverlay/rgba",
+      "purpose": "ImageOverlay",
+      "inputs": {
+        "origin_image": {
+          "$fixture": "rgba9x11"
+        },
+        "overlay_image": {
+          "$fixture": "rgba9x11"
+        },
+        "overlay_mask": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageOverlay/batch-origin",
+      "purpose": "ImageOverlay",
+      "inputs": {
+        "origin_image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "overlay_image": {
+          "$fixture": "rgb17x19"
+        },
+        "overlay_mask": {
+          "$fixture": "gray17x19"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageOverlay/size-error",
+      "purpose": "ImageOverlay",
+      "inputs": {
+        "origin_image": {
+          "$fixture": "rgb9x11"
+        },
+        "overlay_image": {
+          "$fixture": "rgb3x5"
+        },
+        "overlay_mask": {
+          "$fixture": "gray3x5"
+        }
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "SimpleImageOverlay/center",
+      "purpose": "SimpleImageOverlay",
+      "inputs": {
+        "foreground": {
+          "$fixture": "rgba3x5"
+        },
+        "background": {
+          "$fixture": "rgb9x11"
+        },
+        "center": true,
+        "left": 0,
+        "top": 0
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "SimpleImageOverlay/offset",
+      "purpose": "SimpleImageOverlay",
+      "inputs": {
+        "foreground": {
+          "$fixture": "rgba3x5"
+        },
+        "background": {
+          "$fixture": "rgb9x11"
+        },
+        "center": false,
+        "left": 2,
+        "top": 1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "SimpleImageOverlay/negative-clip",
+      "purpose": "SimpleImageOverlay",
+      "inputs": {
+        "foreground": {
+          "$fixture": "rgb3x5"
+        },
+        "background": {
+          "$fixture": "rgba9x11"
+        },
+        "center": false,
+        "left": -2,
+        "top": -1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "SimpleImageOverlay/batch-bg",
+      "purpose": "SimpleImageOverlay",
+      "inputs": {
+        "foreground": {
+          "$fixture": "rgba3x5"
+        },
+        "background": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "center": true,
+        "left": 0,
+        "top": 0
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackgroundV2/margins",
+      "purpose": "AddBackgroundV2",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "color_hex": "#2367AB",
+        "use_hex": true,
+        "R": 0,
+        "G": 0,
+        "B": 0,
+        "square": false,
+        "left_margin": 1,
+        "right_margin": 2,
+        "top_margin": 3,
+        "bottom_margin": 4
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackgroundV2/square",
+      "purpose": "AddBackgroundV2",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "color_hex": "#112233",
+        "use_hex": true,
+        "R": 0,
+        "G": 0,
+        "B": 0,
+        "square": true,
+        "left_margin": 0,
+        "right_margin": 0,
+        "top_margin": 0,
+        "bottom_margin": 0
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AddBackgroundV2/batch-square",
+      "purpose": "AddBackgroundV2",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "color_hex": "#112233",
+        "use_hex": true,
+        "R": 0,
+        "G": 0,
+        "B": 0,
+        "square": true,
+        "left_margin": 1,
+        "right_margin": 0,
+        "top_margin": 1,
+        "bottom_margin": 0
+      },
+      "expected_error_type": "builtins.RuntimeError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "AddBackgroundV2/bad-hex",
+      "purpose": "AddBackgroundV2",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "color_hex": "bad",
+        "use_hex": true,
+        "R": 0,
+        "G": 0,
+        "B": 0,
+        "square": false,
+        "left_margin": 0,
+        "right_margin": 0,
+        "top_margin": 0,
+        "bottom_margin": 0
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "IsTransparent/rgb",
+      "purpose": "IsTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "threshold": 0.1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "IsTransparent/gray",
+      "purpose": "IsTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        },
+        "threshold": 0.1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "IsTransparent/alpha-ramp",
+      "purpose": "IsTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "threshold": 0.3
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "IsTransparent/alpha-shape",
+      "purpose": "IsTransparent",
+      "inputs": {
+        "image": {
+          "$fixture": "alpha-shape9x11"
+        },
+        "threshold": 0.99
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "PhantomTankEffect/luminance",
+      "purpose": "PhantomTankEffect",
+      "inputs": {
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgba9x11"
+        },
+        "offset": 117,
+        "alpha_min": 1,
+        "alpha_max": 255,
+        "v_min": 0,
+        "v_max": 255,
+        "gray_method": "luminosity"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "PhantomTankEffect/average",
+      "purpose": "PhantomTankEffect",
+      "inputs": {
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgba9x11"
+        },
+        "offset": 117,
+        "alpha_min": 1,
+        "alpha_max": 255,
+        "v_min": 0,
+        "v_max": 255,
+        "gray_method": "average"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "PhantomTankEffect/min",
+      "purpose": "PhantomTankEffect",
+      "inputs": {
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgba9x11"
+        },
+        "offset": 117,
+        "alpha_min": 1,
+        "alpha_max": 255,
+        "v_min": 0,
+        "v_max": 255,
+        "gray_method": "min"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "PhantomTankEffect/size-error",
+      "purpose": "PhantomTankEffect",
+      "inputs": {
+        "image1": {
+          "$fixture": "rgb3x5"
+        },
+        "image2": {
+          "$fixture": "rgb9x11"
+        },
+        "offset": 117,
+        "alpha_min": 1,
+        "alpha_max": 255,
+        "v_min": 0,
+        "v_max": 255,
+        "gray_method": "luminosity"
+      },
+      "expected_error_type": "builtins.IndexError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "MaskContourExtractor/contour",
+      "purpose": "MaskContourExtractor",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        },
+        "color_hex": "#51A3CF",
+        "use_hex": true,
+        "R": 7,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskContourExtractor/ramp",
+      "purpose": "MaskContourExtractor",
+      "inputs": {
+        "image": {
+          "$fixture": "gray9x11"
+        },
+        "color_hex": "#unused",
+        "use_hex": false,
+        "R": 7,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskContourExtractor/empty",
+      "purpose": "MaskContourExtractor",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-empty9x11"
+        },
+        "color_hex": "#unused",
+        "use_hex": false,
+        "R": 7,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MaskContourExtractor/rgb",
+      "purpose": "MaskContourExtractor",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "color_hex": "#12AB34",
+        "use_hex": true,
+        "R": 7,
+        "G": 91,
+        "B": 173
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AdvancedSolidColorBackground/rgb-hex",
+      "purpose": "AdvancedSolidColorBackground",
+      "inputs": {
+        "color_hex": "#12AB34",
+        "use_hex": true,
+        "width": 11,
+        "height": 9,
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "mode": "RGB",
+        "alpha": 117
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AdvancedSolidColorBackground/rgb-fields",
+      "purpose": "AdvancedSolidColorBackground",
+      "inputs": {
+        "color_hex": "#unused",
+        "use_hex": false,
+        "width": 11,
+        "height": 9,
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "mode": "RGB",
+        "alpha": 117
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AdvancedSolidColorBackground/rgba",
+      "purpose": "AdvancedSolidColorBackground",
+      "inputs": {
+        "color_hex": "#unused",
+        "use_hex": false,
+        "width": 11,
+        "height": 9,
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "mode": "RGBA",
+        "alpha": 117
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "AdvancedSolidColorBackground/native-L-error",
+      "purpose": "AdvancedSolidColorBackground",
+      "inputs": {
+        "color_hex": "#unused",
+        "use_hex": false,
+        "width": 11,
+        "height": 9,
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "mode": "L",
+        "alpha": 117
+      },
+      "expected_error_type": "builtins.TypeError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "GetImageSize/rgb-no-size",
+      "purpose": "GetImageSize",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "output_size": false
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetImageSize/rgb-size",
+      "purpose": "GetImageSize",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "output_size": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetImageSize/rgba-size",
+      "purpose": "GetImageSize",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "output_size": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetImageSize/batch-native-error",
+      "purpose": "GetImageSize",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "output_size": false
+      },
+      "expected_error_type": "builtins.TypeError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "ImageConcat/horizontal",
+      "purpose": "ImageConcat",
+      "inputs": {
+        "direction": "horizontal",
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgba9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageConcat/vertical",
+      "purpose": "ImageConcat",
+      "inputs": {
+        "direction": "vertical",
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "gray9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageConcat/five",
+      "purpose": "ImageConcat",
+      "inputs": {
+        "direction": "horizontal",
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgb9x11"
+        },
+        "image3": {
+          "$fixture": "gray9x11"
+        },
+        "image4": {
+          "$fixture": "rgba9x11"
+        },
+        "image5": {
+          "$fixture": "rgb9x11"
+        }
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ImageConcat/height-error",
+      "purpose": "ImageConcat",
+      "inputs": {
+        "direction": "horizontal",
+        "image1": {
+          "$fixture": "rgb9x11"
+        },
+        "image2": {
+          "$fixture": "rgb3x5"
+        }
+      },
+      "expected_error_type": "builtins.ValueError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    },
+    {
+      "id": "MorphologicalTF/dilate",
+      "purpose": "MorphologicalTF",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        },
+        "option": "dilate",
+        "kernel_x": 3,
+        "kernel_y": 3,
+        "iterations": 1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MorphologicalTF/erode",
+      "purpose": "MorphologicalTF",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        },
+        "option": "erode",
+        "kernel_x": 2,
+        "kernel_y": 3,
+        "iterations": 2
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MorphologicalTF/identity",
+      "purpose": "MorphologicalTF",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        },
+        "option": "dilate",
+        "kernel_x": 1,
+        "kernel_y": 1,
+        "iterations": 0
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "MorphologicalTF/zero-kernel",
+      "purpose": "MorphologicalTF",
+      "inputs": {
+        "image": {
+          "$fixture": "gray-shape9x11"
+        },
+        "option": "erode",
+        "kernel_x": 0,
+        "kernel_y": 0,
+        "iterations": 1
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ScaleImage/stretch",
+      "purpose": "ScaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 15,
+        "height": 13,
+        "mode": "STRETCH",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "center",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ScaleImage/fill",
+      "purpose": "ScaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 8,
+        "height": 8,
+        "mode": "FILL",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "top-left",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ScaleImage/pad",
+      "purpose": "ScaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 16,
+        "height": 16,
+        "mode": "PAD",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "bottom-right",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "ScaleImage/auto",
+      "purpose": "ScaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 11,
+        "height": 9,
+        "mode": "AUTO",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "center",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "UpscaleImage/stretch",
+      "purpose": "UpscaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 15,
+        "height": 13,
+        "mode": "STRETCH",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "center",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01,
+        "sharpen": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "UpscaleImage/fill",
+      "purpose": "UpscaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 8,
+        "height": 8,
+        "mode": "FILL",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "top-left",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01,
+        "sharpen": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "UpscaleImage/pad",
+      "purpose": "UpscaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 16,
+        "height": 16,
+        "mode": "PAD",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "bottom-right",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01,
+        "sharpen": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "UpscaleImage/auto",
+      "purpose": "UpscaleImage",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "width": 11,
+        "height": 9,
+        "mode": "AUTO",
+        "R": 17,
+        "G": 91,
+        "B": 173,
+        "A": 117,
+        "align": "center",
+        "resample": "NEAREST",
+        "aspect_tolerance": 0.01,
+        "sharpen": true
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetSideLength/longest",
+      "purpose": "GetSideLength",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb9x11"
+        },
+        "mode": "longest"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetSideLength/shortest",
+      "purpose": "GetSideLength",
+      "inputs": {
+        "image": {
+          "$fixture": "rgba9x11"
+        },
+        "mode": "shortest"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetSideLength/gray",
+      "purpose": "GetSideLength",
+      "inputs": {
+        "image": {
+          "$fixture": "gray3x5"
+        },
+        "mode": "longest"
+      },
+      "expected_error_type": null,
+      "expectation": "EXACT_DATA_UI_STDOUT_AND_TYPES"
+    },
+    {
+      "id": "GetSideLength/batch-native-error",
+      "purpose": "GetSideLength",
+      "inputs": {
+        "image": {
+          "$fixture": "rgb-batch2-17x19"
+        },
+        "mode": "longest"
+      },
+      "expected_error_type": "builtins.TypeError",
+      "expectation": "EXACT_ORIGINAL_ERROR"
+    }
+  ],
+  "separate_boundary_diagnostics": [
+    {
+      "id": "ShowAnything/numpy-bool-boundary",
+      "purpose": "ShowAnything",
+      "inputs": {
+        "anything": {
+          "$numpy_bool": true
+        }
+      },
+      "expected": "NONPARITY",
+      "reason": "Original converts np.bool_ to builtin bool; default wrap_inputs treats numpy scalar as OPAQUE and existing materialize does not resolve OpaqueRef. Record exact type/UI/data disagreement, not a parity pass or whole-class refusal."
+    },
+    {
+      "id": "ShowText/opaque-UI-boundary",
+      "purpose": "ShowText",
+      "inputs": {
+        "text": [
+          {
+            "$opaque": "bounded-opaque-7"
+          }
+        ]
+      },
+      "expected": "NONPARITY",
+      "reason": "Raw opaque objects are not JSON UI data; existing materialize preserves OpaqueRef and UI text contains that handle. Record native object versus handle UI difference, never silently unwrap UI or count as a parity pass."
+    }
+  ],
+  "control_ids": [
+    "wrong-image-pixel",
+    "wrong-tensor-dtype",
+    "bool-for-int",
+    "wrong-UI-text"
+  ],
+  "counts": {
+    "Hex2RGB": 6,
+    "RGB2Hex": 6,
+    "TextReplace": 8,
+    "ShowText": 7,
+    "ShowAnything": 9,
+    "ImageMaskApply": 4,
+    "MaskToImage": 4,
+    "ImageToMask": 4,
+    "MaskImageToTransparent": 4,
+    "InvertMask": 4,
+    "RGB2RGBA": 4,
+    "RGBA2RGB": 4,
+    "BoundingBoxCropping": 4,
+    "MaskBoundingBoxCropping": 4,
+    "AddBackground": 4,
+    "ImageOverlay": 4,
+    "SimpleImageOverlay": 4,
+    "AddBackgroundV2": 4,
+    "IsTransparent": 4,
+    "PhantomTankEffect": 4,
+    "MaskContourExtractor": 4,
+    "AdvancedSolidColorBackground": 4,
+    "GetImageSize": 4,
+    "ImageConcat": 4,
+    "MorphologicalTF": 4,
+    "ScaleImage": 4,
+    "UpscaleImage": 4,
+    "GetSideLength": 4
+  },
+  "comparisons": 128,
+  "ordinary": 109,
+  "exact_original_errors": 19,
+  "expected_errors": {
+    "Hex2RGB/bad-hex": "builtins.ValueError",
+    "Hex2RGB/short": "builtins.ValueError",
+    "RGB2Hex/range-low": "builtins.ValueError",
+    "RGB2Hex/range-high": "builtins.ValueError",
+    "TextReplace/bad-regex": "builtins.ValueError",
+    "TextReplace/grouped-regex": "builtins.ValueError",
+    "ShowText/empty": "builtins.IndexError",
+    "ImageMaskApply/size-error": "builtins.ValueError",
+    "BoundingBoxCropping/empty-alpha": "cv2.error",
+    "AddBackground/bad-hex": "builtins.ValueError",
+    "AddBackground/native-rgb-error": "builtins.IndexError",
+    "ImageOverlay/size-error": "builtins.ValueError",
+    "AddBackgroundV2/bad-hex": "builtins.ValueError",
+    "PhantomTankEffect/size-error": "builtins.IndexError",
+    "AdvancedSolidColorBackground/native-L-error": "builtins.TypeError",
+    "GetImageSize/batch-native-error": "builtins.TypeError",
+    "ImageConcat/height-error": "builtins.ValueError",
+    "GetSideLength/batch-native-error": "builtins.TypeError",
+    "AddBackgroundV2/batch-square": "builtins.RuntimeError"
+  },
+  "diagnostics": 2,
+  "controls": 4,
+  "full_contract_completion_claim": false
+}
