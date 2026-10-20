@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,200 @@
 +# APZmedia Naming Tools — Secure Nodes V2 (12 of 14 nodes)
 +
 +Upstream: <https://github.com/APZmedia/ComfyUI-APZmedia-naming-tools> (the project
@@ -14,8 +14,10 @@
 +## Node scope
 +
 +The upstream package registers 14 nodes. This conversion registers **12**. The
-+two remaining original nodes are **not converted**. Each needs a host contract
-+that the published SDK does not have yet.
++two remaining original nodes are unregistered and formally
++**REFUSED_CURRENT_RELEASE** under MERVYN's 2026-10-20 release disposition.
++The reasons below concern the inspected qualified SDK/Host path for this
++release, not permanent impossibility or API absence in every repository.
 +
 +| Node | Status | Finite purposes (cases; original errors) |
 +| --- | --- | --- |
@@ -31,8 +33,65 @@
 +| `APZmediaFashionEcomFilename` | tested | 9: same families, five toggles |
 +| `APZmediaEcomFilename` | tested | 9: same families, five toggles |
 +| `APZmediaStringStripper` | tested | 9: Simple and Regex modes, selected order, duplicate slots, mismatch/no-delimiter fallbacks, named and optional groups, invalid-regex fallback; 1 original `ValueError` (`²`.isdigit) |
-+| `APZmediaLoadImageWithFilename` | **not converted** | Needs a host-managed image catalogue: the original lists the input folder's top-level images (by Core MIME type) every time Core asks for the node definition, and a V2 schema is sealed. Pixel/mask/frame decode helpers exist in `image_decode.py` and `image_assets.py` but are unregistered. |
-+| `APZmediaCycleInt` | **not converted** | Needs host-owned per-node-instance integer state that commits immediately. The original advances `self._current` on Core's cached node object; static, global or persistent storage would not be equivalent. |
++| `APZmediaLoadImageWithFilename` | **REFUSED_CURRENT_RELEASE** (unregistered) | The full upload/catalogue/annotated-input membership contract has no implemented trusted schema binding in the inspected release path. Unregistered decode helpers do not establish the whole-node purpose. See the reopening contract below. |
++| `APZmediaCycleInt` | **REFUSED_CURRENT_RELEASE** (unregistered) | The inspected release path has no implemented authenticated Core-node-generation scalar owner matching the original immediate mutation and cached-instance lifetime. See the reopening contract below. |
++
++## Current-release purpose dispositions
++
++Root owns these two dispositions. Their basis is the inspected qualified
++SDK `f1a73e4f160e70862f51abdddbb9268e2ce94dd96e18455a79e42307a443f91c` and its
++actual Host contracts. No new algorithm, decoder, Guest, catalogue, browser or
++service test credit is assigned. Both original IDs remain unregistered; no
++stub, replacement schema or implementation is added. A trusted implementation
++can reopen either purpose under a separately reviewed contract.
++
++### `APZmediaCycleInt` — REFUSED_CURRENT_RELEASE
++
++**Purpose:** Advance an integer immediately on the same Core-cached node instance across executions, with native initialization, range changes, direction and wraparound semantics.
++
++**Current contract reason (UNIMPLEMENTED_TRUSTED_NODE_INSTANCE_LIFETIME_CONTRACT):** The original initializes self._current on object creation, mutates it in get_value before returning and returns NaN from IS_CHANGED to force execution. A later node or prompt failure does not undo that mutation. The inspected qualified API has no implemented authenticated Core-node-generation scalar owner matching that lifetime and commit point.
++
++**Rejected substitutions:**
++
++- Guest class/module globals or process-global counters
++
++- Persistent pack storage keyed by caller-supplied node/workflow strings
++
++- Committing only the last successful node/prompt output
++
++- Resetting the counter on each Guest dispatch
++
++
++**Minimum reopening contract:** A trusted adapter binds actual cached Core node instance/generation, class/source/runtime and rights; a bounded per-node operation linearizes read/advance before return. Reset/retirement follows the actual selected Core object-cache policy. It must be separate from previous-success commit semantics and expose no caller-chosen owner selector.
++
++**Qualification required after implementation:** Compare first/subsequent increment/decrement, swapped/range-changed bounds, step/wraparound, separate node instances, pre-return mutation surviving downstream failure and actual cache disposal; verify isolated callers cannot select another owner's state.
++
++### `APZmediaLoadImageWithFilename` — REFUSED_CURRENT_RELEASE
++
++**Purpose:** Preserve the original image-upload combo, refreshed top-level MIME-filtered input choices, annotated-input lookup/membership and filename outputs as well as image decoding.
++
++**Current contract reason (UNIMPLEMENTED_MANAGED_INPUT_CATALOGUE_SCHEMA_BINDING):** INPUT_TYPES enumerates and MIME-filters the current Core input directory for its upload combo. Execution, fingerprint and validation use annotated input lookup. io.Combo.Input metadata and existing asset read/list APIs do not themselves supply an implemented admitted-pack/tenant catalogue-to-schema hydration and membership binding in the inspected path. An independently working decoder is insufficient for this full node contract.
++
++**Rejected substitutions:**
++
++- An empty or frozen guessed combo advertised as a live catalogue
++
++- Replacing the image-upload combo with an unrelated STRING input
++
++- Ambient host-directory access or an arbitrary authenticated remote URL
++
++- Treating decoder comparisons as catalogue, upload or graph acceptance
++
++
++**Minimum reopening contract:** A trusted definition/input adapter binds managed catalogue choices, upload/refresh and exact membership validation to the admitted pack and current caller, preserving the supported relative/annotated-input names and the original four output semantics. RemoteOptions alone does not authorize arbitrary backend fetches.
++
++**Qualification required after implementation:** Exercise actual definition refresh/upload/membership plus valid managed PNG/JPEG/EXIF/multi-frame cases, filename outputs, fingerprints and original error behavior through real default SDK and required Guest. Unsupported annotated-path domains must retain explicit purpose-level reasons.
++
++Unregistered public asset/decode helpers remain available for separately qualified managed-image purposes; no helper test or whole-node acceptance is inferred here.
++
++These release decisions are documentation only. Canonical service status
++remains with its owner; this report neither writes that status nor certifies
++whole-pack runtime, dependency-profile admission or deployed adoption.
 +
 +The full original package (all 14 nodes imported normally) and the 12 actual
 +registered default-SDK nodes ran **96 fixed cases**. **92 returned results and 4
