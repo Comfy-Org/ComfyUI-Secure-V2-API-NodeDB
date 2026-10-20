@@ -56,3 +56,36 @@ acceptance remains pending. Refer to SDK_REQUIREMENTS.json and top-level README.
 ## Current public authoring declarations
 
 comfy-api.pyi is genuine canonical apistubs output from the selected public SDK. comfy-api.d.ts is the exact selected frontend declaration file. AUTHORING_CONTRACT_ORIGINS.json pins their origins and bytes. All consumer runtime files and the saved 55-node manifest remain unchanged. These authoring/document additions add no behavior-test, permission or admission credit.
+
+
+## Scoped native five-purpose qualification (2026-10-20)
+
+One separately selected Mac attempt passed strict intake for GetImagesCount,
+InputText, TextConnect, SimpleTextConnect and InputTextList: 28 cases plus two
+comparator controls. The actual converted classes were normally imported and
+executed under the pinned default SDK. References were exact original static
+callables; full original package import was not tested. Eight count cases use
+nonempty finite BHWC images; the other 20 preserve scalar types, nested lists,
+insertion order and exact native error class/message parity.
+
+The actual outer and worker exits were zero. Strict intake verified all 93
+evidence pins, the selected authorization, owner result checks, unchanged full
+input/site/component/runtime/operator maps, an empty deadline marker, bounded
+reaping and two internal plus two independent PID/group/process absence checks.
+Retirement observed a terminal sole child with no other owned members and
+required no group signal. Owner time was 35.515 seconds; sampled payload and
+descendant RSS peaked at 259,833,856 bytes. Userspace timers and RSS observation
+are not hard wall-clock, memory or CPU quotas.
+
+R1 remains failed before payload creation because an external timing path
+matched the process marker. R2 remains failed on retirement EPERM despite its
+preserved raw case results. The precise R2 failing syscall was not traced.
+The R3b owner correction and its normal terminal-child branch do not qualify
+live cancellation, surviving descendants, injected permission failures or
+timeout cleanup paths. No whole-pack, public-graph/default/list scheduling,
+empty/malformed IMAGE, Guest, model, HTTP, browser, service admission or consent
+claim follows. All 55 runtime declarations and the saved normal manifest are
+unchanged. The next seven-purpose crop/data stage is excluded from this pass.
+
+Compact evidence: [strict receipt](../../../../../validation/20261020-light-five-native-component/VERIFIED_RESULT_RECEIPT.json)
+and [source/scope binding](../../../../../validation/20261020-light-five-native-component/SOURCE_AND_SCOPE_BINDING.json).
