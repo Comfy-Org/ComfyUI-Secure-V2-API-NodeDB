@@ -1,0 +1,530 @@
+"""UNRUN outside controller (r4): Qwen 3B Linux CPU comparison in bounded containers (JJK4 R3 recipe + MERVYN m_8f418c201e hardening
++ m_bfd428076d integrity). r4: CONFIG.integrity pins sha256(packet SHA256SUMS) and sha256(deps DEPS_TREE.json). Every listed
+file is verified (regular, inside the tree, sha256), and missing files, extra files and symlinks fail the job. This runs before
+the original role and again before the converted role, and both results go into RECEIPT.integrity.
+
+Run only after a separate Root selection, as root in WSL under the shared lock:
+  wsl -d Ubuntu-24.04 -u root -e flock -w 900 /tmp/conversion-tests.lock \
+      python3 -I -S -B <packet>/controller/run_qwen_linux.py --config <BOUND-CONFIG.json> --config-sha256 <sha> --authorization-message <m_...>
+  python3 -I -S -B run_qwen_linux.py --selftest <fresh dir>   (no docker: argv, disk sampler, readability and comparator-input gate)
+Stdlib only.
+
+Containers:
+- One role container at a time: original, then converted.
+- Each runs as uid/gid 1000 with every capability dropped and no-new-privileges.
+- No network, read-only root, 512 MiB noexec tmpfs /tmp. memory = swap = 11 GiB.
+- Read-only binds: the engine tree, the Qwen model dir, the packet, the binding, and an optional deps dir.
+- The only writable bind is the fresh per-role /private. Its size is sampled every loop, with a fail-stop at 1 GiB.
+- In finally, the container is removed by exact ID and its absence is checked twice. No retry.
+
+The comparator never reads a role-written path. Each OBSERVATIONS.json first passes lstat, realpath and size checks, and is
+then read with O_NOFOLLOW into a root-only copy; only that copy goes to the comparator.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import time
+
+GiB = 1024 ** 3
+MiB = 1024 ** 2
+PREPARATION_MAILS = {'m_ee3bbeb1e8', 'm_8c74f89828', 'm_46f4e5d022', 'm_b847bd87eb', 'm_b0a87c5d39', 'm_3225c9c5a5', 'm_f67ff66d18',
+                     'm_8f418c201e'}
+USER = '1000:1000'
+UID = GID = 1000
+PYTHON = '/usr/local/bin/python3.13'
+REQUIRED_ENV = {'HOME': '/tmp', 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'}
+LIMITS = {'container_memory_bytes': 11 * GiB, 'sampled_rss_stop_bytes': 10 * GiB, 'memavailable_min_bytes': 15 * GiB,
+          'disk_free_bytes': 8 * GiB, 'private_max_bytes': 1 * GiB, 'tmpfs_bytes': 512 * MiB, 'comparator_input_max_bytes': 64 * MiB}
+PRIVATE_MAX_ENTRIES = 100000
+MODEL_ROOT = '/models/text_encoders'
+DEPS_SITE = '/deps/site'
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def run(argv, timeout=30, check=True):
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    if check and result.returncode != 0:
+        raise RuntimeError('%s failed: %s' % (argv[:3], result.stderr.strip()[:400]))
+    return result
+
+
+def digest(path):
+    value = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+            value.update(block)
+    return value.hexdigest()
+
+
+def mem_available():
+    for line in Path('/proc/meminfo').read_text().splitlines():
+        if line.startswith('MemAvailable:'):
+            return int(line.split()[1]) * 1024
+    raise RuntimeError('MemAvailable not reported')
+
+
+def parse_size(text):
+    match = re.fullmatch(r'([0-9.]+)\s*([KMGT]?i?B)', text.strip())
+    require(match is not None, 'Unparsed memory sample: ' + text)
+    scale = {'B': 1, 'KiB': 1024, 'MiB': 1024 ** 2, 'GiB': GiB, 'TiB': 1024 ** 4, 'kB': 1000, 'KB': 1000, 'MB': 1000 ** 2,
+             'GB': 1000 ** 3}[match.group(2)]
+    return int(float(match.group(1)) * scale)
+
+
+def absent_twice(cid):
+    rows = []
+    for _ in range(2):
+        rows.append(run(['docker', 'container', 'inspect', cid], check=False).returncode != 0)
+        time.sleep(1)
+    return rows
+
+
+def dir_usage(root):
+    """Allocated bytes (st_blocks) and entry count under root; never follows symlinks."""
+    used, entries = 0, 0
+    for base, dirs, files in os.walk(root, followlinks=False):
+        for name in dirs + files:
+            entries += 1
+            try:
+                used += os.lstat(os.path.join(base, name)).st_blocks * 512
+            except OSError:
+                continue
+    return used, entries
+
+
+def uid_can(st, owner_bits, group_bits, other_bits):
+    if st.st_uid == UID:
+        return st.st_mode & owner_bits == owner_bits
+    if st.st_gid == GID:
+        return st.st_mode & group_bits == group_bits
+    return st.st_mode & other_bits == other_bits
+
+
+def unreadable_for_uid(root, recursive):
+    """Paths under a bind source that uid/gid 1000 could not traverse or read (the source itself is resolved by dockerd)."""
+    bad = []
+    walker = os.walk(root, followlinks=False) if recursive else [(root, [], [])]
+    for base, _, files in walker:
+        if not uid_can(os.lstat(base), stat.S_IRUSR | stat.S_IXUSR, stat.S_IRGRP | stat.S_IXGRP, stat.S_IROTH | stat.S_IXOTH):
+            bad.append(base)
+        for name in files:
+            st = os.lstat(os.path.join(base, name))
+            if stat.S_ISREG(st.st_mode) and not uid_can(st, stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH):
+                bad.append(os.path.join(base, name))
+    return bad[:20]
+
+
+def read_small_regular(path, limit):
+    st = os.lstat(path)
+    require(stat.S_ISREG(st.st_mode) and st.st_size <= limit, '%s must be a small regular file' % path)
+    with open(path, 'rb') as stream:
+        return stream.read(limit + 1)
+
+
+def verify_tree(root, listing, walk_root):
+    """Every listed file exists as a regular file (no symlink) inside root with the listed sha256, and walk_root holds
+    nothing unlisted: no extra file, symlink or special file."""
+    root_real = os.path.realpath(root)
+    for rel, expected in listing.items():
+        require(not rel.startswith('/') and '..' not in rel.split('/'), 'Bad listed path ' + rel)
+        path = os.path.join(root, rel)
+        st = os.lstat(path)
+        require(stat.S_ISREG(st.st_mode), 'Listed path is not a regular file: ' + rel)
+        require(os.path.realpath(path).startswith(root_real + os.sep), 'Listed path escapes the tree: ' + rel)
+        require(digest(path) == expected, 'Tree file differs from its pin: ' + rel)
+    seen = set()
+    for base, dirs, files in os.walk(walk_root, followlinks=False):
+        for name in dirs:
+            require(not os.path.islink(os.path.join(base, name)), 'Symlinked dir in tree: ' + os.path.join(base, name))
+        for name in files:
+            full = os.path.join(base, name)
+            require(stat.S_ISREG(os.lstat(full).st_mode), 'Non-regular entry in tree: ' + full)
+            seen.add(os.path.relpath(full, root))
+    extra = sorted(seen - set(listing))
+    require(not extra, 'Unlisted files in tree: %s' % extra[:5])
+    return {'files': len(listing)}
+
+
+def verify_integrity(config):
+    """r4 (MERVYN m_bfd428076d): the packet must equal its pinned SHA256SUMS and the deps site its pinned DEPS_TREE.json."""
+    host, pins = config['host'], config['integrity']
+    started = time.time()
+    sums = read_small_regular(os.path.join(host['packet_root'], 'SHA256SUMS'), 4 * MiB)
+    require(hashlib.sha256(sums).hexdigest() == pins['packet_sha256sums_sha256'], 'Packet SHA256SUMS differs from the bound pin')
+    listing = {}
+    for line in sums.decode('utf-8').splitlines():
+        value, _, rel = line.partition('  ')
+        require(re.fullmatch('[0-9a-f]{64}', value) is not None and rel and rel not in listing and rel != 'SHA256SUMS', 'Bad SHA256SUMS line')
+        listing[rel] = value
+    row = {'packet': verify_tree(host['packet_root'], dict(listing, SHA256SUMS=hashlib.sha256(sums).hexdigest()), host['packet_root']),
+           'packet_sha256sums_sha256': pins['packet_sha256sums_sha256'], 'deps': None}
+    if host.get('deps_root'):
+        tree = read_small_regular(os.path.join(host['deps_root'], 'DEPS_TREE.json'), 4 * MiB)
+        require(hashlib.sha256(tree).hexdigest() == pins['deps_tree_sha256'], 'DEPS_TREE.json differs from the bound pin')
+        deps_listing = {rel: item['sha256'] for rel, item in json.loads(tree).items()}
+        require(deps_listing and all(rel.startswith('site/') for rel in deps_listing), 'DEPS_TREE paths must be under site/')
+        row['deps'] = verify_tree(host['deps_root'], deps_listing, os.path.join(host['deps_root'], 'site'))
+        row['deps_tree_sha256'] = pins['deps_tree_sha256']
+    row['status'], row['seconds'] = 'VERIFIED', round(time.time() - started, 2)
+    return row
+
+
+def model_mount_dst(config):
+    parts = config['model']['logical_name'].split('/')
+    require(len(parts) == 2 and all(re.fullmatch(r'[A-Za-z0-9._-]+', part) for part in parts), 'Model logical name must be DIR/FILE')
+    return MODEL_ROOT + '/' + parts[0]
+
+
+def role_argv(role, config, role_out):
+    host, limits = config['host'], config['limits']
+    cap = limits['container_memory_bytes']
+    argv = ['docker', 'create', '--pull=never', '--name', config['container_prefix'] + '-' + role, '--init',
+            '--user', USER, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+            '--network', 'none', '--read-only', '--cpus', str(limits['cpus']), '--memory', str(cap), '--memory-swap', str(cap),
+            '--pids-limit', '256', '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=%d' % limits['tmpfs_bytes'], '--workdir', '/tmp',
+            '--mount', 'type=bind,src=%s,dst=/runtime/engine,readonly' % host['engine_root'],
+            '--mount', 'type=bind,src=%s,dst=%s,readonly' % (host['model_dir'], model_mount_dst(config)),
+            '--mount', 'type=bind,src=%s,dst=/plan,readonly' % host['packet_root'],
+            '--mount', 'type=bind,src=%s,dst=/binding,readonly' % host['binding_root'],
+            '--mount', 'type=bind,src=%s,dst=/private' % role_out]
+    if host.get('deps_root'):
+        argv += ['--mount', 'type=bind,src=%s,dst=/deps,readonly' % host['deps_root']]
+    for key, value in sorted(config['environment'].items()):
+        argv += ['--env', '%s=%s' % (key, value)]
+    argv += ['--entrypoint', config['container']['python'], config['image']['id'], '-I', '-B', '/plan/harness/qwen_role.py', '--role', role,
+             '--config', '/binding/BOUND-CONFIG.json', '--out', '/private/result']
+    return argv
+
+
+def safe_observations(role_out, dest, limit):
+    """Root-side gate before the comparator: plain dir, regular file, realpath inside the role dir, size cap, O_NOFOLLOW copy."""
+    role_real = os.path.realpath(role_out)
+    result = os.path.join(role_out, 'result')
+    st = os.lstat(result)
+    require(stat.S_ISDIR(st.st_mode), 'result/ must be a plain directory')
+    require(os.path.realpath(result) == os.path.join(role_real, 'result'), 'result/ must resolve inside the role dir')
+    path = os.path.join(result, 'OBSERVATIONS.json')
+    st = os.lstat(path)
+    require(stat.S_ISREG(st.st_mode), 'OBSERVATIONS.json must be a regular file')
+    require(os.path.realpath(path).startswith(role_real + os.sep), 'OBSERVATIONS.json must resolve inside the role dir')
+    require(st.st_size <= limit, 'OBSERVATIONS.json above the size cap')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        require(stat.S_ISREG(opened.st_mode) and (opened.st_dev, opened.st_ino) == (st.st_dev, st.st_ino), 'OBSERVATIONS.json changed')
+        chunks, size = [], 0
+        while True:
+            block = os.read(fd, 1 << 20)
+            if not block:
+                break
+            size += len(block)
+            require(size <= limit, 'OBSERVATIONS.json above the size cap')
+            chunks.append(block)
+    finally:
+        os.close(fd)
+    data = b''.join(chunks)
+    with os.fdopen(os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as stream:
+        stream.write(data)
+    return {'source': path, 'copy': str(dest), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+
+
+def run_role(role, config, out):
+    limits = config['limits']
+    role_out = out / ('private-' + role)
+    role_out.mkdir()
+    role_out.chmod(0o777)  # fresh task-owned bind source; the role runs as uid 1000
+    argv = role_argv(role, config, role_out)
+    row = {'role': role, 'create_argv': argv}
+    cid = run(argv).stdout.strip()
+    require(re.fullmatch('[0-9a-f]{64}', cid) is not None, 'Exact container ID required')
+    row['container_id'] = cid
+    try:
+        run(['docker', 'start', cid])
+        started, peak, private_peak, samples = time.monotonic(), 0, 0, []
+        while True:
+            state = json.loads(run(['docker', 'inspect', '--format', '{{json .State}}', cid]).stdout)
+            if state['Status'] in ('exited', 'dead'):
+                break
+            usage = run(['docker', 'stats', '--no-stream', '--format', '{{.MemUsage}}', cid], timeout=20, check=False).stdout.strip()
+            used, entries = dir_usage(role_out)
+            private_peak = max(private_peak, used)
+            value = parse_size(usage.split('/')[0]) if usage else None
+            if value is not None:
+                peak = max(peak, value)
+            samples.append([round(time.monotonic() - started, 1), value, used, entries])
+            stop = None
+            if value is not None and value > limits['sampled_rss_stop_bytes']:
+                stop = 'sampled memory above stop'
+            elif used > limits['private_max_bytes'] or entries > PRIVATE_MAX_ENTRIES:
+                stop = 'private dir above 1 GiB or %d entries' % PRIVATE_MAX_ENTRIES
+            elif time.monotonic() - started > limits['role_work_seconds']:
+                stop = 'role deadline'
+            if stop:
+                row.setdefault('fail_stop', stop)
+                run(['docker', 'kill', cid], check=False)
+            time.sleep(2)
+        final = json.loads(run(['docker', 'inspect', '--format', '{{json .State}}', cid]).stdout)
+        row.update(exit_code=final['ExitCode'], oom_killed=final['OOMKilled'], seconds=time.monotonic() - started,
+                   peak_sampled_bytes=peak, private_peak_bytes=private_peak, private_final=dir_usage(role_out), samples=samples[-400:])
+        logs = run(['docker', 'logs', '--tail', '4000', cid], timeout=60, check=False)
+        (out / ('LOG-' + role + '.txt')).write_text((logs.stdout + logs.stderr)[-8 * 1024 * 1024:])
+    finally:
+        row['removed'] = run(['docker', 'rm', '-f', cid], check=False).returncode == 0
+        row['absent_twice'] = absent_twice(cid)
+    return row, role_out
+
+
+def check_config(config):
+    host = config['host']
+    require(config['schema'] == 'wan-qwen3b-linux-cpu/1' and config['execution_selected'] is True, 'Selected bound config required')
+    require(config['container'] == {'python': PYTHON, 'user': USER}, 'Reviewed container identity required')
+    require(all(config['environment'].get(key) == value for key, value in REQUIRED_ENV.items()), 'HOME=/tmp and offline env required')
+    require(all(config['limits'].get(key) == value for key, value in LIMITS.items()), 'Reviewed r3 limits required')
+    require(config['model_root'] == MODEL_ROOT, 'Model root must be ' + MODEL_ROOT)
+    model_file = Path(host['model_file'])
+    require(model_file.parent == Path(host['model_dir']) and model_file.name == config['model']['logical_name'].split('/')[1],
+            'Model dir must be the checkpoint parent')
+    deps = config.get('extra_sys_path')
+    require(deps in ([], [DEPS_SITE]) and bool(host.get('deps_root')) == bool(deps), 'Deps mount and extra_sys_path must agree')
+    for key in ('engine_root', 'model_dir', 'packet_root', 'binding_root', 'output_root') + (('deps_root',) if deps else ()):
+        require(Path(host[key]).is_absolute() and ',' not in host[key], key + ' must be an absolute path without commas')
+    integrity = config.get('integrity') or {}
+    require(re.fullmatch('[0-9a-f]{64}', str(integrity.get('packet_sha256sums_sha256'))) is not None, 'Packet SHA256SUMS pin required (r4)')
+    require((re.fullmatch('[0-9a-f]{64}', str(integrity.get('deps_tree_sha256'))) is not None) == bool(deps)
+            and (deps or integrity.get('deps_tree_sha256') is None), 'DEPS_TREE pin must match the deps binding (r4)')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=Path)
+    parser.add_argument('--config-sha256')
+    parser.add_argument('--authorization-message')
+    parser.add_argument('--selftest')
+    args = parser.parse_args()
+    if args.selftest:
+        return selftest(Path(args.selftest))
+    require(re.fullmatch('m_[0-9a-f]+', args.authorization_message or '') is not None
+            and args.authorization_message not in PREPARATION_MAILS, 'A separate Root runtime selection is required')
+    require(digest(args.config) == args.config_sha256, 'Reviewed bound config required')
+    config = json.loads(args.config.read_bytes())
+    check_config(config)
+    out = Path(config['host']['output_root'])
+    require(out.is_absolute() and not out.exists(), 'Fresh output root required')
+    out.mkdir(mode=0o700)
+    limits, host = config['limits'], config['host']
+    receipt = {'status': 'FAILED_QWEN3B_LINUX_CPU_NO_RETRY', 'authorization_message': args.authorization_message, 'attempts': 1,
+               'automatic_retries': 0, 'started_utc': time.time(), 'roles': {}}
+    try:
+        available = mem_available()
+        receipt['preflight'] = {'MemAvailable_bytes': available, 'required_bytes': limits['container_memory_bytes'] + 4 * GiB,
+                                'disk_free_bytes': shutil.disk_usage(out).free, 'required_disk_bytes': limits['disk_free_bytes']}
+        require(available >= limits['container_memory_bytes'] + 4 * GiB, 'MemAvailable below cap + 4 GiB')
+        require(receipt['preflight']['disk_free_bytes'] >= limits['disk_free_bytes'], 'Disk below 8 GiB')
+        unreadable = {key: unreadable_for_uid(host[key], recursive) for key, recursive in
+                      (('engine_root', False), ('model_dir', False), ('packet_root', True), ('binding_root', True))
+                      + ((('deps_root', True),) if host.get('deps_root') else ())}
+        unreadable['model_file'] = unreadable_for_uid(host['model_file'], False) if not os.path.isfile(host['model_file']) else [
+            host['model_file']] if not uid_can(os.stat(host['model_file']), stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH) else []
+        receipt['preflight']['unreadable_for_uid_1000'] = unreadable
+        require(not any(unreadable.values()), 'A bind source is not readable by uid 1000')
+        receipt['integrity'] = {'before_original': verify_integrity(config)}
+        image = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', config['image']['id']]).stdout.strip()
+        require(image == config['image']['id'], 'Exact pinned image required')
+        for role in ('original', 'converted'):
+            require(run(['docker', 'container', 'inspect', config['container_prefix'] + '-' + role], check=False).returncode != 0,
+                    'Container name already in use')
+        model = Path(host['model_file'])
+        receipt['model'] = {'bytes': model.stat().st_size, 'sha256': digest(model)}
+        require(receipt['model'] == {'bytes': config['model']['bytes'], 'sha256': config['model']['sha256']}, 'Pinned checkpoint differs')
+        copies = {}
+        for role in ('original', 'converted'):
+            if role == 'converted':  # r4: a change between the roles stops the job before the second container
+                receipt['integrity']['before_converted'] = verify_integrity(config)
+            receipt['roles'][role], role_out = run_role(role, config, out)
+            require(receipt['roles'][role]['absent_twice'] == [True, True], 'Container retirement unconfirmed; stop')
+            require(receipt['roles'][role].get('exit_code') == 0 and not receipt['roles'][role].get('fail_stop'), role + ' role failed')
+            receipt['roles'][role]['observations'] = safe_observations(
+                role_out, out / ('OBSERVATIONS-%s.json' % role), limits['comparator_input_max_bytes'])
+            copies[role] = receipt['roles'][role]['observations']['copy']
+        comparison = out / 'COMPARISON.json'
+        result = run([sys.executable, '-I', '-S', '-B', str(Path(host['packet_root']) / 'harness/compare_qwen.py'),
+                      '--original', copies['original'], '--converted', copies['converted'],
+                      '--config', str(args.config), '--out', str(comparison)], timeout=120, check=False)
+        receipt['comparison'] = {'exit_code': result.returncode, 'path': str(comparison),
+                                 'sha256': digest(comparison) if comparison.exists() else None}
+        if result.returncode == 0:
+            receipt['status'] = 'PASS_SCOPED_QWEN3B_LINUX_CPU_NATIVE_COMPARE_CONTROLLER'
+    except BaseException as error:
+        receipt.update(error_type=type(error).__name__, error=str(error))
+    finally:
+        receipt['finished_utc'] = time.time()
+        (out / 'RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    print(json.dumps({'status': receipt['status'], 'error': receipt.get('error')}))
+    return 0 if receipt['status'].startswith('PASS_') else 1
+
+
+def selftest(directory):
+    """No docker. Synthetic files only, under a fresh directory."""
+    require(not directory.exists(), 'Fresh selftest dir required')
+    directory.mkdir()
+    checks, controls = {}, {}
+    config = {'container_prefix': 'p', 'image': {'id': 'sha256:' + 'a' * 64}, 'container': {'python': PYTHON, 'user': USER},
+              'environment': dict(REQUIRED_ENV), 'limits': {**LIMITS, 'cpus': 2}, 'model_root': MODEL_ROOT,
+              'model': {'logical_name': 'Qwen/q.safetensors'},
+              'host': {'engine_root': '/e', 'model_dir': '/m/Qwen', 'packet_root': '/p', 'binding_root': '/b', 'deps_root': None}}
+    argv = role_argv('original', config, Path('/o/private-original'))
+    mounts = [argv[i + 1] for i, item in enumerate(argv) if item == '--mount']
+    checks['argv_user_and_caps'] = (argv[argv.index('--user') + 1] == '1000:1000' and argv[argv.index('--cap-drop') + 1] == 'ALL'
+                                    and '--cap-add' not in argv and '--privileged' not in argv)
+    checks['argv_tmpfs_not_bind'] = (argv[argv.index('--tmpfs') + 1] == '/tmp:rw,nosuid,nodev,noexec,size=%d' % (512 * MiB)
+                                     and not any(',dst=/tmp' in item for item in mounts))
+    checks['argv_only_private_writable'] = [item for item in mounts if not item.endswith(',readonly')] == [
+        'type=bind,src=/o/private-original,dst=/private']
+    checks['argv_model_mount'] = 'type=bind,src=/m/Qwen,dst=/models/text_encoders/Qwen,readonly' in mounts
+    checks['argv_engine_only'] = 'type=bind,src=/e,dst=/runtime/engine,readonly' in mounts and not any(',dst=/runtime,' in m for m in mounts)
+    checks['argv_network_memory'] = (argv[argv.index('--network') + 1] == 'none' and '--read-only' in argv
+                                     and argv[argv.index('--memory') + 1] == argv[argv.index('--memory-swap') + 1] == str(11 * GiB))
+    checks['argv_interpreter'] = argv[argv.index('--entrypoint') + 1] == PYTHON
+    config['host']['deps_root'] = '/d'
+    checks['argv_deps_readonly'] = 'type=bind,src=/d,dst=/deps,readonly' in [
+        role_argv('converted', config, Path('/o/x'))[i + 1] for i, item in enumerate(role_argv('converted', config, Path('/o/x'))) if item == '--mount']
+    disk = directory / 'disk'
+    disk.mkdir()
+    (disk / 'a.bin').write_bytes(b'x' * (2 * MiB))
+    used, entries = dir_usage(disk)
+    checks['disk_sampler_counts_allocated'] = 2 * MiB <= used <= 2 * MiB + 64 * 1024 and entries == 1
+    role = directory / 'private-original'
+    (role / 'result').mkdir(parents=True)
+    (role / 'result' / 'OBSERVATIONS.json').write_text('{"ok": 1}')
+    row = safe_observations(role, directory / 'COPY-ok.json', 64 * MiB)
+    checks['gate_copies_regular_file'] = row['bytes'] == 9 and oct(os.stat(directory / 'COPY-ok.json').st_mode & 0o777) == '0o600'
+
+    def refused(name, prepare, limit=64 * MiB):
+        case = directory / ('case-' + name)
+        prepare(case)
+        try:
+            safe_observations(case, directory / ('COPY-' + name + '.json'), limit)
+            controls[name] = 'NOT DETECTED'
+        except (RuntimeError, OSError) as error:
+            controls[name] = 'REFUSED: ' + str(error)[:70]
+
+    outside = directory / 'outside.json'
+    outside.write_text('{"secret": 1}')
+
+    def symlink_file(case):
+        (case / 'result').mkdir(parents=True)
+        (case / 'result' / 'OBSERVATIONS.json').symlink_to(outside)
+
+    def symlink_dir(case):
+        case.mkdir()
+        (directory / 'elsewhere').mkdir(exist_ok=True)
+        (directory / 'elsewhere' / 'OBSERVATIONS.json').write_text('{}')
+        (case / 'result').symlink_to(directory / 'elsewhere')
+
+    def fifo(case):
+        (case / 'result').mkdir(parents=True)
+        os.mkfifo(case / 'result' / 'OBSERVATIONS.json')
+
+    def oversize(case):
+        (case / 'result').mkdir(parents=True)
+        (case / 'result' / 'OBSERVATIONS.json').write_bytes(b'x' * 2048)
+
+    def hardlink_ok_but_dir_file(case):
+        (case / 'result' / 'OBSERVATIONS.json').mkdir(parents=True)
+
+    refused('symlinked_file', symlink_file)
+    refused('symlinked_result_dir', symlink_dir)
+    refused('fifo', fifo)
+    refused('oversize', oversize, limit=1024)
+    refused('directory_not_file', hardlink_ok_but_dir_file)
+    tree = directory / 'tree'
+    (tree / 'sub').mkdir(parents=True)
+    (tree / 'sub' / 'f.txt').write_text('x')
+    (tree / 'sub' / 'f.txt').chmod(0o200)
+    flagged = unreadable_for_uid(str(tree), True)
+    checks['readability_flags_unreadable_file'] = (os.getuid() != UID) or flagged == [str(tree / 'sub' / 'f.txt')]
+    (tree / 'sub' / 'f.txt').chmod(0o600)
+    good = dict(config, schema='wan-qwen3b-linux-cpu/1', execution_selected=True, extra_sys_path=[],
+                integrity={'packet_sha256sums_sha256': 'c' * 64, 'deps_tree_sha256': None})
+    good['host'] = dict(config['host'], deps_root=None, model_file='/m/Qwen/q.safetensors', output_root='/out')
+    check_config(good)
+    # r4 integrity: clean synthetic packet + deps trees verify; each tamper is refused.
+    clean_packet, clean_deps = directory / 'packet', directory / 'deps'
+    (clean_packet / 'harness').mkdir(parents=True)
+    (clean_packet / 'harness' / 'a.py').write_text('x = 1\n')
+    (clean_packet / 'CASES.json').write_text('{}')
+    sums = ''.join('%s  %s\n' % (digest(clean_packet / rel), rel) for rel in ('CASES.json', 'harness/a.py')).encode()
+    (clean_packet / 'SHA256SUMS').write_bytes(sums)
+    (clean_deps / 'site' / 'm').mkdir(parents=True)
+    (clean_deps / 'site' / 'm' / '__init__.py').write_text('y = 2\n')
+    tree = json.dumps({'site/m/__init__.py': {'bytes': 6, 'sha256': digest(clean_deps / 'site' / 'm' / '__init__.py')}}).encode()
+    (clean_deps / 'DEPS_TREE.json').write_bytes(tree)
+    pins = {'packet_sha256sums_sha256': hashlib.sha256(sums).hexdigest(), 'deps_tree_sha256': hashlib.sha256(tree).hexdigest()}
+    row = verify_integrity({'host': {'packet_root': str(clean_packet), 'deps_root': str(clean_deps)}, 'integrity': pins})
+    checks['integrity_verifies_clean_trees'] = row['status'] == 'VERIFIED' and row['packet']['files'] == 3 and row['deps']['files'] == 1
+
+    def write(path, text):
+        path.write_text(text)
+
+    def make_symlink(case_packet):
+        (case_packet / 'harness' / 'a.py').unlink()
+        (directory / 'outside-a.py').write_text('x = 1\n')
+        (case_packet / 'harness' / 'a.py').symlink_to(directory / 'outside-a.py')
+
+    tampers = {
+        'tampered_packet_file': lambda p, d: write(p / 'harness' / 'a.py', 'x = 2\n'),
+        'extra_packet_file': lambda p, d: write(p / 'harness' / 'b.py', ''),
+        'missing_packet_file': lambda p, d: (p / 'CASES.json').unlink(),
+        'symlinked_packet_file': lambda p, d: make_symlink(p),
+        'tampered_deps_file': lambda p, d: write(d / 'site' / 'm' / '__init__.py', 'y = 3\n'),
+        'extra_deps_file': lambda p, d: write(d / 'site' / 'x.py', ''),
+        'wrong_packet_pin': None}
+    for name, edit in tampers.items():
+        case_packet, case_deps = directory / ('packet-' + name), directory / ('deps-' + name)
+        shutil.copytree(clean_packet, case_packet, symlinks=True)
+        shutil.copytree(clean_deps, case_deps, symlinks=True)
+        case_pins = dict(pins)
+        if edit is None:
+            case_pins['packet_sha256sums_sha256'] = '0' * 64
+        else:
+            edit(case_packet, case_deps)
+        try:
+            verify_integrity({'host': {'packet_root': str(case_packet), 'deps_root': str(case_deps)}, 'integrity': case_pins})
+            controls['integrity_' + name] = 'NOT DETECTED'
+        except (RuntimeError, OSError) as error:
+            controls['integrity_' + name] = 'REFUSED: ' + str(error)[:70]
+    for name, edit in (('root_user', lambda c: c['container'].update(user='0:0')),
+                       ('online_env', lambda c: c['environment'].update(HF_HUB_OFFLINE='0')),
+                       ('bigger_cap', lambda c: c['limits'].update(container_memory_bytes=12 * GiB)),
+                       ('small_disk_gate', lambda c: c['limits'].update(disk_free_bytes=2 * GiB)),
+                       ('deps_mismatch', lambda c: c.update(extra_sys_path=[DEPS_SITE])),
+                       ('model_dir_not_parent', lambda c: c['host'].update(model_dir='/m'))):
+        bad = json.loads(json.dumps(good))
+        edit(bad)
+        try:
+            check_config(bad)
+            controls['config_' + name] = 'NOT DETECTED'
+        except RuntimeError as error:
+            controls['config_' + name] = 'REFUSED: ' + str(error)[:70]
+    checks['controls_all_refused'] = all(value.startswith('REFUSED') for value in controls.values())
+    record = {'scope': 'no docker, image, model or pack code; synthetic files only', 'uid': os.getuid(), 'checks': checks,
+              'controls': controls, 'status': 'PASS_SELFTEST' if all(checks.values()) else 'FAILED_SELFTEST'}
+    shutil.rmtree(directory / 'disk')
+    (directory / 'SELFTEST.json').write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({'status': record['status'], 'failed': sorted(k for k, v in checks.items() if not v)}))
+    return 0 if record['status'] == 'PASS_SELFTEST' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

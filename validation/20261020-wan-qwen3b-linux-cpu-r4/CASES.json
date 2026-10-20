@@ -1,0 +1,54 @@
+{
+  "model": {
+    "logical_name": "Qwen/Qwen2.5_3B_instruct_bf16.safetensors",
+    "bytes": 6171927112,
+    "sha256": "4d34f42cb1a79e766dc6a5234205b462a9306ac2e360d19faf09a951cafffe46"
+  },
+  "loader": {
+    "id": "QL1",
+    "load_device": "offload_device",
+    "precision": "bf16"
+  },
+  "extender": [
+    {
+      "id": "PE1",
+      "prompt": "A red fox runs through fresh snow.",
+      "max_new_tokens": 12,
+      "device": "cpu",
+      "force_offload": true,
+      "system_prompt": null,
+      "custom_system_prompt": null,
+      "seed": 0
+    },
+    {
+      "id": "PE2",
+      "prompt": "A red fox runs through fresh snow.",
+      "max_new_tokens": 12,
+      "device": "cpu",
+      "force_offload": true,
+      "system_prompt": null,
+      "custom_system_prompt": "",
+      "seed": 0
+    },
+    {
+      "id": "PE3",
+      "prompt": "A red fox runs through fresh snow.",
+      "max_new_tokens": 12,
+      "device": "cpu",
+      "force_offload": false,
+      "system_prompt": null,
+      "custom_system_prompt": "Answer in one short sentence.",
+      "seed": 7
+    }
+  ],
+  "same_output_pairs": [
+    [
+      "PE1",
+      "PE2"
+    ]
+  ],
+  "why": {
+    "PE1_PE2": "original semantics: custom None with no label and custom \"\" both select an empty system prompt",
+    "short_prompts": "bounded CPU bf16 prefill/decode cost; the long built-in system prompts are not selected"
+  }
+}
