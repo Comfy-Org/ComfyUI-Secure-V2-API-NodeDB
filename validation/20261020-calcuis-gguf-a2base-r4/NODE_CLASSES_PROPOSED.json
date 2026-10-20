@@ -1,0 +1,67 @@
+{
+ "schema": "ned-node-classes/1",
+ "pack": "calcuis-gguf",
+ "revision": 3,
+ "supersedes": "NODE_CLASSES_PROPOSED.json of stage r1 and the dispositions in the test r4 PER_NODE_RECORDS.json",
+ "ruling": "MERVYN m_fba3174463: rev-2 'tested' nodes whose only change is the queue validator keep 'tested (scoped)' with the gates in the label; see NODE_CHANGES_REV2_TO_REV3.json",
+ "counts": {
+  "tested (scoped)": 7,
+  "converted, partly tested": 6,
+  "partial or missing": 0
+ },
+ "nodes": {
+  "LoaderGGUF": {
+   "class": "tested (scoped)",
+   "label": "a2 base (undeployed GGML SDK); construction-call parity for the 20 provider-supported GGML types, every load_gguf_sd rule and the metadata, bit-exact dequantization (800 cells), queue validation equal to the original list; no real model load or forward; Q4_0/Q4_1/Q5_0/Q5_1/Q2_K/Q3_K missing in the provider; needs SDK deploy + GGUF mapping limit"
+  },
+  "LoaderGGUFAdvanced": {
+   "class": "converted, partly tested",
+   "label": "as LoaderGGUF plus 51 option combinations compared as values through the provider's table; patch_dtype/patch_on_device effect (LoRA patching) not exercised; per-load dtype settings final accepted difference"
+  },
+  "ClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "construction-call parity (a2 base) for identity GGUF, t5 maps, typed SafeTensors, .sft and Torch containers; exact refusals for 15 transforming architectures (missing); real construction not exercised (missing Linear weights refused: M3); one declared output (final)"
+  },
+  "DualClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "as ClipLoaderGGUF for two files incl. construction-only CLIP-G/CLIP-L; two SafeTensors with a device missing (named refusal); full encode blocked: encoder not local"
+  },
+  "TripleClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "shape-only construction-call parity; full-model test blocked: encoder not local; T5-XXL SafeTensors exceeds the 2 GiB store cap (missing)"
+  },
+  "QuadrupleClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "as Triple; llama GGUF refused (transforms missing), Llama-class SafeTensors exceeds the store cap"
+  },
+  "VaeGGUF": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev-2 differential applies (node code unchanged; build_table refactor statement-identical, helpers exercised on rev-3 bytes); validator equal to the original list incl. TAESD; .gguf needs the GGUF mapping limit"
+  },
+  "AudioEncoderLoaderGGUF": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev-2 differential applies (as VaeGGUF); validator equal to the original list; .gguf needs the mapping limit; non-GGUF limited by the 2 GiB store cap; Torch containers need host torch >= 2.6"
+  },
+  "TENSORBoost": {
+   "class": "tested (scoped)",
+   "label": "rev-2 evidence applies for every lower-case name; any-case .safetensors acceptance (rev 3, as the original lists) verified by reading only; validator equal to the original list; results above the 2 GiB store cap refused"
+  },
+  "GGUFUndo": {
+   "class": "tested (scoped)",
+   "label": "rev-2 evidence applies for every lower-case name; any-case .gguf acceptance verified by reading only; validator equal to the original list; results above the 2 GiB store cap refused"
+  },
+  "GGUFSave": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev-2 writer differential applies for every lower-case name; any-case acceptance by reading; validator equal to the original list; needs COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES > 0 (default 0)"
+  },
+  "GGUFRun": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "as GGUFSave"
+  },
+  "TENSORCut": {
+   "class": "converted, partly tested",
+   "label": "rev-2 r3 CUDA fixture; production guest output on a CUDA worker not qualified; validator equal to the original list; store cap applies"
+  }
+ },
+ "registry": "Rev 3 stays out of the registry until the GGML SDK, the Phase-1 SDK verbs and the operator limits ship (deployed _sdk.py 0d6ec97e has none of them)."
+}

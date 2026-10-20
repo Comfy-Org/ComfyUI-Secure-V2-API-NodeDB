@@ -1,0 +1,633 @@
+{
+  "observed_utc": "2026-10-20T22:45:01.896412+00:00",
+  "base_label": "a2 base (deployed core plus GGML SDK additions)",
+  "targets_port": "ned-calcuis-gguf-loader-port-20261020-r5",
+  "missing_index": {
+    "H1_mapping_limit": {
+      "owner": "GERALD/JERRY",
+      "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+    },
+    "H1_store_round_trip": {
+      "owner": "GERALD",
+      "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+    },
+    "H1_binary_output": {
+      "owner": "GERALD/JERRY",
+      "what": "output.save_binary is refused while COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES is 0 (backend a1 default, host.py:1781-1783); an operator must select a cap >= the output size"
+    },
+    "H2_gguf_listing": {
+      "owner": "MIKE/GERALD",
+      "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+    },
+    "quant_types": {
+      "owner": "GERALD (request d4ddc2de)",
+      "what": "provider refuses Q4_0, Q4_1, Q5_0, Q5_1, Q2_K, Q3_K"
+    },
+    "text_transforms": {
+      "owner": "GERALD (request d4ddc2de)",
+      "what": "llama/qwen/mistral/gemma families, 256384-row t5 tokenizer, ideogram, cat, cow, dog, mmproj"
+    },
+    "two_file_device_loader": {
+      "owner": "GERALD (request d4ddc2de)",
+      "what": "two SafeTensors encoders with an explicit device (load_clip with two paths)"
+    },
+    "M3_zero_fill": {
+      "owner": "GERALD",
+      "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+    },
+    "M3_limits": {
+      "owner": "GERALD (recorded, no ask yet)",
+      "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+    }
+  },
+  "nodes": {
+    "LoaderGGUF": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A1",
+          "A2",
+          "A3",
+          "A4",
+          "A7",
+          "A8",
+          "A9"
+        ],
+        "B": [
+          "LoaderGGUF rows",
+          "H1",
+          "B8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "quant_types": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "provider refuses Q4_0, Q4_1, Q5_0, Q5_1, Q2_K, Q3_K"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)"
+      ],
+      "deliberate_differences_final": [
+        "per-load dequant/patch dtype settings. Original: the last GGUF load sets them for every loaded GGUF model's Linear layers (shared GGMLOps.Linear class). Outputs can differ only when one workflow holds two or more GGUF loads with different dtype options; a single load matches exactly (Tier A A4, Tier B single-load rows, B8). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "other_differences": [
+        "model-detection failure message omits the host path",
+        "non-.gguf names are also rejected at execute (the original's list never offers them)"
+      ],
+      "tier_c": "C1 planned; needs a separate GO"
+    },
+    "LoaderGGUFAdvanced": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A1",
+          "A2",
+          "A3",
+          "A4",
+          "A7",
+          "A8",
+          "A9"
+        ],
+        "B": [
+          "Advanced option rows (5 combinations on Q8_0, 2 more files)",
+          "B8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "quant_types": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "provider refuses Q4_0, Q4_1, Q5_0, Q5_1, Q2_K, Q3_K"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)"
+      ],
+      "deliberate_differences_final": [
+        "per-load dequant/patch dtype settings. Original: the last GGUF load sets them for every loaded GGUF model's Linear layers (shared GGMLOps.Linear class). Outputs can differ only when one workflow holds two or more GGUF loads with different dtype options; a single load matches exactly (Tier A A4, Tier B single-load rows, B8). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "tier_c": "C1 option grid incl. LoRA patch with patch_dtype/patch_on_device; planned; needs a separate GO"
+    },
+    "ClipLoaderGGUF": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A3 text",
+          "A5",
+          "A6",
+          "A7",
+          "A8 (every clip slot)",
+          "A9"
+        ],
+        "B": [
+          "CLIP rows",
+          "B8 text"
+        ],
+        "Q": [
+          "queue validation vs the original list (every clip slot)"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested) (GGML path for .sft, upper-case SafeTensors and Torch containers)",
+        "Torch containers are loaded host-side with load_torch_file(safe_load=True) (weights_only); a safety boundary only on torch >= 2.6 (CVE-2025-32434): platform requirement"
+      ],
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "text_transforms": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "llama/qwen/mistral/gemma families, 256384-row t5 tokenizer, ideogram, cat, cow, dog, mmproj"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)"
+      ],
+      "deliberate_differences_final": [
+        "one declared output: the GGML branch returns (clip, device options) in the original; only slot 0 is declared and linkable (B7). Final (MERVYN m_f4da836b12).",
+        "per-load dtype settings: in the original, GGUF text encoders also read the shared GGMLOps.Linear dtypes left by the last diffusion load; converted text encoders always use the default ops (B8 text row). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "narrowings_recorded": [
+        "cat GGUF with no *tokenizer*.safetensors next to it: the original loads it unchanged; the port refuses every cat GGUF (r6 planned)",
+        "qwen2/qwen3 below 65536 token rows (synthetic sizes only): the original only renames; the port refuses at any size (r6 planned)",
+        "qwen2vl/qwen3vl with no *mmproj*.gguf pair and below 65536 token rows: as above"
+      ],
+      "other_differences": [
+        "the host refuses a weights container whose content is not a flat tensor dict; load_torch_file alone returns it"
+      ],
+      "recorded_core_differences": [
+        "core 708e6c01 CLIPLoader lists 31 types (adds flux3, moss_image) and CLIPType 38 members; the port lists the run core 6257422 types (29)"
+      ],
+      "tier_c": "C2 revised (see TIER_C_PLAN.json); needs a separate GO"
+    },
+    "DualClipLoaderGGUF": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A3 text",
+          "A5",
+          "A6",
+          "A7",
+          "A8 (every clip slot)",
+          "A9"
+        ],
+        "B": [
+          "Dual rows incl. CLIP-G construction-only",
+          "B7"
+        ],
+        "Q": [
+          "queue validation vs the original list (every clip slot)"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)",
+        "Torch containers are loaded host-side with load_torch_file(safe_load=True) (weights_only); a safety boundary only on torch >= 2.6 (CVE-2025-32434): platform requirement"
+      ],
+      "fixtures": {
+        "CLIP-G": "layers 0 and 30, width 1280, Q8_0, no token embedding: construction-only (never an encode test)"
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "text_transforms": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "llama/qwen/mistral/gemma families, 256384-row t5 tokenizer, ideogram, cat, cow, dog, mmproj"
+        },
+        "two_file_device_loader": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "two SafeTensors encoders with an explicit device (load_clip with two paths)"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)",
+        "full Dual encode: encoder not local (CLIP-G)"
+      ],
+      "deliberate_differences_final": [
+        "one declared output: the GGML branch returns (clip, device options) in the original; only slot 0 is declared and linkable (B7). Final (MERVYN m_f4da836b12).",
+        "per-load dtype settings: in the original, GGUF text encoders also read the shared GGMLOps.Linear dtypes left by the last diffusion load; converted text encoders always use the default ops (B8 text row). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "tier_c": "C3 construction-call comparison only; full encode BLOCKED: encoder not local"
+    },
+    "TripleClipLoaderGGUF": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A3 text",
+          "A5",
+          "A6",
+          "A7",
+          "A8 (every clip slot)",
+          "A9"
+        ],
+        "B": [
+          "Triple shape-only construction row"
+        ],
+        "Q": [
+          "queue validation vs the original list (every clip slot)"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)",
+        "Torch containers are loaded host-side with load_torch_file(safe_load=True) (weights_only); a safety boundary only on torch >= 2.6 (CVE-2025-32434): platform requirement"
+      ],
+      "fixtures": {
+        "T5-XXL": "shape-only SafeTensors (real names/shapes of two small tensors)"
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "text_transforms": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "llama/qwen/mistral/gemma families, 256384-row t5 tokenizer, ideogram, cat, cow, dog, mmproj"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)",
+        "full-model test: encoder not local (T5-XXL)"
+      ],
+      "deliberate_differences_final": [
+        "per-load dtype settings: in the original, GGUF text encoders also read the shared GGMLOps.Linear dtypes left by the last diffusion load; converted text encoders always use the default ops (B8 text row). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "tier_c": "C4 BLOCKED: encoder not local"
+    },
+    "QuadrupleClipLoaderGGUF": {
+      "disposition": "untested",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A3 text",
+          "A5",
+          "A6",
+          "A7",
+          "A8 (every clip slot)",
+          "A9"
+        ],
+        "B": [
+          "Quad shape-only construction row"
+        ],
+        "Q": [
+          "queue validation vs the original list (every clip slot)"
+        ]
+      },
+      "operator_env_in_tests": {
+        "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616 (41 MiB: largest fixture, CLIP-G layers 0+30 at about 42.3 MB, rounded up; set by the Tier B driver, MERVYN m_f31d311532)",
+        "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)"
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)",
+        "Torch containers are loaded host-side with load_torch_file(safe_load=True) (weights_only); a safety boundary only on torch >= 2.6 (CVE-2025-32434): platform requirement"
+      ],
+      "fixtures": {
+        "T5-XXL, Llama-class": "shape-only SafeTensors"
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        },
+        "text_transforms": {
+          "owner": "GERALD (request d4ddc2de)",
+          "what": "llama/qwen/mistral/gemma families, 256384-row t5 tokenizer, ideogram, cat, cow, dog, mmproj"
+        },
+        "M3_zero_fill": {
+          "owner": "GERALD",
+          "what": "a missing Linear weight is refused (pig.py zero-fills, e.g. CLIP text_projection)"
+        },
+        "M3_limits": {
+          "owner": "GERALD (recorded, no ask yet)",
+          "what": "dynamic patchers refused; tensor table 1..4096 tensors, 512 KiB JSON, 1..8 dimensions"
+        }
+      },
+      "blocked": [
+        "SDK207 not deployed (these tests run on the a2 base; not SDK207 runtime evidence)",
+        "full-model test: encoder not local (T5-XXL, Llama-class)"
+      ],
+      "deliberate_differences_final": [
+        "per-load dtype settings: in the original, GGUF text encoders also read the shared GGMLOps.Linear dtypes left by the last diffusion load; converted text encoders always use the default ops (B8 text row). Final (MERVYN m_f4da836b12)."
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "tier_c": "C4 BLOCKED: encoder not local"
+    },
+    "VaeGGUF": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation; re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8 incl. TAESD presets"
+        ],
+        "Q": [
+          "queue validation vs the original list incl. TAESD"
+        ]
+      },
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "note": "execution otherwise unchanged from rev 2; the .gguf branch maps through gguf_tensor_state (H1_mapping_limit)"
+    },
+    "AudioEncoderLoaderGGUF": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation; re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)",
+        "Torch containers are loaded host-side with load_torch_file(safe_load=True) (weights_only); a safety boundary only on torch >= 2.6 (CVE-2025-32434): platform requirement (non-GGUF branch, since rev 2)"
+      ],
+      "missing": {
+        "H1_mapping_limit": {
+          "owner": "GERALD/JERRY",
+          "what": "GGUF mappings are refused while COMFY_SECURE_MAX_GGUF_MAPPING_BYTES is 0 (backend a1 default; unset live per JERRY; recommendation logged by MERVYN)"
+        },
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        },
+        "H2_gguf_listing": {
+          "owner": "MIKE/GERALD",
+          "what": "the /models/<folder> dropdown routes list supported_pt_extensions only: no .gguf name is offered"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ],
+      "note": "execution otherwise unchanged from rev 2; the non-GGUF branch republishes the state through ValueRef.from_value (H1_store_round_trip)"
+    },
+    "TENSORBoost": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation and the execute-time name check (any-case .safetensors); re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)"
+      ],
+      "missing": {
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ]
+    },
+    "TENSORCut": {
+      "disposition": "untested: needs CUDA worker",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ],
+        "T": [
+          "CUDA worker only"
+        ]
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)"
+      ],
+      "missing": {
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        }
+      },
+      "blocked": [
+        "CUDA-capable worker (JERRY/MIKE)"
+      ],
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ]
+    },
+    "GGUFSave": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation and the execute-time name check (any-case .safetensors); re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "missing": {
+        "H1_binary_output": {
+          "owner": "GERALD/JERRY",
+          "what": "output.save_binary is refused while COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES is 0 (backend a1 default, host.py:1781-1783); an operator must select a cap >= the output size"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ]
+    },
+    "GGUFRun": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation and the execute-time name check (any-case .safetensors); re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "missing": {
+        "H1_binary_output": {
+          "owner": "GERALD/JERRY",
+          "what": "output.save_binary is refused while COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES is 0 (backend a1 default, host.py:1781-1783); an operator must select a cap >= the output size"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ]
+    },
+    "GGUFUndo": {
+      "disposition": "partial: the rev-2 scoped tests predate r4/r5, which changed queue validation and the execute-time name check (any-case .gguf); re-run needed (Tier A A0/A8 and Tier Q cover the validators)",
+      "tests_planned": {
+        "A": [
+          "A0",
+          "A8"
+        ],
+        "Q": [
+          "queue validation vs the original list"
+        ]
+      },
+      "notes": [
+        "uses ValueRef.from_value (runtime-public, undeclared in stub; stub fix requested)"
+      ],
+      "missing": {
+        "H1_store_round_trip": {
+          "owner": "GERALD",
+          "what": "states republished through ValueRef.from_value are capped by COMFY_SECURE_MAX_STORE_BYTES (2 GiB, a1 host.py:736) and held about three times at peak (e.g. a TENSORBoost of an SDXL UNet in fp32, about 10 GB, is refused)"
+        }
+      },
+      "refused_platform_policy": [
+        "names the host cannot address are not accepted: a listed name with a backslash (host separator) and files whose real path leaves the folder root (host confinement); platform policy"
+      ]
+    }
+  }
+}
