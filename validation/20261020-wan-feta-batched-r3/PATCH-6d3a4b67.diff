@@ -1,0 +1,13 @@
+diff --git a/v2/wan_workflow_sampler_runtime.py b/v2/wan_workflow_sampler_runtime.py
+index 086d412a389ed5daa9fd95b4f1e5c6ba2fe8054c..925cdefc9a17e8ae447c3379aeb1267a6ffbf494 100644
+--- a/v2/wan_workflow_sampler_runtime.py
++++ b/v2/wan_workflow_sampler_runtime.py
+@@ -80,8 +80,6 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
+                    'multitalk_embeds')
+     if any(kwargs.get(key) is not None for key in unsupported):
+         raise NotImplementedError('Advanced sampling inputs await their reviewed execution slices')
+-    if kwargs.get('batched_cfg', False):
+-        raise NotImplementedError('Batched CFG awaits its reviewed execution slice')
+     for key in ('cache_args', 'teacache_args'):
+         if kwargs.get(key) is not None:
+             kwargs = dict(kwargs, **{key: resolve_cache_placement(kwargs[key])})

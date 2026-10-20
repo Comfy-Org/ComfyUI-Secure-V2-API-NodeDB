@@ -1,0 +1,95 @@
+"""Read-only referrer-chain diagnostic for an object that should have been released (harness only).
+
+Walks gc.get_referrers upward from the target (breadth-first, bounded) and reports the chains that reach
+a frame, a module namespace or the depth limit. The walker's own bookkeeping and frames are excluded.
+"""
+import gc
+import os
+import sys
+import types
+
+
+def describe(obj):
+    kind = type(obj)
+    info = {'type': kind.__module__ + '.' + kind.__qualname__}
+    try:
+        if isinstance(obj, types.FrameType):
+            info.update(code=obj.f_code.co_name, file=os.path.basename(obj.f_code.co_filename), line=obj.f_lineno)
+        elif isinstance(obj, types.TracebackType):
+            info.update(frame=obj.tb_frame.f_code.co_name, file=os.path.basename(obj.tb_frame.f_code.co_filename))
+        elif isinstance(obj, BaseException):
+            info.update(exception=repr(obj)[:200])
+        elif isinstance(obj, dict):
+            info.update(size=len(obj), keys=[str(k)[:48] for k in list(obj)[:16]], module=obj.get('__name__') if '__name__' in obj else None)
+        elif isinstance(obj, (list, tuple, set, frozenset)):
+            info.update(size=len(obj))
+        elif isinstance(obj, types.FunctionType):
+            info.update(function=obj.__qualname__, file=os.path.basename(obj.__code__.co_filename))
+        elif isinstance(obj, types.MethodType):
+            info.update(method=getattr(obj.__func__, '__qualname__', '?'))
+        elif isinstance(obj, types.CellType):
+            pass
+        else:
+            info.update(repr=repr(obj)[:160])
+    except Exception as error:  # describing must never fail the diagnostic
+        info['describe_error'] = repr(error)[:120]
+    return info
+
+
+def trace_weakref(reference, **options):
+    """Dereference inside this frame only, so no caller frame holds the target during the walk."""
+    target = reference()
+    if target is None:
+        return None
+    try:
+        return referrer_chains(target, **options)
+    finally:
+        del target
+
+
+def referrer_chains(target, max_depth=8, max_visit=4000, max_chains=12):
+    gc.collect()
+    own = {id(sys._getframe())}
+    parents = {}
+    visited = {id(target)}
+    frontier = [target]
+    roots = []
+    own.update({id(parents), id(visited), id(frontier), id(roots), id(own)})
+    depth = 0
+    while frontier and depth < max_depth and len(visited) < max_visit and len(roots) < max_chains:
+        depth += 1
+        nxt = []
+        own.add(id(nxt))
+        for obj in frontier:
+            for ref in gc.get_referrers(obj):
+                rid = id(ref)
+                if rid in own or rid in visited or ref is frontier or ref is nxt:
+                    continue
+                if isinstance(ref, types.FrameType) and ref.f_code.co_filename == __file__:
+                    continue
+                visited.add(rid)
+                parents[rid] = (ref, id(obj))
+                if isinstance(ref, types.FrameType) or (isinstance(ref, dict) and '__name__' in ref and '__builtins__' in ref):
+                    roots.append(ref)
+                    if len(roots) >= max_chains:
+                        break
+                else:
+                    nxt.append(ref)
+            if len(roots) >= max_chains:
+                break
+        frontier = nxt
+    chains = []
+    for root in roots:
+        chain, current = [], id(root)
+        while current in parents:
+            obj, child = parents[current]
+            chain.append(describe(obj))
+            current = child
+        chains.append(list(reversed(chain)))
+    open_ends = [describe(obj) for obj in frontier[:20]]
+    result = {'depth_reached': depth, 'visited': len(visited), 'chains_to_roots': chains, 'unresolved_frontier_sample': open_ends,
+              'sys_last_exc': repr(getattr(sys, 'last_exc', None))[:160]}
+    parents.clear()
+    frontier.clear()
+    roots.clear()
+    return result

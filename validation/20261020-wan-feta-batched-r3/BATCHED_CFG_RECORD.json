@@ -1,0 +1,45 @@
+{
+ "ruling": "MERVYN m_932f23f1bf",
+ "record_text": "original defect: batched_cfg always raises TypeError; converted reproduces it",
+ "line_refs": [
+  "nodes_sampler.py:1657-1663 batched branch (vendored v2 copy identical)",
+  "nodes_sampler.py:1659 torch.cat([clip_fea, clip_fea]) raises TypeError when clip_fea is None (every T2V dict)",
+  "nodes_sampler.py:1444 + 1661-1663 is_uncond passed twice and unknown z kwarg when clip_fea is present",
+  "wanvideo/modules/model.py:2307-2353 WanModel.forward has no z parameter and no **kwargs"
+ ],
+ "cases": {
+  "T2V": "b1_batched_cfg2_error_parity (this packet)",
+  "I2V": "i4 (Step 1 synthetic I2V packet)"
+ },
+ "converted_delta": "6d3a4b67 removes the batched_cfg refusal so the converted node reproduces the original error",
+ "is_not": [
+  "a computation pass",
+  "REFUSED"
+ ],
+ "status": "T2V_HALF_RECORDED_I2V_HALF_PENDING",
+ "T2V_result": {
+  "case": "b1_batched_cfg2_error_parity",
+  "comparison": "COMPARISON_batched_cfg.json (PASS_SLICE_BATCHED_CFG, 35/35)",
+  "original": {
+   "message": "expected Tensor as element 0 in argument 0, but got NoneType",
+   "raised": true,
+   "raising_file": "nodes_sampler.py",
+   "raising_function": "predict_with_cfg",
+   "raising_line": 1659,
+   "type": "TypeError"
+  },
+  "converted": {
+   "message": "expected Tensor as element 0 in argument 0, but got NoneType",
+   "raised": true,
+   "raising_file": "nodes_sampler.py",
+   "raising_function": "predict_with_cfg",
+   "raising_line": 1659,
+   "type": "TypeError"
+  },
+  "transformer_forwards": [
+   0,
+   0
+  ]
+ },
+ "I2V_result": "pending: case i4 of the I2V Step 1 synthetic code-path packet"
+}

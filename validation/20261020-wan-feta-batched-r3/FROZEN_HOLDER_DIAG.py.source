@@ -1,0 +1,100 @@
+"""Read-only holder diagnostic (harness only): what keeps an object alive.
+
+Walks gc.get_referrers upward from the target, breadth-first and bounded (depth, visits, seconds). Unlike
+leak_diag (which stops at any frame), finished frames are expanded like any other container. A chain ends at
+  - an executing frame (on a live thread stack; its locals are roots),
+  - a module namespace, or
+  - an open end: an object with no GC-visible referrer, i.e. held from C (a C call's local) or from an
+    executing frame's locals/value stack, which gc cannot traverse (e.g. the event loop's in-flight Handle).
+The walker's own bookkeeping and frames are excluded. Nothing is mutated.
+"""
+import gc
+import sys
+import time
+import types
+
+import leak_diag
+
+
+def _executing_frame_ids():
+    ids = set()
+    for top in sys._current_frames().values():
+        frame = top
+        while frame is not None:
+            ids.add(id(frame))
+            frame = frame.f_back
+    return ids
+
+
+def holder_chains(target, max_depth=12, max_visit=3000, max_ends=16, max_seconds=25.0):
+    begun = time.monotonic()
+    gc.collect()
+    live = _executing_frame_ids()
+    own_files = {__file__, leak_diag.__file__}
+    parent_obj, parent_child = {}, {}
+    visited = {id(target)}
+    roots, open_ends, keep = [], [], []
+    frontier = [target]
+    own = {id(sys._getframe()), id(parent_obj), id(parent_child), id(visited), id(roots), id(open_ends), id(keep), id(live)}
+    own.add(id(own))
+    keep.append(frontier)
+    own.add(id(frontier))
+    depth = 0
+    stopped = None
+    while frontier:
+        if depth >= max_depth:
+            stopped = 'max_depth'
+            break
+        if len(visited) >= max_visit:
+            stopped = 'max_visit'
+            break
+        if len(roots) + len(open_ends) >= max_ends:
+            stopped = 'max_ends'
+            break
+        if time.monotonic() - begun > max_seconds:
+            stopped = 'max_seconds'
+            break
+        depth += 1
+        nxt = []
+        keep.append(nxt)
+        own.add(id(nxt))
+        for obj in frontier:
+            held = False
+            for ref in gc.get_referrers(obj):
+                rid = id(ref)
+                if rid in own:
+                    continue
+                if isinstance(ref, types.FrameType) and ref.f_code.co_filename in own_files:
+                    continue
+                held = True
+                if rid in visited:
+                    continue
+                visited.add(rid)
+                parent_obj[rid] = ref
+                parent_child[rid] = id(obj)
+                if (isinstance(ref, types.FrameType) and rid in live) or (
+                        isinstance(ref, dict) and '__builtins__' in ref and '__name__' in ref):
+                    roots.append(rid)
+                else:
+                    nxt.append(ref)
+            if not held:
+                open_ends.append(id(obj))
+        frontier = nxt
+
+    def chain(start):
+        out, current = [], start
+        while current in parent_obj:
+            out.append(leak_diag.describe(parent_obj[current]))
+            current = parent_child[current]
+        return list(reversed(out))
+    result = {
+        'depth_reached': depth, 'visited': len(visited), 'stopped': stopped, 'seconds': round(time.monotonic() - begun, 3),
+        'target': leak_diag.describe(target),
+        'chains_to_executing_frames_or_modules': [chain(rid) for rid in roots],
+        'chains_to_open_ends': [chain(rid) for rid in open_ends if rid != id(target)],
+        'target_is_open_end': id(target) in open_ends,
+        'unexpanded_frontier_sample': [leak_diag.describe(obj) for obj in frontier[:12]] if stopped else [],
+    }
+    parent_obj.clear()
+    keep.clear()
+    return result

@@ -1,0 +1,109 @@
+--- compare_slices_rev3.py	2026-10-20 14:26:43.172876900 -0700
++++ compare_slices_rev4.py	2026-10-20 14:27:21.047347200 -0700
+@@ -10,13 +10,46 @@
+   converted release (both kinds): one owned transformer, weakref dead after gc right after the node, no sampler/package
+     frames once the error/result is released, private weight files removed.
+ Registry size: rev 3 registers 146.
++
++rev 4 (MERVYN R1 ruling m_ac4fbd5c7d) adds one reviewed normalization and changes nothing else.
++- Scope: only for raising cases whose CASE declares "message_normalization": "set_literal_sorted".
++- Normalization: the message must hold exactly one {...} set literal; its elements are compared as sorted lists, and
++  everything outside the braces is compared exactly. Reason: Python set iteration order is hash-randomized per process,
++  and PYTHONHASHSEED cannot be pinned under -I (which implies -E).
++- The exact checks still run and are recorded unchanged; an exact-message mismatch still FAILs that check.
++- An item whose only failing checks are such message checks, each equal after normalization, gets status
++  CLOSED_BY_REVIEWED_NORMALIZATION_SLICE_<item>, never PASS. Both raw messages and the normalized comparison are recorded.
+ """
+ import hashlib
+ import json
+ from pathlib import Path
++import re
++import sys
+ 
+-OUT = Path('/out')
+-PREPARED = Path('/prepared')
++OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
++PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
++SET_LITERAL = re.compile(r'\{([^{}]*)\}')
++NORMALIZATION_REASON = ('Python set iteration order is hash-randomized per process; PYTHONHASHSEED is unavailable under -I (implies -E). '
++                        'Only the set literal is normalized (elements compared as sorted lists); all other text is compared exactly.')
++NORMALIZABLE = ('same_exception_type_and_message', 'original_error_is_the_cited_one')
++
++
++def split_set_literal(message):
++    """(prefix, elements, suffix) for a message holding exactly one flat {...} literal, else None."""
++    if not isinstance(message, str):
++        return None
++    found = list(SET_LITERAL.finditer(message))
++    if len(found) != 1 or message.count('{') != 1 or message.count('}') != 1:
++        return None
++    elements = [element.strip() for element in found[0].group(1).split(',')]
++    if not elements or any(not element for element in elements) or len(set(elements)) != len(elements):
++        return None
++    return message[:found[0].start()], elements, message[found[0].end():]
++
++
++def normalized_equal(first, second):
++    a, b = split_set_literal(first), split_set_literal(second)
++    return a is not None and b is not None and a[0] == b[0] and a[2] == b[2] and sorted(a[1]) == sorted(b[1])
+ CACHE_NODES = {'WanVideoTeaCache', 'WanVideoMagCache', 'WanVideoEasyCache'}
+ EXPECTED_REGISTERED = 146
+ 
+@@ -43,6 +76,7 @@
+ class Item:
+     def __init__(self, name):
+         self.name, self.checks, self.details, self.info = name, {}, {}, {}
++        self.normalized = {}  # check key -> reviewed normalization record (rev 4)
+ 
+     def check(self, key, ok, detail=None):
+         self.checks[key] = bool(ok)
+@@ -51,9 +85,14 @@
+ 
+     def write(self, results_sha):
+         passed = bool(self.checks) and all(self.checks.values())
+-        status = ('PASS_SLICE_' if passed else 'FAIL_SLICE_') + self.name.upper()
+-        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': [k for k, v in self.checks.items() if not v],
+-               'details': self.details, 'info': self.info, 'results_sha256': results_sha}
++        failed = [k for k, v in self.checks.items() if not v]
++        closed = (not passed and bool(failed) and all(k in self.normalized and self.normalized[k]['equal_after_normalization']
++                                                      for k in failed))
++        status = ('PASS_SLICE_' if passed else 'CLOSED_BY_REVIEWED_NORMALIZATION_SLICE_' if closed else 'FAIL_SLICE_') + self.name.upper()
++        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': failed,
++               'details': self.details, 'info': self.info, 'results_sha256': results_sha,
++               'reviewed_normalization': {'ruling': 'MERVYN m_ac4fbd5c7d R1', 'reason': NORMALIZATION_REASON,
++                                          'records': self.normalized, 'closed_checks': failed if closed else []}}
+         (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+         return status
+ 
+@@ -96,6 +135,18 @@
+         item.check(p + 'same_raising_function_and_file', (oo.get('raising_function'), oo.get('raising_file')) == (co.get('raising_function'), co.get('raising_file')), [oo, co])
+         if case.get('expected_error'):
+             item.check(p + 'original_error_is_the_cited_one', [oo.get('type'), oo.get('message')] == case['expected_error'], oo)
++        if case.get('message_normalization') == 'set_literal_sorted':
++            pairs = {p + 'same_exception_type_and_message': (oo.get('type') == co.get('type'), oo.get('message'), co.get('message'))}
++            if case.get('expected_error'):
++                pairs[p + 'original_error_is_the_cited_one'] = (oo.get('type') == case['expected_error'][0], oo.get('message'),
++                                                                case['expected_error'][1])
++            for key, (same_type, first, second) in pairs.items():
++                parts = [split_set_literal(first), split_set_literal(second)]
++                item.normalized[key] = {
++                    'raw_messages': [first, second], 'exact_equal': first == second, 'types_equal': same_type,
++                    'normalized_parts': [None if x is None else {'prefix': x[0], 'elements': x[1], 'sorted': sorted(x[1]), 'suffix': x[2]}
++                                         for x in parts],
++                    'equal_after_normalization': bool(same_type) and normalized_equal(first, second)}
+     else:
+         returned = oo.get('raised') is False and co.get('raised') is False
+         item.check(p + 'both_returned', returned, {'original': oo, 'converted': co})
+@@ -164,8 +215,10 @@
+         effect_checks(items, case_file, original)
+     for item_name, item in items.items():
+         statuses[item_name] = item.write(results_sha)
+-    failed = [k for k, v in statuses.items() if not v.startswith('PASS')]
+-    status = ('PASS_SLICES_' if not failed else 'FAIL_SLICES_') + '_'.join(sorted(statuses)).upper()
++    failed = [k for k, v in statuses.items() if v.startswith('FAIL')]
++    closed = [k for k, v in statuses.items() if v.startswith('CLOSED_BY_REVIEWED_NORMALIZATION')]
++    prefix = 'FAIL_SLICES_' if failed else 'CLOSED_BY_REVIEWED_NORMALIZATION_SLICES_' if closed else 'PASS_SLICES_'
++    status = prefix + '_'.join(sorted(statuses)).upper()
+     (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha}, indent=2, sort_keys=True) + '\n')
+     print(json.dumps({'status': status, 'items': statuses}))
+     return 0 if not failed else 1
