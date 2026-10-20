@@ -1,0 +1,19 @@
+"""TEST ONLY: initialize genuine Guest global RNG; never shipped in pack."""
+import random
+from comfy_api.latest import io
+
+
+class SeedGlobalRandomFixture(io.ComfyNode):
+    SDK_REFS = True
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(node_id='NED_TEST_SeedGlobalRandomFixture',
+                         inputs=[io.Int.Input('seed', default=0, min=0, max=2147483647)],
+                         outputs=[io.Int.Output()])
+
+    @classmethod
+    def execute(cls, seed):
+        random.seed(seed)
+        return io.NodeOutput(seed)
