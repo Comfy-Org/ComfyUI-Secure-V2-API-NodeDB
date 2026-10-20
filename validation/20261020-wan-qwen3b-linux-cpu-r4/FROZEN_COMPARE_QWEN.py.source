@@ -1,0 +1,143 @@
+"""UNRUN stdlib-only comparator for the Qwen 3B Linux CPU original-vs-converted observations.
+
+usage: python3 -I -S -B compare_qwen.py --original OBS.json --converted OBS.json --config BOUND-CONFIG.json --out COMPARISON.json
+       python3 -I -S -B compare_qwen.py --selftest OUT.json   (synthetic observations only; no model, no torch)
+Exact equality only; no tolerance. Negative controls run on in-memory copies after the baseline passes.
+"""
+import argparse
+import copy
+import json
+from pathlib import Path
+
+RECIPE_KEYS = {'format', 'model_name', 'weights_sha256', 'precision', 'load_device', 'tokenizer_bundle_sha256'}
+
+
+def checks_for(original, converted, config, cases):
+    model = config['model']
+    loader = cases['loader']
+    checks = {}
+    checks['roles_complete'] = (original.get('status') == converted.get('status') == 'OBSERVATIONS_COMPLETE_NO_PARITY_CLAIM')
+    o_loader, c_loader = original.get('loader', {}), converted.get('loader', {})
+    o_model, c_model = o_loader.get('model'), c_loader.get('materialized', {}).get('model')
+    checks['model_class_config_equal'] = (o_model is not None and c_model is not None
+                                          and o_model['class'] == c_model['class'] and o_model['config'] == c_model['config'])
+    checks['parameters_bitwise_equal'] = (o_model is not None and c_model is not None and bool(o_model['parameters'])
+                                          and o_model['parameters'] == c_model['parameters'])
+    checks['buffers_bitwise_equal'] = o_model is not None and c_model is not None and o_model['buffers'] == c_model['buffers']
+    checks['lm_head_tied_both'] = (o_model is not None and c_model is not None
+                                   and o_model['lm_head_tied_to_embeddings'] is True and c_model['lm_head_tied_to_embeddings'] is True)
+    checks['tokenizer_equal'] = (o_loader.get('tokenizer') is not None
+                                 and o_loader.get('tokenizer') == c_loader.get('materialized', {}).get('tokenizer'))
+    recipe = c_loader.get('recipe')
+    checks['converted_recipe_exact'] = (type(recipe) is dict and set(recipe) == RECIPE_KEYS
+                                        and recipe['format'] == 'wan-qwen-model-recipe-v1' and recipe['model_name'] == model['logical_name']
+                                        and recipe['weights_sha256'] == model['sha256'] and recipe['precision'] == loader['precision']
+                                        and recipe['load_device'] == loader['load_device']
+                                        and recipe['tokenizer_bundle_sha256'] == config['tokenizer_bundle_sha256'])
+    same_baseline = o_loader.get('rng_before') is not None and o_loader.get('rng_before') == c_loader.get('rng_before')
+    checks['loader_rng_effect_equal'] = (o_loader.get('rng_after') == c_loader.get('rng_after')) if same_baseline else (
+        o_loader.get('rng_after') != o_loader.get('rng_before') and c_loader.get('rng_after') != c_loader.get('rng_before'))
+    ids = [case['id'] for case in cases['extender']]
+    o_ext, c_ext = original.get('extender', {}), converted.get('extender', {})
+    checks['extender_cases_complete'] = sorted(o_ext) == sorted(c_ext) == sorted(ids)
+    checks['extender_text_equal'] = checks['extender_cases_complete'] and all(
+        type(o_ext[i]['text']) is str and o_ext[i]['text'] == c_ext[i]['text'] for i in ids)
+    checks['extender_rng_after_equal'] = checks['extender_cases_complete'] and all(o_ext[i]['rng_after'] == c_ext[i]['rng_after'] for i in ids)
+    pair = cases.get('same_output_pairs', [])
+    checks['none_vs_empty_system_prompt_same_output_each_side'] = checks['extender_cases_complete'] and all(
+        o_ext[a]['text'] == o_ext[b]['text'] and c_ext[a]['text'] == c_ext[b]['text'] for a, b in pair)
+    checks['checkpoint_unchanged_each_role'] = all(
+        side.get('checkpoint_stat_after') == side.get('setup', {}).get('checkpoint_stat_before') is not None for side in (original, converted))
+    stop = config['limits']['sampled_rss_stop_bytes']
+    checks['role_rss_within_fail_stop'] = all(type(side.get('rss_peak_bytes')) is int and side['rss_peak_bytes'] <= stop
+                                              for side in (original, converted))
+    return checks
+
+
+def controls(original, converted, config, cases):
+    first_param = sorted(original['loader']['model']['parameters'])[0]
+    first_case = cases['extender'][0]['id']
+
+    def tamper_param(o, c):
+        c['loader']['materialized']['model']['parameters'][first_param]['sha256'] = '0' * 64
+
+    def tamper_text(o, c):
+        c['extender'][first_case]['text'] += '.'
+
+    def drop_case(o, c):
+        c['extender'].pop(first_case)
+
+    def tamper_recipe(o, c):
+        c['loader']['recipe']['weights_sha256'] = 'f' * 64
+
+    def tamper_tokenizer(o, c):
+        c['loader']['materialized']['tokenizer']['length'] += 1
+
+    def untie(o, c):
+        c['loader']['materialized']['model']['lm_head_tied_to_embeddings'] = False
+
+    rows = {}
+    for name, edit in (('wrong_parameter_bits', tamper_param), ('wrong_text', tamper_text), ('missing_case', drop_case),
+                       ('wrong_recipe_digest', tamper_recipe), ('wrong_tokenizer', tamper_tokenizer), ('untied_lm_head', untie)):
+        o, c = copy.deepcopy(original), copy.deepcopy(converted)
+        edit(o, c)
+        failed = sorted(k for k, v in checks_for(o, c, config, cases).items() if not v)
+        rows[name] = failed or ['NOT DETECTED']
+    return rows
+
+
+def compare(original, converted, config, cases):
+    checks = checks_for(original, converted, config, cases)
+    baseline = all(checks.values())
+    control_rows = controls(original, converted, config, cases) if baseline else 'UNRUN_BASELINE_NOT_PASS'
+    controls_ok = baseline and all(v != ['NOT DETECTED'] for v in control_rows.values())
+    return {'status': 'PASS_SCOPED_QWEN3B_LINUX_CPU_NATIVE_COMPARE' if baseline and controls_ok else 'FAILED_QWEN3B_LINUX_CPU_COMPARE',
+            'checks': checks, 'negative_controls': control_rows,
+            'scope': 'Native CPU bf16 QwenLoader + 3 seeded WanVideoPromptExtender cases, original vs converted default-SDK route; '
+                     'no Guest, public executor, GPU, 7B, fp16/fp32 or whole-pack claim'}
+
+
+def synthetic():
+    params = {'model.embed_tokens.weight': {'shape': [4, 2], 'dtype': 'torch.bfloat16', 'device': 'cpu', 'sha256': 'a' * 64}}
+    model = {'class': 'transformers.Qwen2ForCausalLM', 'config': {'vocab_size': 4}, 'parameters': params, 'buffers': {},
+             'training': False, 'lm_head_tied_to_embeddings': True}
+    tok = {'class': 'Qwen2TokenizerFast', 'length': 4, 'vocab_sha256': 'b' * 64, 'special_tokens': ['<|im_end|>'], 'chat_template_sha256': 'c' * 64}
+    ext = {'PE1': {'text': 'x', 'rng_before': '1', 'rng_after': '2'}, 'PE2': {'text': 'x', 'rng_before': '1', 'rng_after': '2'},
+           'PE3': {'text': 'y', 'rng_before': '1', 'rng_after': '3'}}
+    stat = {'size': 1, 'mtime_ns': 1, 'ino': 1}
+    config = {'model': {'logical_name': 'Qwen/q.safetensors', 'sha256': 'd' * 64}, 'tokenizer_bundle_sha256': 'e' * 64,
+              'limits': {'sampled_rss_stop_bytes': 100}}
+    cases = {'loader': {'load_device': 'offload_device', 'precision': 'bf16'},
+             'extender': [{'id': 'PE1'}, {'id': 'PE2'}, {'id': 'PE3'}], 'same_output_pairs': [['PE1', 'PE2']]}
+    common = {'status': 'OBSERVATIONS_COMPLETE_NO_PARITY_CLAIM', 'setup': {'checkpoint_stat_before': stat},
+              'checkpoint_stat_after': stat, 'rss_peak_bytes': 50, 'extender': ext}
+    original = {**copy.deepcopy(common), 'loader': {'rng_before': '0', 'rng_after': '9', 'model': model, 'tokenizer': tok}}
+    recipe = {'format': 'wan-qwen-model-recipe-v1', 'model_name': 'Qwen/q.safetensors', 'weights_sha256': 'd' * 64,
+              'precision': 'bf16', 'load_device': 'offload_device', 'tokenizer_bundle_sha256': 'e' * 64}
+    converted = {**copy.deepcopy(common), 'loader': {'rng_before': '0', 'rng_after': '9', 'recipe': recipe,
+                                                     'materialized': {'model': copy.deepcopy(model), 'tokenizer': copy.deepcopy(tok)}}}
+    return original, converted, config, cases
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--original', type=Path)
+    parser.add_argument('--converted', type=Path)
+    parser.add_argument('--config', type=Path)
+    parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--selftest', action='store_true')
+    args = parser.parse_args()
+    if args.selftest:
+        record = compare(*synthetic())
+        record['selftest'] = 'synthetic observations only; not evidence'
+    else:
+        config = json.loads(args.config.read_bytes())
+        cases = json.loads(Path(config['host']['cases_path']).read_bytes())
+        record = compare(json.loads(args.original.read_bytes()), json.loads(args.converted.read_bytes()), config, cases)
+    args.out.write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({'status': record['status'], 'failed': sorted(k for k, v in record['checks'].items() if not v)}))
+    return 0 if record['status'].startswith('PASS_') else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,252 @@
+"""UNRUN container-side role worker: Qwen 3B native CPU original-vs-converted observations.
+
+usage (inside one bounded role container only):
+  python -I -B /plan/harness/qwen_role.py --role original|converted --config /binding/BOUND-CONFIG.json --out /private/result
+
+The original role runs the genuine upstream QwenLoader/WanVideoPromptExtender (pack x088128b qwen/qwen.py) on genuine
+Core. The converted role runs the published v2 secure_qwen_nodes through the default-SDK in-process providers and the
+real SDK assets domain. Both use the same pinned checkpoint through Core folder_paths. Nothing is downloaded; no
+network; threads are pinned to 1 for bitwise determinism. Observations are written as JSON for compare_qwen.py.
+"""
+import argparse
+import asyncio
+import gc
+import hashlib
+import importlib
+import importlib.machinery
+import json
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+import types
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def digest_file(path):
+    value = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+            value.update(block)
+    return value.hexdigest()
+
+
+def namespace(name, root):
+    """Package location only; the package __init__ is never executed."""
+    require(name not in sys.modules, 'Bound package name already imported: ' + name)
+    package = types.ModuleType(name)
+    package.__path__ = [str(root)]
+    package.__package__ = name
+    package.__spec__ = importlib.machinery.ModuleSpec(name, loader=None, is_package=True)
+    package.__spec__.submodule_search_locations = [str(root)]
+    sys.modules[name] = package
+
+
+def rss_peak_bytes():
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+
+
+def rng_sha():
+    import torch
+    return hashlib.sha256(torch.get_rng_state().numpy().tobytes()).hexdigest()
+
+
+def tensor_sha(tensor):
+    import torch
+    data = tensor.detach().to('cpu').contiguous()
+    raw = data.view(torch.uint8) if data.dtype != torch.uint8 else data
+    return hashlib.sha256(raw.reshape(-1).numpy()).hexdigest()
+
+
+def model_observation(model):
+    params = {name: {'shape': list(p.shape), 'dtype': str(p.dtype), 'device': str(p.device), 'sha256': tensor_sha(p)}
+              for name, p in model.named_parameters()}
+    buffers = {name: {'shape': list(b.shape), 'dtype': str(b.dtype), 'sha256': tensor_sha(b)} for name, b in model.named_buffers()}
+    embed = model.get_input_embeddings().weight
+    return {'class': type(model).__module__ + '.' + type(model).__qualname__, 'config': model.config.to_dict(),
+            'parameters': params, 'buffers': buffers, 'training': model.training,
+            'lm_head_tied_to_embeddings': model.lm_head.weight is embed and model.lm_head.weight.data_ptr() == embed.data_ptr()}
+
+
+def tokenizer_observation(tokenizer):
+    vocab = json.dumps(sorted(tokenizer.get_vocab().items()), separators=(',', ':')).encode()
+    return {'class': type(tokenizer).__qualname__, 'length': len(tokenizer), 'vocab_sha256': hashlib.sha256(vocab).hexdigest(),
+            'special_tokens': list(tokenizer.all_special_tokens),
+            'chat_template_sha256': hashlib.sha256((tokenizer.chat_template or '').encode()).hexdigest()}
+
+
+def setup(config, out):
+    require(sys.platform == 'linux' and sys.flags.isolated and not sys.flags.no_site, 'Isolated Linux site-enabled interpreter required')
+    require(list(sys.version_info[:3]) == config['python_version'], 'Bound interpreter version differs')
+    require(os.getuid() == 1000 and os.getgid() == 1000, 'Role must run as uid/gid 1000 (r3)')
+    require(all(os.environ.get(key) == value for key, value in (('HOME', '/tmp'), ('HF_HUB_OFFLINE', '1'), ('TRANSFORMERS_OFFLINE', '1'))),
+            'HOME=/tmp and offline HF/transformers environment required (r3)')
+    sys.dont_write_bytecode = True
+    private = {name: out / name for name in ('input', 'output', 'temp', 'user', 'models')}
+    for path in private.values():
+        path.mkdir(mode=0o700)
+    if config['comfy_api_root'] is not None:
+        root = Path(config['comfy_api_root'])
+        package = types.ModuleType('comfy_api')
+        package.__path__ = [str(root / 'comfy_api')]
+        package.__package__ = 'comfy_api'
+        package.__spec__ = importlib.machinery.ModuleSpec('comfy_api', loader=None, is_package=True)
+        package.__spec__.submodule_search_locations = [str(root / 'comfy_api')]
+        require('comfy_api' not in sys.modules, 'comfy_api imported before the bound root')
+        sys.modules['comfy_api'] = package
+    sys.path[:0] = config['host_import_order']
+    # Optional reviewed read-only deps (route b): appended after site-packages, so it can only supply missing modules.
+    sys.path.extend(config.get('extra_sys_path') or [])
+    sys.argv = ['wan-qwen3b-private', '--cpu', '--disable-all-custom-nodes', '--disable-api-nodes', '--disable-auto-launch',
+        '--cache-none', '--input-directory', str(private['input']), '--output-directory', str(private['output']),
+        '--temp-directory', str(private['temp']), '--user-directory', str(private['user']),
+        '--models-directory', str(private['models']), '--database-url', 'sqlite:///' + str(out / 'assets.db')]
+    import comfy.options
+    comfy.options.enable_args_parsing()
+    import comfy.cli_args
+    require(comfy.cli_args.args.cpu, 'CPU-only Core arguments required')
+    import torch
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+    import folder_paths
+    folder_paths.add_model_folder_path('text_encoders', config['model_root'], is_default=True)
+    resolved = folder_paths.get_full_path('text_encoders', config['model']['logical_name'])
+    require(resolved is not None and Path(resolved).resolve() == (Path(config['model_root']) / config['model']['logical_name']).resolve(),
+            'Pinned checkpoint must resolve under the bound model root only')
+    stat = os.stat(resolved)
+    require(stat.st_size == config['model']['bytes'], 'Checkpoint size differs')
+    return {'checkpoint_stat_before': {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns, 'ino': stat.st_ino}, 'resolved': resolved,
+            'uid_gid': [os.getuid(), os.getgid()], 'executable': sys.executable, 'sys_path': list(sys.path)}
+
+
+def module_records(expected):
+    rows = {}
+    for name, row in expected.items():
+        module = sys.modules.get(name)
+        actual = Path(module.__file__).resolve() if module is not None else None
+        rows[name] = {'path': str(actual), 'sha256': digest_file(actual) if actual else None}
+        require(rows[name] == row, 'Actual loaded module differs: ' + name)
+    return rows
+
+
+def run_original(config, cases, record):
+    namespace(config['original_package'], config['original_root'])
+    module = importlib.import_module(config['original_package'] + '.qwen.qwen')
+    loader = cases['loader']
+    before = rng_sha()
+    started = time.monotonic()
+    (qwen,) = module.QwenLoader().load(config['model']['logical_name'], loader['load_device'], loader['precision'])
+    record['loader'] = {'rng_before': before, 'rng_after': rng_sha(), 'seconds': time.monotonic() - started,
+                        'model': model_observation(qwen.model), 'tokenizer': tokenizer_observation(qwen.tokenizer),
+                        'rss_peak_bytes': rss_peak_bytes()}
+    record['extender'] = {}
+    for case in cases['extender']:
+        before = rng_sha()
+        started = time.monotonic()
+        (text,) = module.WanVideoPromptExtender().generate(qwen, prompt=case['prompt'], device=case['device'],
+            force_offload=case['force_offload'], max_new_tokens=case['max_new_tokens'], system_prompt=case['system_prompt'],
+            custom_system_prompt=case['custom_system_prompt'], seed=case['seed'])
+        record['extender'][case['id']] = {'text': text, 'rng_before': before, 'rng_after': rng_sha(),
+                                          'seconds': time.monotonic() - started, 'rss_peak_bytes': rss_peak_bytes()}
+    del qwen
+    gc.collect()
+
+
+def run_converted(config, cases, record):
+    namespace(config['converted_package'], config['converted_root'])
+    nodes = importlib.import_module(config['converted_package'] + '.secure_qwen_nodes')
+    runtime_module = importlib.import_module(config['converted_package'] + '.secure_qwen_runtime')
+    from comfy_api.latest import _sdk as sdk
+    providers = sdk.providers
+    require(not providers.overlay_active and not providers.engaged, 'Default providers required')
+    require(type(providers.execution_backend) is sdk.InProcessExecutionBackend, 'Default in-process backend required')
+
+    async def dispatch(node, inputs, local):
+        plan = sdk.ExecutionPlan(prompt_id='wan-qwen3b-linux-cpu', node_id=node, node_type=node,
+            node_module=nodes.__name__, input_mode='values', permissions=tuple(sorted(getattr(nodes, node).SDK_PERMISSIONS)),
+            inputs=inputs)
+        refs = providers.ref_resolver_factory()
+        scope = sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+
+        async def local_call():
+            with scope:
+                return await local()
+        return await sdk.unwrap_outputs(refs, await providers.execution_backend.dispatch(plan, local_call, scope.runtime)), plan
+
+    async def body():
+        loader = cases['loader']
+        inputs = {'model': config['model']['logical_name'], 'load_device': loader['load_device'], 'precision': loader['precision']}
+        before = rng_sha()
+        started = time.monotonic()
+        output, plan = await dispatch('QwenLoader', inputs, lambda: nodes.QwenLoader.execute(**inputs))
+        recipe = output.result[0]
+        record['loader'] = {'rng_before': before, 'rng_after': rng_sha(), 'seconds': time.monotonic() - started, 'recipe': recipe,
+                            'rss_peak_bytes': rss_peak_bytes()}
+        gc.collect()
+
+        async def observe():
+            instance, _ = await runtime_module._materialize_qwen(config['model']['logical_name'], loader['load_device'],
+                                                                 loader['precision'], expected_sha256=recipe['weights_sha256'])
+            return instance
+        refs = providers.ref_resolver_factory()
+        scope = sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        with scope:
+            instance = await observe()
+        record['loader']['materialized'] = {'model': model_observation(instance.model), 'tokenizer': tokenizer_observation(instance.tokenizer),
+                                            'rss_peak_bytes': rss_peak_bytes()}
+        del instance
+        gc.collect()
+        record['extender'] = {}
+        for case in cases['extender']:
+            args = {'qwen': recipe, 'prompt': case['prompt'], 'device': case['device'], 'force_offload': case['force_offload'],
+                    'max_new_tokens': case['max_new_tokens'], 'system_prompt': case['system_prompt'],
+                    'custom_system_prompt': case['custom_system_prompt'], 'seed': case['seed']}
+            before = rng_sha()
+            started = time.monotonic()
+            output, _ = await dispatch('WanVideoPromptExtender', args, lambda: nodes.WanVideoPromptExtender.execute(**args))
+            record['extender'][case['id']] = {'text': output.result[0], 'rng_before': before, 'rng_after': rng_sha(),
+                                              'seconds': time.monotonic() - started, 'rss_peak_bytes': rss_peak_bytes()}
+            gc.collect()
+    asyncio.run(body())
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--role', choices=['original', 'converted'], required=True)
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--out', type=Path, required=True)
+    args = parser.parse_args()
+    config = json.loads(args.config.read_bytes())
+    require(config.get('schema') == 'wan-qwen3b-linux-cpu/1' and config.get('execution_selected') is True, 'Selected bound config required')
+    cases = json.loads(Path(config['cases']['path']).read_bytes())
+    require(digest_file(config['cases']['path']) == config['cases']['sha256'], 'Frozen cases differ')
+    args.out.mkdir(mode=0o700)
+    record = {'role': args.role, 'status': 'FAILED', 'started_utc': time.time()}
+    try:
+        record['setup'] = setup(config, args.out)
+        if args.role == 'original':
+            run_original(config, cases, record)
+        else:
+            run_converted(config, cases, record)
+        record['modules'] = module_records(config['expected_modules'][args.role])
+        stat = os.stat(record['setup']['resolved'])
+        record['checkpoint_stat_after'] = {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns, 'ino': stat.st_ino}
+        require(record['checkpoint_stat_after'] == record['setup']['checkpoint_stat_before'], 'Checkpoint changed during the role')
+        record['status'] = 'OBSERVATIONS_COMPLETE_NO_PARITY_CLAIM'
+    except BaseException as error:
+        import traceback
+        record.update(error_type=type(error).__name__, error=str(error), traceback=traceback.format_exc())
+    finally:
+        record['finished_utc'] = time.time()
+        record['rss_peak_bytes'] = rss_peak_bytes()
+        (args.out / 'OBSERVATIONS.json').write_text(json.dumps(record, indent=2, default=str) + '\n')
+    return 0 if record['status'].startswith('OBSERVATIONS_COMPLETE') else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
