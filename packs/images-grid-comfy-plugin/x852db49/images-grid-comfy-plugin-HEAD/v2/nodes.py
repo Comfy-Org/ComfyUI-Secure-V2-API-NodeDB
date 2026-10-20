@@ -105,7 +105,7 @@ class ImageCombine(io.ComfyNode):
         result = torch.cat((first, second), 0)
         if result.shape[0] > _MAX_BATCH or result.numel() * result.element_size() > _MAX_OUTPUT_BYTES:
             raise ValueError("combined image exceeds the bounded output size")
-        return io.NodeOutput(await sdk.ImageRef._from_raw(result))
+        return io.NodeOutput(await sdk.ImageRef.from_tensor(result))
 
 
 class GridAnnotation(io.ComfyNode):
@@ -165,7 +165,7 @@ class _ImagesGridBase(io.ComfyNode):
         result = pillow_to_tensor(function(**kwargs))
         if result.numel() * result.element_size() > _MAX_OUTPUT_BYTES:
             raise ValueError("grid output exceeds the bounded in-memory size")
-        return io.NodeOutput(await sdk.ImageRef._from_raw(result))
+        return io.NodeOutput(await sdk.ImageRef.from_tensor(result))
 
 
 class ImagesGridByColumns(_ImagesGridBase):
