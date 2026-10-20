@@ -7,6 +7,8 @@ from .light_tool_utils import *
 import json
 import io as bytes_io
 import uuid
+import cv2
+from torchvision.transforms import functional
 from PIL import ImageSequence, ImageOps
 from typing import Any, Tuple
 from .image_upscale import UpscaleMode, upscale_image
@@ -149,7 +151,7 @@ class ImageMaskApply(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().run, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().run, kwargs, ['IMAGE'], [False])
 
 
 class MaskToImage(io.ComfyNode):
@@ -180,7 +182,7 @@ class MaskToImage(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().mask_to_image, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().mask_to_image, kwargs, ['IMAGE'], [False])
 
 
 class ImageToMask(io.ComfyNode):
@@ -251,7 +253,7 @@ class MaskImageToTransparent(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().mask2Transparent, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().mask2Transparent, kwargs, ['IMAGE'], [False])
 
 
 class BoundingBoxCropping(io.ComfyNode):
@@ -272,7 +274,6 @@ class BoundingBoxCropping(io.ComfyNode):
 
     @staticmethod
     def image_crop(image):
-        import cv2
         image_list = []
         for img in image:
             img = tensor2pil(img).convert("RGBA")
@@ -290,7 +291,7 @@ class BoundingBoxCropping(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().image_crop, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().image_crop, kwargs, ['IMAGE'], [False])
 
 
 class MaskBoundingBoxCropping(io.ComfyNode):
@@ -311,7 +312,6 @@ class MaskBoundingBoxCropping(io.ComfyNode):
 
     @staticmethod
     def mask_image_crop(image):
-        import cv2
         image_list = []
         for img in image:
             gray_image = tensor2pil(img).convert("L")
@@ -339,7 +339,7 @@ class MaskBoundingBoxCropping(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().mask_image_crop, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().mask_image_crop, kwargs, ['IMAGE'], [False])
 
 
 class InvertMask(io.ComfyNode):
@@ -431,7 +431,7 @@ class AddBackground(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().add_background, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().add_background, kwargs, ['IMAGE'], [False])
 
 
 class ImageOverlay(io.ComfyNode):
@@ -464,9 +464,10 @@ class ImageOverlay(io.ComfyNode):
                 raise ValueError(f"ImageOverlay(Light-Tool): Images must have the same size. "
                                  f"{image.size}and{bg.size} is not match")
 
-            image = torch.from_numpy(np.array(image).transpose(2, 0, 1).copy()).float().div(255)
-            bg = torch.from_numpy(np.array(bg).transpose(2, 0, 1).copy()).float().div(255)
-            alpha = torch.from_numpy(np.array(alpha)[None].copy()).float().div(255)
+            image = functional.to_tensor(image)
+            bg = functional.to_tensor(bg)
+            bg = functional.resize(bg, image.shape[-2:])
+            alpha = functional.to_tensor(alpha)
             new_image = image * alpha + bg * (1 - alpha)
             new_image = new_image.squeeze(0).permute(1, 2, 0).numpy()
             image_list.append(pil2tensor(np2pil(new_image)))
@@ -476,7 +477,7 @@ class ImageOverlay(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().combine_images, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().combine_images, kwargs, ['IMAGE'], [False])
 
 
 class SimpleImageOverlay(io.ComfyNode):
@@ -523,7 +524,7 @@ class SimpleImageOverlay(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().combine_images, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().combine_images, kwargs, ['IMAGE'], [False])
 
 
 class AddBackgroundV2(io.ComfyNode):
@@ -593,7 +594,7 @@ class AddBackgroundV2(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().add_background_v2, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().add_background_v2, kwargs, ['IMAGE'], [False])
 
 
 class IsTransparent(io.ComfyNode):
@@ -634,7 +635,7 @@ class IsTransparent(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().is_transparent, kwargs, ['BOOLEAN'], [False])
+        return await run_eight(cls().is_transparent, kwargs, ['BOOLEAN'], [False])
 
 
 class PhantomTankEffect(io.ComfyNode):
@@ -697,7 +698,7 @@ class PhantomTankEffect(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().process_images, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().process_images, kwargs, ['IMAGE'], [False])
 
 
 class MaskContourExtractor(io.ComfyNode):
@@ -723,7 +724,6 @@ class MaskContourExtractor(io.ComfyNode):
 
     @staticmethod
     def contour_extractor(image, color_hex, use_hex, R, G, B):
-        import cv2
 
         image_pil = tensor2pil(image).convert('L')
         image = np.array(image_pil).astype(np.uint8)
@@ -749,7 +749,7 @@ class MaskContourExtractor(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().contour_extractor, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().contour_extractor, kwargs, ['IMAGE'], [False])
 
 
 class AdvancedSolidColorBackground(io.ComfyNode):
@@ -795,7 +795,7 @@ class AdvancedSolidColorBackground(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().generate_bg, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().generate_bg, kwargs, ['IMAGE'], [False])
 
 
 class RGB2RGBA(io.ComfyNode):
@@ -827,7 +827,7 @@ class RGB2RGBA(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().rgb2rgba, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().rgb2rgba, kwargs, ['IMAGE'], [False])
 
 
 class RGBA2RGB(io.ComfyNode):
@@ -859,7 +859,7 @@ class RGBA2RGB(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().rgba2rgb, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().rgba2rgb, kwargs, ['IMAGE'], [False])
 
 
 class InputText(io.ComfyNode):
@@ -913,7 +913,7 @@ class ShowText(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().show_text, kwargs, ['STRING'], [True])
+        return await run_eight(cls().show_text, kwargs, ['STRING'], [True])
 
 
 class ShowAnything(io.ComfyNode):
@@ -1091,6 +1091,7 @@ class GetImageSize(io.ComfyNode):
             encoded = bytes_io.BytesIO()
             image.save(encoded, format="PNG")
             file_size = len(encoded.getvalue())
+            print(f"The size of the image file is: {file_size} bytes")
         return image.width, image.height, file_size
 
 
@@ -1429,7 +1430,7 @@ class ScaleImage(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().scale_image, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().scale_image, kwargs, ['IMAGE'], [False])
 
 
 class UpscaleImage(io.ComfyNode):
@@ -1496,7 +1497,7 @@ class UpscaleImage(io.ComfyNode):
 
     @classmethod
     async def execute(cls, **kwargs):
-        return await run(cls().upscale_image, kwargs, ['IMAGE'], [False])
+        return await run_eight(cls().upscale_image, kwargs, ['IMAGE'], [False])
 
 
 class LoadMetadataFromURL(io.ComfyNode):
