@@ -1,0 +1,201 @@
+{
+ "schema": "ned-live-source-facts-compact/1",
+ "note": "Hashes and line references only; the cited text is kept in the routed packet, not in the corpus.",
+ "files": {
+  "guest.mjs (live host-stack r3)": {
+   "sha256": "c6b97a15472968ff504dded98c9331bb971a68d707038e2d1cf221442cf33c35",
+   "lines": 3323
+  },
+  "host-entry.mjs (live host-stack r3)": {
+   "sha256": "63d9437e3213f4bc5771ce541831a30801d0544e67c988b779873cc58dcfaec9",
+   "lines": 3551
+  },
+  "v2/comfy-api.d.ts": {
+   "sha256": "29c837e1e018f2bb7564af5acb23639a05bbdb8ceb621828a15a4807ee1f4969"
+  }
+ },
+ "citations": [
+  {
+   "label": "generic RPC: every proxied call is posted (structured clone)",
+   "file": "guest.mjs",
+   "lines": "393-398",
+   "checked_tokens": [
+    "const rpc",
+    "self.postMessage"
+   ]
+  },
+  {
+   "label": "generic comfy.* path proxy",
+   "file": "guest.mjs",
+   "lines": "409-418",
+   "checked_tokens": [
+    "const proxy",
+    "rpc('call'"
+   ]
+  },
+  {
+   "label": "comfy.defs: only extend/define/get/has/all/onRefreshed are local; everything else is RPC",
+   "file": "guest.mjs",
+   "lines": "730-745",
+   "checked_tokens": [
+    "if (p === 'extend') return extend",
+    "if (p === 'define') return define",
+    "return defsProxy[p]"
+   ]
+  },
+  {
+   "label": "worker ResizeObserver is inert",
+   "file": "guest.mjs",
+   "lines": "382-386",
+   "checked_tokens": [
+    "self.ResizeObserver = class",
+    "observe()"
+   ]
+  },
+  {
+   "label": "stub element facade",
+   "file": "guest.mjs",
+   "lines": "203-213",
+   "checked_tokens": [
+    "querySelector() { return null }",
+    "closest() { return null }",
+    "focus() {}"
+   ]
+  },
+  {
+   "label": "published API: unregistered widget type -> socket, value dropped",
+   "file": "comfy-api.d.ts",
+   "lines": "859-868",
+   "checked_tokens": [
+    "defineWidgetType(type: string, def: WidgetTypeDef): Unsubscribe",
+    "turns the input into a socket"
+   ]
+  },
+  {
+   "label": "pack registration: separator",
+   "file": "separator_widget_type.js",
+   "lines": "36-37",
+   "checked_tokens": [
+    "defineWidgetType('ZIPN_SEPARATOR'"
+   ]
+  },
+  {
+   "label": "separator line hidden until a width is observed",
+   "file": "separator_widget_type.js",
+   "lines": "65-65",
+   "checked_tokens": [
+    "drawingWidth !== null"
+   ]
+  },
+  {
+   "label": "pack registration: ZIPN_STYLE, ZIPN_PALETTE",
+   "file": "combo_widget_types.js",
+   "lines": "47-51",
+   "checked_tokens": [
+    "comfy.defs.defineWidgetType(type"
+   ]
+  },
+  {
+   "label": "pack registration: ZIPN_PREDEFINED_STYLE, ZIPN_PREDEFINED_PALETTE",
+   "file": "predefined_gallery_widget_types.js",
+   "lines": "43-45",
+   "checked_tokens": [
+    "comfy.defs.defineWidgetType(type",
+    "render("
+   ]
+  },
+  {
+   "label": "pack registration: ZIPN_STYLE_GALLERY_BUTTON",
+   "file": "style_gallery_button_widget_type.js",
+   "lines": "20-22",
+   "checked_tokens": [
+    "comfy.defs.defineWidgetType(type",
+    "render("
+   ]
+  },
+  {
+   "label": "gallery card click relies on closest()",
+   "file": "public_gallery_dialog.js",
+   "lines": "1097-1100",
+   "checked_tokens": [
+    "e.target.closest(cardSelector)"
+   ]
+  }
+ ],
+ "absent": {
+  "host-entry.mjs contains \"defineWidgetType\"": false,
+  "host-entry.mjs contains \"WidgetType\"": false,
+  "guest.mjs contains \"defineWidgetType\"": false
+ },
+ "earlier_live_guest": {
+  "sha256": "76f287a6a57fb686c620cdfa07f5da2c110d04d2a1201ff622c499417412ae48",
+  "where": "cloud2 docker MVP r5 frontend dist (secure-nodes/src/guest.mjs), the guest cited by the rev-2 report",
+  "contains \"defineWidgetType\"": false,
+  "citations": [
+   {
+    "label": "generic RPC: every proxied call is posted (structured clone)",
+    "file": "guest.mjs",
+    "lines": "394-398",
+    "checked_tokens": [
+     "self.postMessage"
+    ]
+   },
+   {
+    "label": "generic comfy.* path proxy",
+    "file": "guest.mjs",
+    "lines": "410-418",
+    "checked_tokens": [
+     "const proxy",
+     "rpc('call'"
+    ]
+   },
+   {
+    "label": "comfy.defs: non-local members are RPC",
+    "file": "guest.mjs",
+    "lines": "733-744",
+    "checked_tokens": [
+     "if (p === 'extend') return extend",
+     "return defsProxy[p]"
+    ]
+   }
+  ]
+ },
+ "frozen_draft": {
+  "FROZEN.md": "f36b533716c628972a92084c59a932afe3b4f472d5a2613211f1ed51bfb27788",
+  "candidate/bridge/widget-type-bridge.mjs": "dd753d91423c046d6af03584fa21aa9a9c1b3bc1f9f649c77e13acbb95d1d7d4",
+  "candidate/bridge/host-entry.mjs": "37572d19ce3250328f0101ffdd89cfd478af2c2afb9830505a1ec5d036bb263a",
+  "candidate/bridge/guest.mjs": "8dbeb3f3602e5f6ae94c16961effa799db02110fd542f9c2c426e6e125f41507",
+  "baseline/bridge/guest.mjs": "8dbeb3f3602e5f6ae94c16961effa799db02110fd542f9c2c426e6e125f41507",
+  "baseline/bridge/host-entry.mjs": "e9a984161a26cf3a52e263ac5c3c2c3bd08708b2b3d25f4110643ddff952bb7d",
+  "candidate/backend/__init__.py": "6816d6c75632f438a8d32c94d176701e6e32cc61acfa48e88153429739865b76",
+  "candidate/backend/webassets.py": "9f8db54258630a4a1cc4771b3ceca29e2be50eb7cbeb69b18442f5a578fe43a5",
+  "guest_half_implemented": false,
+  "where": "MERVYN's coordination folder zimage-completion-20261016 (frozen, unpublished draft)",
+  "citations": [
+   {
+    "label": "guest half missing",
+    "file": "FROZEN.md",
+    "lines": "31-33",
+    "checked_tokens": [
+     "The guest half of defineWidgetType has NOT been implemented"
+    ]
+   },
+   {
+    "label": "host half registers through the host realm registrar",
+    "file": "widget-type-bridge.mjs",
+    "lines": "63-67",
+    "checked_tokens": [
+     "this.comfy.defs.defineWidgetType(type"
+    ]
+   },
+   {
+    "label": "candidate host-entry imports the bridge",
+    "file": "host-entry.mjs",
+    "lines": "17-17",
+    "checked_tokens": [
+     "WidgetTypeBridge"
+    ]
+   }
+  ]
+ }
+}

@@ -1,6 +1,9 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 > Nodes: 31 of 31 upstream converted; 24 tested (scoped), 7 converted but untested/partly tested,
 > 0 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> **Live UI blocked for 18 nodes (revision 3, 2026-10-20).** The live stack cannot register this pack's 6 custom
+> widget types, so 18 nodes (the 7 partly tested plus 11 tested (scoped)) cannot be queued from the UI there.
+> Their backend-scoped results stand. See "Revision 3".
 
 <!-- secure-conversion-report-v1 -->
 # Secure Nodes V2 conversion report — Z-Image Power Nodes (`z-image-power-nodes`)
@@ -11,6 +14,9 @@ The 7 "partly tested" nodes depend on the pack's custom frontend widgets. Those 
 onto the public frontend API and source-reviewed, and the transport passes 9/9 protocol tests, but browser
 acceptance is still open. Revision 2 changes only the frontend (Top-10 queue controller, entry module,
 route calls) and this report; the node counts are unchanged because no browser test has run.
+Revision 3 changes only this report. It records that the custom widget types cannot register on the live
+stack, which blocks 18 nodes in the live UI, and it labels the 11 affected tested (scoped) nodes "backend only;
+live UI blocked".
 
 ## Provenance
 
@@ -19,6 +25,56 @@ Upstream https://github.com/martin-rizzo/ComfyUI-ZImagePowerNodes at commit
 byte-exact at that commit (415 files). `v2/` is a complete copy of the pack with the conversion
 applied. Two TEST-only oracle catalogue declarations were removed from the production manifest.
 Their helper modules remain as test support and are not registered.
+
+## Revision 3 (2026-10-20, docs only)
+
+Only this report changes. No code, manifest or test changed, and nothing was run: the finding below comes from
+reading the source of the live stack and of `v2/`.
+
+**The six custom widget types do not register on the live stack.** The pack's frontend registers `ZIPN_SEPARATOR`,
+`ZIPN_STYLE`, `ZIPN_PALETTE`, `ZIPN_PREDEFINED_STYLE`, `ZIPN_PREDEFINED_PALETTE` and `ZIPN_STYLE_GALLERY_BUTTON`
+only through the published `comfy.defs.defineWidgetType`. The live sandbox (host-stack r3, guest `c6b97a15`) does
+not implement it. The call goes through the sandbox's generic RPC proxy, the type's `render` function cannot cross
+the worker boundary (DataCloneError), and the registration is rejected. The live host has no widget-type bridge
+either. By the published API, an input whose type is not registered becomes a socket and its value is dropped.
+Each affected node has required ZIPN inputs, so a prompt built in the UI in which one of them feeds an output is
+rejected with "Required input is missing". Linking does not help: no node outputs the separator, gallery-button or
+predefined-gallery types, and the only nodes that output `ZIPN_STYLE`/`ZIPN_PALETTE` (StyleLibraryV10,
+PaletteLibraryV20) are blocked themselves.
+
+Affected: 18 of 31 nodes.
+- The 7 partly tested nodes: ZSamplerTurbo, ZSamplerTurboAdvanced, ZSamplerTurbo2Laboratory, StylePromptEncoder2,
+  StyleStringInjector2, MyTop10Styles, MyTop10StylesEditor.
+- 11 tested (scoped) nodes, now labelled "backend only; live UI blocked": ZSamplerTurbo2Simple, ZSamplerTurbo2,
+  ZSamplerTurbo2Advanced, ZSamplerTurboX21, ImageFilter, ImageLabeler2, StyleLibraryV10, PaletteLibraryV20,
+  StylePromptEncoderX21, StylePromptEncoderX22Advanced, CustomStylePromptEncoderX21.
+
+The other 13 nodes have no custom-type input and are unaffected.
+
+Counts are unchanged. The backend-scoped results stand for all 24 tested nodes; for the 11 above they do not
+cover use from the live UI. The block lifts when the platform ships the `defineWidgetType` bridge (guest half and
+host bridge), which has been requested from the platform owners. The browser acceptance spec is the gate:
+`validation/20261020-z-image-live-widget-registration/ACCEPTANCE_SPEC.md`. Its first check (each widget type registers rather than becoming a
+socket) is expected to fail on the live stack until the bridge ships.
+
+The same source reading predicts two limits that remain after the bridge ships:
+- The separator line takes its width from `ResizeObserver`, which is inert in the live sandbox, so `divider`
+  separators would show as blank space of the right height.
+- Choosing a gallery card with the mouse relies on `closest()`, which the live sandbox's element facade does not
+  implement. The keyboard path (search, then Enter) does not need it.
+
+Both are rows of the acceptance spec.
+
+Corrections to revision 2:
+- "Live guest `76f287a6` has no sandbox-side `defineWidgetType`; gallery widget registration needs a browser
+  check" understated the gap. By source, registration cannot succeed on that guest or on the current live guest
+  `c6b97a15`.
+- "With the controller failing, the entry module kept all 6 gallery widget types registered" describes the
+  revision 2 harness, which used a fake host. On the live stack none of the 6 register.
+
+Evidence: `validation/20261020-z-image-live-widget-registration/`. It holds the input census from
+`v2/secure-nodes.json`, source line references with file hashes (including the earlier guest `76f287a6`), and the
+acceptance spec.
 
 ## Revision 2 (2026-10-15)
 
@@ -111,35 +167,35 @@ Node IDs, display names and categories are the original's (mirror mode, includin
 
 | Node id | Disposition | Evidence or gap |
 | --- | --- | --- |
-| `ZSamplerTurbo2Simple //ZImagePowerNodes` | tested (scoped) | Backend subset; public sampling (`raw`, `sample`, `inspect`). |
-| `ZSamplerTurbo2 //ZImagePowerNodes` | tested (scoped) | Backend subset; public sampling. |
-| `ZSamplerTurbo2Advanced //ZImagePowerNodes` | tested (scoped) | Backend subset; public sampling. |
-| `ZSamplerTurboX21 //ZImagePowerNodes` | tested (scoped) | Backend subset; public sampling with `closures`. |
-| `ZSamplerTurbo //ZImagePowerNodes` | converted, partly tested | Backend subset passes. Its separator widgets need browser acceptance. |
-| `ZSamplerTurboAdvanced //ZImagePowerNodes` | converted, partly tested | Same as ZSamplerTurbo. |
-| `ZSamplerTurbo2Laboratory //ZImagePowerNodes` | converted, partly tested | Same as ZSamplerTurbo. |
-| `StylePromptEncoder2 //ZImagePowerNodes` | converted, partly tested | Backend subset passes. The style gallery widgets need browser acceptance. |
-| `StyleStringInjector2 //ZImagePowerNodes` | converted, partly tested | Backend subset passes. The style gallery widgets need browser acceptance. |
-| `MyTop10Styles //ZImagePowerNodes` | converted, partly tested | Backend subset passes. "next" advances through the deployed `comfy.queue.onAfterRun`. In the controller differential, fixed, single-run, two-run and rejected match the original. With batch > 1, every prompt of a Run carries the starting selection, though the final selection matches (Pending). Browser queue run open. |
-| `MyTop10StylesEditor //ZImagePowerNodes` | converted, partly tested | Backend subset passes. The editor widgets need browser acceptance. |
-| `StylePromptEncoderX22Advanced //ZImagePowerNodes` | tested (scoped) | Backend subset. |
+| `ZSamplerTurbo2Simple //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separator `divider`). Backend subset; public sampling (`raw`, `sample`, `inspect`). |
+| `ZSamplerTurbo2 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separators `divider`, `divider2`). Backend subset; public sampling. |
+| `ZSamplerTurbo2Advanced //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separators `divider`, `divider2`). Backend subset; public sampling. |
+| `ZSamplerTurboX21 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separator `divider1`). Backend subset; public sampling with `closures`. |
+| `ZSamplerTurbo //ZImagePowerNodes` | converted, partly tested | Backend subset passes. **Live UI blocked** (separator `divider`): it cannot be queued from the live UI until the bridge ships. Browser acceptance (spec checks 0, B1) waits on it. |
+| `ZSamplerTurboAdvanced //ZImagePowerNodes` | converted, partly tested | Same as ZSamplerTurbo (separator `divider`). |
+| `ZSamplerTurbo2Laboratory //ZImagePowerNodes` | converted, partly tested | Same as ZSamplerTurbo (separators `divider1`-`divider4`). |
+| `StylePromptEncoder2 //ZImagePowerNodes` | converted, partly tested | Backend subset passes. **Live UI blocked** (gallery button `gallery`, separator `spacer`): it cannot be queued from the live UI until the bridge ships. Browser acceptance (spec checks 0, B1, B2) waits on it. |
+| `StyleStringInjector2 //ZImagePowerNodes` | converted, partly tested | Backend subset passes. **Live UI blocked** (gallery button `gallery`): it cannot be queued from the live UI until the bridge ships. Browser acceptance (spec checks 0, B2) waits on it. |
+| `MyTop10Styles //ZImagePowerNodes` | converted, partly tested | Backend subset passes. "next" advances through the deployed `comfy.queue.onAfterRun`. In the controller differential, fixed, single-run, two-run and rejected match the original. With batch > 1, every prompt of a Run carries the starting selection, though the final selection matches (Pending). Browser queue run open. **Live UI blocked** (separator `divider`): it cannot be queued from the live UI until the bridge ships, so no browser queue run is possible yet (spec checks 0, B1, B3, C1-C5). |
+| `MyTop10StylesEditor //ZImagePowerNodes` | converted, partly tested | Backend subset passes. **Live UI blocked** (gallery buttons `gallery_1`-`gallery_10`, separators `spacer_1`-`spacer_9`): it cannot be queued from the live UI until the bridge ships. Browser acceptance (spec checks 0, B1, B2, B3) waits on it. |
+| `StylePromptEncoderX22Advanced //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (user-input combos `style`, `palette`). Backend subset. |
 | `StylePromptEncoder //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
 | `PhotoStylePromptEncoder //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
 | `IllustrationStylePromptEncoder //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
-| `StylePromptEncoderX21 //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
-| `CustomStylePromptEncoderX21 //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
+| `StylePromptEncoderX21 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (galleries `style`, `palette`). Backend subset (deprecated node). |
+| `CustomStylePromptEncoderX21 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (user-input combo `custom_style`). Backend subset (deprecated node). |
 | `StyleStringInjector //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node). |
-| `StyleLibraryV10 //ZImagePowerNodes` | tested (scoped) | Backend subset (experimental node). |
-| `PaletteLibraryV20 //ZImagePowerNodes` | tested (scoped) | Backend subset (experimental node). |
+| `StyleLibraryV10 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (gallery `style`). Backend subset (experimental node). |
+| `PaletteLibraryV20 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (gallery `palette`). Backend subset (experimental node). |
 | `EmptyZImageLatentImage //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
 | `VAEEncodeSoftInpainting //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
 | `AdvancedVAEDecoderX21 //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
 | `LoadZImageModel //ZImagePowerNodes` | tested (scoped) | Backend subset; logical model names (`assets`, `models`). |
 | `LoadQwen34bModel //ZImagePowerNodes` | tested (scoped) | Backend subset; logical model names (`assets`, `models`). |
 | `ComfyKitchenAttentionEnabler //ZImagePowerNodes` | tested (scoped) | Backend subset; public `ModelRef.patch("attention_impl")`. |
-| `ImageFilter //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
+| `ImageFilter //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separators `divider1`-`divider3`). Backend subset (`raw`). |
 | `ImageGridBuilder //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
-| `ImageLabeler2 //ZImagePowerNodes` | tested (scoped) | Backend subset (`raw`). |
+| `ImageLabeler2 //ZImagePowerNodes` | tested (scoped) | **Backend only; live UI blocked** (separator `divider1`). Backend subset (`raw`). |
 | `ImageLabeler //ZImagePowerNodes` | tested (scoped) | Backend subset (deprecated node, `raw`). |
 | `SaveImage //ZImagePowerNodes` | tested (scoped) | Backend subset; managed output plus the node's own graph metadata (`output`, `graph.metadata`). 2.0.0 workflows compatible (see above). |
 
@@ -195,13 +251,19 @@ No user-visible node or feature is refused. Only these techniques are:
   selections differ. This is the one accepted difference, and it closes when such a hook ships. Repeated
   Runs queued faster than the advance reaches the host can also reuse a selection; this is not measured.
 
+- **Custom widget types in the sandbox** need the `defineWidgetType` bridge (guest half and host bridge), which
+  the live stack does not have. Until it ships, 18 nodes cannot be queued from the UI (see "Revision 3").
+
 ## Open test gates
 
 - Real-browser acceptance of the galleries, separators, user-input combos and the Top-10 editor/controller,
   including a real queue run of "next" on the deployed host. The revision 2 differential uses fakes of the
-  host queue and the worker boundary.
-- Live guest `76f287a6` has no sandbox-side `defineWidgetType`; gallery widget registration needs a
-  browser check. This is an open gate, not a refusal, and it predates revision 2.
+  host queue and the worker boundary. Spec:
+  `validation/20261020-z-image-live-widget-registration/ACCEPTANCE_SPEC.md`. It can pass only after the
+  `defineWidgetType` bridge ships.
+- The `defineWidgetType` bridge (guest half and host bridge). The live stack (guest `c6b97a15`; earlier
+  `76f287a6`) has none, so the 6 widget types cannot register and 18 nodes cannot be queued from the UI
+  (see "Revision 3"). This is a platform gap, not a refusal. Check 0 of the acceptance spec is its test.
 - The gallery catalogue end to end on the deployed backend: the relative `zi_power/<route>` calls against
   the route v3 mount of the existing declarations.
 - Native frontend unit stage (ComfyApp) for the widget controllers.
