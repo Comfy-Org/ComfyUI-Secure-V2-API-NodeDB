@@ -1,0 +1,47 @@
+{
+ "schema": "ned-node-changes/1",
+ "asked_by": "MERVYN m_fba3174463",
+ "method": "AST comparison of corpus rev-2 v2 (nodes.py, gguf_state.py) with the tested r5 tree: class members resolved through the pack's bases (validate_inputs listed separately), and every module-level function each node's execute path reaches (tools/rev2_vs_rev3_node_changes.py)",
+ "shared_changes": {
+  "nodes.py module level": "new imports (posixpath, catalogue_pins), validator helpers (canonical_name, catalogue_member, catalogue_check, taesd_listed), extension sets; reached only by validate_inputs",
+  "secure-nodes.json": "validate_inputs true + validation_inputs for every node (validator wiring); rev-2 nodes' permissions unchanged"
+ },
+ "nodes": {
+  "VaeGGUF": {
+   "beyond_validator": "none in the node; its .gguf branch reaches gguf_state.build_table, refactored into _entries/_table: the architecture read and refusal, the loop statements and the returned dict are AST-identical (checked)",
+   "evidence_still_applying": "revision-2 Phase-1 differential (both branches, in-process and guest); _entries/_table also exercised on rev-3 bytes by Tier A A3 and Tier B (via the diffusion builder); validator: Tier A A8 + Tier Q 29 cases",
+   "proposed_class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)"
+  },
+  "AudioEncoderLoaderGGUF": {
+   "beyond_validator": "as VaeGGUF (the build_table refactor only)",
+   "evidence_still_applying": "revision-2 Phase-1 differential (both branches); validator: Tier A A8 + Tier Q 25 cases",
+   "proposed_class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)"
+  },
+  "TENSORBoost": {
+   "beyond_validator": "safe_state: `name.endswith('.safetensors')` -> `name.lower().endswith('.safetensors')`; upper-case names the original lists are now accepted instead of refused. No ValueRef, dtype or other path change.",
+   "evidence_still_applying": "revision-2 evidence for every lower-case name (byte-identical code path); the upper-case path is verified by reading only (the same content-based code, output stem from rsplit like the original); validator: Tier A A8 + Tier Q 34 cases",
+   "proposed_class": "tested (scoped)"
+  },
+  "GGUFUndo": {
+   "beyond_validator": "execute: `select_gguf.endswith('.gguf')` -> `select_gguf.lower().endswith('.gguf')`; nothing else",
+   "evidence_still_applying": "revision-2 evidence for lower-case names; upper-case by reading; validator: Tier A A8 + Tier Q 34 cases",
+   "proposed_class": "tested (scoped)"
+  },
+  "GGUFSave": {
+   "beyond_validator": "safe_state (as TENSORBoost); the conversion, rechunk and save_binary paths are unchanged",
+   "evidence_still_applying": "revision-2 Phase-1 writer differential for lower-case names; upper-case by reading (prepare_conversion uses posixpath.splitext like the original); validator: Tier A A8 + Tier Q 34 cases",
+   "proposed_class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)"
+  },
+  "GGUFRun": {
+   "beyond_validator": "as GGUFSave",
+   "evidence_still_applying": "as GGUFSave",
+   "proposed_class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)"
+  },
+  "TENSORCut": {
+   "beyond_validator": "safe_state (as TENSORBoost)",
+   "evidence_still_applying": "revision-2 r3 CUDA fixture (math and native bytes); production guest output on a CUDA worker still not qualified",
+   "proposed_class": "converted, partly tested (unchanged)"
+  }
+ },
+ "decision_rule": "MERVYN m_fba3174463: only the validator changed -> tested (scoped) with gates in the label; code changed -> partial. The four any-case name checks are flagged: they remove a refusal for upper-case names only; if you read that as a refusal change, those four become partial (one-line change in NODE_CLASSES and the report)."
+}
