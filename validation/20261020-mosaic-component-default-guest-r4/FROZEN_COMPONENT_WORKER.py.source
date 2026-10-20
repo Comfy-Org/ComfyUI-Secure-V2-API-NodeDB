@@ -1,0 +1,324 @@
+"""UNRUN single finite Mosaic source job. Only stdlib until preflight passes."""
+import argparse
+import asyncio
+import base64
+import hashlib
+import importlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import uuid
+
+ROOT=Path(__file__).resolve().parent
+PACK_REL=Path('comfyui-mosaic-blur/x007acb0/comfyui-mosaic-blur-HEAD')
+
+
+def require(ok,message):
+    if not ok:raise AssertionError(message)
+
+
+def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def load(path):return json.loads(Path(path).read_bytes())
+def save(path,value):Path(path).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+
+
+def module(name,path,package=False):
+    require(name not in sys.modules,'Private source namespace already occupied')
+    spec=importlib.util.spec_from_file_location(name,path,submodule_search_locations=[str(path.parent)] if package else None)
+    value=importlib.util.module_from_spec(spec);sys.modules[name]=value;spec.loader.exec_module(value)
+    return value
+
+
+def inventory(root):
+    result={}
+    for path in sorted(root.rglob('*')):
+        require(not path.is_symlink(),'Symlink in owned source/output tree')
+        if path.is_dir():continue
+        require(path.is_file(),'Nonregular owned tree leaf')
+        result[path.relative_to(root).as_posix()]=dict(sha256=sha(path),mode='100755' if path.stat().st_mode&0o111 else '100644')
+    return result
+
+
+def stage(destination,with_candidate):
+    rows=load(ROOT/'SOURCE_BINDINGS.json')['files'];destination.mkdir(parents=True)
+    for row in rows:
+        name=row['path']
+        if name.startswith('v2/') and (not with_candidate or name=='v2/secure-nodes.json'):continue
+        source=ROOT/'published'/name;require(sha(source)==row['sha256'],'Frozen published leaf changed')
+        path=destination/name;path.parent.mkdir(parents=True,exist_ok=True)
+        with path.open('xb') as stream:stream.write(source.read_bytes())
+        path.chmod(0o644)
+
+
+def pinned_sources(config):
+    required={'torch','numpy','PIL','PIL.Image','cv2','comfy.cli_args','execution','folder_paths',
+        'comfy_api.latest._sdk','comfy_api.latest._io','comfy_secure_nodes.packmanifest',
+        'comfy_secure_nodes.packdb','comfy_secure_nodes.transport.host','comfy_secure_nodes.transport.wire'}
+    require(type(config['module_pins']) is dict and required<=config['module_pins'].keys(),'Complete selected module source pins missing')
+    pins=list(config['module_pins'].values())+config['native_binary_pins']
+    require(config['native_binary_pins'],'Actual native binary inventory missing')
+    for row in pins:
+        path=Path(row['path']);require(path.is_absolute() and path.is_file() and not path.is_symlink()
+            and sha(path)==row['sha256'],'Selected runtime/native source pin differs')
+    for key in ('profile_receipt','owner_binding_receipt','packpatch_pin'):
+        row=config[key];path=Path(row['path'])
+        require(path.is_absolute() and path.is_file() and not path.is_symlink() and sha(path)==row['sha256'],'Actual pinned '+key+' missing/different')
+    require(config['packpatch_pin']['sha256']=='268df53fa640b4eb42ee342850e686790016ad15a207cf6a5a7e57ee5d5953a2','Canonical packpatch changed')
+
+
+def run_command(argv,label,out,deadline,report):
+    with (out/(label+'.stdout')).open('xb') as stdout,(out/(label+'.stderr')).open('xb') as stderr:
+        command=[str(v) for v in argv]
+        result=subprocess.run(command,cwd=out,stdout=stdout,stderr=stderr,
+            timeout=max(.001,deadline-time.monotonic()),check=False)
+        report['commands'].append(dict(label=label,argv=command,exit_code=result.returncode))
+        require(stdout.tell()<=1024**2 and stderr.tell()<=1024**2,'Captured canonical output exceeds inherited bound')
+        require(result.returncode==0,'Canonical command failed: '+label)
+
+
+def generate(pack,report):
+    source=ROOT/'generate_popular_pack_manifest.py'
+    require(sha(source)=='f929ea628fec11c5cf695a3bee0928866b128050654acc2abf25415c3af9ad2f','Canonical generator differs')
+    tool=module('_mosaic_real_canonical_generator',source)
+    profile='mosaic-blur-component-acceptance'
+    require(profile not in tool.PROFILES,'Private profile collision')
+    tool.PROFILES[profile]=dict(nodes=1,node_ids=('ImageMosaic',),extension_entrypoint=True)
+    before=inventory(pack/'v2')
+    generated=tool.build((pack/'v2').resolve(),profile)
+    require(set(generated['nodes'])=={'ImageMosaic'},'Actual normal generation has wrong node IDs')
+    row=generated['nodes']['ImageMosaic']
+    require(row['class']=='ImageMosaic' and row['module']=='nodes' and row['sdk_refs'] is False
+        and row['permissions']==['raw'],'Actual generation changed production class/ref/permission contract')
+    with (pack/'v2/secure-nodes.json').open('x') as stream:json.dump(generated,stream,indent=2,sort_keys=True);stream.write('\n')
+    (pack/'v2/secure-nodes.json').chmod(0o644)
+    after=inventory(pack/'v2')
+    require(set(after)==set(before)|{'secure-nodes.json'} and all(after[k]==v for k,v in before.items()),'Generator changed frozen source')
+    report['generation']=dict(actual_runs=1,builder='build',generator_sha256=sha(source),
+        manifest_sha256=sha(pack/'v2/secure-nodes.json'),nodes=['ImageMosaic'])
+
+
+async def science(config,pack,out,report):
+    import cv2
+    import numpy as np
+    import PIL
+    import torch
+    import execution
+    from comfy_api.latest import io,sdk,_sdk
+    from comfy_secure_nodes import packdb
+    from comfy_secure_nodes.transport.host import GuestSession
+    from comfy_secure_nodes.transport.wire import WireError
+    require(torch.__version__.split('+')[0]=='2.13.0' and np.__version__=='2.4.6'
+        and PIL.__version__=='12.3.0' and cv2.__version__=='5.0.0','Existing native144 scientific profile differs')
+    require(type(_sdk.providers.execution_backend) is _sdk.InProcessExecutionBackend
+        and type(_sdk.providers.ctx_provider) is _sdk.InProcessCtxProvider
+        and type(_sdk.providers.ops_provider) is _sdk.InProcessOps,'Stock default SDK providers required')
+    providers={name:getattr(_sdk.providers,name) for name in ('execution_backend','ctx_provider','ops_provider','ref_resolver_factory')}
+    original=module('_mosaic_complete_original',pack/'mosaicblur.py')
+    candidate=module('_mosaic_default_candidate',pack/'v2/__init__.py',package=True)
+    native=original.NODE_CLASS_MAPPINGS['ImageMosaic']();default=candidate.NODE_CLASS_MAPPINGS['ImageMosaic']
+    loaded=packdb.load_pack(pack.parent,mount_name='custom_nodes.mosaic_component_'+uuid.uuid4().hex)
+    require(set(loaded.node_mappings)=={'ImageMosaic'} and not loaded.routes and not loaded.frontend_permissions
+        and loaded.web_directory is None,'Unexpected generated proxy capabilities')
+    proxy=loaded.node_mappings['ImageMosaic']
+    require(proxy.SECURE_NODE_PROXY and proxy.SDK_REFS is False and tuple(proxy.SDK_PERMISSIONS)==('raw',),'Actual value-mode proxy contract differs')
+    schema=default.GET_SCHEMA();schema.validate()
+    require(schema.node_id=='ImageMosaic' and [v.id for v in schema.inputs]==['images','method','block_size'],'Real SDK schema differs')
+    require(schema.inputs[1].options==['pillow','cv2'] and (schema.inputs[2].min,schema.inputs[2].max,schema.inputs[2].default)==(1,100,10),'Schema method/default bounds differ')
+
+    def tensor_row(value):
+        require(isinstance(value,torch.Tensor) and value.dtype==torch.float32 and value.device.type=='cpu'
+            and value.layout==torch.strided and torch.isfinite(value).all().item(),'Actual finite CPU float32 output required')
+        raw=value.detach().contiguous().numpy().tobytes()
+        return dict(shape=list(value.shape),dtype='float32',byte_order=sys.byteorder,bytes=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),base64=base64.b64encode(raw).decode())
+
+    def decode(row):
+        require(row['dtype']=='float32' and row['byte_order']==sys.byteorder=='little','Captured native oracle ABI differs')
+        raw=base64.b64decode(row['base64'],validate=True)
+        require(hashlib.sha256(raw).hexdigest()==row['sha256'],'Captured fixture bytes differ')
+        value=torch.frombuffer(bytearray(raw),dtype=torch.float32).clone().reshape(row['shape'])
+        require(tensor_row(value)['sha256']==row['sha256'],'Fixture decode changed bytes')
+        return value
+
+    def equal(actual,expected):
+        a=tensor_row(actual);b=tensor_row(expected)
+        require(a==b and torch.equal(actual,expected),'Exact typed tensor comparator')
+
+    async def default_call(image,method,block,label):
+        mapped=await execution._async_map_node_over_list('mosaic-default',label,default,
+            dict(images=[image],method=[method],block_size=[block]),'execute')
+        resolved=await execution.resolve_map_node_over_list_results(mapped)
+        require(len(resolved)==1 and isinstance(resolved[0],io.NodeOutput) and len(resolved[0].result)==1,'Actual default Core SDK return differs')
+        return resolved[0].result[0]
+
+    session=None;observer=None;pid=None;sock=None;cleanup_errors=[]
+    try:
+        observer_module=module('_mosaic_actual_creation_observer',ROOT/'guest_startup_observer.py')
+        observer=observer_module.GuestStartupObserver(out,config['observer_binding']['subprocess_source'])
+        work=out/'work';work.mkdir()
+        session=GuestSession('mosaic-component-'+uuid.uuid4().hex,runtime=None,tenant=config['tenant_id'],
+            work_root=work,guest_runtime_root=pack/'v2')
+        observer.begin_creation()
+        try:await asyncio.wait_for(session.start(),20)
+        finally:
+            observer.end_creation();report['creation_observation']=observer.snapshot();save(out/'PARTIAL.json',report)
+        report['actual_startup']=observer.verify_session(session)
+        pid=session.pid;sock=Path(session._sockdir)
+        require(pid!=os.getpid() and session._pgid==pid and session.sandbox_kind=='seatbelt' and session.pack_runtime is None,'Actual isolated ordinary Guest identity differs')
+        forbidden={Path('/'),Path('/Users/ben'),Path('/Users/ben/popbot/workspaces'),Path('/private/tmp')}
+        require(not any(Path(p).resolve() in forbidden for p in report['actual_startup']['ordered_read_roots_source_bound']),'Overbroad Guest read root')
+
+        async def guest_call(image,method,block,label,capabilities=('raw',)):
+            refs=_sdk.InProcessRefResolver()
+            plan=_sdk.ExecutionPlan(prompt_id='mosaic-component',node_id=label,node_type='ImageMosaic',
+                tier='sandbox',node_module=proxy.__module__,input_mode='values',permissions=('raw',),method='execute')
+            try:
+                plan.inputs=await _sdk.wrap_inputs(refs,dict(images=image,method=method,block_size=block))
+                runtime=_sdk.Runtime(refs=refs,ctx=_sdk.InProcessCtxProvider().build(plan),ops=_sdk.InProcessOps())
+                report['session_execute_attempts']+=1
+                result=await asyncio.wait_for(session.execute(plan,runtime,capabilities=capabilities,tenant=config['tenant_id']),10)
+                require(isinstance(result,io.NodeOutput) and len(result.result)==1 and isinstance(result.result[0],sdk.ImageRef),'Actual Guest must return a typed IMAGE')
+                pixels=await refs.resolve(result.result[0]);tensor_row(pixels)
+                require(session.last_guest_pid==pid,'Reply did not come from owned Guest')
+                return pixels
+            finally:refs.clear()
+
+        payload=load(ROOT/'ORACLE_PAYLOAD.json')['cases'];saved=None
+        for label,case in payload.items():
+            image=decode(case['input']);before=image.clone();expected_captured=decode(case['expected_original'])
+            method=case['method'];block=case['block_size']
+            expected=native.image_mosaic(image.clone(),method,block)[0];equal(expected,expected_captured)
+            # The public helper correction is exercised with genuine SDK refs,
+            # not by adding a second handwritten transport/manifest helper.
+            refs=_sdk.InProcessRefResolver();plan=_sdk.ExecutionPlan(prompt_id='mosaic-public-fixture',node_id=label,
+                node_type='MosaicFixture',node_module=__name__,inputs={},permissions=('raw',))
+            try:
+                with _sdk.bind_runtime(refs,_sdk.InProcessCtxProvider().build(plan),_sdk.InProcessOps()):
+                    ref=await sdk.ImageRef.from_value(image);require(isinstance(ref,sdk.ImageRef),'Public IMAGE publication failed')
+                    equal(await ref.raw(),image);report['public_roundtrips']+=1
+            finally:refs.clear()
+            default_pixels=await default_call(image,method,block,label);equal(default_pixels,expected)
+            guest_pixels=await guest_call(image,method,block,label);equal(guest_pixels,expected)
+            equal(image,before)
+            require(default_pixels is not image and guest_pixels is not image,'Output aliases Host input')
+            report['comparisons'].append(dict(case=label,method=method,block_size=block,original=tensor_row(expected),
+                default=tensor_row(default_pixels),Guest=tensor_row(guest_pixels),inputs_unchanged=True,Guest_PID=pid))
+            saved=(image,expected,method,block)
+            save(out/'PARTIAL.json',report)
+        image,expected,method,block=saved
+        for label,wrong in (('changed-pixel',expected.clone()),('changed-dtype',expected.double())):
+            if label=='changed-pixel':wrong.reshape(-1)[0]=1.0 if expected.reshape(-1)[0].item()!=1.0 else 0.0
+            try:equal(wrong,expected)
+            except AssertionError:report['comparator_controls'].append(label)
+            else:raise AssertionError('Comparator control escaped')
+        try:native.image_mosaic(image.clone(),'cv2',100)
+        except cv2.error as error:native_error=(type(error).__name__,str(error))
+        else:raise AssertionError('Pristine unexpectedly accepts zero-grid cv2')
+        try:await default_call(image,'cv2',100,'native-error')
+        except cv2.error as error:require((type(error).__name__,str(error))==native_error,'Default native error differs')
+        else:raise AssertionError('Default fabricated zero-grid output')
+        try:await guest_call(image,'cv2',100,'native-error')
+        except WireError as error:require((error.remote_type,error.remote_message)==native_error,'Guest native error differs')
+        else:raise AssertionError('Guest fabricated zero-grid output')
+        report['native_error']=dict(remote_type=native_error[0],exact_original_default_Guest_message=True,
+            message_sha256=hashlib.sha256(native_error[1].encode()).hexdigest())
+        try:await guest_call(image,method,block,'raw-denial',capabilities=())
+        except (WireError,PermissionError) as error:
+            require('raw' in str(error).lower(),'Refusal does not name the missing raw capability')
+            report['raw_denial']=dict(type=type(error).__name__,raw_named=True)
+        else:raise AssertionError('Guest unexpectedly accepted missing raw')
+        equal(await guest_call(image,method,block,'recovery'),expected)
+        report['Guest_recovery']=True
+        require(all(getattr(_sdk.providers,k) is v for k,v in providers.items()),'SDK providers changed')
+        report['versions']=dict(torch=torch.__version__,numpy=np.__version__,Pillow=PIL.__version__,cv2=cv2.__version__)
+    finally:
+        if session is not None:
+            try:await asyncio.wait_for(session.kill(),3)
+            except BaseException as error:cleanup_errors.append('session.kill: '+repr(error))
+        if observer is not None:
+            report['creation_observation']=observer.snapshot()
+            for birth in observer.births:
+                observed=birth.get('assigned_child_pid')
+                if type(observed) is int and observed>0:
+                    for repeat in range(2):
+                        try:os.kill(observed,0)
+                        except ProcessLookupError:pass
+                        else:cleanup_errors.append('Guest PID remains: '+str(observed))
+                        try:os.killpg(observed,0)
+                        except ProcessLookupError:pass
+                        else:cleanup_errors.append('Guest group remains: '+str(observed))
+                        if repeat==0:await asyncio.sleep(.05)
+            try:observer.close()
+            except BaseException as error:cleanup_errors.append('observer.close: '+repr(error))
+        if sock is not None and sock.exists():cleanup_errors.append('Guest socket remains')
+        report['cleanup']=dict(errors=cleanup_errors,normal_path_confirmed=not cleanup_errors,
+            actual_parent_independent_witness_required=True)
+        save(out/'PARTIAL.json',report)
+        require(not cleanup_errors,'Actual Guest cleanup unconfirmed')
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--execute',action='store_true');parser.add_argument('--authorization-message',required=True)
+    parser.add_argument('--config',type=Path,required=True);parser.add_argument('--config-sha256',required=True)
+    parser.add_argument('--owner-pid',type=int,required=True)
+    args=parser.parse_args()
+    require(sha(args.config)==args.config_sha256,'Actual config pin differs');config=load(args.config)
+    require(args.execute and config['execution_selected'] is True and config['authorization_message']==args.authorization_message
+        and re.fullmatch('m_[0-9a-f]+',args.authorization_message),'Separate actual one-attempt selection required')
+    require(sys.platform=='darwin' and sys.version_info[:3]==(3,13,14) and sys.flags.isolated and not sys.flags.no_site,'Selected isolated normal-site Darwin3.13.14 required')
+    require(os.getppid()==args.owner_pid and os.getpgrp()==os.getpid(),'Existing finite parent and fresh owned payload session required')
+    require(Path(sys.executable).resolve()==Path(config['python']).resolve() and sha(Path(sys.executable).resolve())==config['python_sha256'],'Actual interpreter differs')
+    for key,value in config['required_environment'].items():require(os.environ.get(key)==value,'Selected environment differs: '+key)
+    pinned_sources(config)
+    out=Path(config['work_root']);require(out.is_absolute() and not out.exists() and not out.resolve().is_relative_to(ROOT.resolve()),'Fresh external owned output required')
+    out.mkdir(parents=True);started=time.monotonic();deadline=started+75
+    report=dict(status='FAILED_MOSAIC_COMPONENT_SOURCE_JOB',authorization_message=args.authorization_message,
+        source_commit=load(ROOT/'SOURCE_BINDINGS.json')['published_commit'],comparisons=[],comparator_controls=[],commands=[],
+        session_execute_attempts=0,public_roundtrips=0,managed_registry_service_frontend_or_whole_pack_acceptance=False,
+        reused_native_matrix_comparisons=144,new_native_matrix_runs=0)
+    try:
+        sys.path[:0]=config['host_import_roots'];sys.argv=['mosaic-component-job','--cpu']
+        import comfy.options
+        comfy.options.enable_args_parsing()
+        import comfy.cli_args
+        require(comfy.cli_args.args.cpu is True,'Actual CPU selection required')
+        for name,row in config['module_pins'].items():
+            loaded=importlib.import_module(name)
+            require(Path(loaded.__file__).resolve()==Path(row['path']).resolve(),'Imported module origin differs: '+name)
+        pack=out/'packs'/PACK_REL;stage(pack,True)
+        pristine={k:v for k,v in inventory(pack).items() if not k.startswith('v2/')}
+        generate(pack,report);generated=inventory(pack/'v2')
+        frozen=inventory(pack)
+        asyncio.run(asyncio.wait_for(science(config,pack,out,report),max(.001,deadline-time.monotonic())))
+        require(inventory(pack)==frozen,'Science changed staged frozen source')
+        patches=out/'patches'/PACK_REL.parent;pair=patches/'comfyui-mosaic-blur-x007acb0'
+        tool=config['packpatch_pin']['path'];python=config['python']
+        run_command([python,'-I','-B',tool,'generate',pack.parent,patches],'pair',out,deadline,report)
+        run_command([python,'-I','-B',tool,'bundle',pair,pair.with_suffix('.zip')],'bundle',out,deadline,report)
+        report['replays']=[]
+        for kind,action,artifact in (('pair','apply',pair),('zip','apply-zip',pair.with_suffix('.zip'))):
+            target=out/('replay-'+kind)/PACK_REL;stage(target,False)
+            require(inventory(target)==pristine,'Fresh original bytes/modes differ')
+            run_command([python,'-I','-B',tool,action,target.parent,artifact],'replay-'+kind,out,deadline,report)
+            require(inventory(target/'v2')==generated,'Actual replay V2 bytes/modes differ')
+            require({k:v for k,v in inventory(target).items() if not k.startswith('v2/')}==pristine,'Replay mutated originals')
+            report['replays'].append(dict(kind=kind,originals_preserved=True,v2_files=generated))
+        require(len(report['comparisons'])==4 and report['session_execute_attempts']==7 and report['public_roundtrips']==4,'Prepared finite coverage incomplete')
+        report.update(status='PASS_ORIGINAL_DEFAULT_REQUIRED_GUEST_AND_CANONICAL_PACKAGE_SCOPE',
+            generated_files=generated,artifact_files=inventory(patches),elapsed_seconds=time.monotonic()-started)
+    except BaseException as error:
+        report['error']=dict(type=type(error).__name__,message=str(error));raise
+    finally:
+        try:pinned_sources(config)
+        except BaseException as error:
+            report['status']='FAILED_SOURCE_POSTFLIGHT';report['postflight_error']=repr(error);raise
+        finally:save(out/'RESULT.json',report)
+
+
+if __name__=='__main__':main()

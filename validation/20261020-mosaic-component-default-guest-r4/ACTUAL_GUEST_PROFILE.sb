@@ -1,0 +1,38 @@
+(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow file-read-metadata)
+(allow file-read*
+    (literal "/")
+    (subpath "/System/Library")
+    (subpath "/Library/Apple/System/Library")
+    (subpath "/usr/lib")
+    (subpath "/usr/share")
+    (subpath "/private/etc")
+    (literal "/dev/null")
+    (literal "/dev/zero")
+    (literal "/dev/random")
+    (literal "/dev/urandom")
+    (subpath "/opt/homebrew/opt")
+    (subpath "/opt/homebrew/Cellar")
+    (subpath "/Users/ben/pip-mosaic-binding-20261020-r1/r4-attempt1/actual-output/work/work/guest-zvdmlm3t")
+    (subpath "/Users/ben/pip-mosaic-binding-20261020-r1/r4-attempt1/actual-output/work/packs/comfyui-mosaic-blur/x007acb0/comfyui-mosaic-blur-HEAD/v2")
+    (subpath "/Users/ben/popbot/workspaces/comfyui-frontend/comfyui-frontend-1/temp/sdk-main-rebase-20261019/overlay/backend")
+    (subpath "/Users/ben/popbot/workspaces/comfyui-frontend/comfyui-frontend-1/temp/sdk-main-rebase-20261019/overlay/sdk")
+    (subpath "/Users/ben/popbot/workspaces/comfyui-frontend/comfyui-frontend-1/temp/in_progress/sdk-main-rebase-20261019/core-test-venv/lib/python3.13/site-packages/comfy_api")
+    (subpath "/Users/ben/popbot/workspaces/comfyui-frontend/comfyui-frontend-1/temp/sdk-main-rebase-20261019/overlay")
+    (subpath "/Users/ben/popbot/workspaces/comfyui-frontend/comfyui-frontend-1/temp/in_progress/sdk-main-rebase-20261019/core-test-venv")
+    (subpath "/opt/homebrew/Cellar/python@3.13/3.13.14_1/Frameworks/Python.framework/Versions/3.13")
+    (subpath "/opt/homebrew/Cellar/python@3.13/3.13.14_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13"))
+(allow sysctl-read)                         ; torch reads hw.* for core counts
+(allow mach-lookup)                         ; TODO tighten to Metal services
+(allow iokit-open iokit-get-properties)     ; the GPU itself
+(allow ipc-posix-shm*)                      ; THE ONE PEOPLE MISS — device refs
+(allow file-write*
+    (literal "/dev/null") (literal "/dev/zero")
+    (literal "/dev/random") (literal "/dev/urandom")
+    (subpath "/Users/ben/pip-mosaic-binding-20261020-r1/r4-attempt1/actual-output/work/work/guest-zvdmlm3t")
+    ; dev-only shader cache, see _shader_cache_clause
+    (subpath "/private/var/folders/5v/4sjlf6ts47v0ww2vbczg80y40000gn/C/com.apple.MetalPerformanceShadersGraph"))
+(allow network-outbound (literal "/private/tmp/mguest-hclu11qd/cg-1zbhyrdt/rpc.sock"))
+; no (allow network*) anywhere -> egress denied by the default

@@ -1,0 +1,45 @@
+"""UNRUN strict result-data predicate; no SDK/science import or new authority."""
+import base64
+import hashlib
+import json
+import math
+import struct
+
+
+def tensor(row):
+    assert row['dtype']=='float32' and row['byte_order']=='little'
+    raw=base64.b64decode(row['base64'],validate=True)
+    assert row['bytes']==len(raw)==4*math.prod(row['shape'])
+    assert hashlib.sha256(raw).hexdigest()==row['sha256']
+    assert all(math.isfinite(v[0]) for v in struct.iter_unpack('<f',raw))
+    return raw
+
+
+def check(path,authorization_message):
+    result=json.loads(path.read_bytes())
+    assert result['status']=='PASS_ORIGINAL_DEFAULT_REQUIRED_GUEST_AND_CANONICAL_PACKAGE_SCOPE'
+    assert result['authorization_message']==authorization_message
+    assert result['managed_registry_service_frontend_or_whole_pack_acceptance'] is False
+    assert result['generation']['actual_runs']==1 and result['generation']['nodes']==['ImageMosaic']
+    rows=result['comparisons']
+    assert {row['case'] for row in rows}=={'pillow_c3_b3','pillow_c4_b6','cv2_c3_b3','cv2_c4_b2'} and len(rows)==4
+    guest_pid=result['actual_startup']['pid']
+    assert result['actual_startup']['status']=='ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+    assert result['actual_startup']['sandbox_kind']=='seatbelt'
+    for row in rows:
+        assert row['inputs_unchanged'] is True and row['Guest_PID']==guest_pid
+        assert row['original']==row['default']==row['Guest']
+        assert tensor(row['original'])==tensor(row['default'])==tensor(row['Guest'])
+    assert result['public_roundtrips']==4 and result['session_execute_attempts']==7
+    assert result['comparator_controls']==['changed-pixel','changed-dtype']
+    assert result['native_error']['exact_original_default_Guest_message'] is True
+    assert result['raw_denial']['raw_named'] is True and result['Guest_recovery'] is True
+    assert [row['label'] for row in result['commands']]==['pair','bundle','replay-pair','replay-zip']
+    assert all(row['exit_code']==0 for row in result['commands'])
+    assert [row['kind'] for row in result['replays']]==['pair','zip']
+    assert all(row['originals_preserved'] is True and row['v2_files']==result['generated_files'] for row in result['replays'])
+    assert result['cleanup']['normal_path_confirmed'] is True and not result['cleanup']['errors']
+    return dict(status='STRICT_COMPONENT_AND_CANONICAL_PACKAGE_RESULT_DATA_VERIFIED',
+        raw_output_buffers_verified=12,original_default_Guest_positive_inputs=4,canonical_generations=1,
+        pairs=1,bundles=1,pristine_replays=2,parent_independent_retirement_and_full_maps_required=True,
+        managed_service_frontend_or_whole_pack_acceptance=False)
