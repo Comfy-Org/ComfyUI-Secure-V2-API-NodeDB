@@ -1,0 +1,256 @@
+"""CONVERTED side for sampler slices on rev 3 (generic, CASE-driven): registered producer nodes -> registered
+WanVideoSampler through the SDK in-process seam on one candidate tree (package from CASE.json).
+
+The owned transformer of every sampler call is observed through a passive call-through wrapper around the pack's
+load_plain_weights: weakref, a forward hook on the transformer (forward parity) and a forward hook on
+transformer.blocks[0] (block executions). After each case, the two observation points of sampler-block1-test-r1:
+in-step (gc, weakref, live sampler/package frames with non-None local names, error liveness + holder trace) and after
+release (error dropped, two event-loop turns, gc).
+"""
+import asyncio
+import gc
+import inspect
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+import types
+import weakref
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import holder_diag  # noqa: E402
+import leak_diag  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+PACKAGE_ROOT = '/candidate/%s/' % PACKAGE
+LABEL = 'CONVERTED'
+REPORT = {'status': 'RUNNING', 'route': 'registered_inprocess_sdk', 'package': PACKAGE, 'cases': {}}
+phase = common.Phases(REPORT, LABEL)
+WANTED = {('sample_workflow', 'wan_workflow_sampler_runtime.py'), ('run', 'wan_workflow_sampler_runtime.py'),
+          ('process', 'nodes_sampler.py'), ('predict_with_cfg', 'nodes_sampler.py')}
+
+
+def latent_input(case_file):
+    """The sha-bound r5 sampler latent (INPUT only), as sampler slice b."""
+    import torch
+    spec = case_file['inputs']['r5_latent']
+    data = Path(spec['container_path']).read_bytes()
+    assert len(data) == spec['bytes'] and common.sha_bytes(data) == spec['sha256']
+    return torch.frombuffer(bytearray(data), dtype=torch.float32).reshape(spec['shape'])
+
+
+def frame_rows(predicate):
+    gc.collect()
+    rows = []
+    for obj in gc.get_objects():
+        if isinstance(obj, types.FrameType) and predicate(obj):
+            rows.append({'code': obj.f_code.co_name, 'file': os.path.basename(obj.f_code.co_filename), 'line': obj.f_lineno,
+                         'non_none_locals': sorted(k for k, v in obj.f_locals.items() if v is not None)})
+    return rows
+
+
+def owner_frame_rows():
+    return frame_rows(lambda f: f.f_code.co_filename.startswith(PACKAGE_ROOT)
+                      and (f.f_code.co_name, os.path.basename(f.f_code.co_filename)) in WANTED)
+
+
+def package_frame_rows():
+    return frame_rows(lambda f: f.f_code.co_filename.startswith(PACKAGE_ROOT))
+
+
+def find_error(signature):
+    error_id, type_name, message = signature
+    for obj in gc.get_objects():
+        if id(obj) == error_id and isinstance(obj, BaseException) and type(obj).__name__ == type_name and str(obj) == message:
+            return obj
+    return None
+
+
+def error_alive(signature):
+    gc.collect()
+    found = find_error(signature)
+    alive = found is not None
+    del found
+    return alive
+
+
+def trace_error_holders(signature):
+    gc.collect()
+    target = find_error(signature)
+    if target is None:
+        return None
+    try:
+        return holder_diag.holder_chains(target)
+    finally:
+        del target
+
+
+async def run(case_file):
+    import importlib
+    import torch
+    from comfy_api.latest import _sdk
+    package = importlib.import_module(PACKAGE)
+    registry = package.NODE_CLASS_MAPPINGS
+    REPORT['registered_count'] = len(registry)
+    runtime = importlib.import_module(PACKAGE + '.wan_workflow_sampler_runtime')
+    REPORT['sampler_runtime_sha256'] = common.sha_file(runtime.__file__)
+    assert REPORT['sampler_runtime_sha256'] == case_file['sampler_runtime_sha256']
+    assert runtime.__file__.startswith(PACKAGE_ROOT), runtime.__file__
+    model_runtime = importlib.import_module(PACKAGE + '.wan_workflow_model_runtime')
+    owned, forward_calls, block0 = [], [], []
+    real_load = model_runtime.load_plain_weights
+
+    def count_block0(module, args, output):
+        block0.append(1)
+
+    observer_mode = ['transformer']
+
+    def observed_load(transformer, *a, **k):
+        if not owned:
+            if observer_mode[0] == 'head':
+                # R1 principle (MERVYN m_32d504a4e7): no hook on the transformer or its blocks for raising cases.
+                transformer.head.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True)
+            else:
+                transformer.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True)
+                transformer.blocks[0].register_forward_hook(count_block0)
+        owned.append(weakref.ref(transformer))
+        return real_load(transformer, *a, **k)
+    model_runtime.load_plain_weights = observed_load
+    providers = _sdk.providers
+    assert not providers.overlay_active and not providers.engaged
+    counter = iter(range(1, 1000))
+
+    async def node(name, inputs):
+        cls = registry[name]
+        plan = _sdk.ExecutionPlan(prompt_id='jack-wan-sampler-slices-rev3', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs,
+                                  input_mode='refs' if cls.SDK_REFS else 'values', permissions=tuple(cls.SDK_PERMISSIONS))
+        refs = providers.ref_resolver_factory()
+        scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        try:
+            values = await _sdk.wrap_inputs(refs, inputs) if cls.SDK_REFS else inputs
+
+            async def local_call():
+                with scope:
+                    value = cls.execute(**values)
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value
+            result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+            result = await _sdk.unwrap_outputs(refs, result)
+            return result.result
+        finally:
+            refs.clear()
+
+    text = common.load_text_embeds(case_file)
+    for case in case_file['cases']:
+        name = case['name']
+        phase('converted-' + name)
+        torch.manual_seed(case_file['seed'])
+        record = {'rng_after_seed': common.rng_sha()}
+        owned.clear()
+        forward_calls.clear()
+        block0.clear()
+        observer_mode[0] = case.get('observer', 'transformer')
+        model, = await node('WanVideoModelLoader', dict(case_file['model_loader'], model=case_file['model']['catalogue_name']))
+        embeds, = await node('WanVideoEmptyEmbeds', dict(case['empty_embeds']))
+        record['inputs'] = {'image_embeds': common.tree_meta(embeds)}
+        producers = {}
+        for spec in case.get('producers', []):
+            value, = await node(spec['node'], dict(spec['inputs']))
+            producers[spec['sampler_input']] = value
+        record['producers'] = {key: common.any_meta(value) for key, value in producers.items()}
+        sampler_inputs = dict(case['sampling'], **case.get('extra', {}))
+        if sampler_inputs.get('samples') == 'r5_latent':
+            sampler_inputs['samples'] = {'samples': latent_input(case_file)}
+            record['inputs']['samples'] = common.tree_meta(sampler_inputs['samples'])
+        sampler_inputs.update(producers)
+        started = time.monotonic()
+        error_signature = None
+        try:
+            out = await node('WanVideoSampler', dict(sampler_inputs, model=model, image_embeds=embeds, text_embeds=text))
+            samples, denoised = out
+            record['outcome'] = {'raised': False}
+            record['samples'] = common.tree_meta(samples)
+            record['denoised'] = common.tree_meta(denoised)
+            common.tensor_meta(samples['samples'], 'converted-%s-samples.bin' % name)
+            del out, samples, denoised
+        except Exception as error:
+            frames = traceback.extract_tb(error.__traceback__)
+            record['outcome'] = {'raised': True, 'type': type(error).__name__, 'message': str(error)[:2000],
+                                 'raising_function': frames[-1].name, 'raising_file': os.path.basename(frames[-1].filename),
+                                 'raising_line': frames[-1].lineno}
+            error_signature = (id(error), type(error).__name__, str(error))
+            del frames, error
+        record['seconds'] = round(time.monotonic() - started, 3)
+        record['rng_after_sampler'] = common.rng_sha()
+        record['forward_calls'] = list(forward_calls)
+        record['block0_calls'] = len(block0)
+        producers = sampler_inputs = None
+        gc.collect()
+        in_step = {'owned_transformers_observed': len(owned),
+                   'transformer_released': bool(owned) and all(r() is None for r in owned),
+                   'owner_frames': owner_frame_rows(), 'package_frames': package_frame_rows(),
+                   'private_weight_dirs': sorted(str(p) for p in Path('/tmp').glob('wan-workflow-weights-*'))}
+        if error_signature is not None:
+            in_step['error_alive'] = error_alive(error_signature)
+            in_step['error_holders'] = trace_error_holders(error_signature)
+        if owned and not in_step['transformer_released']:
+            in_step['leak_trace'] = leak_diag.trace_weakref(owned[0])
+        record['in_step'] = in_step
+        for _ in range(2):
+            await asyncio.sleep(0)
+        gc.collect()
+        after = {'loop_turns': 2, 'transformer_released': bool(owned) and all(r() is None for r in owned),
+                 'owner_frames': owner_frame_rows(), 'package_frames': package_frame_rows(),
+                 'private_weight_dirs': sorted(str(p) for p in Path('/tmp').glob('wan-workflow-weights-*'))}
+        if error_signature is not None:
+            after['error_alive'] = error_alive(error_signature)
+            if after['error_alive']:
+                after['error_holders'] = trace_error_holders(error_signature)
+        if owned and not after['transformer_released']:
+            after['leak_trace'] = leak_diag.trace_weakref(owned[0])
+        record['after_release'] = after
+        REPORT['cases'][name] = record
+        del model, embeds
+        gc.collect()
+    REPORT['status'] = LABEL + '_SLICES_DONE'
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/converted-site', '/native-core', '/candidate']
+    from comfy.cli_args import args
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/converted-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    asyncio.run(run(CASE_FILE))
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save(LABEL + '_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != LABEL + '_SLICES_DONE':
+    raise SystemExit(1)

@@ -76,14 +76,10 @@ async def sample_workflow(context, model, image_embeds, **kwargs):
         raise NotImplementedError('First staged trained workflow requires plain empty T2V conditioning')
     if image_embeds['control_embeds'] is not None:
         raise NotImplementedError('Control embeds await their reviewed execution slice')
-    unsupported = ('feta_args',
-                   'experimental_args',
-                   'unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',
+    unsupported = ('unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',
                    'multitalk_embeds')
     if any(kwargs.get(key) is not None for key in unsupported):
         raise NotImplementedError('Advanced sampling inputs await their reviewed execution slices')
-    if kwargs.get('batched_cfg', False):
-        raise NotImplementedError('Batched CFG awaits its reviewed execution slice')
     for key in ('cache_args', 'teacache_args'):
         if kwargs.get(key) is not None:
             kwargs = dict(kwargs, **{key: resolve_cache_placement(kwargs[key])})

@@ -1,0 +1,142 @@
+{
+  "checks": {
+    "b0_unbatched_cfg2:block0_executions_equal": true,
+    "b0_unbatched_cfg2:both_returned": true,
+    "b0_unbatched_cfg2:converted_no_retained_frames_after_release": true,
+    "b0_unbatched_cfg2:converted_owned_transformer_observed_once": true,
+    "b0_unbatched_cfg2:converted_private_weight_files_removed": true,
+    "b0_unbatched_cfg2:converted_transformer_released_after_node": true,
+    "b0_unbatched_cfg2:cpu_rng_after_seed_equal": true,
+    "b0_unbatched_cfg2:denoised_equal": true,
+    "b0_unbatched_cfg2:expected_latent_shape": true,
+    "b0_unbatched_cfg2:final_cpu_rng_equal": true,
+    "b0_unbatched_cfg2:forward_count_equal": true,
+    "b0_unbatched_cfg2:forward_inputs_outputs_equal": true,
+    "b0_unbatched_cfg2:inputs_equal": true,
+    "b0_unbatched_cfg2:latent_raw_bytes_equal": true,
+    "b0_unbatched_cfg2:original_forward_count_as_expected": true,
+    "b0_unbatched_cfg2:samples_dict_equal_incl_generator_state": true,
+    "b1_batched_cfg2_error_parity:block0_executions_equal": true,
+    "b1_batched_cfg2_error_parity:both_raised": true,
+    "b1_batched_cfg2_error_parity:converted_error_object_released_after_caller_drops_it": true,
+    "b1_batched_cfg2_error_parity:converted_no_retained_frames_after_release": true,
+    "b1_batched_cfg2_error_parity:converted_owned_transformer_observed_once": true,
+    "b1_batched_cfg2_error_parity:converted_private_weight_files_removed": true,
+    "b1_batched_cfg2_error_parity:converted_transformer_released_after_node": true,
+    "b1_batched_cfg2_error_parity:cpu_rng_after_seed_equal": true,
+    "b1_batched_cfg2_error_parity:final_cpu_rng_equal": true,
+    "b1_batched_cfg2_error_parity:forward_count_equal": true,
+    "b1_batched_cfg2_error_parity:forward_inputs_outputs_equal": true,
+    "b1_batched_cfg2_error_parity:inputs_equal": true,
+    "b1_batched_cfg2_error_parity:original_error_is_the_cited_one": true,
+    "b1_batched_cfg2_error_parity:original_forward_count_as_expected": true,
+    "b1_batched_cfg2_error_parity:same_exception_type_and_message": true,
+    "b1_batched_cfg2_error_parity:same_raising_function_and_file": true,
+    "registry_146": true,
+    "same_vendor_versions_and_cpu": true,
+    "workers_completed": true
+  },
+  "details": {},
+  "failed_checks": [],
+  "info": {
+    "b0_unbatched_cfg2:seconds": [
+      6.215,
+      13.356
+    ],
+    "b0_unbatched_cfg2:skipped_transformer_steps": [
+      0,
+      0
+    ],
+    "b0_unbatched_cfg2:transformer_options_equal": true,
+    "b1_batched_cfg2_error_parity:seconds": [
+      1.348,
+      9.754
+    ],
+    "b1_batched_cfg2_error_parity:skipped_transformer_steps": [
+      0,
+      0
+    ],
+    "b1_batched_cfg2_error_parity:transformer_options_equal": true,
+    "cases": [
+      {
+        "empty_embeds": {
+          "height": 64,
+          "num_frames": 1,
+          "width": 64
+        },
+        "exercises": "same case without batching: cond and uncond as separate forwards",
+        "expected_forwards": 4,
+        "expected_latent_shape": [
+          1,
+          16,
+          1,
+          8,
+          8
+        ],
+        "item": "batched_cfg",
+        "name": "b0_unbatched_cfg2",
+        "producers": [],
+        "sampling": {
+          "cfg": 2.0,
+          "force_offload": true,
+          "riflex_freq_index": 0,
+          "rope_function": "comfy",
+          "scheduler": "unipc",
+          "seed": 314159,
+          "shift": 5.0,
+          "steps": 2
+        }
+      },
+      {
+        "empty_embeds": {
+          "height": 64,
+          "num_frames": 1,
+          "width": 64
+        },
+        "exercises": "original defect: batched_cfg always raises TypeError; converted reproduces it (T2V half; nodes_sampler.py:1657-1663; clip_fea None -> torch.cat at 1659). Error parity, not a computation pass.",
+        "expect": "raise",
+        "expected_error": [
+          "TypeError",
+          "expected Tensor as element 0 in argument 0, but got NoneType"
+        ],
+        "expected_forwards": 0,
+        "expected_latent_shape": [
+          1,
+          16,
+          1,
+          8,
+          8
+        ],
+        "extra": {
+          "batched_cfg": true
+        },
+        "item": "batched_cfg",
+        "name": "b1_batched_cfg2_error_parity",
+        "observer": "head",
+        "producers": [],
+        "sampling": {
+          "cfg": 2.0,
+          "force_offload": true,
+          "riflex_freq_index": 0,
+          "rope_function": "comfy",
+          "scheduler": "unipc",
+          "seed": 314159,
+          "shift": 5.0,
+          "steps": 2
+        }
+      }
+    ]
+  },
+  "item": "batched_cfg",
+  "results_sha256": {
+    "CONVERTED_RESULT.json": "2943de2c2019a41e1e6244bee3201510db8a52eb10efa3a7a733d5cb7a1fa3cf",
+    "ORIGINAL_RESULT.json": "cf8c415adedb198c2ea176d156255e1f76384cfcf5c38d1efb60f087cd83efd7"
+  },
+  "reviewed_normalization": {
+    "closed_checks": [],
+    "reason": "Python set iteration order is hash-randomized per process; PYTHONHASHSEED is unavailable under -I (implies -E). Only the set literal is normalized (elements compared as sorted lists); all other text is compared exactly.",
+    "records": {},
+    "ruling": "MERVYN m_ac4fbd5c7d R1"
+  },
+  "status": "PASS_SLICE_BATCHED_CFG"
+}

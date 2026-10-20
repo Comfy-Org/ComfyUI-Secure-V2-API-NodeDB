@@ -1,0 +1,481 @@
+{
+  "approval": "MERVYN m_932f23f1bf (rerun r3 go) + m_21c672eca8 (combined candidate c2d97473 + 6d3a4b67; b0/b1 added)",
+  "bytes_under_test": {
+    "candidate": "corpus main d6271b5c v2 + c2d97473 + 6d3a4b67 (git archive)",
+    "materials_sha256": "b0b32ad67957ca7e25932d9a2b76614d3f72a95e76dfc70bd9fe04c5a7cc8c90",
+    "sampler_runtime_sha256": "51b17ea93e8502722ad12df4b4e4611993eb56d23fcfae412c4e03245c229025"
+  },
+  "cases": [
+    {
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "same-seed baseline (cfg 2.0, r5 negative embeds, 2 latent frames), as r1",
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x0_baseline_cfg2",
+      "producers": [],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      }
+    },
+    {
+      "differs_from_case": "x0_baseline_cfg2",
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "temporal score rescaling alone (r1 x3 split, part a)",
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x3a_tsr_only",
+      "producers": [
+        {
+          "inputs": {
+            "bidirectional_sampling": false,
+            "cfg_zero_star": false,
+            "fresca_freq_cutoff": 20,
+            "fresca_scale_high": 1.25,
+            "fresca_scale_low": 1.0,
+            "raag_alpha": 0.0,
+            "temporal_score_rescaling": true,
+            "tsr_k": 0.95,
+            "tsr_sigma": 1.0,
+            "use_fresca": false,
+            "use_tcfg": false,
+            "use_zero_init": false,
+            "video_attention_split_steps": "",
+            "zero_star_steps": 0
+          },
+          "node": "WanVideoExperimentalArgs",
+          "sampler_input": "experimental_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      }
+    },
+    {
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "error parity (r1 x3 split, part b): bidirectional sampling forces the original complex RoPE (nodes_sampler.py 984); Core625 apply_rope1 rejects complex128 freqs on CPU",
+      "expect": "raise",
+      "expected_error": [
+        "NoCapableBackendError",
+        "No backend can handle 'apply_rope1': eager: freqs_cis: dtype torch.complex128 not in {torch.float16, torch.bfloat16, torch.float32}"
+      ],
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x3b_bidirectional_error_parity",
+      "observer": "head",
+      "producers": [
+        {
+          "inputs": {
+            "bidirectional_sampling": true,
+            "cfg_zero_star": false,
+            "fresca_freq_cutoff": 20,
+            "fresca_scale_high": 1.25,
+            "fresca_scale_low": 1.0,
+            "raag_alpha": 0.0,
+            "temporal_score_rescaling": false,
+            "tsr_k": 0.95,
+            "tsr_sigma": 1.0,
+            "use_fresca": false,
+            "use_tcfg": false,
+            "use_zero_init": false,
+            "video_attention_split_steps": "",
+            "zero_star_steps": 0
+          },
+          "node": "WanVideoExperimentalArgs",
+          "sampler_input": "experimental_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      },
+      "message_normalization": "set_literal_sorted"
+    },
+    {
+      "differs_from_case": "x0_baseline_cfg2",
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "CFG-Zero* optimized-scale guidance (no zero-init) and FreSca frequency scaling",
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x1_cfg_zero_star_fresca",
+      "producers": [
+        {
+          "inputs": {
+            "bidirectional_sampling": false,
+            "cfg_zero_star": true,
+            "fresca_freq_cutoff": 20,
+            "fresca_scale_high": 1.25,
+            "fresca_scale_low": 1.0,
+            "raag_alpha": 0.0,
+            "temporal_score_rescaling": false,
+            "tsr_k": 0.95,
+            "tsr_sigma": 1.0,
+            "use_fresca": true,
+            "use_tcfg": false,
+            "use_zero_init": false,
+            "video_attention_split_steps": "",
+            "zero_star_steps": 0
+          },
+          "node": "WanVideoExperimentalArgs",
+          "sampler_input": "experimental_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      }
+    },
+    {
+      "differs_from_case": "x0_baseline_cfg2",
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "tangential damping CFG and RAAG guidance",
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x2_tcfg_raag",
+      "producers": [
+        {
+          "inputs": {
+            "bidirectional_sampling": false,
+            "cfg_zero_star": false,
+            "fresca_freq_cutoff": 20,
+            "fresca_scale_high": 1.25,
+            "fresca_scale_low": 1.0,
+            "raag_alpha": 1.0,
+            "temporal_score_rescaling": false,
+            "tsr_k": 0.95,
+            "tsr_sigma": 1.0,
+            "use_fresca": false,
+            "use_tcfg": true,
+            "use_zero_init": false,
+            "video_attention_split_steps": "",
+            "zero_star_steps": 0
+          },
+          "node": "WanVideoExperimentalArgs",
+          "sampler_input": "experimental_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      }
+    },
+    {
+      "differs_from_case": "x0_baseline_cfg2",
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "Enhance-A-Video (needs > 1 latent frame)",
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x4_feta_enhance_a_video",
+      "producers": [
+        {
+          "inputs": {
+            "end_percent": 1.0,
+            "start_percent": 0.0,
+            "weight": 2.0
+          },
+          "node": "WanVideoEnhanceAVideo",
+          "sampler_input": "feta_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      }
+    },
+    {
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "exercises": "error parity: upstream CFG-Zero* zero-init returns 2 values (nodes_sampler.py 1185, \"return z*0, None\") where every caller unpacks 3, so the original rejects this input at step 0",
+      "expect": "raise",
+      "expected_error": [
+        "ValueError",
+        "not enough values to unpack (expected 3, got 2)"
+      ],
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "item": "experimental_feta",
+      "name": "x5_zero_init_upstream_error",
+      "producers": [
+        {
+          "inputs": {
+            "bidirectional_sampling": false,
+            "cfg_zero_star": true,
+            "fresca_freq_cutoff": 20,
+            "fresca_scale_high": 1.25,
+            "fresca_scale_low": 1.0,
+            "raag_alpha": 0.0,
+            "temporal_score_rescaling": false,
+            "tsr_k": 0.95,
+            "tsr_sigma": 1.0,
+            "use_fresca": false,
+            "use_tcfg": false,
+            "use_zero_init": true,
+            "video_attention_split_steps": "",
+            "zero_star_steps": 0
+          },
+          "node": "WanVideoExperimentalArgs",
+          "sampler_input": "experimental_args"
+        }
+      ],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      },
+      "observer": "head"
+    },
+    {
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 1,
+        "width": 64
+      },
+      "exercises": "same case without batching: cond and uncond as separate forwards",
+      "expected_forwards": 4,
+      "expected_latent_shape": [
+        1,
+        16,
+        1,
+        8,
+        8
+      ],
+      "item": "batched_cfg",
+      "name": "b0_unbatched_cfg2",
+      "producers": [],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      }
+    },
+    {
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 1,
+        "width": 64
+      },
+      "exercises": "original defect: batched_cfg always raises TypeError; converted reproduces it (T2V half; nodes_sampler.py:1657-1663; clip_fea None -> torch.cat at 1659). Error parity, not a computation pass.",
+      "expected_forwards": 0,
+      "expected_latent_shape": [
+        1,
+        16,
+        1,
+        8,
+        8
+      ],
+      "extra": {
+        "batched_cfg": true
+      },
+      "item": "batched_cfg",
+      "name": "b1_batched_cfg2_error_parity",
+      "producers": [],
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expect": "raise",
+      "expected_error": [
+        "TypeError",
+        "expected Tensor as element 0 in argument 0, but got NoneType"
+      ],
+      "observer": "head"
+    }
+  ],
+  "inputs": {
+    "r5_latent": {
+      "bytes": 4096,
+      "container_path": "/inputs/r5-sampler-latent.bin",
+      "sha256": "ca2d93f4acbf3fd73fd6f69ce95d80c028ddce2340a7da8228a9fa0a8f3a2192",
+      "shape": [
+        1,
+        16,
+        1,
+        8,
+        8
+      ],
+      "source": "r5 internal_unipc_complete_workflow sampler output latent (as sampler slice b)"
+    }
+  },
+  "model": {
+    "bytes": 2874796712,
+    "catalogue_name": "huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/Wan2_1-T2V-1_3B_bf16.safetensors",
+    "container_path": "/models/diffusion_models/huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/Wan2_1-T2V-1_3B_bf16.safetensors",
+    "sha256": "bcb3c10ad5bbb03e597ebbf3ec1d1ce3e76180df99d4d11e1cc933ff92c066d5"
+  },
+  "model_loader": {
+    "attention_mode": "sdpa",
+    "base_precision": "bf16",
+    "load_device": "offload_device",
+    "quantization": "disabled",
+    "rms_norm_function": "default"
+  },
+  "original_producer_modules": [
+    "nodes"
+  ],
+  "package": "wan_v2_r3",
+  "sampler_runtime_sha256": "51b17ea93e8502722ad12df4b4e4611993eb56d23fcfae412c4e03245c229025",
+  "seed": 314159,
+  "text_embeds": {
+    "echoshot": false,
+    "negative_prompt_embeds": {
+      "bytes": 49152,
+      "container_path": "/inputs/internal_unipc_complete_workflow-text-negative_prompt_embeds-i0.bin",
+      "dtype": "bfloat16",
+      "sha256": "97fc473361185f65006fe6590a6a6746ccbacc0774c6ae8bfb077554b1b0e39c",
+      "shape": [
+        6,
+        4096
+      ]
+    },
+    "prompt_embeds": {
+      "bytes": 90112,
+      "container_path": "/inputs/internal_unipc_complete_workflow-text-prompt_embeds-i0.bin",
+      "dtype": "bfloat16",
+      "sha256": "9041b84752a8389cadc4a508943f243fab5829874f65c534b79b1b530afdb24b",
+      "shape": [
+        11,
+        4096
+      ]
+    }
+  },
+  "vendor_versions": [
+    "accelerate",
+    "diffusers",
+    "ftfy",
+    "gguf",
+    "huggingface-hub",
+    "protobuf",
+    "sentencepiece",
+    "tokenizers",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "wcwidth"
+  ],
+  "harness_changes_from_r2": [
+    "one container per role (host controller, Qwen r4 hardening); the in-container supervisor and pip install are gone",
+    "wheels pre-unpacked into read-only /native-site and /converted-site (WORKERS_R2_TO_R3.diff: two path lines)",
+    "comparator rev4 (reviewed set-literal normalization, declared on x3b only)"
+  ]
+}

@@ -1,0 +1,42 @@
+"""Role entry for the WAN feta/experimental + batched_cfg rerun r3. Runs inside a role container as uid/gid 1000 with no
+capabilities.
+
+usage (container entrypoint): /usr/local/bin/python3.13 -I -B -X faulthandler /prepared/role_entry.py --role original|converted
+It checks the hardened environment, then runs the r2 slice worker for the role with runpy. The worker is unchanged except for
+the two read-only site paths (WORKERS_R2_TO_R3.diff). The worker's own exit status is the container's exit status.
+"""
+import json
+import os
+import runpy
+import sys
+
+
+def require(condition, message):
+    if not condition:
+        print(json.dumps({'role_entry': 'REFUSED', 'reason': message}))
+        raise SystemExit(2)
+
+
+def main():
+    require('--role' in sys.argv, '--role required')
+    role = sys.argv[sys.argv.index('--role') + 1]
+    require(role in ('original', 'converted'), 'unknown role')
+    require(os.getuid() == 1000 and os.getgid() == 1000, 'uid/gid 1000 required')
+    require(list(sys.version_info[:3]) == [3, 13, 7] and os.path.realpath(sys.executable) == '/usr/local/bin/python3.13',
+            'image python 3.13.7 required')
+    require(sys.flags.isolated == 1 and sys.flags.dont_write_bytecode == 1 and sys.flags.no_site == 0, '-I -B with site required')
+    for key, value in (('HOME', '/tmp'), ('HF_HUB_OFFLINE', '1'), ('TRANSFORMERS_OFFLINE', '1'), ('CUDA_VISIBLE_DEVICES', '-1')):
+        require(os.environ.get(key) == value, key + ' must be ' + value)
+    with open('/prepared/CASE.json', 'rb') as stream:
+        case = json.loads(stream.read())
+    for path in ('/prepared/common.py', '/prepared/slice_%s.py' % role, '/original/wan_original', '/original/PRISTINE_GIT_BINDINGS.json',
+                 '/candidate/' + case['package'], '/native-core', '/native-site', '/converted-site', '/inputs', case['model']['container_path']):
+        require(os.path.exists(path), 'missing mount: ' + path)
+    require(os.access('/out', os.W_OK) and os.listdir('/out') == [], '/out must be fresh and writable')
+    require(os.access('/tmp', os.W_OK), '/tmp must be writable')
+    print(json.dumps({'role_entry': 'OK', 'role': role, 'uid_gid': [os.getuid(), os.getgid()], 'sys_path_head': sys.path[:4]}), flush=True)
+    sys.argv = ['/prepared/slice_%s.py' % role]
+    runpy.run_path('/prepared/slice_%s.py' % role, run_name='__main__')
+
+
+main()
