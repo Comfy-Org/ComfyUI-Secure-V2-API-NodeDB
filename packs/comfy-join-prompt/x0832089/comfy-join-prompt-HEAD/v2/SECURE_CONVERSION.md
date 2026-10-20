@@ -1,9 +1,10 @@
 <!-- secure-conversion-report-v1 -->
 
-> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
+> **STATUS: IN PROGRESS — PARTIAL VERIFICATION.** Published for evaluation on 2026-10-15 at the user's request.
 > Native backend differential and genuine normal-manifest evidence was verified on 2026-10-19.
 > The older conversion suites below are historical and unrefreshed; they are not claimed to pass
-> unchanged on the current SDK. Frontend, Guest/public executor and service acceptance remain open.
+> unchanged on the current SDK. Ten selected Core/ordinary required-Seatbelt Guest cases now pass.
+> Current frontend, managed-runtime admission and service acceptance remain open.
 > Not accepted: no whole-pack certificate.
 
 # Secure Nodes V2 conversion report — comfy-join-prompt
@@ -36,9 +37,23 @@ Approved deliberate placement difference: the legacy selection-toolbox chrome an
 
 ## Current native evidence (2026-10-19)
 
-The actual selected Mac attempt used Python 3.13.14, installed SDK 0.42.0/API141, Core `44564d0279c275eef52b11750a9d76349f4e7a88` and backend `59bd3e1acba6520bb32717ad03833f6ab2967ecc`. The genuine full original package and candidate completed 704 value/error comparisons plus 704 unchanged-component crosschecks, 7 resource guard denials and 6 detected comparator controls. Genuine normal encoding, canonical pair/bundle generation and both pristine-tree replays passed. Exact returned evidence and missing-purpose qualification are published separately under `validation/20261019-moe-resolution-join-native/joinprompt2`. This proves the recorded native backend and artifact subset; it does not exercise the current frontend, isolated Guest/Core public executor or shared service.
+The actual selected Mac attempt used Python 3.13.14, installed SDK 0.42.0/API141, Core `44564d0279c275eef52b11750a9d76349f4e7a88` and backend `59bd3e1acba6520bb32717ad03833f6ab2967ecc`. The genuine full original package and candidate completed 704 value/error comparisons plus 704 unchanged-component crosschecks, 7 resource guard denials and 6 detected comparator controls. Genuine normal encoding, canonical pair/bundle generation and both pristine-tree replays passed. Exact returned evidence and missing-purpose qualification are published separately under `validation/20261019-moe-resolution-join-native/joinprompt2`. That native run proves the recorded backend and artifact subset. The separate Core/Guest evidence below does not refresh the native suite or exercise the current frontend or shared service.
 
 This publication successor changes only this report and regenerates its canonical patch artifacts with byte/mode checks. Runtime code, the genuine normal manifest and prior native evidence remain byte-identical; the native scientific tests were not rerun for these prose changes.
+
+## Current Core boundary and ordinary Guest evidence (2026-10-19)
+
+The separately selected corrective revision 6 attempt passed ten comparisons between the genuine full original package and the unchanged candidate through real Core input finalization and ordinary Guest execution. Nine cases bind the retained native fixtures; a tenth supplies out-of-order `texts.text_2`, `texts.text_0`, `texts.text_1` inputs and observes Core's `zero|first|second` result. All ten actual Core-created plans dispatched through the genuine Guest session with zero local fallbacks. A corrupted actual STRING result was rejected by the comparator. These are ten selected cases, not another run of the 704-case native suite.
+
+The trusted controller used the selected Python 3.13.14/SDK 0.42.0/API141 environment, Core `44564d0279c275eef52b11750a9d76349f4e7a88` and backend `59bd3e1acba6520bb32717ad03833f6ab2967ecc`. One actual Guest started under required macOS Seatbelt with the genuine supported Host policy recipe, a candidate-only pack root, zero node capabilities and the recorded exact constructor, profile, argv, import and startup bindings. The controller itself ran outside outer Seatbelt. This development-host diagnostic does not establish managed module admission or production runtime readiness.
+
+The first revision 4 attempt remains **FAILED**: its ten comparisons completed, but fixture cleanup incorrectly awaited the `None` returned by the selected Core's synchronous `NoAssets.shutdown`. That failure receives no overall PASS or acceptance credit. Revision 5 calls the same synchronous shutdown exactly once and preserves fatal exception handling; revision 6 only corrects and reseals metadata. No node implementation changed. The single separately selected revision 6 attempt completed with no cleanup errors and no automatic retry. Both failed and corrective evidence are retained under `validation/20261020-moe-join-core-guest-r6`.
+
+The unchanged owner observed 41.059917875 seconds including preflight and postflight, with 8.2256455 seconds for payload and cleanup, within the selected 180-second work, 15-second cleanup and 200-second whole-owner bounds. Peak sampled aggregate RSS was 800,571,392 bytes under the observed 1 GiB watchdog; this is not a hard memory or CPU quota. Controller 77980 and Guest 78394 were independently absent after completion; no owned process or socket path remained. The actual journal contains one durable Guest birth with no journal, monitor or cleanup errors. This observation does not close the pre-fsync uncatchable-parent-kill gap.
+
+All 40 input files retained their exact bytes, sizes and modes. The before/after INPUT map JSON serializations differ (SHA-256 `047b27a75f44c2b4a20fc815cb2edf92e137366a7a85b4ceb87d3ef66c4e8146` and `8430b6ba84dfb6f4f009f07a3bfcb5fb553c50659e2fd8df55396affb79b650e`), while both parsed dictionaries equal the complete frozen configuration. The other five maps are byte-exact before/after: selected runtime, full site (84,917 entries), component prefix (96 entries), bindings and operator sources. Interpreter configuration and operator/payload bytes also remained unchanged. Compact records retain both INPUT maps and bind the larger raw maps in the retained archive.
+
+The strict result receipt is `73b3c3471b2ec2175313f9040888ab6065599ec6bbe4695b5b2d547cdf95120b`; the actual terminal archive is `821cad6fa3ff323e88478956efecc1bc6c92eabddb3ba4226e4d78248958a804`. Source-only publication updates this report and its matching canonical JSON/diff. Both current patch forms reconstruct all candidate files byte/mode-exactly on independent pristine trees, preserving all 43 original files. The normal manifest, node code, frontend, stubs and historical tests remain unchanged. No normal-generator, native, SDK, Guest or service job was rerun for publication. These observations do not constitute whole-pack, frontend, shared-service, managed-runtime or admission acceptance.
 
 ## Historical verification results (unrefreshed)
 
@@ -75,4 +90,4 @@ Workflow-serialized state; no durable pack state. Delimiter/cleanup travel with 
 
 Safety narrowing: text/options/delimiter input ≤64 KiB UTF-8 (surrogatepass for native direct calls), ≤50 autogrow values, projected joined output ≤1 MiB before final join allocation. Dialog edits are checked against the encoded options JSON limit including escaping overhead. Schema min=1 remains; direct empty groups still return the native empty string. Cleanup is bounded per input, and preserves empty tags and line structure; it does not deduplicate. Input/output beyond bounds is deliberately rejected rather than silently truncated.
 
-No full multi-pack workflow/browser deployment is certified by a recording harness or schema pass. Final supported recommendation requires the focused guest/executor/behavior/security/artifact gate twice and coordinator review.
+No full multi-pack workflow/browser deployment is certified. The recorded Core/Guest subset and file-only reconstruction do not refresh the historical full suite or close frontend, shared-service, managed-runtime and production-admission requirements. Coordinator review and separately selected remaining-purpose evidence are still required for a whole-pack recommendation.
