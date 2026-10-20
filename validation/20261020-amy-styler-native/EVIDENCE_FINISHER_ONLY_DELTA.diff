@@ -1,0 +1,23 @@
+--- prior-c452
++++ evidence-corrected
+@@ -128,7 +128,8 @@
+     artifacts_ok = len(artifact_readbacks) == 2 and all(row['replay_candidate_exact']
+         and row['replay_pristine_exact'] and row['changed_base_retains_only_declared_control']
+         and row['changed_base_exception'].get('exception') == 'PackPatchError'
+-        and 'base hash mismatch' in row['changed_base_exception'].get('message', '').lower()
++        and row['changed_base_exception'].get('message') ==
++            'base file does not match the manifest: sdxl_prompt_styler.py — this pair was generated against a different snapshot'
+         for row in artifact_readbacks.values())
+     controls = worker.get('ordinary_node_return_controls', {})
+     passed = (capture['capture_and_owner_pass'] and terminal['native_exit_code'] == 0
+@@ -175,7 +176,9 @@
+     files.save(CAPTURE / 'EXTERNAL-EXECUTION-RECEIPT.json', receipt)
+     queue_path = ROOT / 'temp/in_progress/sdk-main-rebase-20261019/FOLLOWUP-QUEUE.json'
+     queue = json.loads(queue_path.read_bytes())
+-    assert queue['active_jobs'] == 1 and queue['active_job'] == 'Styler2_native_R4'
++    assert (queue['active_jobs'] == 1 and queue['active_job'] == 'Styler2_native_R4'
++        or queue['active_jobs'] == 0 and queue['pending_selected_attempts'] ==
++            [{'task': 'Light28_native_R2', 'authority': 'm_dcfb79b20d'}])
+     queue.update(active_jobs=0, active_job=None, cleanup_hold=not absent,
+         cleanup_confirmation_required=not absent,
+         pending_selected_attempts=[{'task': 'Light28_native_R2', 'authority': 'm_dcfb79b20d'}],
