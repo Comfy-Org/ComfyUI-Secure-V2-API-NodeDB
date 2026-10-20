@@ -1,0 +1,11 @@
+--- R2/packet/worker.py
++++ R3/packet/worker.py
+@@ -77,7 +77,7 @@
+ 
+ def result_parts(value, io):
+     if isinstance(value, io.NodeOutput):
+-        return value.result, value.ui
++        return (() if value.result is None else value.result), value.ui
+     if type(value) is dict and ('ui' in value or 'result' in value):
+         return value.get('result', ()), value.get('ui')
+     values = value if type(value) in (list, tuple) else (value,)
