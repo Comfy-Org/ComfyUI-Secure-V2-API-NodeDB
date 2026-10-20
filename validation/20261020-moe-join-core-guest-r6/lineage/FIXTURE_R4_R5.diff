@@ -1,0 +1,15 @@
+--- r4/join_public_guest_fixture.py
++++ r5/join_public_guest_fixture.py
+@@ -283,7 +283,11 @@
+             if instance.client_session is not None:
+                 await cleanup_step('client session close',asyncio.wait_for(instance.client_session.close(),1))
+             await cleanup_step('server app cleanup',asyncio.wait_for(instance.app.cleanup(),1))
+-        await cleanup_step('asset manager shutdown',asyncio.wait_for(assets.shutdown(),1))
++        try:
++            # Selected Core NoAssets.shutdown is synchronous and returns None.
++            assets.shutdown()
++        except BaseException as error:
++            cleanup_errors.append('asset manager shutdown: '+repr(error))
+         server.PromptServer.instance=prior_instance
+         try:
+             require(inventory(pack)==before, 'Source changed during fixture')

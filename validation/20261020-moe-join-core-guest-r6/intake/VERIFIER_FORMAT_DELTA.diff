@@ -1,0 +1,37 @@
+--- R6-prepared-verifier
++++ R6-format-v2-verifier
+@@ -60,8 +60,14 @@
+     maps = []
+     for stem in ('INPUT', 'RUNTIME', 'COMPONENT-PREFIX', 'FULL-SITE', 'BINDINGS', 'OPERATOR-SOURCES'):
+         before, after = run / (stem + '-BEFORE.json'), run / (stem + '-AFTER.json')
+-        assert before.read_bytes() == after.read_bytes()
+-        maps.append(dict(name=stem, sha256=sha(before), before_after_bytes_equal=True))
++        if stem == 'INPUT':
++            # The reviewed owner compares hash/size/mode dictionaries, not JSON formatting.
++            assert load(before) == load(after) == config['input_files']
++        else:
++            assert before.read_bytes() == after.read_bytes()
++        maps.append(dict(name=stem, before_sha256=sha(before), after_sha256=sha(after),
++                         before_after_bytes_equal=before.read_bytes() == after.read_bytes(),
++                         before_after_JSON_equal=load(before) == load(after)))
+     assert load(run / 'INPUT-BEFORE.json') == config['input_files']
+     assert len(load(run / 'FULL-SITE-BEFORE.json')) == 84917
+     assert len(load(run / 'COMPONENT-PREFIX-BEFORE.json')) == 96
+@@ -171,8 +177,15 @@
+     assert set(independent['full_maps']) == {r['name'] for r in maps}
+     for stem, row in independent['full_maps'].items():
+         assert row['equal'] is True
+-        assert row['before_sha256'] == row['after_sha256'] == sha(run / (stem + '-BEFORE.json'))
+-    assert independent['interpreter_config']['sha256'] == config['interpreter_configuration']['sha256']
++        assert row['before_sha256'] == sha(run / (stem + '-BEFORE.json'))
++        assert row['after_sha256'] == sha(run / (stem + '-AFTER.json'))
++        assert load(run / (stem + '-BEFORE.json')) == load(run / (stem + '-AFTER.json'))
++    assert independent['interpreter_config_sha256'] == config['interpreter_configuration']['sha256']
++    assert independent['frozen_config_sha256'] == CONFIG_SHA
++    assert independent['runtime_attempts'] == 1 and independent['automatic_retries'] == 0
++    assert independent['overall_qualification_status'] == outer['status']
++    assert independent['hard_memory_or_CPU_quota'] is False
++    assert independent['aggregate_rss_peak_bytes'] == outer['aggregate_rss_peak_bytes']
+     receipt.update(status='VERIFIED_JOIN_CORE_BOUNDARY_AND_ORDINARY_SEATBELT_GUEST_ONLY',
+                    correction_revision='R6_METADATA_R5_SYNC_SHUTDOWN',
+                    independent_postflight_sha256=sha(independent_path),
