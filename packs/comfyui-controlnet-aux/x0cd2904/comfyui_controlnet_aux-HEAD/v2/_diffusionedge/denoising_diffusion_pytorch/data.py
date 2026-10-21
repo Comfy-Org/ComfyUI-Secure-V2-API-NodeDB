@@ -16,7 +16,6 @@ import os
 import pickle
 import numpy as np
 import copy
-import albumentations
 from torchvision.transforms.functional import InterpolationMode
 
 def get_imgs_list(imgs_dir):

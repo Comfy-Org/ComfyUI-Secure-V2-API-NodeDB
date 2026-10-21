@@ -10,9 +10,7 @@ import re
 
 PIN='0cd290477128d42cdc3e76a826a402d866e8c684'
 REPO='hr16/Diffusion-Edge'
-MAX_RESOURCE_BYTES=1024*1024*1024
 MAX_TOTAL_BYTES=2*1024*1024*1024
-PUBLISHED_DEFAULT_READ_MAX=64*1024*1024
 CURRENT=ContextVar('diffusion_edge_sealed_construction',default=None)
 AUTHORITIES=('dependency_setup','torch_restricted_reader','raw_nested_container_storage_metadata','yaml_config',
              'device_policy','current_invocation','exclusive_global_rng_config_lifetime','image_realm','finite_patch_workspace',
@@ -30,6 +28,10 @@ def validate_selection(item):
         raise RuntimeError('DiffusionEdge actual setup/raw storage/vendor/YAML/RNG/workspace authority missing')
     if type(item.get('device')) is not str or not re.fullmatch(r'cpu|mps|cuda(?::[0-9]+)?',item['device']):
         raise RuntimeError('DiffusionEdge real device unselected')
+    # The restricted-globals proofs use private torch APIs (get_globals_in_pkl, the default allowlist): the selection pins
+    # the torch build they were inspected on, and restricted_checkpoint refuses any other.
+    if type(item.get('torch_runtime_version')) is not str or not item['torch_runtime_version']:
+        raise RuntimeError('DiffusionEdge restricted decode torch runtime version is unselected')
     if item.get('environment') not in ('indoor','urban','natrual'):
         raise RuntimeError('DiffusionEdge exact source environment unselected')
     if item.get('main_cpu_weights_only_correspondence') is not True or item.get('auxiliary_saved_cpu_storage_correspondence') is not True:
@@ -41,14 +43,19 @@ def validate_selection(item):
     for key,r in resources.items():
         if r.get('approved') is not True or not all(is_sha(r.get(k)) for k in ('sha256','raw_structure_sha256','raw_container_evidence_sha256','saved_cpu_storage_evidence_sha256')):
             raise RuntimeError('DiffusionEdge actual immutable raw resource evidence missing')
-        if type(r.get('bytes')) is not int or not 0<r['bytes']<=MAX_RESOURCE_BYTES:
+        # Bounded by the total budget only: the pinned main checkpoint is about 1.19 GB, and resources are read in
+        # bounded read_range chunks (the 64 MiB guest cap on whole-asset reads does not apply).
+        if type(r.get('bytes')) is not int or not 0<r['bytes']<=MAX_TOTAL_BYTES:
             raise RuntimeError('DiffusionEdge actual bounded resource bytes missing')
-        if r['bytes']>PUBLISHED_DEFAULT_READ_MAX:
-            raise RuntimeError('DiffusionEdge resource exceeds published default64MiB sealed-byte read contract; new owning disposition required')
         if type(r.get('tensor_bytes')) is not int or not 0<r['tensor_bytes']<=MAX_TOTAL_BYTES:
             raise RuntimeError('DiffusionEdge actual CPU tensor materialization missing')
         if not all(type(r.get(k)) is str and r[k] for k in ('folder','catalogue_name','publisher','filename','revision')):
             raise RuntimeError('DiffusionEdge genuine sealed resource/provenance missing')
+        # The per-archive restricted-globals proof is pinned with the selection and checked here, before any vendor
+        # import or asset read: the archive format and the exact sorted global list from the inspection.
+        pinned=r.get('pickle_globals')
+        if r.get('archive_format') not in ('zip','legacy') or type(pinned) is not list or not pinned or any(type(g) is not str or not g for g in pinned) or pinned!=sorted(set(pinned)):
+            raise RuntimeError('DiffusionEdge restricted decode archive format/pinned pickle globals are unselected')
         total+=r['bytes']
     if total>MAX_TOTAL_BYTES:raise RuntimeError('DiffusionEdge sealed resource buffer budget exceeded')
     if resources['main']['publisher']!=REPO or resources['main']['filename']!=f"diffusion_edge_{item['environment']}.pt":
@@ -73,12 +80,13 @@ def selected_construction(environment):
 async def sealed_buffers(item):
     validate_selection(item)
     from comfy_api.latest import sdk
+    from .._sealed_asset_read import read_sealed_asset
     assets=sdk.ctx().assets;out={}
     for key in ('vgg16','lpips','swin_b','main'):
         r=item['resources'][key];ref=await assets.resolve(r['folder'],r['catalogue_name'])
         if await assets.size(ref)!=r['bytes'] or await assets.digest(ref,'sha256')!=r['sha256']:
             raise RuntimeError('DiffusionEdge immutable resource size/digest differs')
-        blob=await assets.read_bytes(ref)
+        blob=await read_sealed_asset(assets,ref,r['bytes'],r['sha256'])
         if type(blob) is not bytes or len(blob)!=r['bytes'] or sha(blob)!=r['sha256']:
             raise RuntimeError('DiffusionEdge actual sealed buffer differs')
         out[key]=blob
@@ -97,10 +105,34 @@ def restricted_checkpoint(key):
     if current is None:raise RuntimeError('DiffusionEdge checkpoint read outside approved construction')
     item,buffers=current;validate_selection(item)
     if key not in buffers:raise RuntimeError('DiffusionEdge optional native checkpoint/resource unselected')
+    blob=buffers[key]
+    if blob is None:raise RuntimeError('DiffusionEdge sealed resource already decoded; each resource is read once')
+    # Release the sealed bytes with this single decode (peak memory); the decoded value is checked below.
+    buffers[key]=None
+    # ComfyUI registers extra torch safe globals at import, so the decode may resolve only this archive's pinned,
+    # default-allowlisted globals: zip archives through _restricted_globals, legacy archives through _restricted_legacy_globals.
+    record=item['resources'][key]
+    import torch
+    if torch.__version__!=item['torch_runtime_version']:
+        raise RuntimeError('DiffusionEdge restricted decode torch runtime differs from the selected version')
+    if record['archive_format']=='zip':
+        from .._restricted_globals import require_default_allowlisted
+        require_default_allowlisted(blob,record['pickle_globals'])
+    else:
+        from .._restricted_legacy_globals import require_default_allowlisted_legacy
+        require_default_allowlisted_legacy(blob,record['pickle_globals'])
     # Exact physically bound Torch reader source; no safe-global additions,
     # raw host path, default pickle, flattening, synthesized model or EMA map.
     import torch
-    value=torch.load(io.BytesIO(buffers[key]),map_location='cpu',weights_only=True)
+    value=torch.load(io.BytesIO(blob),map_location='cpu',weights_only=True)
+    del blob
+    structure,total=raw_structure(value,torch);record=item['resources'][key]
+    if sha(json.dumps(structure,sort_keys=True,separators=(',',':')).encode())!=record['raw_structure_sha256'] or total!=record['tensor_bytes'] or total>MAX_TOTAL_BYTES:
+        raise RuntimeError('DiffusionEdge actual raw nested metadata/storage structure differs')
+    return value
+
+def raw_structure(value,torch):
+    """The restricted primitive/Tensor container description and its CPU tensor bytes (also used by the inspection step)."""
     storages={};total=0;count=0
     def describe(v,depth=0):
         nonlocal total,count
@@ -121,10 +153,8 @@ def restricted_checkpoint(key):
         if type(v) in (list,tuple):return dict(kind=type(v).__name__,items=[describe(x,depth+1) for x in v])
         if v is None or type(v) in (str,int,float,bool):return dict(kind=type(v).__name__,value=v)
         raise RuntimeError('DiffusionEdge restricted primitive/Tensor container contract unsupported')
-    structure=describe(value);record=item['resources'][key]
-    if sha(json.dumps(structure,sort_keys=True,separators=(',',':')).encode())!=record['raw_structure_sha256'] or total!=record['tensor_bytes'] or total>MAX_TOTAL_BYTES:
-        raise RuntimeError('DiffusionEdge actual raw nested metadata/storage structure differs')
-    return value
+    structure=describe(value)
+    return structure,total
 
 def private_module_name(module_name):
     prefix='custom_controlnet_aux.diffusion_edge'
