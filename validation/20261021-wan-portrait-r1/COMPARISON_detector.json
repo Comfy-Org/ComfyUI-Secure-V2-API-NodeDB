@@ -1,0 +1,198 @@
+{
+  "checks": {
+    "converted_module_digests_as_bound": true,
+    "cpu_execution_provider_available": true,
+    "d1_face5_default:bbox_equal": true,
+    "d1_face5_default:both_returned": true,
+    "d1_face5_default:converted_recipe_exact": true,
+    "d1_face5_default:expected_embeds_shape": true,
+    "d1_face5_default:inputs_equal": true,
+    "d1_face5_default:landmarks_equal": true,
+    "d1_face5_default:no_face_frame_2_forward_filled": true,
+    "d1_face5_default:outputs_finite": true,
+    "d1_face5_default:portrait_embeds_meta_equal": true,
+    "d1_face5_default:portrait_embeds_raw_bytes_equal": true,
+    "d1_face5_default:rng_after_case_equal": true,
+    "d1_face5_default:rng_after_loader_equal": true,
+    "d1_face5_default:rng_after_seed_equal": true,
+    "d2_face9_scales:bbox_equal": true,
+    "d2_face9_scales:both_returned": true,
+    "d2_face9_scales:converted_recipe_exact": true,
+    "d2_face9_scales:expected_embeds_shape": true,
+    "d2_face9_scales:inputs_equal": true,
+    "d2_face9_scales:landmarks_equal": true,
+    "d2_face9_scales:no_face_frame_4_forward_filled": true,
+    "d2_face9_scales:outputs_finite": true,
+    "d2_face9_scales:portrait_embeds_meta_equal": true,
+    "d2_face9_scales:portrait_embeds_raw_bytes_equal": true,
+    "d2_face9_scales:rng_after_case_equal": true,
+    "d2_face9_scales:rng_after_loader_equal": true,
+    "d2_face9_scales:rng_after_seed_equal": true,
+    "d2_face9_scales:slice_input_changes_original_output": true,
+    "d3_noface5:both_raised": true,
+    "d3_noface5:converted_recipe_exact": true,
+    "d3_noface5:inputs_equal": true,
+    "d3_noface5:original_error_is_the_cited_one": true,
+    "d3_noface5:raising_files_as_mapped": true,
+    "d3_noface5:rng_after_case_equal": true,
+    "d3_noface5:rng_after_loader_equal": true,
+    "d3_noface5:rng_after_seed_equal": true,
+    "d3_noface5:same_exception_type_and_message": true,
+    "d3_noface5:same_full_message_digest_and_length": true,
+    "d3_noface5:same_raising_function": true,
+    "d4_short3:both_raised": true,
+    "d4_short3:converted_recipe_exact": true,
+    "d4_short3:inputs_equal": true,
+    "d4_short3:original_error_is_the_cited_one": true,
+    "d4_short3:raising_files_as_mapped": true,
+    "d4_short3:rng_after_case_equal": true,
+    "d4_short3:rng_after_loader_equal": true,
+    "d4_short3:rng_after_seed_equal": true,
+    "d4_short3:same_exception_type_and_message": true,
+    "d4_short3:same_full_message_digest_and_length": true,
+    "d4_short3:same_raising_function": true,
+    "environment_as_bound": true,
+    "onnx_assets_pinned_in_both_roles": true,
+    "registry_146": true,
+    "same_versions_environment_cpu": true,
+    "workers_completed": true
+  },
+  "details": {},
+  "failed_checks": [],
+  "info": {
+    "cases": [
+      {
+        "base_precision": "fp16",
+        "device": "cpu",
+        "exercises": "five frames (one no-face frame forward-filled), default scales; CPUExecutionProvider",
+        "frames": [
+          "face",
+          "shift_r",
+          "black",
+          "shift_d",
+          "face"
+        ],
+        "item": "detector",
+        "name": "d1_face5_default",
+        "no_face_frames": [
+          2
+        ],
+        "scales": {
+          "adapter_scale": 1.0,
+          "emo_scale": 1.0,
+          "mouth_scale": 1.0
+        }
+      },
+      {
+        "base_precision": "fp16",
+        "device": "cpu",
+        "differs_from_case": "d1_face5_default",
+        "exercises": "nine frames (three latent frames), non-default scales",
+        "frames": [
+          "face",
+          "shift_r",
+          "shift_d",
+          "face",
+          "black",
+          "face",
+          "shift_r",
+          "shift_d",
+          "face"
+        ],
+        "item": "detector",
+        "name": "d2_face9_scales",
+        "no_face_frames": [
+          4
+        ],
+        "scales": {
+          "adapter_scale": 0.5,
+          "emo_scale": 2.0,
+          "mouth_scale": 1.5
+        }
+      },
+      {
+        "base_precision": "fp16",
+        "device": "cpu",
+        "exercises": "no face in any frame: the original fills nothing, and warp_face_pd_fgc subscripts None (pdf.py 105). The converted vendored copy of pdf.py is secure_portrait_pd_math.py (reformatted; same function)",
+        "expect": "raise",
+        "expected_error": [
+          "TypeError",
+          "'NoneType' object is not subscriptable"
+        ],
+        "expected_raising": {
+          "files": {
+            "converted": "secure_portrait_pd_math.py",
+            "original": "pdf.py"
+          },
+          "function": "warp_face_pd_fgc"
+        },
+        "frames": [
+          "black",
+          "black",
+          "black",
+          "black",
+          "black"
+        ],
+        "item": "detector",
+        "name": "d3_noface5",
+        "scales": {
+          "adapter_scale": 1.0,
+          "emo_scale": 1.0,
+          "mouth_scale": 1.0
+        }
+      },
+      {
+        "base_precision": "fp16",
+        "device": "cpu",
+        "exercises": "fewer than five frames: num_frames 1 gives one segment, and split_audio_adapter_sequence reads pos_idx_range[1] (fantasyportrait/model.py 228-231; vendored copy identical)",
+        "expect": "raise",
+        "expected_error": [
+          "IndexError",
+          "list index out of range"
+        ],
+        "expected_raising": {
+          "files": {
+            "converted": "model.py",
+            "original": "model.py"
+          },
+          "function": "split_audio_adapter_sequence"
+        },
+        "frames": [
+          "face",
+          "shift_r",
+          "face"
+        ],
+        "item": "detector",
+        "name": "d4_short3",
+        "scales": {
+          "adapter_scale": 1.0,
+          "emo_scale": 1.0,
+          "mouth_scale": 1.0
+        }
+      }
+    ],
+    "d1_face5_default:seconds": [
+      6.609,
+      11.118
+    ],
+    "d2_face9_scales:seconds": [
+      9.369,
+      12.061
+    ],
+    "d3_noface5:seconds": [
+      2.118,
+      3.275
+    ],
+    "d4_short3:seconds": [
+      2.71,
+      3.357
+    ],
+    "label": "FantasyPortrait loader + face detector, native CPU, original vs converted on the default-SDK in-process route; the test environment supplies onnxruntime 1.30.0 (CPU provider) and opencv 4.12; the converted pack's ONNX dependency profile stays unadmitted in the deployed runtime (the converted detector refuses at import there); not Guest, not GPU/CUDA"
+  },
+  "item": "detector",
+  "results_sha256": {
+    "CONVERTED_RESULT.json": "7dd559e3c2028d75e57a1e290fa5a31b5dd7073babe72e2aa8cb623860211e62",
+    "ORIGINAL_RESULT.json": "f940cbcdc70d20338569ac8bda47195ccd73ae98546e22cc2b7555c98ff37860"
+  },
+  "status": "PASS_SLICE_DETECTOR"
+}

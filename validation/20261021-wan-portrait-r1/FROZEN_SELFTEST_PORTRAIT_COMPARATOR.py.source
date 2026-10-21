@@ -1,0 +1,205 @@
+"""Comparator self-test on the SHIPPED capsule/CASE.json (FantasyPortrait r1). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_portrait_comparator.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch, onnxruntime, cv2 or SDK.
+1. Build one synthetic ORIGINAL/CONVERTED result pair that satisfies every check the shipped comparator derives from the shipped
+   CASE.json.
+2. Every item must PASS.
+3. Each control mutates recorded fields. The targeted check must then fail and its item must be FAIL; other failing checks are
+   recorded too.
+SELFTEST.json records the CASE.json and comparator sha256 and the per-item check counts.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+COMPARATOR = 'compare_portrait_r1.py'
+DTYPES = {'fp16': 'float16', 'bf16': 'bfloat16', 'fp32': 'float32'}
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def tensor(raw, shape, dtype='float16', raw_file=None):
+    meta = {'dtype': dtype, 'shape': shape, 'bytes': len(raw), 'sha256': sha(raw), 'finite': True}
+    if raw_file:
+        meta['raw_file'] = raw_file
+    return meta
+
+
+def ndarray(seed, shape):
+    raw = bytes([seed % 251]) * 16
+    return {'ndarray': {'dtype': 'float32', 'shape': shape, 'sha256': sha(raw), 'finite': True}}
+
+
+def synthetic(case_file, registered):
+    env = dict(case_file['environment_expect'], onnxruntime_providers=['CPUExecutionProvider'])
+    common_role = {'versions': {'torch': 'x', 'onnxruntime': case_file['environment_expect']['onnxruntime']}, 'cpu': {'threads': 1},
+                   'environment': env, 'onnx_assets': dict(case_file['onnx_assets']), 'cases': {}}
+    original = dict(json.loads(json.dumps(common_role)), status='ORIGINAL_PORTRAIT_DONE')
+    converted = dict(json.loads(json.dumps(common_role)), status='CONVERTED_PORTRAIT_DONE', registered_count=registered,
+                     module_sha256=dict(case_file['converted_module_pins']))
+    raws = {}
+    for index, case in enumerate(case_file['cases']):
+        name = case['name']
+        recipe = {'format': 'wan-fantasy-portrait-recipe-v1', 'model_name': case_file['model']['catalogue_name'],
+                  'weights_sha256': case_file['model']['sha256'], 'base_precision': case['base_precision']}
+        base = {'rng_after_seed': 'r0', 'rng_after_loader': 'r1', 'rng_after_case': 'r2', 'seconds': 1.0}
+        o, c = dict(base), dict(base, recipe=recipe)
+        if case['item'] == 'loader':
+            want = DTYPES[case['base_precision']]
+            rows = {'proj_model.norm.weight': {'dtype': want, 'shape': [2048], 'device': 'cpu', 'sha256': '1' * 64}}
+            proj = {'class': 'PortraitAdapter', 'dtype_attr': 'torch.' + want, 'training': True, 'repr_sha256': '2' * 64, 'tensors': 1,
+                    'digest': sha(json.dumps(rows, sort_keys=True).encode()), 'rows': rows}
+            state = {'keys': 3, 'digest': '3' * 64, 'rows': {}}
+            o['resource'] = {'proj_model': json.loads(json.dumps(proj)), 'sd': dict(state)}
+            c.update(resource={'proj_model': json.loads(json.dumps(proj)), 'sd': dict(state)}, rng_after_probe='r1', recipe_rebuilt=dict(recipe))
+        else:
+            images = tensor(bytes([index]) * 64, [len(case['frames']), 512, 512, 3], 'float32')
+            o['inputs'] = {'images': images, 'frames': list(case['frames'])}
+            c['inputs'] = json.loads(json.dumps(o['inputs']))  # separate objects: a control mutates one role only
+            if case.get('expect') == 'raise':
+                kind, message = case['expected_error']
+                outcome = {'raised': True, 'type': kind, 'message': message, 'message_sha256': sha(message.encode()),
+                           'message_length': len(message), 'message_tail': message[-300:],
+                           'raising_function': case['expected_raising']['function'], 'raising_line': 1}
+                o['outcome'] = dict(outcome, raising_file=case['expected_raising']['files']['original'])
+                c['outcome'] = dict(outcome, raising_file=case['expected_raising']['files']['converted'])
+            else:
+                frames = len(case['frames'])
+                latent = ((((frames - 1) // 4) * 4 + 1) - 1) // 4 + 1
+                raw = bytes([index + 7]) * 128
+                rects, marks = [], []
+                for k, frame in enumerate(case['frames']):
+                    source = k - 1 if (k in case.get('no_face_frames', []) and k > 0) else k
+                    rects.append({'ndarray': {'dtype': 'float64', 'shape': [4], 'sha256': sha(b'r%d' % source), 'finite': True,
+                                              'values': ['1.0', '2.0', '3.0', '4.0']}})
+                    marks.append(ndarray(source + index * 10, [222, 2]))
+                outputs = {'bbox': {'list': rects}, 'landmarks': {'list': marks}}
+                o['outcome'], c['outcome'] = {'raised': False}, {'raised': False}
+                o['outputs'] = dict(outputs, portrait_embeds=tensor(raw, [1, latent, 24, 2048], 'float16', 'original-%s-embeds.bin' % name))
+                c['outputs'] = json.loads(json.dumps(dict(outputs, portrait_embeds=tensor(raw, [1, latent, 24, 2048], 'float16',
+                                                                                          'converted-%s-embeds.bin' % name))))
+                raws['original-%s-embeds.bin' % name] = raw
+                raws['converted-%s-embeds.bin' % name] = raw
+        original['cases'][name], converted['cases'][name] = o, c
+    return original, converted, raws
+
+
+def run_comparator(packet, root, original, converted, raws):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'ORIGINAL_RESULT.json').write_text(json.dumps(original))
+    (out / 'CONVERTED_RESULT.json').write_text(json.dumps(converted))
+    for name, data in raws.items():
+        (out / name).write_bytes(data)
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule' / COMPARATOR), '--out-dir', str(out),
+                             '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    status = json.loads((out / 'COMPARISON.json').read_text())
+    items = {item: json.loads((out / ('COMPARISON_%s.json' % item)).read_text()) for item in status['items']}
+    return status, items, result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    comparator_bytes = (packet / 'capsule' / COMPARATOR).read_bytes()
+    case_file = json.loads(case_bytes)
+    registered = int(re.search(r'^EXPECTED_REGISTERED = (\d+)$', comparator_bytes.decode(), re.M).group(1))
+    names = {c['name']: c for c in case_file['cases']}
+    loaders = [c['name'] for c in case_file['cases'] if c['item'] == 'loader']
+    returning = [c['name'] for c in case_file['cases'] if c['item'] == 'detector' and c.get('expect') != 'raise']
+    raising = [c['name'] for c in case_file['cases'] if c.get('expect') == 'raise']
+    filled = next(c for c in case_file['cases'] if c.get('no_face_frames'))
+    d1, d2 = returning[0], returning[1]
+    noface = next(n for n in raising if names[n]['expected_raising']['files']['original'] != names[n]['expected_raising']['files']['converted'])
+    short = next(n for n in raising if n != noface)
+    l1, l2, l3 = loaders
+    status, items, code = run_comparator(packet, out / 'clean', *synthetic(case_file, registered))
+    clean_ok = status['status'].startswith('PASS_PORTRAIT_') and all(d['status'].startswith('PASS_SLICE_') for d in items.values()) and code == 0
+    record = {'format': 'jack-wan-portrait-comparator-selftest/1', 'case_sha256': sha(case_bytes), 'comparator': COMPARATOR,
+              'comparator_sha256': sha(comparator_bytes), 'cases': list(names),
+              'clean': {'status': status['status'], 'items': status['items'],
+                        'checks_true_per_item': {k: sum(1 for v in d['checks'].values() if v) for k, d in items.items()},
+                        'checks_total_per_item': {k: len(d['checks']) for k, d in items.items()}}, 'controls': {}}
+
+    def conv(fn):
+        return lambda o, c, r: fn(c)
+
+    def both(fn):
+        return lambda o, c, r: (fn(o), fn(c))
+
+    def embeds_bytes(o, c, r):
+        r['converted-%s-embeds.bin' % d1] = b'\x00' * 128
+
+    def same_as_d1(o, c, r):
+        for role, doc in (('original', o), ('converted', c)):
+            doc['cases'][d2]['outputs']['portrait_embeds'] = dict(doc['cases'][d1]['outputs']['portrait_embeds'],
+                                                                  raw_file='%s-%s-embeds.bin' % (role, d2))
+            r['%s-%s-embeds.bin' % (role, d2)] = r['%s-%s-embeds.bin' % (role, d1)]
+
+    def unfill(doc):
+        k = filled['no_face_frames'][0]
+        doc['cases'][filled['name']]['outputs']['bbox']['list'][k]['ndarray']['sha256'] = 'f' * 64
+
+    controls = [
+        ('recipe_digest', 'loader', l1 + ':converted_recipe_exact', conv(lambda c: c['cases'][l1]['recipe'].update(weights_sha256='e' * 64))),
+        ('rebuild_differs', 'loader', l2 + ':converted_recipe_rebuild_repeats_it', conv(lambda c: c['cases'][l2]['recipe_rebuilt'].update(base_precision='fp16'))),
+        ('proj_tensor', 'loader', l1 + ':proj_model_equal_tensor_by_tensor',
+         conv(lambda c: c['cases'][l1]['resource']['proj_model']['rows']['proj_model.norm.weight'].update(sha256='9' * 64))),
+        ('state_dict', 'loader', l3 + ':state_dict_equal', conv(lambda c: c['cases'][l3]['resource']['sd'].update(digest='8' * 64))),
+        ('dtype', 'loader', l2 + ':proj_model_dtype_as_requested',
+         both(lambda d: d['cases'][l2]['resource']['proj_model']['rows']['proj_model.norm.weight'].update(dtype='float16'))),
+        ('probe_rng', 'loader', l1 + ':converted_rebuild_probe_preserved_rng', conv(lambda c: c['cases'][l1].update(rng_after_probe='rX'))),
+        ('loader_rng', 'loader', l3 + ':rng_after_loader_equal', conv(lambda c: c['cases'][l3].update(rng_after_loader='rX'))),
+        ('inputs', 'detector', d1 + ':inputs_equal', conv(lambda c: c['cases'][d1]['inputs']['images'].update(sha256='7' * 64))),
+        ('embeds_bytes', 'detector', d1 + ':portrait_embeds_raw_bytes_equal', embeds_bytes),
+        ('bbox', 'detector', d1 + ':bbox_equal', conv(lambda c: c['cases'][d1]['outputs']['bbox']['list'][0]['ndarray'].update(values=['9.0'] * 4))),
+        ('landmarks', 'detector', d2 + ':landmarks_equal', conv(lambda c: c['cases'][d2]['outputs']['landmarks']['list'][1]['ndarray'].update(sha256='6' * 64))),
+        ('non_finite', 'detector', d1 + ':outputs_finite', both(lambda d: d['cases'][d1]['outputs']['portrait_embeds'].update(finite=False))),
+        ('shape', 'detector', d1 + ':expected_embeds_shape', both(lambda d: d['cases'][d1]['outputs']['portrait_embeds'].update(shape=[1, 9, 24, 2048]))),
+        ('no_face_fill', 'detector', filled['name'] + ':no_face_frame_%d_forward_filled' % filled['no_face_frames'][0], both(unfill)),
+        ('differs', 'detector', d2 + ':slice_input_changes_original_output', same_as_d1),
+        ('noface_message', 'detector', noface + ':original_error_is_the_cited_one',
+         both(lambda d: d['cases'][noface]['outcome'].update(message='something else'))),
+        ('noface_file_map', 'detector', noface + ':raising_files_as_mapped', conv(lambda c: c['cases'][noface]['outcome'].update(raising_file='pdf2.py'))),
+        ('short_function', 'detector', short + ':same_raising_function', both(lambda d: d['cases'][short]['outcome'].update(raising_function='other'))),
+        ('onnx_asset', 'detector', 'onnx_assets_pinned_in_both_roles',
+         conv(lambda c: c['onnx_assets'].update({sorted(c['onnx_assets'])[0]: 'd' * 64}))),
+        ('module_pin', 'loader', 'converted_module_digests_as_bound',
+         conv(lambda c: c['module_sha256'].update({sorted(c['module_sha256'])[0]: 'c' * 64}))),
+        ('registry', 'loader', 'registry_146', conv(lambda c: c.update(registered_count=registered - 1))),
+        ('environment', 'detector', 'environment_as_bound', both(lambda d: d['environment'].update(onnxruntime='0.0.0')))]
+    all_ok = clean_ok
+    for name, item, check, mutate in controls:
+        original, converted, raws = synthetic(case_file, registered)
+        mutate(original, converted, raws)
+        status, items, code = run_comparator(packet, out / ('control-' + name), original, converted, raws)
+        doc = items[item]
+        failed = sorted(k for k, v in doc['checks'].items() if not v)
+        ok = doc['status'].startswith('FAIL_SLICE_') and check in failed
+        record['controls'][name] = {'item': item, 'targeted_check': check, 'item_status': doc['status'], 'failed_checks': failed,
+                                    'result': 'REFUSED' if ok else 'NOT DETECTED'}
+        all_ok = all_ok and ok
+    record['status'] = 'PASS_COMPARATOR_SELFTEST' if all_ok else 'FAILED_COMPARATOR_SELFTEST'
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'clean': record['clean']['status'], 'controls': len(controls),
+                      'not_refused': sorted(k for k, v in record['controls'].items() if v['result'] != 'REFUSED'),
+                      'checks_total_per_item': record['clean']['checks_total_per_item']}))
+    return 0 if all_ok else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

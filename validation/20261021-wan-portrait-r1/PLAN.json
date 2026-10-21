@@ -1,0 +1,71 @@
+{
+  "status": "SOURCE_ONLY_UNSELECTED_UNRUN",
+  "authority": "MERVYN m_8fcb266085, m_5600b71965",
+  "label": "FantasyPortrait loader + face detector, native CPU, original vs converted on the default-SDK in-process route; the test environment supplies onnxruntime 1.30.0 (CPU provider) and opencv 4.12; the converted pack's ONNX dependency profile stays unadmitted in the deployed runtime (the converted detector refuses at import there); not Guest, not GPU/CUDA",
+  "rows": [
+    "FantasyPortraitModelLoader",
+    "FantasyPortraitFaceDetector"
+  ],
+  "candidate": "corpus origin/main f66757d8ac82fa021ca211843a0aa94d71a725c1 v2 (published WAN); package wan_v2_pt1",
+  "roles": "original (genuine 088128b; opencv-site) then converted (registered wan_v2_pt1, in-process SDK; converted-site); one container each",
+  "cases": [
+    "l1_fp16",
+    "l2_bf16",
+    "l3_fp32",
+    "d1_face5_default",
+    "d2_face9_scales",
+    "d3_noface5",
+    "d4_short3"
+  ],
+  "items": [
+    "loader",
+    "detector"
+  ],
+  "model": "Wan2_1_FantasyPortrait_fp16 1b80e538 (2,046,114,748 B), bundled ONNX face_det + face_landmark, bundled woman.jpg",
+  "dependencies": {
+    "onnxruntime": "image e48accf7 onnxruntime 1.30.0 (CPU build; CPUExecutionProvider) - no wheel fetched",
+    "opencv": "opencv-python-headless 4.12.0.88 from the r2 registry lock (already RECORD-verified), identical on both roles",
+    "new_downloads": 0
+  },
+  "hardening": {
+    "user": "1000:1000, --cap-drop ALL, no-new-privileges",
+    "network": "none",
+    "root": "read-only",
+    "tmp": "tmpfs 3840 MiB noexec",
+    "writable": "only the role /out",
+    "out_disk_fail_stop": "1 GiB",
+    "integrity": "packet + six material trees before each role; CASE parsed from pinned bytes",
+    "isolation": "original sees no candidate/converted-site; converted sees no opencv-site",
+    "comparator_inputs": "O_NOFOLLOW copies, re-hashed right before the comparator",
+    "removal": "exact ID, absence twice",
+    "retries": 0
+  },
+  "cap": {
+    "container_memory_bytes": 6442450944,
+    "memory_equals_swap": true,
+    "sampled_stop_bytes": 5905580032,
+    "launch_gate": "MemAvailable >= cap + 4 GiB = 10 GiB",
+    "role_work_seconds": 420,
+    "roles": 2,
+    "basis": "one 2.05 GB fp16 state at a time per role (the SDK load_state_dict uses comfy.utils.load_torch_file directly, no private copy) + the adapter (~0.33 GB fp16 / 0.66 GB fp32) + ONNX/FanEncoder; expected peak ~3.5-4 GiB"
+  },
+  "envelope": {
+    "expected": "original ~60-90 s, converted ~90-150 s (two loads per converted case)"
+  },
+  "expected_statuses": {
+    "loader": "PASS (recipe rebuild bitwise equal at fp16/bf16/fp32)",
+    "detector": "PASS (exact outputs; original TypeError/IndexError parity)"
+  },
+  "not_claimed": [
+    "the deployed-runtime ONNX profile (unadmitted; the converted detector refuses at import live)",
+    "GPU/CUDA provider",
+    "Guest",
+    "other face images or detectors",
+    "WanVideoAddFantasyPortrait downstream use (tested separately)",
+    "whole pack"
+  ],
+  "activity": {
+    "runs": 0,
+    "imports_of_pack_code": 0
+  }
+}

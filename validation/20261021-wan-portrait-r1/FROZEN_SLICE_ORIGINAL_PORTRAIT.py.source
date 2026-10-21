@@ -1,0 +1,117 @@
+"""ORIGINAL side for FantasyPortrait r1: the untouched 088128b nodes FantasyPortraitModelLoader.loadmodel and
+FantasyPortraitFaceDetector.detect. Every portrait module and both bundled ONNX models are checked against PRISTINE_GIT_BINDINGS.
+
+Each case gets a fresh seeded load:
+- loader cases: the returned resource {'proj_model': PortraitAdapter, 'sd': state} is recorded tensor by tensor (dtype, shape,
+  device, sha256);
+- detector cases: deterministic frames from the bundled woman.jpg; the outputs (portrait_embeds, bbox, landmarks) are recorded
+  exactly; raising cases record the original's own error.
+The CPU RNG is recorded after the seed, after the loader and after the case.
+"""
+import gc
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import portrait_common  # noqa: E402
+
+REPORT = {'status': 'RUNNING', 'route': 'original_native', 'cases': {}}
+phase = common.Phases(REPORT, 'ORIGINAL')
+PORTRAIT_MODULES = ('fantasyportrait.nodes', 'fantasyportrait.model', 'fantasyportrait.pd_fgc.pdf', 'fantasyportrait.pd_fgc.face_align',
+                    'fantasyportrait.pd_fgc.face_det', 'fantasyportrait.pd_fgc.face_utils', 'fantasyportrait.pd_fgc.camer')
+ONNX_ASSETS = ('fantasyportrait/models/face_det.onnx', 'fantasyportrait/models/face_landmark.onnx')
+
+
+def main():
+    case_file = common.load_json('/prepared/CASE.json')
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/opencv-site', '/native-core', '/original']
+    from comfy.cli_args import args, LatentPreviewMethod
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    args.preview_method = LatentPreviewMethod.NoPreviews
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/original-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    import asyncio
+    import server
+    from app.assets.manager import default_asset_manager
+    args.front_end_root = '/tmp/original-headless-web'
+    Path(args.front_end_root).mkdir(exist_ok=True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server.PromptServer(loop, default_asset_manager())
+    REPORT['versions'] = common.versions(case_file['vendor_versions'])
+    REPORT['environment'] = portrait_common.environment()
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    import importlib
+    bound = {row['path']: row['sha256'] for row in common.load_json('/original/PRISTINE_GIT_BINDINGS.json')['files']}
+    modules = {}
+    for name in PORTRAIT_MODULES:
+        module = importlib.import_module('wan_original.' + name)
+        rel = os.path.relpath(module.__file__, '/original/wan_original')
+        assert common.sha_file(module.__file__) == bound[rel], rel
+        modules[name] = module
+    REPORT['onnx_assets'] = {}
+    for rel in ONNX_ASSETS:
+        digest = common.sha_file('/original/wan_original/' + rel)
+        assert digest == bound[rel], rel
+        REPORT['onnx_assets'][rel] = digest
+    nodes = modules['fantasyportrait.nodes']
+    loader, detector = nodes.FantasyPortraitModelLoader(), nodes.FantasyPortraitFaceDetector()
+    model_name = case_file['model']['catalogue_name']
+    for case in case_file['cases']:
+        name = case['name']
+        phase('original-' + name)
+        torch.manual_seed(case_file['seed'])
+        record = {'rng_after_seed': common.rng_sha()}
+        started = time.monotonic()
+        resource, = loader.loadmodel(model=model_name, base_precision=case['base_precision'])
+        record['rng_after_loader'] = common.rng_sha()
+        if case['item'] == 'loader':
+            record['resource'] = {'proj_model': portrait_common.module_meta(resource['proj_model']),
+                                  'sd': portrait_common.state_meta(resource['sd'])}
+        else:
+            images = portrait_common.frames(case_file, case['frames'])
+            record['inputs'] = {'images': common.tensor_meta(images), 'frames': case['frames']}
+            try:
+                result = detector.detect(images, resource, device=case['device'], **case['scales'])
+                record['outcome'] = {'raised': False}
+                record['outputs'] = portrait_common.detector_outputs(result, name, 'original')
+                del result
+            except Exception as error:
+                record['outcome'] = portrait_common.error_outcome(error)
+                del error
+            del images
+        record['rng_after_case'] = common.rng_sha()
+        record['seconds'] = round(time.monotonic() - started, 3)
+        REPORT['cases'][name] = record
+        del resource
+        gc.collect()
+    REPORT['status'] = 'ORIGINAL_PORTRAIT_DONE'
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save('ORIGINAL_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != 'ORIGINAL_PORTRAIT_DONE':
+    raise SystemExit(1)

@@ -1,0 +1,196 @@
+"""Stdlib-only comparison for FantasyPortrait r1. Writes COMPARISON_loader.json and COMPARISON_detector.json, plus COMPARISON.json.
+
+Every case compares the original with the converted role. Both start from the same seed, with a fresh load each:
+- loader (FantasyPortraitModelLoader, fp16/bf16/fp32):
+  - the converted digest-bound recipe is exact (format, catalogue name, the model sha256, precision), and its rebuild repeats it;
+  - the rebuilt resource equals the original resource tensor by tensor (proj_model parameters and buffers: dtype, shape, device,
+    sha256; class, dtype attribute and repr) and over the whole state dict;
+  - every proj_model tensor has the requested dtype;
+  - the CPU RNG matches after the seed, the loader and the case, and the converted rebuild probe leaves the RNG unchanged.
+- detector (FantasyPortraitFaceDetector, CPU):
+  - identical input frames;
+  - returning cases: portrait_embeds meta and raw bytes, bbox and landmarks are exact; outputs are finite; the expected embeds
+    shape holds; no-face frames are forward-filled from the previous frame (original behavior); differs_from_case holds;
+  - raising cases: the same type and message, full-message digest and length, and raising function. The raising files follow
+    the CASE map (the converted vendored copy of pdf.py is secure_portrait_pd_math.py). The original error is the cited one.
+- global: workers done, registry 146, identical versions/environment/CPU, CPUExecutionProvider available, ONNX assets equal to the
+  CASE pins in both roles, and the converted module digests equal to the CASE pins.
+"""
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+EXPECTED_REGISTERED = 146
+DTYPES = {'fp16': 'float16', 'bf16': 'bfloat16', 'fp32': 'float32'}
+RECIPE_FORMAT = 'wan-fantasy-portrait-recipe-v1'
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+class Item:
+    def __init__(self, name, label):
+        self.name, self.checks, self.details, self.info = name, {}, {}, {'label': label}
+
+    def check(self, key, ok, detail=None):
+        self.checks[key] = bool(ok)
+        if not ok and detail is not None:
+            self.details[key] = detail
+
+    def write(self, results_sha):
+        passed = bool(self.checks) and all(self.checks.values())
+        status = ('PASS_SLICE_' if passed else 'FAIL_SLICE_') + self.name.upper()
+        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': [k for k, v in self.checks.items() if not v],
+               'details': self.details, 'info': self.info, 'results_sha256': results_sha}
+        (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+        return status
+
+
+def finite_flags(value):
+    flags = []
+    if isinstance(value, dict):
+        if 'finite' in value and 'sha256' in value:
+            flags.append(value['finite'])
+        for item in value.values():
+            if isinstance(item, (dict, list)):
+                flags.extend(finite_flags(item))
+    elif isinstance(value, list):
+        for item in value:
+            flags.extend(finite_flags(item))
+    return flags
+
+
+def entries(meta):
+    """The per-frame list inside a value_meta of a list/tuple."""
+    return (meta or {}).get('list') or (meta or {}).get('tuple') or []
+
+
+def global_checks(item, case_file, original, converted, done):
+    item.check('workers_completed', done, {'original': original.get('status'), 'converted': converted.get('status'),
+                                           'tracebacks': [original.get('traceback', '')[-1500:], converted.get('traceback', '')[-1500:]]})
+    if not done:
+        return
+    item.check('registry_%d' % EXPECTED_REGISTERED, converted.get('registered_count') == EXPECTED_REGISTERED, converted.get('registered_count'))
+    item.check('same_versions_environment_cpu', canon(original.get('versions')) == canon(converted.get('versions'))
+               and canon(original.get('environment', {}).get('onnxruntime')) == canon(converted.get('environment', {}).get('onnxruntime'))
+               and all(original.get('environment', {}).get(k) == converted.get('environment', {}).get(k)
+                       for k in ('onnxruntime', 'onnxruntime_providers', 'onnx', 'cv2', 'numpy', 'scipy'))
+               and canon(original.get('cpu')) == canon(converted.get('cpu')), [original.get('environment'), converted.get('environment')])
+    item.check('cpu_execution_provider_available', 'CPUExecutionProvider' in (original.get('environment') or {}).get('onnxruntime_providers', []))
+    item.check('environment_as_bound', all((original.get('environment') or {}).get(k) == v for k, v in case_file['environment_expect'].items()),
+               original.get('environment'))
+    item.check('onnx_assets_pinned_in_both_roles', original.get('onnx_assets') == converted.get('onnx_assets') == case_file['onnx_assets'],
+               [original.get('onnx_assets'), converted.get('onnx_assets')])
+    item.check('converted_module_digests_as_bound', converted.get('module_sha256') == case_file['converted_module_pins'], converted.get('module_sha256'))
+
+
+def rng_checks(item, p, o, c):
+    for key in ('rng_after_seed', 'rng_after_loader', 'rng_after_case'):
+        item.check(p + key + '_equal', o.get(key) is not None and o.get(key) == c.get(key), [o.get(key), c.get(key)])
+
+
+def loader_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    expected = {'format': RECIPE_FORMAT, 'model_name': case_file['model']['catalogue_name'], 'weights_sha256': case_file['model']['sha256'],
+                'base_precision': case['base_precision']}
+    item.check(p + 'converted_recipe_exact', c.get('recipe') == expected, c.get('recipe'))
+    item.check(p + 'converted_recipe_rebuild_repeats_it', c.get('recipe_rebuilt') == expected, c.get('recipe_rebuilt'))
+    po, pc = (o.get('resource') or {}).get('proj_model') or {}, (c.get('resource') or {}).get('proj_model') or {}
+    item.check(p + 'proj_model_equal_tensor_by_tensor', bool(po.get('rows')) and canon(po) == canon(pc),
+               {'digests': [po.get('digest'), pc.get('digest')], 'class': [po.get('class'), pc.get('class')],
+                'dtype_attr': [po.get('dtype_attr'), pc.get('dtype_attr')]})
+    so, sc = (o.get('resource') or {}).get('sd') or {}, (c.get('resource') or {}).get('sd') or {}
+    item.check(p + 'state_dict_equal', bool(so.get('keys')) and so.get('digest') == sc.get('digest') and so.get('keys') == sc.get('keys'),
+               [so.get('keys'), sc.get('keys')])
+    want = DTYPES[case['base_precision']]
+    item.check(p + 'proj_model_dtype_as_requested', bool(po.get('rows')) and all(r['dtype'] == want for r in po['rows'].values())
+               and po.get('dtype_attr') == 'torch.' + want, sorted({r['dtype'] for r in (po.get('rows') or {}).values()}))
+    rng_checks(item, p, o, c)
+    item.check(p + 'converted_rebuild_probe_preserved_rng', c.get('rng_after_probe') == c.get('rng_after_loader'),
+               [c.get('rng_after_loader'), c.get('rng_after_probe')])
+    item.info[p + 'tensors_state_keys_seconds'] = [po.get('tensors'), so.get('keys'), o.get('seconds'), c.get('seconds')]
+
+
+def detector_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'inputs_equal', canon(o.get('inputs')) == canon(c.get('inputs')), [o.get('inputs'), c.get('inputs')])
+    item.check(p + 'converted_recipe_exact', (c.get('recipe') or {}).get('weights_sha256') == case_file['model']['sha256'], c.get('recipe'))
+    oo, co = o.get('outcome') or {}, c.get('outcome') or {}
+    if case.get('expect') == 'raise':
+        item.check(p + 'both_raised', oo.get('raised') is True and co.get('raised') is True, [oo, co])
+        item.check(p + 'same_exception_type_and_message', (oo.get('type'), oo.get('message')) == (co.get('type'), co.get('message')), [oo, co])
+        item.check(p + 'same_full_message_digest_and_length', (oo.get('message_sha256'), oo.get('message_length'))
+                   == (co.get('message_sha256'), co.get('message_length')))
+        raising = case['expected_raising']
+        item.check(p + 'same_raising_function', oo.get('raising_function') == co.get('raising_function') == raising['function'],
+                   [oo.get('raising_function'), co.get('raising_function')])
+        item.check(p + 'raising_files_as_mapped', oo.get('raising_file') == raising['files']['original']
+                   and co.get('raising_file') == raising['files']['converted'], [oo.get('raising_file'), co.get('raising_file')])
+        item.check(p + 'original_error_is_the_cited_one', [oo.get('type'), oo.get('message')] == case['expected_error'], oo)
+    else:
+        returned = oo.get('raised') is False and co.get('raised') is False
+        item.check(p + 'both_returned', returned, [oo, co])
+        if returned:
+            mo, mc = o['outputs'], c['outputs']
+            item.check(p + 'portrait_embeds_meta_equal', canon(mo['portrait_embeds']) == canon({**mc['portrait_embeds'],
+                       'raw_file': mo['portrait_embeds'].get('raw_file')}), [mo['portrait_embeds'], mc['portrait_embeds']])
+            raw_o = (OUT / mo['portrait_embeds']['raw_file']).read_bytes()
+            raw_c = (OUT / mc['portrait_embeds']['raw_file']).read_bytes()
+            item.check(p + 'portrait_embeds_raw_bytes_equal', raw_o == raw_c and hashlib.sha256(raw_o).hexdigest() == mo['portrait_embeds']['sha256'],
+                       [len(raw_o), len(raw_c)])
+            item.check(p + 'bbox_equal', canon(mo['bbox']) == canon(mc['bbox']))
+            item.check(p + 'landmarks_equal', canon(mo['landmarks']) == canon(mc['landmarks']))
+            flags = finite_flags(mo) + finite_flags(mc)
+            item.check(p + 'outputs_finite', bool(flags) and all(x is True for x in flags))
+            frames = len(case['frames'])
+            num_frames = ((frames - 1) // 4) * 4 + 1
+            shape = mo['portrait_embeds']['shape']
+            item.check(p + 'expected_embeds_shape', len(shape) == 4 and shape[0] == 1 and shape[1] == (num_frames - 1) // 4 + 1
+                       and shape[3] == 2048, shape)
+            for k in case.get('no_face_frames', []):
+                b, l = entries(mo['bbox']), entries(mo['landmarks'])
+                item.check(p + 'no_face_frame_%d_forward_filled' % k, len(b) > k and len(l) > k and canon(b[k]) == canon(b[k - 1])
+                           and canon(l[k]) == canon(l[k - 1]))
+    rng_checks(item, p, o, c)
+    item.info[p + 'seconds'] = [o.get('seconds'), c.get('seconds')]
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    load = lambda name: json.loads((OUT / name).read_text()) if (OUT / name).exists() else {}
+    original, converted = load('ORIGINAL_RESULT.json'), load('CONVERTED_RESULT.json')
+    results_sha = {n: hashlib.sha256((OUT / n).read_bytes()).hexdigest() for n in ('ORIGINAL_RESULT.json', 'CONVERTED_RESULT.json') if (OUT / n).exists()}
+    done = original.get('status') == 'ORIGINAL_PORTRAIT_DONE' and converted.get('status') == 'CONVERTED_PORTRAIT_DONE'
+    items = {name: Item(name, case_file['label']) for name in ('loader', 'detector')}
+    for item in items.values():
+        global_checks(item, case_file, original, converted, done)
+        item.info['cases'] = [c for c in case_file['cases'] if c['item'] == item.name]
+    if done:
+        for case in case_file['cases']:
+            o, c = original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {})
+            if case['item'] == 'loader':
+                loader_checks(items['loader'], case_file, case, o, c)
+            else:
+                detector_checks(items['detector'], case_file, case, o, c)
+        for case in case_file['cases']:
+            base = case.get('differs_from_case')
+            if base:
+                sha = lambda rec: (((rec.get('outputs') or {}).get('portrait_embeds')) or {}).get('sha256')
+                o, b = original['cases'].get(case['name'], {}), original['cases'].get(base, {})
+                items[case['item']].check(case['name'] + ':slice_input_changes_original_output', sha(o) is not None and sha(b) is not None
+                                          and sha(o) != sha(b), [sha(o), sha(b)])
+    statuses = {name: item.write(results_sha) for name, item in items.items()}
+    failed = any(v.startswith('FAIL') for v in statuses.values())
+    status = ('FAIL_PORTRAIT_' if failed else 'PASS_PORTRAIT_') + '_'.join(sorted(statuses)).upper()
+    (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha,
+                                                     'label': case_file['label']}, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': status, 'items': statuses}))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

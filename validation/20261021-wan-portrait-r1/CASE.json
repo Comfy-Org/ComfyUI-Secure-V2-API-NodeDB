@@ -1,0 +1,202 @@
+{
+  "approval": "MERVYN m_8fcb266085 (WSL-testable rows, Portrait first) + m_5600b71965 (go as outlined)",
+  "label": "FantasyPortrait loader + face detector, native CPU, original vs converted on the default-SDK in-process route; the test environment supplies onnxruntime 1.30.0 (CPU provider) and opencv 4.12; the converted pack's ONNX dependency profile stays unadmitted in the deployed runtime (the converted detector refuses at import there); not Guest, not GPU/CUDA",
+  "package": "wan_v2_pt1",
+  "seed": 314159,
+  "bytes_under_test": {
+    "candidate": "corpus origin/main f66757d8ac82fa021ca211843a0aa94d71a725c1 v2 (published WAN)",
+    "materials_sha256": "d875d848e94e2065215a7df1be404219e3fe5b64309a45b12949398ba9a3f137"
+  },
+  "model": {
+    "catalogue_name": "huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/FantasyPortrait/Wan2_1_FantasyPortrait_fp16.safetensors",
+    "container_path": "/models/diffusion_models/huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/FantasyPortrait/Wan2_1_FantasyPortrait_fp16.safetensors",
+    "bytes": 2046114748,
+    "sha256": "1b80e53849a80713c54775f1fcaad798a6d7f03a916b374baaa79f7020be9794"
+  },
+  "image": {
+    "path": "/original/wan_original/example_workflows/example_inputs/woman.jpg",
+    "bytes": 196851,
+    "sha256": "5662b7d55d57749a8ed53267be076b13234d2e2de445fdd5b58a695f894a40de",
+    "resize": [
+      512,
+      512
+    ],
+    "shift": 6,
+    "source": "bundled in the pristine 088128b pack (PRISTINE_GIT_BINDINGS)"
+  },
+  "onnx_assets": {
+    "fantasyportrait/models/face_det.onnx": "7ea8de1da304c1459a11f637798bb1140805365aeb3cf6637ca6d61909720aec",
+    "fantasyportrait/models/face_landmark.onnx": "463aaa48dd24b9d3b966c76accf9a27f7c590a73a3827d5002a975e46bd54995"
+  },
+  "converted_module_pins": {
+    "secure_portrait_resource.py": "ed33973faf6bec17277ec2dedf36acc6051f4d5f39a32226165669da13cc703e",
+    "secure_portrait_detector_node.py": "d4fc02adaca1bc0ee936bcc67835ca6b59115da8b6e9797c8f1203c8b0e79d83",
+    "secure_portrait_detector_algorithm.py": "d0ffce0388241f5a1b80d781be33e6e3f8f88b5572a6cb39d1beb6f60b4838a4",
+    "secure_portrait_pd_math.py": "97a3b20d5f2a27bff03811afb540eb6e221568202fee3812e6c401813b2f4ea7",
+    "secure_portrait_detector_assets.json": "f16c479bb3603df916be094d959d343b0f7f4142b64661ed9e489defd3962a25",
+    "fantasyportrait/model.py": "a1c08b12caee3881e3e8ddfce395c54c460c1729a0abb49dab8fb3159a0cca66",
+    "fantasyportrait/pd_fgc/face_align.py": "f60942f04bc86fae6425324ea0169431bcb4faeca645cdebac897fc6b989a5ee",
+    "fantasyportrait/pd_fgc/face_det.py": "bfab6fc66f821c98c7b3dd6ccf25008a968088c996e35649793a1f029e0d0c02",
+    "fantasyportrait/pd_fgc/face_utils.py": "a1ea77bb5ef779530ba46eeba5fd7d7a313cdebeb90c918fe69dfbdedefc995c",
+    "fantasyportrait/pd_fgc/camer.py": "ff099b6c0171bf575435a1dc8ce06be46ba4cc5874915f5623502b6d5f291191",
+    "fantasyportrait/models/face_det.onnx": "7ea8de1da304c1459a11f637798bb1140805365aeb3cf6637ca6d61909720aec",
+    "fantasyportrait/models/face_landmark.onnx": "463aaa48dd24b9d3b966c76accf9a27f7c590a73a3827d5002a975e46bd54995"
+  },
+  "environment_expect": {
+    "onnxruntime": "1.30.0",
+    "onnx": "1.23.1",
+    "numpy": "2.2.6",
+    "scipy": "1.18.1",
+    "cv2": "4.12.0"
+  },
+  "environment_source": "readback r2 PROBE-01.stdout.json (image e48accf76d58) + opencv-python-headless 4.12.0.88 (r2 registry lock)",
+  "vendor_versions": [
+    "accelerate",
+    "diffusers",
+    "ftfy",
+    "gguf",
+    "huggingface-hub",
+    "numpy",
+    "onnx",
+    "onnxruntime",
+    "opencv-python-headless",
+    "protobuf",
+    "safetensors",
+    "scipy",
+    "sentencepiece",
+    "tokenizers",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "wcwidth"
+  ],
+  "cases": [
+    {
+      "item": "loader",
+      "name": "l1_fp16",
+      "base_precision": "fp16",
+      "exercises": "loader at the default fp16 (the checkpoint dtype)"
+    },
+    {
+      "item": "loader",
+      "name": "l2_bf16",
+      "base_precision": "bf16",
+      "exercises": "loader with the bf16 conversion of every adapter tensor"
+    },
+    {
+      "item": "loader",
+      "name": "l3_fp32",
+      "base_precision": "fp32",
+      "exercises": "loader with the fp32 conversion"
+    },
+    {
+      "item": "detector",
+      "name": "d1_face5_default",
+      "base_precision": "fp16",
+      "device": "cpu",
+      "frames": [
+        "face",
+        "shift_r",
+        "black",
+        "shift_d",
+        "face"
+      ],
+      "scales": {
+        "adapter_scale": 1.0,
+        "mouth_scale": 1.0,
+        "emo_scale": 1.0
+      },
+      "no_face_frames": [
+        2
+      ],
+      "exercises": "five frames (one no-face frame forward-filled), default scales; CPUExecutionProvider"
+    },
+    {
+      "item": "detector",
+      "name": "d2_face9_scales",
+      "base_precision": "fp16",
+      "device": "cpu",
+      "frames": [
+        "face",
+        "shift_r",
+        "shift_d",
+        "face",
+        "black",
+        "face",
+        "shift_r",
+        "shift_d",
+        "face"
+      ],
+      "scales": {
+        "adapter_scale": 0.5,
+        "mouth_scale": 1.5,
+        "emo_scale": 2.0
+      },
+      "no_face_frames": [
+        4
+      ],
+      "differs_from_case": "d1_face5_default",
+      "exercises": "nine frames (three latent frames), non-default scales"
+    },
+    {
+      "item": "detector",
+      "name": "d3_noface5",
+      "base_precision": "fp16",
+      "device": "cpu",
+      "frames": [
+        "black",
+        "black",
+        "black",
+        "black",
+        "black"
+      ],
+      "scales": {
+        "adapter_scale": 1.0,
+        "mouth_scale": 1.0,
+        "emo_scale": 1.0
+      },
+      "expect": "raise",
+      "expected_error": [
+        "TypeError",
+        "'NoneType' object is not subscriptable"
+      ],
+      "expected_raising": {
+        "function": "warp_face_pd_fgc",
+        "files": {
+          "original": "pdf.py",
+          "converted": "secure_portrait_pd_math.py"
+        }
+      },
+      "exercises": "no face in any frame: the original fills nothing, and warp_face_pd_fgc subscripts None (pdf.py 105). The converted vendored copy of pdf.py is secure_portrait_pd_math.py (reformatted; same function)"
+    },
+    {
+      "item": "detector",
+      "name": "d4_short3",
+      "base_precision": "fp16",
+      "device": "cpu",
+      "frames": [
+        "face",
+        "shift_r",
+        "face"
+      ],
+      "scales": {
+        "adapter_scale": 1.0,
+        "mouth_scale": 1.0,
+        "emo_scale": 1.0
+      },
+      "expect": "raise",
+      "expected_error": [
+        "IndexError",
+        "list index out of range"
+      ],
+      "expected_raising": {
+        "function": "split_audio_adapter_sequence",
+        "files": {
+          "original": "model.py",
+          "converted": "model.py"
+        }
+      },
+      "exercises": "fewer than five frames: num_frames 1 gives one segment, and split_audio_adapter_sequence reads pos_idx_range[1] (fantasyportrait/model.py 228-231; vendored copy identical)"
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+"""Test-harness helpers shared by the original and converted forcing workers.
+
+Harness code only (never production). Torch is imported lazily so the supervisor
+and comparison steps stay stdlib-only.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import resource
+import time
+
+OUT = Path('/out')
+PREPARED = Path('/prepared')
+
+
+def sha_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha_file(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def save(name, value):
+    path = OUT / name
+    with path.open('w') as stream:
+        stream.write(json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    return path
+
+
+def load_json(path):
+    return json.loads(Path(path).read_text())
+
+
+class Phases:
+    def __init__(self, report, label):
+        self.report = report
+        self.label = label
+        self.started = time.monotonic()
+        report['phases'] = []
+
+    def __call__(self, name):
+        entry = {'phase': name, 'seconds_since_start': round(time.monotonic() - self.started, 3),
+                 'ru_maxrss_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+        entry.update(proc_memory())
+        self.report['phases'].append(entry)
+        save(self.label + '_CURRENT_PHASE.json', {'phase': name, 'pid': os.getpid(), 'entry': entry})
+
+
+def proc_memory():
+    fields = {}
+    for line in Path('/proc/self/status').read_text().splitlines():
+        if line.startswith(('VmRSS:', 'VmHWM:', 'RssAnon:', 'RssFile:', 'RssShmem:')):
+            key, value = line.split(':', 1)
+            fields[key] = value.strip()
+    return fields
+
+
+def verify_rows(rows, root_map=None):
+    """Exact size+sha256 of every bound file; returns the count."""
+    count = 0
+    for row in rows:
+        path = Path(row['path'])
+        assert path.is_file() and not path.is_symlink(), row['path']
+        assert path.stat().st_size == row['bytes'] and sha_file(path) == row['sha256'], row['path']
+        count += 1
+    return count
+
+
+def verify_tree(root, rows):
+    expected = {row['path'] for row in rows}
+    actual = set()
+    for directory, names, files in os.walk(root):
+        names[:] = [n for n in names if n != '__pycache__']
+        for name in files:
+            actual.add(os.path.join(directory, name))
+    assert actual == expected, sorted(actual ^ expected)[:10]
+    return verify_rows(rows)
+
+
+def rng_sha():
+    import torch
+    return sha_bytes(torch.get_rng_state().numpy().tobytes())
+
+
+def tensor_meta(value, raw_file=None):
+    import torch
+    assert isinstance(value, torch.Tensor)
+    tensor = value.detach().cpu().contiguous()
+    raw = tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+    meta = {'dtype': str(tensor.dtype).removeprefix('torch.'), 'shape': list(tensor.shape),
+            'bytes': len(raw), 'sha256': sha_bytes(raw), 'finite': bool(torch.isfinite(tensor.float()).all())}
+    if raw_file is not None:
+        (OUT / raw_file).write_bytes(raw)
+        meta['raw_file'] = raw_file
+    return meta
+
+
+def tree_meta(value):
+    import torch
+    if isinstance(value, torch.Tensor):
+        return tensor_meta(value)
+    if isinstance(value, dict):
+        return {key: tree_meta(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [tree_meta(item) for item in value]
+    if isinstance(value, tuple):
+        return {'native_tuple': [tree_meta(item) for item in value]}
+    assert value is None or type(value) in (str, int, float, bool), type(value)
+    return value
+
+
+def any_meta(value):
+    """tree_meta that also records non-data objects by type (devices, dtypes, modules) instead of failing."""
+    import torch
+    if isinstance(value, torch.Tensor):
+        return tensor_meta(value)
+    if isinstance(value, dict):
+        return {str(key): any_meta(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [any_meta(item) for item in value]
+    if isinstance(value, tuple):
+        return {'native_tuple': [any_meta(item) for item in value]}
+    if value is None or type(value) in (str, int, bool):
+        return value
+    if type(value) is float:
+        return {'float': repr(value)}
+    if isinstance(value, (torch.device, torch.dtype)):
+        return {'torch': str(value)}
+    return {'object': type(value).__qualname__}
+
+
+def forward_observer(records, limit=4, raw_prefix=None):
+    """Passive forward hook (with_kwargs): records inputs/outputs of the first calls; returns None."""
+    def hook(module, args, kwargs, output):
+        if len(records) >= limit:
+            return None
+        index = len(records)
+        first = output[0] if isinstance(output, (tuple, list)) else output
+        predictions = []
+        for position, tensor in enumerate(first if isinstance(first, (list, tuple)) else [first]):
+            raw = '%s-forward%d-out%d.bin' % (raw_prefix, index, position) if raw_prefix else None
+            predictions.append(tensor_meta(tensor, raw))
+        records.append({'call': index, 'args': any_meta(list(args)),
+                        'kwargs': {key: any_meta(kwargs[key]) for key in sorted(kwargs)},
+                        'output_arity': len(output) if isinstance(output, (tuple, list)) else 1,
+                        'noise_pred': predictions, 'rng_sha256_after_forward': rng_sha()})
+        return None
+    return hook
+
+
+def load_text_embeds(case):
+    """The frozen r5 text buffers (INPUT only; no T5 run)."""
+    import torch
+    result = {}
+    for key in ('prompt_embeds', 'negative_prompt_embeds'):
+        spec = case['text_embeds'][key]
+        data = Path(spec['container_path']).read_bytes()
+        assert len(data) == spec['bytes'] and sha_bytes(data) == spec['sha256'], key
+        tensor = torch.frombuffer(bytearray(data), dtype=getattr(torch, spec['dtype'])).reshape(spec['shape'])
+        result[key] = [tensor]
+    result['echoshot'] = case['text_embeds']['echoshot']
+    return result
+
+
+def cache_states(transformer):
+    out = {}
+    for name in ('teacache_state', 'magcache_state', 'easycache_state'):
+        state = getattr(transformer, name, None)
+        states = getattr(state, 'states', None)
+        out[name] = {'type': type(state).__name__, 'entries': len(states) if isinstance(states, dict) else None}
+    return out
+
+
+def offload_snapshot(transformer, digest=True):
+    """Observable post-offload state of the node's transformer (read-only)."""
+    import torch
+    params = list(transformer.named_parameters())
+    buffers = list(transformer.named_buffers())
+    dtypes = {}
+    for _, param in params:
+        key = str(param.dtype).removeprefix('torch.')
+        dtypes[key] = dtypes.get(key, 0) + param.numel() * param.element_size()
+    snapshot = {
+        'class_qualname': type(transformer).__qualname__,
+        'training': bool(transformer.training),
+        'parameter_count': len(params), 'buffer_count': len(buffers),
+        'parameter_devices': sorted({str(p.device) for _, p in params}),
+        'buffer_devices': sorted({str(b.device) for _, b in buffers}),
+        'parameter_bytes_by_dtype': dtypes,
+        'parameter_requires_grad': sorted({bool(p.requires_grad) for _, p in params}),
+        'patched_linear': bool(getattr(transformer, 'patched_linear', False)),
+        'cache_states': cache_states(transformer),
+        'blocks': len(transformer.blocks),
+        'blocks_kv_cache_none': sum(1 for block in transformer.blocks if getattr(block, 'kv_cache', None) is None),
+        'rope_embedder_k': getattr(transformer.rope_embedder, 'k', 'absent'),
+        'rope_embedder_num_frames': getattr(transformer.rope_embedder, 'num_frames', 'absent'),
+        'attention_mode': getattr(transformer, 'attention_mode', None),
+    }
+    if digest:
+        hasher = hashlib.sha256()
+        for name, param in params:
+            tensor = param.detach()
+            if tensor.device.type != 'cpu':
+                snapshot['parameter_value_digest'] = 'non-cpu parameter ' + name
+                return snapshot
+            hasher.update(name.encode() + b'\0' + str(tensor.dtype).encode() + b'\0'
+                          + json.dumps(list(tensor.shape)).encode() + b'\0')
+            hasher.update(tensor.contiguous().reshape(-1).view(torch.uint8).numpy())
+        snapshot['parameter_value_digest'] = hasher.hexdigest()
+    return snapshot
+
+
+def versions(names):
+    import importlib.metadata
+    found = {}
+    for name in names:
+        try:
+            found[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            found[name] = None
+    return found
+
+
+def cgroup_now():
+    root = Path('/sys/fs/cgroup')
+    result = {}
+    for name in ('memory.current', 'memory.peak', 'memory.max', 'memory.swap.max'):
+        try:
+            value = (root / name).read_text().strip()
+            result[name] = int(value) if value.isdigit() else value
+        except OSError:
+            result[name] = None
+    return result

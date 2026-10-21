@@ -1,0 +1,510 @@
+"""UNRUN outside controller: WAN FantasyPortrait loader + face detector r1, native CPU (MERVYN m_8fcb266085 / m_5600b71965).
+The feta r3 / I2V Step 1 r2 hardening applies.
+
+Run only after a separate Root selection, as root in WSL under the shared lock:
+  wsl -d Ubuntu-24.04 -u root -e flock -w 900 /tmp/conversion-tests.lock \
+      python3 -I -S -B <packet>/controller/run_portrait_r1.py --config <BOUND-CONFIG.json> --config-sha256 <sha> --authorization-message <m_...>
+  python3 -I -S -B run_portrait_r1.py --selftest <fresh dir>   (no docker: argv, gates, integrity tampers, copy gate)
+Stdlib only.
+
+Two containers run one after the other:
+- original: the genuine 088128b nodes. Read-only binds: capsule, original, native-core, native-site, opencv-site (cv2 only), the
+  portrait checkpoint.
+- converted: the registered candidate nodes on the in-process SDK route. Read-only binds: capsule, candidate, original (it holds the
+  bundled input image), native-core, native-site, converted-site, the checkpoint.
+Each container runs as uid/gid 1000 with every capability dropped and no-new-privileges, no network, a read-only root, a noexec
+tmpfs /tmp and memory = swap = the cap. /out is the only writable bind. Each is removed by exact ID in finally, with absence checked
+twice. No retry.
+Integrity: the packet and every material tree are checked before each role: every file, no extras, no symlinks. CASE.json is
+parsed from bytes checked against the pinned SHA256SUMS. The comparator inputs are O_NOFOLLOW copies, re-hashed right before the
+comparator runs.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import time
+
+GiB = 1024 ** 3
+MiB = 1024 ** 2
+PREPARATION_MAILS = {'m_8fcb266085', 'm_0001df0c76', 'm_f6375fabb0', 'm_5600b71965', 'm_562d528906', 'm_8b6d9c4119', 'm_e3fdd3eabc',
+                     'm_c4ac56fde3', 'm_11da48bcaf', 'm_6c64c1b5a4'}
+SCHEMA = 'wan-portrait-r1-linux-cpu/1'
+USER = '1000:1000'
+UID = GID = 1000
+PYTHON = '/usr/local/bin/python3.13'
+REQUIRED_ENV = {'HOME': '/tmp', 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1', 'CUDA_VISIBLE_DEVICES': '-1'}
+LIMITS = {'container_memory_bytes': 6 * GiB, 'sampled_rss_stop_bytes': 5632 * MiB, 'memavailable_min_bytes': 10 * GiB,
+          'disk_free_bytes': 8 * GiB, 'private_max_bytes': 1 * GiB, 'tmpfs_bytes': 3840 * MiB, 'shm_bytes': 128 * MiB,
+          'comparator_input_max_bytes': 64 * MiB}
+PRIVATE_MAX_ENTRIES = 100000
+ROLES = ('original', 'converted')
+TREES = ('candidate', 'original', 'native-core', 'native-site', 'converted-site', 'opencv-site')
+MOUNTS = {'original': (('original', '/original'), ('native-core', '/native-core'), ('native-site', '/native-site'),
+                       ('opencv-site', '/opencv-site')),
+          'converted': (('candidate', '/candidate'), ('original', '/original'), ('native-core', '/native-core'),
+                        ('native-site', '/native-site'), ('converted-site', '/converted-site'))}
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def run(argv, timeout=30, check=True):
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    if check and result.returncode != 0:
+        raise RuntimeError('%s failed: %s' % (argv[:3], result.stderr.strip()[:400]))
+    return result
+
+
+def digest(path):
+    value = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            value.update(block)
+    return value.hexdigest()
+
+
+def mem_available():
+    for line in Path('/proc/meminfo').read_text().splitlines():
+        if line.startswith('MemAvailable:'):
+            return int(line.split()[1]) * 1024
+    raise RuntimeError('MemAvailable not reported')
+
+
+def parse_size(text):
+    match = re.fullmatch(r'([0-9.]+)\s*([KMGT]?i?B)', text.strip())
+    require(match is not None, 'Unparsed memory sample: ' + text)
+    scale = {'B': 1, 'KiB': 1024, 'MiB': MiB, 'GiB': GiB, 'TiB': 1024 ** 4, 'kB': 1000, 'KB': 1000, 'MB': 1000 ** 2, 'GB': 1000 ** 3}[match.group(2)]
+    return int(float(match.group(1)) * scale)
+
+
+def absent_twice(cid):
+    rows = []
+    for _ in range(2):
+        rows.append(run(['docker', 'container', 'inspect', cid], check=False).returncode != 0)
+        time.sleep(1)
+    return rows
+
+
+def dir_usage(root):
+    used, entries = 0, 0
+    for base, dirs, files in os.walk(root, followlinks=False):
+        for name in dirs + files:
+            entries += 1
+            try:
+                used += os.lstat(os.path.join(base, name)).st_blocks * 512
+            except OSError:
+                continue
+    return used, entries
+
+
+def uid_can(st, owner_bits, group_bits, other_bits):
+    if st.st_uid == UID:
+        return st.st_mode & owner_bits == owner_bits
+    if st.st_gid == GID:
+        return st.st_mode & group_bits == group_bits
+    return st.st_mode & other_bits == other_bits
+
+
+def unreadable_for_uid(root, recursive):
+    bad = []
+    walker = os.walk(root, followlinks=False) if recursive else [(root, [], [])]
+    for base, _, files in walker:
+        if not uid_can(os.lstat(base), stat.S_IRUSR | stat.S_IXUSR, stat.S_IRGRP | stat.S_IXGRP, stat.S_IROTH | stat.S_IXOTH):
+            bad.append(base)
+        for name in files:
+            st = os.lstat(os.path.join(base, name))
+            if stat.S_ISREG(st.st_mode) and not uid_can(st, stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH):
+                bad.append(os.path.join(base, name))
+    return bad[:20]
+
+
+def read_small_regular(path, limit):
+    st = os.lstat(path)
+    require(stat.S_ISREG(st.st_mode) and st.st_size <= limit, '%s must be a small regular file' % path)
+    with open(path, 'rb') as stream:
+        return stream.read(limit + 1)
+
+
+def verify_tree(root, listing, walk_root):
+    root_real = os.path.realpath(root)
+    for rel, expected in listing.items():
+        require(not rel.startswith('/') and '..' not in rel.split('/'), 'Bad listed path ' + rel)
+        path = os.path.join(root, rel)
+        st = os.lstat(path)
+        require(stat.S_ISREG(st.st_mode), 'Listed path is not a regular file: ' + rel)
+        require(os.path.realpath(path).startswith(root_real + os.sep), 'Listed path escapes the tree: ' + rel)
+        require(digest(path) == expected, 'Tree file differs from its pin: ' + rel)
+    seen = set()
+    for base, dirs, files in os.walk(walk_root, followlinks=False):
+        for name in dirs:
+            require(not os.path.islink(os.path.join(base, name)), 'Symlinked dir in tree: ' + os.path.join(base, name))
+        for name in files:
+            full = os.path.join(base, name)
+            require(stat.S_ISREG(os.lstat(full).st_mode), 'Non-regular entry in tree: ' + full)
+            seen.add(os.path.relpath(full, root))
+    extra = sorted(seen - set(listing))
+    require(not extra, 'Unlisted files in tree: %s' % extra[:5])
+    return len(listing)
+
+
+def verify_integrity(config):
+    host, pins = config['host'], config['integrity']
+    started = time.time()
+    sums = read_small_regular(os.path.join(host['packet_root'], 'SHA256SUMS'), 4 * MiB)
+    require(hashlib.sha256(sums).hexdigest() == pins['packet_sha256sums_sha256'], 'Packet SHA256SUMS differs from the bound pin')
+    listing = {}
+    for line in sums.decode('utf-8').splitlines():
+        value, _, rel = line.partition('  ')
+        require(re.fullmatch('[0-9a-f]{64}', value) is not None and rel and rel not in listing and rel != 'SHA256SUMS', 'Bad SHA256SUMS line')
+        listing[rel] = value
+    row = {'packet_files': verify_tree(host['packet_root'], dict(listing, SHA256SUMS=hashlib.sha256(sums).hexdigest()), host['packet_root'])}
+    materials = read_small_regular(os.path.join(host['materials_root'], 'MATERIALS.json'), 64 * MiB)
+    require(hashlib.sha256(materials).hexdigest() == pins['materials_sha256'], 'MATERIALS.json differs from the bound pin')
+    trees = json.loads(materials)['trees']
+    require(sorted(trees) == sorted(TREES), 'Unexpected material trees')
+    for tree in TREES:
+        root = os.path.join(host['materials_root'], tree)
+        row[tree] = verify_tree(root, {rel: item['sha256'] for rel, item in trees[tree].items()}, root)
+    row['status'], row['seconds'] = 'VERIFIED', round(time.time() - started, 2)
+    return row
+
+
+def pinned_capsule_bytes(config, rel):
+    """One read, checked against the bound SHA256SUMS pin, then parsed by the caller: no gap between check and use."""
+    sums = read_small_regular(os.path.join(config['host']['packet_root'], 'SHA256SUMS'), 4 * MiB)
+    require(hashlib.sha256(sums).hexdigest() == config['integrity']['packet_sha256sums_sha256'], 'Packet SHA256SUMS differs from the bound pin')
+    listing = dict(line.split('  ', 1)[::-1] for line in sums.decode('utf-8').splitlines())
+    data = read_small_regular(os.path.join(config['host']['packet_root'], rel), 4 * MiB)
+    require(rel in listing and hashlib.sha256(data).hexdigest() == listing[rel], rel + ' differs from the pinned SHA256SUMS')
+    return data
+
+
+def role_argv(role, config, role_out):
+    host, limits, box = config['host'], config['limits'], config['container']
+    cap = limits['container_memory_bytes']
+    argv = ['docker', 'create', '--pull=never', '--name', config['container_prefix'] + '-' + role, '--init',
+            '--user', USER, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--network', 'none', '--read-only',
+            '--cpus', str(limits['cpus']), '--memory', str(cap), '--memory-swap', str(cap), '--pids-limit', '256',
+            '--shm-size', str(limits['shm_bytes']), '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=%d' % limits['tmpfs_bytes'],
+            '--workdir', '/tmp', '--mount', 'type=bind,src=%s,dst=/prepared,readonly' % (Path(host['packet_root']) / 'capsule')]
+    for tree, dst in MOUNTS[role]:
+        argv += ['--mount', 'type=bind,src=%s,dst=%s,readonly' % (Path(host['materials_root']) / tree, dst)]
+    argv += ['--mount', 'type=bind,src=%s,dst=%s,readonly' % (host['model_file'], config['model']['container_path']),
+             '--mount', 'type=bind,src=%s,dst=/out' % role_out]
+    for key, value in sorted(config['environment'].items()):
+        argv += ['--env', '%s=%s' % (key, value)]
+    argv += ['--entrypoint', box['python'], config['image']['id'], '-I', '-B', '-X', 'faulthandler', '/prepared/role_entry.py', '--role', role]
+    return argv
+
+
+def safe_copy(role_out, name, dest, limit, mode=0o600):
+    role_real = os.path.realpath(role_out)
+    path = os.path.join(role_out, name)
+    st = os.lstat(path)
+    require(stat.S_ISREG(st.st_mode), name + ' must be a regular file')
+    require(os.path.realpath(path) == os.path.join(role_real, name), name + ' must resolve inside the role dir')
+    require(st.st_size <= limit, name + ' above the size cap')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        require(stat.S_ISREG(opened.st_mode) and (opened.st_dev, opened.st_ino) == (st.st_dev, st.st_ino), name + ' changed')
+        chunks, size = [], 0
+        while True:
+            block = os.read(fd, 1 << 20)
+            if not block:
+                break
+            size += len(block)
+            require(size <= limit, name + ' above the size cap')
+            chunks.append(block)
+    finally:
+        os.close(fd)
+    data = b''.join(chunks)
+    target = os.path.join(dest, name)
+    with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode), 'wb') as stream:
+        stream.write(data)
+    return {'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+
+
+def comparator_inputs(case_file, role):
+    names = ['%s_RESULT.json' % role.upper()]
+    for case in case_file['cases']:
+        if case['item'] == 'detector' and case.get('expect') != 'raise':
+            names.append('%s-%s-embeds.bin' % (role, case['name']))
+    return names
+
+
+def run_role(role, config, out):
+    limits = config['limits']
+    role_out = out / ('out-' + role)
+    role_out.mkdir()
+    role_out.chmod(0o777)
+    argv = role_argv(role, config, role_out)
+    row = {'role': role, 'create_argv': argv}
+    cid = run(argv).stdout.strip()
+    require(re.fullmatch('[0-9a-f]{64}', cid) is not None, 'Exact container ID required')
+    row['container_id'] = cid
+    try:
+        run(['docker', 'start', cid])
+        started, peak, private_peak, samples = time.monotonic(), 0, 0, []
+        while True:
+            state = json.loads(run(['docker', 'inspect', '--format', '{{json .State}}', cid]).stdout)
+            if state['Status'] in ('exited', 'dead'):
+                break
+            usage = run(['docker', 'stats', '--no-stream', '--format', '{{.MemUsage}}', cid], timeout=20, check=False).stdout.strip()
+            used, entries = dir_usage(role_out)
+            private_peak = max(private_peak, used)
+            value = parse_size(usage.split('/')[0]) if usage else None
+            if value is not None:
+                peak = max(peak, value)
+            samples.append([round(time.monotonic() - started, 1), value, used, entries])
+            stop = None
+            if value is not None and value > limits['sampled_rss_stop_bytes']:
+                stop = 'sampled memory above stop'
+            elif used > limits['private_max_bytes'] or entries > PRIVATE_MAX_ENTRIES:
+                stop = '/out above 1 GiB or %d entries' % PRIVATE_MAX_ENTRIES
+            elif time.monotonic() - started > limits['role_work_seconds']:
+                stop = 'role deadline'
+            if stop:
+                row.setdefault('fail_stop', stop)
+                run(['docker', 'kill', cid], check=False)
+            time.sleep(2)
+        final = json.loads(run(['docker', 'inspect', '--format', '{{json .State}}', cid]).stdout)
+        row.update(exit_code=final['ExitCode'], oom_killed=final['OOMKilled'], seconds=time.monotonic() - started,
+                   peak_sampled_bytes=peak, private_peak_bytes=private_peak, private_final=dir_usage(role_out), samples=samples[-400:])
+        logs = run(['docker', 'logs', '--tail', '4000', cid], timeout=60, check=False)
+        (out / ('LOG-' + role + '.txt')).write_text((logs.stdout + logs.stderr)[-8 * 1024 * 1024:])
+    finally:
+        row['removed'] = run(['docker', 'rm', '-f', cid], check=False).returncode == 0
+        row['absent_twice'] = absent_twice(cid)
+    return row, role_out
+
+
+def check_config(config):
+    host = config['host']
+    require(config['schema'] == SCHEMA and config['execution_selected'] is True, 'Selected bound config required')
+    require(config['container'] == {'python': PYTHON, 'user': USER}, 'Reviewed container identity required')
+    require(all(config['environment'].get(k) == v for k, v in REQUIRED_ENV.items()), 'HOME=/tmp and offline env required')
+    require(all(config['limits'].get(k) == v for k, v in LIMITS.items()), 'Reviewed Portrait r1 limits required')
+    require(config['limits']['memavailable_min_bytes'] == config['limits']['container_memory_bytes'] + 4 * GiB, 'Gate must be cap + 4 GiB')
+    require(config['model']['container_path'].startswith('/models/diffusion_models/'), 'Model container path')
+    for key in ('packet_root', 'materials_root', 'binding_root', 'output_root', 'model_file'):
+        require(Path(host[key]).is_absolute() and ',' not in host[key], key + ' must be an absolute path without commas')
+    integrity = config.get('integrity') or {}
+    for key in ('packet_sha256sums_sha256', 'materials_sha256'):
+        require(re.fullmatch('[0-9a-f]{64}', str(integrity.get(key))) is not None, key + ' pin required')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=Path)
+    parser.add_argument('--config-sha256')
+    parser.add_argument('--authorization-message')
+    parser.add_argument('--selftest')
+    args = parser.parse_args()
+    if args.selftest:
+        return selftest(Path(args.selftest))
+    require(re.fullmatch('m_[0-9a-f]+', args.authorization_message or '') is not None
+            and args.authorization_message not in PREPARATION_MAILS, 'A separate Root runtime selection is required')
+    require(digest(args.config) == args.config_sha256, 'Reviewed bound config required')
+    config = json.loads(args.config.read_bytes())
+    check_config(config)
+    out = Path(config['host']['output_root'])
+    require(out.is_absolute() and not out.exists(), 'Fresh output root required')
+    out.mkdir(mode=0o700)
+    limits, host = config['limits'], config['host']
+    receipt = {'status': 'FAILED_PORTRAIT_R1_NO_RETRY', 'authorization_message': args.authorization_message, 'attempts': 1,
+               'automatic_retries': 0, 'started_utc': time.time(), 'roles': {}, 'integrity': {}}
+    try:
+        available = mem_available()
+        receipt['preflight'] = {'MemAvailable_bytes': available, 'required_bytes': limits['memavailable_min_bytes'],
+                                'disk_free_bytes': shutil.disk_usage(out).free, 'required_disk_bytes': limits['disk_free_bytes']}
+        require(available >= limits['memavailable_min_bytes'], 'MemAvailable below cap + 4 GiB')
+        require(receipt['preflight']['disk_free_bytes'] >= limits['disk_free_bytes'], 'Disk below 8 GiB')
+        unreadable = {'packet_capsule': unreadable_for_uid(str(Path(host['packet_root']) / 'capsule'), True)}
+        for tree in TREES:
+            unreadable[tree] = unreadable_for_uid(str(Path(host['materials_root']) / tree), True)
+        unreadable['model_file'] = [] if uid_can(os.stat(host['model_file']), stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH) else [host['model_file']]
+        receipt['preflight']['unreadable_for_uid_1000'] = unreadable
+        require(not any(unreadable.values()), 'A bind source is not readable by uid 1000')
+        receipt['integrity']['before_original'] = verify_integrity(config)
+        case_file = json.loads(pinned_capsule_bytes(config, 'capsule/CASE.json'))
+        image = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', config['image']['id']]).stdout.strip()
+        require(image == config['image']['id'], 'Exact pinned image required')
+        for role in ROLES:
+            require(run(['docker', 'container', 'inspect', config['container_prefix'] + '-' + role], check=False).returncode != 0,
+                    'Container name already in use')
+        receipt['model'] = {'bytes': os.stat(host['model_file']).st_size, 'sha256': digest(host['model_file'])}
+        require(receipt['model'] == {'bytes': config['model']['bytes'], 'sha256': config['model']['sha256']}, 'Pinned model differs')
+        compare_dir = out / 'compare'
+        compare_dir.mkdir(mode=0o700)
+        copies = {}
+        for role in ROLES:
+            if role == 'converted':
+                receipt['integrity']['before_converted'] = verify_integrity(config)
+            receipt['roles'][role], role_out = run_role(role, config, out)
+            require(receipt['roles'][role]['absent_twice'] == [True, True], 'Container retirement unconfirmed; stop')
+            require(receipt['roles'][role].get('exit_code') == 0 and not receipt['roles'][role].get('fail_stop'), role + ' role failed')
+            copies[role] = []
+            for name in comparator_inputs(case_file, role):
+                if os.path.lexists(os.path.join(role_out, name)) or name.endswith('_RESULT.json'):
+                    copies[role].append(safe_copy(role_out, name, compare_dir, limits['comparator_input_max_bytes']))
+        receipt['comparator_inputs'] = copies
+        for rows in copies.values():  # drvfs modes are not enforced, so re-hash every copy right before the comparator
+            for row in rows:
+                require(digest(compare_dir / row['name']) == row['sha256'], 'Comparator input changed after copy: ' + row['name'])
+        receipt['comparator_inputs_rehashed'] = True
+        capsule = Path(host['packet_root']) / 'capsule'
+        result = run([sys.executable, '-I', '-S', '-B', str(capsule / 'compare_portrait_r1.py'),
+                      '--out-dir', str(compare_dir), '--prepared-dir', str(capsule)], timeout=300, check=False)
+        comparison = compare_dir / 'COMPARISON.json'
+        receipt['comparison'] = {'exit_code': result.returncode, 'stdout': result.stdout[-2000:], 'stderr': result.stderr[-4000:],
+                                 'sha256': digest(comparison) if comparison.exists() else None}
+        status = json.loads(comparison.read_bytes())['status'] if comparison.exists() else 'NO_COMPARISON'
+        receipt['comparison']['status'] = status
+        if status.startswith('PASS_PORTRAIT_'):
+            receipt['status'] = 'COMPLETED_' + status
+    except BaseException as error:
+        receipt.update(error_type=type(error).__name__, error=str(error))
+    finally:
+        receipt['finished_utc'] = time.time()
+        (out / 'RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    print(json.dumps({'status': receipt['status'], 'error': receipt.get('error')}))
+    return 0 if receipt['status'].startswith('COMPLETED_') else 1
+
+
+def selftest(directory):
+    """No docker. Synthetic files only, under a fresh Linux directory."""
+    require(not directory.exists(), 'Fresh selftest dir required')
+    directory.mkdir()
+    checks, controls = {}, {}
+    config = {'container_prefix': 'p', 'image': {'id': 'sha256:' + 'a' * 64}, 'container': {'python': PYTHON, 'user': USER},
+              'environment': dict(REQUIRED_ENV), 'limits': {**LIMITS, 'cpus': 2, 'role_work_seconds': 420},
+              'model': {'container_path': '/models/diffusion_models/x/p.safetensors'},
+              'host': {'packet_root': '/p', 'materials_root': '/m', 'model_file': '/f/p.safetensors'}}
+    argvs = {role: role_argv(role, config, Path('/o/out-' + role)) for role in ROLES}
+    mounts = {role: [a[i + 1] for i, item in enumerate(a) if item == '--mount'] for role, a in argvs.items()}
+    checks['argv_user_caps'] = all(a[a.index('--user') + 1] == USER and a[a.index('--cap-drop') + 1] == 'ALL' and '--cap-add' not in a
+                                   and '--privileged' not in a for a in argvs.values())
+    checks['argv_tmpfs_noexec'] = all(a[a.index('--tmpfs') + 1] == '/tmp:rw,nosuid,nodev,noexec,size=%d' % (3840 * MiB) for a in argvs.values())
+    checks['argv_only_out_writable'] = all([m for m in mounts[r] if not m.endswith(',readonly')] == ['type=bind,src=/o/out-%s,dst=/out' % r]
+                                           for r in ROLES)
+    checks['argv_role_trees'] = all(all('type=bind,src=/m/%s,dst=%s,readonly' % (t, d) in mounts[r] for t, d in MOUNTS[r]) for r in ROLES)
+    checks['argv_original_sees_no_converted_bytes'] = not any('/candidate' in m or 'converted-site' in m for m in mounts['original'])
+    checks['argv_converted_has_no_opencv_site'] = not any('opencv-site' in m for m in mounts['converted'])
+    checks['argv_model_readonly'] = all('type=bind,src=/f/p.safetensors,dst=/models/diffusion_models/x/p.safetensors,readonly' in mounts[r] for r in ROLES)
+    checks['argv_network_memory'] = all(a[a.index('--network') + 1] == 'none' and '--read-only' in a
+                                        and a[a.index('--memory') + 1] == a[a.index('--memory-swap') + 1] == str(6 * GiB) for a in argvs.values())
+    checks['argv_entrypoint'] = all(a[a.index('--entrypoint') + 1:a.index('--entrypoint') + 9] == [
+        PYTHON, 'sha256:' + 'a' * 64, '-I', '-B', '-X', 'faulthandler', '/prepared/role_entry.py', '--role'] for a in argvs.values())
+    packet, materials = directory / 'packet', directory / 'materials'
+    (packet / 'capsule').mkdir(parents=True)
+    (packet / 'capsule/CASE.json').write_text('{}')
+    sums = ('%s  capsule/CASE.json\n' % digest(packet / 'capsule/CASE.json')).encode()
+    (packet / 'SHA256SUMS').write_bytes(sums)
+    trees = {}
+    for tree in TREES:
+        (materials / tree / 'd').mkdir(parents=True)
+        (materials / tree / 'd/f.txt').write_text(tree)
+        trees[tree] = {'d/f.txt': {'bytes': len(tree), 'sha256': digest(materials / tree / 'd/f.txt')}}
+    mbytes = json.dumps({'trees': trees}).encode()
+    (materials / 'MATERIALS.json').write_bytes(mbytes)
+    pins = {'packet_sha256sums_sha256': hashlib.sha256(sums).hexdigest(), 'materials_sha256': hashlib.sha256(mbytes).hexdigest()}
+    good = {'host': {'packet_root': str(packet), 'materials_root': str(materials)}, 'integrity': pins}
+    row = verify_integrity(good)
+    checks['integrity_clean'] = row['status'] == 'VERIFIED' and row['packet_files'] == 2 and all(row[t] == 1 for t in TREES)
+    checks['pinned_case_bytes'] = pinned_capsule_bytes(good, 'capsule/CASE.json') == b'{}'
+
+    def tamper(name, edit, pin_edit=None):
+        case_root = directory / ('case-' + name)
+        shutil.copytree(packet, case_root / 'packet', symlinks=True)
+        shutil.copytree(materials, case_root / 'materials', symlinks=True)
+        if edit:
+            edit(case_root / 'packet', case_root / 'materials')
+        try:
+            verify_integrity({'host': {'packet_root': str(case_root / 'packet'), 'materials_root': str(case_root / 'materials')},
+                              'integrity': dict(pins, **(pin_edit or {}))})
+            controls['integrity_' + name] = 'NOT DETECTED'
+        except (RuntimeError, OSError) as error:
+            controls['integrity_' + name] = 'REFUSED: ' + str(error)[:70]
+
+    def relink(p, m):
+        target = m / 'opencv-site/d/f.txt'
+        target.unlink()
+        target.symlink_to(directory / 'materials/opencv-site/d/f.txt')
+
+    tamper('candidate_byte', lambda p, m: (m / 'candidate/d/f.txt').write_text('x'))
+    tamper('extra_core_file', lambda p, m: (m / 'native-core/d/g.py').write_text(''))
+    tamper('missing_opencv_file', lambda p, m: (m / 'opencv-site/d/f.txt').unlink())
+    tamper('symlinked_tree_file', relink)
+    tamper('capsule_byte', lambda p, m: (p / 'capsule/CASE.json').write_text('{"x": 1}'))
+    tamper('extra_capsule_file', lambda p, m: (p / 'capsule/evil.py').write_text(''))
+    tamper('materials_pin', None, {'materials_sha256': '0' * 64})
+    swapped = directory / 'case-pinned'
+    shutil.copytree(packet, swapped / 'packet', symlinks=True)
+    (swapped / 'packet/capsule/CASE.json').write_text('{"x": 2}')
+    try:
+        pinned_capsule_bytes({'host': {'packet_root': str(swapped / 'packet')}, 'integrity': pins}, 'capsule/CASE.json')
+        controls['case_bytes_swapped'] = 'NOT DETECTED'
+    except (RuntimeError, OSError) as error:
+        controls['case_bytes_swapped'] = 'REFUSED: ' + str(error)[:70]
+    role_out = directory / 'out-original'
+    role_out.mkdir()
+    (role_out / 'ORIGINAL_RESULT.json').write_text('{"status": "ORIGINAL_PORTRAIT_DONE"}')
+    copy_dir = directory / 'compare'
+    copy_dir.mkdir()
+    copied = safe_copy(role_out, 'ORIGINAL_RESULT.json', copy_dir, 64 * MiB)
+    checks['copy_gate_regular_file'] = copied['bytes'] > 0 and oct(os.stat(copy_dir / 'ORIGINAL_RESULT.json').st_mode & 0o777) == '0o600'
+    (directory / 'secret.txt').write_text('s')
+    (role_out / 'original-d1-embeds.bin').symlink_to(directory / 'secret.txt')
+    try:
+        safe_copy(role_out, 'original-d1-embeds.bin', copy_dir, 64 * MiB)
+        controls['copy_symlink'] = 'NOT DETECTED'
+    except (RuntimeError, OSError) as error:
+        controls['copy_symlink'] = 'REFUSED: ' + str(error)[:70]
+    (role_out / 'big.bin').write_bytes(b'x' * 2048)
+    try:
+        safe_copy(role_out, 'big.bin', copy_dir, 1024)
+        controls['copy_oversize'] = 'NOT DETECTED'
+    except RuntimeError as error:
+        controls['copy_oversize'] = 'REFUSED: ' + str(error)[:70]
+    names = comparator_inputs({'cases': [{'name': 'l1', 'item': 'loader'}, {'name': 'd1', 'item': 'detector'},
+                                         {'name': 'd3', 'item': 'detector', 'expect': 'raise'}]}, 'converted')
+    checks['comparator_inputs_expected'] = names == ['CONVERTED_RESULT.json', 'converted-d1-embeds.bin']
+    base = {'schema': SCHEMA, 'execution_selected': True, 'container': {'python': PYTHON, 'user': USER},
+            'environment': dict(REQUIRED_ENV), 'limits': {**LIMITS, 'cpus': 2, 'role_work_seconds': 420},
+            'model': {'container_path': '/models/diffusion_models/x/p.safetensors'}, 'integrity': pins,
+            'host': {'packet_root': '/p', 'materials_root': '/m', 'binding_root': '/b', 'output_root': '/o', 'model_file': '/f/p'}}
+    check_config(base)
+    for name, edit in (('root_user', lambda c: c['container'].update(user='0:0')),
+                       ('online', lambda c: c['environment'].update(HF_HUB_OFFLINE='0')),
+                       ('bigger_cap', lambda c: c['limits'].update(container_memory_bytes=8 * GiB)),
+                       ('no_materials_pin', lambda c: c['integrity'].pop('materials_sha256')),
+                       ('model_path_escape', lambda c: c['model'].update(container_path='/etc/p.safetensors')),
+                       ('unselected', lambda c: c.update(execution_selected=False))):
+        bad = json.loads(json.dumps(base))
+        edit(bad)
+        try:
+            check_config(bad)
+            controls['config_' + name] = 'NOT DETECTED'
+        except RuntimeError as error:
+            controls['config_' + name] = 'REFUSED: ' + str(error)[:70]
+    checks['controls_all_refused'] = all(v.startswith('REFUSED') for v in controls.values())
+    record = {'scope': 'no docker, image, model or pack code; synthetic files only', 'checks': checks, 'controls': controls,
+              'status': 'PASS_SELFTEST' if all(checks.values()) else 'FAILED_SELFTEST'}
+    (directory / 'SELFTEST.json').write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({'status': record['status'], 'failed': sorted(k for k, v in checks.items() if not v),
+                      'controls': len(controls), 'not_refused': sorted(k for k, v in controls.items() if not v.startswith('REFUSED'))}))
+    return 0 if record['status'] == 'PASS_SELFTEST' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
