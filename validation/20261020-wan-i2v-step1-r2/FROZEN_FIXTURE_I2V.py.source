@@ -1,0 +1,138 @@
+"""FIXTURE phase of I2V Step 1 (synthetic code-path parity; MERVYN m_ac4fbd5c7d / m_21c672eca8). Runs in its own container as
+uid 1000 with no capabilities and no network, before the two roles. No trained weights, detector, face or pose model.
+
+Model:
+- The untouched original WanModel (088128b, /original; pristine bindings checked) is constructed under init_empty_weights
+  with the original loader's TRANSFORMER_CONFIG for this state (FIXTURE_SPEC.json: i2v, dim 192, 12 heads, 30 layers,
+  in_dim 36).
+- Named parameters, in sorted order, are filled from one seeded CPU generator:
+  - weights of modules whose class name contains "Norm": ones; their biases: zeros;
+  - all other biases: zeros;
+  - everything else: N(0, std).
+- The state is saved as bf16 safetensors, parameters only, as real checkpoints are.
+Inputs come from the same generator, after the parameters:
+- y [16,2,8,8] bf16;
+- clip_context [1,257,1280] bf16;
+- mask [4,2,8,8] float32, with the first latent frame 1 (start-image mask, as WanVideoImageToVideoEncode builds it).
+Each is written as raw little-endian bytes.
+FIXTURE.json records the seed, constructor kwargs, every parameter name/shape and each file's sha256/bytes. The controller
+copies and verifies these; both roles verify them again before use. The converted harness admits only this model digest.
+r2 (review L7):
+- one safetensors metadata key, so the file digest is reproducible across runs (the metadata map is serialised in hash order);
+- a payload digest over the sorted (name, dtype, shape, raw bytes) rows.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+
+SPEC = common.load_json('/prepared/FIXTURE_SPEC.json')
+REPORT = {'status': 'RUNNING', 'route': 'fixture_original_constructor'}
+phase = common.Phases(REPORT, 'FIXTURE')
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/native-core', '/original']
+    from comfy.cli_args import args, LatentPreviewMethod
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    args.preview_method = LatentPreviewMethod.NoPreviews
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/fixture-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    import asyncio
+    import server
+    from app.assets.manager import default_asset_manager
+    args.front_end_root = '/tmp/fixture-headless-web'
+    Path(args.front_end_root).mkdir(exist_ok=True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server.PromptServer(loop, default_asset_manager())
+    from accelerate import init_empty_weights
+    from safetensors.torch import save_file
+    from wan_original.wanvideo.modules import model as model_module
+    bound = {row['path']: row['sha256'] for row in common.load_json('/original/PRISTINE_GIT_BINDINGS.json')['files']}
+    rel = os.path.relpath(model_module.__file__, '/original/wan_original')
+    assert common.sha_file(model_module.__file__) == bound[rel], rel
+    REPORT['constructor'] = {'module': rel, 'sha256': bound[rel]}
+    phase('construct')
+    kwargs = dict(SPEC['model_kwargs'], patch_size=tuple(SPEC['model_kwargs']['patch_size']), main_device=torch.device('cpu'),
+                  offload_device=torch.device('cpu'), dtype=torch.bfloat16)
+    with init_empty_weights():
+        model = model_module.WanModel(**kwargs).eval()
+    norm_owned = set()
+    for module_name, module in model.named_modules():
+        if 'Norm' in type(module).__name__:
+            for param_name, _ in module.named_parameters(recurse=False):
+                norm_owned.add((module_name + '.' if module_name else '') + param_name)
+    generator = torch.Generator().manual_seed(SPEC['seed'])
+    state, shapes = {}, {}
+    for name, param in sorted(model.named_parameters()):
+        shape = tuple(param.shape)
+        if name in norm_owned:
+            value = torch.ones(shape) if name.endswith('weight') else torch.zeros(shape)
+        elif name.endswith('bias'):
+            value = torch.zeros(shape)
+        else:
+            value = torch.randn(shape, generator=generator) * SPEC['std']
+        state[name] = value.to(torch.bfloat16).contiguous()
+        shapes[name] = list(shape)
+    del model
+    phase('write')
+    out = Path('/out')
+    model_path = out / SPEC['model_file']
+    save_file(state, str(model_path), metadata={'jack_fixture': 'synthetic i2v, code-path parity only; seed %d' % SPEC['seed']})
+    payload = hashlib.sha256()
+    for name in sorted(state):
+        tensor = state[name]
+        payload.update(name.encode() + b'\0' + str(tensor.dtype).encode() + b'\0' + json.dumps(list(tensor.shape)).encode() + b'\0')
+        payload.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    inputs = {}
+    for name, item in SPEC['inputs'].items():
+        if name == 'mask':
+            value = torch.zeros(item['shape'], dtype=torch.float32)
+            value[:, 0] = 1.0
+        else:
+            value = torch.randn(item['shape'], generator=generator).to(getattr(torch, item['dtype']))
+        raw = value.contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+        (out / item['file']).write_bytes(raw)
+        inputs[name] = {'file': item['file'], 'dtype': item['dtype'], 'shape': item['shape'], 'bytes': len(raw), 'sha256': common.sha_bytes(raw)}
+    REPORT['fixture'] = {
+        'format': 'jack-wan-i2v-fixture/1', 'seed': SPEC['seed'], 'std': SPEC['std'], 'model_kwargs': SPEC['model_kwargs'],
+        'model': {'file': SPEC['model_file'], 'catalogue_name': SPEC['catalogue_name'], 'bytes': model_path.stat().st_size,
+                  'sha256': common.sha_file(model_path), 'parameters': len(shapes),
+                  'parameter_elements': sum(int(torch.Size(s).numel()) for s in shapes.values()),
+                  'patch_embedding': shapes['patch_embedding.weight'], 'has_k_img': 'blocks.0.cross_attn.k_img.weight' in shapes,
+                  'parameter_shapes_sha256': hashlib.sha256(json.dumps(shapes, sort_keys=True).encode()).hexdigest(),
+                  'payload_sha256': payload.hexdigest(),
+                  'payload_rule': 'sha256 over sorted names of name NUL dtype NUL json(shape) NUL, then the raw tensor bytes'},
+        'inputs': inputs, 'torch': torch.__version__}
+    (out / 'FIXTURE.json').write_text(json.dumps(REPORT['fixture'], indent=1, sort_keys=True) + '\n')
+    (out / 'FIXTURE_PARAMETER_SHAPES.json').write_text(json.dumps(shapes, indent=0, sort_keys=True) + '\n')
+    REPORT['status'] = 'FIXTURE_DONE'
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save('FIXTURE_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != 'FIXTURE_DONE':
+    raise SystemExit(1)

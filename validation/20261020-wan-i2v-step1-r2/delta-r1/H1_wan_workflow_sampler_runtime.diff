@@ -1,0 +1,29 @@
+--- a/v2/wan_workflow_sampler_runtime.py
++++ b/v2/wan_workflow_sampler_runtime.py
+@@ -6,6 +6,8 @@
+ from .wan_workflow_model_runtime import materialize_model
+ from .wan_workflow_sampler_progress import progress_scope
+ from .wan_workflow_scheduler_runtime import FORMAT as SCHEDULER_FORMAT, restore_scheduler
++
++PLAIN_I2V_KEYS = frozenset(['image_embeds', 'clip_context', 'negative_clip_context', 'max_seq_len', 'num_frames', 'lat_h', 'lat_w', 'control_embeds', 'end_image', 'fun_or_fl2v_model', 'has_ref', 'add_cond_latents', 'mask'])
+ 
+ 
+ @dataclass
+@@ -72,8 +74,15 @@
+ async def sample_workflow(context, model, image_embeds, **kwargs):
+     import torch
+     from .wan_workflow_math.nodes_sampler import WanVideoSampler
+-    if type(image_embeds) is not dict or set(image_embeds) != {'target_shape', 'num_frames', 'control_embeds'}:
+-        raise NotImplementedError('First staged trained workflow requires plain empty T2V conditioning')
++    plain_t2v = type(image_embeds) is dict and set(image_embeds) == {'target_shape', 'num_frames', 'control_embeds'}
++    # Plain I2V: exactly the 13 keys WanVideoImageToVideoEncode returns. The code path is admitted only through digest-bound
++    # model admission (wan_workflow_model_runtime.ADMITTED); no real I2V model is admitted yet.
++    plain_i2v = type(image_embeds) is dict and set(image_embeds) == PLAIN_I2V_KEYS
++    if not (plain_t2v or plain_i2v):
++        raise NotImplementedError('First staged trained workflow requires plain empty T2V or plain I2V conditioning')
++    if plain_i2v and (any(image_embeds[key] is not None for key in ('negative_clip_context', 'end_image', 'add_cond_latents'))
++                      or image_embeds['has_ref'] is not False):
++        raise NotImplementedError('Only plain I2V conditioning (no negative clip, end image, extra cond latents or ref) is staged')
+     if image_embeds['control_embeds'] is not None:
+         raise NotImplementedError('Control embeds await their reviewed execution slice')
+     unsupported = ('unianimate_poses', 'fantasytalking_embeds', 'uni3c_embeds',

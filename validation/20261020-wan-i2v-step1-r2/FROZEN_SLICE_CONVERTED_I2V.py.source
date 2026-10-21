@@ -1,0 +1,284 @@
+"""CONVERTED side for I2V Step 1, derived from the r3 slice worker. The registered candidate nodes (wan_v2_i2v1 = published v2
++ the reviewed un-staging delta H1-H3) run on the SDK in-process route.
+
+Test-only admission seam (MERVYN m_21c672eca8). It lives in this harness only, never in v2 or the registry:
+1. The candidate tree under /candidate is hashed before the package is imported, and must equal the bound listing.
+2. p0: the published admission is called through the registered WanVideoModelLoader with the synthetic checkpoint. It must
+   refuse with the published NotImplementedError (published ADMITTED = the approved 1.3B T2V only).
+3. t0, the T2V regression case, runs next with the published ADMITTED unchanged (no seam).
+4. Only then is one entry inserted in-process into wan_workflow_model_runtime.ADMITTED, for this container's lifetime:
+   {<fixture sha256>: {model_type: i2v, patch_embedding: [192, 36, 1, 2, 2]}}. Cases i1-i4 run with it.
+5. Afterwards the candidate tree is hashed again. The fixture digest must not occur in any candidate file, and the registry
+   must hold only the candidate's own 146 classes.
+
+Observation is passive: a call-through wrapper around load_plain_weights adds forward hooks (transformer + blocks[0], or
+head only for raising cases) and a weakref. Release checks after each case are as in r3.
+"""
+import asyncio
+import gc
+import inspect
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+import types
+import weakref
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import holder_diag  # noqa: E402
+import i2v_common  # noqa: E402
+import leak_diag  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+PACKAGE_ROOT = '/candidate/%s/' % PACKAGE
+LABEL = 'CONVERTED'
+REPORT = {'status': 'RUNNING', 'route': 'registered_inprocess_sdk', 'package': PACKAGE, 'cases': {}, 'seam': {}}
+phase = common.Phases(REPORT, LABEL)
+WANTED = {('sample_workflow', 'wan_workflow_sampler_runtime.py'), ('run', 'wan_workflow_sampler_runtime.py'),
+          ('process', 'nodes_sampler.py'), ('predict_with_cfg', 'nodes_sampler.py')}
+
+
+def frame_rows(predicate):
+    gc.collect()
+    rows = []
+    for obj in gc.get_objects():
+        if isinstance(obj, types.FrameType) and predicate(obj):
+            rows.append({'code': obj.f_code.co_name, 'file': os.path.basename(obj.f_code.co_filename), 'line': obj.f_lineno,
+                         'non_none_locals': sorted(k for k, v in obj.f_locals.items() if v is not None)})
+    return rows
+
+
+def owner_frame_rows():
+    return frame_rows(lambda f: f.f_code.co_filename.startswith(PACKAGE_ROOT)
+                      and (f.f_code.co_name, os.path.basename(f.f_code.co_filename)) in WANTED)
+
+
+def package_frame_rows():
+    return frame_rows(lambda f: f.f_code.co_filename.startswith(PACKAGE_ROOT))
+
+
+def find_error(signature):
+    error_id, type_name, message = signature
+    for obj in gc.get_objects():
+        if id(obj) == error_id and isinstance(obj, BaseException) and type(obj).__name__ == type_name and str(obj) == message:
+            return obj
+    return None
+
+
+def error_alive(signature):
+    gc.collect()
+    found = find_error(signature)
+    alive = found is not None
+    del found
+    return alive
+
+
+def trace_error_holders(signature):
+    gc.collect()
+    target = find_error(signature)
+    if target is None:
+        return None
+    try:
+        return holder_diag.holder_chains(target)
+    finally:
+        del target
+
+
+def admitted_view(table):
+    return {key: dict(value) for key, value in sorted(table.items())}
+
+
+async def run(case_file, listing):
+    import importlib
+    import torch
+    from comfy_api.latest import _sdk
+    seam = REPORT['seam']
+    package = importlib.import_module(PACKAGE)
+    registry = package.NODE_CLASS_MAPPINGS
+    REPORT['registered_count'] = len(registry)
+    modules = {}
+    for key, name in (('sampler_runtime', 'wan_workflow_sampler_runtime'), ('model_runtime', 'wan_workflow_model_runtime'),
+                      ('model_config', 'wan_workflow_model_config')):
+        module = importlib.import_module(PACKAGE + '.' + name)
+        assert module.__file__.startswith(PACKAGE_ROOT), module.__file__
+        modules[key] = module
+        REPORT[key + '_sha256'] = common.sha_file(module.__file__)
+        assert REPORT[key + '_sha256'] == case_file[key + '_sha256'], key
+    model_runtime = modules['model_runtime']
+    seam['admitted_published'] = admitted_view(model_runtime.ADMITTED)
+    owned, forward_calls, block0, transformer_rows = [], [], [], []
+    real_load = model_runtime.load_plain_weights
+
+    def count_block0(module, args, output):
+        block0.append(1)
+
+    observer_mode = ['transformer']
+
+    def observed_load(transformer, *a, **k):
+        if not owned:
+            if observer_mode[0] == 'head':
+                transformer.head.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True)
+            else:
+                transformer.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True)
+                transformer.blocks[0].register_forward_hook(count_block0)
+            transformer_rows.append({'class': type(transformer).__qualname__, 'model_type': transformer.model_type, 'dim': transformer.dim,
+                                     'in_dim': transformer.in_dim, 'num_layers': len(transformer.blocks)})
+        owned.append(weakref.ref(transformer))
+        return real_load(transformer, *a, **k)
+    model_runtime.load_plain_weights = observed_load
+    providers = _sdk.providers
+    assert not providers.overlay_active and not providers.engaged
+    counter = iter(range(1, 1000))
+
+    async def node(name, inputs):
+        cls = registry[name]
+        plan = _sdk.ExecutionPlan(prompt_id='jack-wan-i2v-step1-r1', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs,
+                                  input_mode='refs' if cls.SDK_REFS else 'values', permissions=tuple(cls.SDK_PERMISSIONS))
+        refs = providers.ref_resolver_factory()
+        scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        try:
+            values = await _sdk.wrap_inputs(refs, inputs) if cls.SDK_REFS else inputs
+
+            async def local_call():
+                with scope:
+                    value = cls.execute(**values)
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value
+            result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+            result = await _sdk.unwrap_outputs(refs, result)
+            return result.result
+        finally:
+            refs.clear()
+
+    # p0: the published admission refuses the synthetic digest (before any seam exists).
+    phase('converted-p0')
+    synthetic = case_file['models']['synthetic_i2v']
+    try:
+        await node('WanVideoModelLoader', dict(case_file['model_loader'], model=synthetic['catalogue_name']))
+        seam['p0'] = {'raised': False}
+    except Exception as error:
+        seam['p0'] = i2v_common.error_outcome(error)
+        del error
+    seam['admitted_after_p0'] = admitted_view(model_runtime.ADMITTED)
+    gc.collect()
+    text = common.load_text_embeds(case_file)
+    for case in case_file['cases']:
+        name = case['name']
+        if case.get('seam_required') and 'installed_before_case' not in seam:
+            # The test-only admission entry: in-process, this container only; keyed by the controller-verified fixture digest.
+            model_runtime.ADMITTED[REPORT['fixture']['model_sha256']] = dict(case_file['seam']['entry'])
+            seam['installed_before_case'] = name
+            seam['admitted_with_seam'] = admitted_view(model_runtime.ADMITTED)
+        phase('converted-' + name)
+        model_spec = case_file['models'][case['model']]
+        torch.manual_seed(case_file['seed'])
+        record = {'rng_after_seed': common.rng_sha(), 'model': case['model'], 'seam_active': 'installed_before_case' in seam}
+        owned.clear()
+        forward_calls.clear()
+        block0.clear()
+        transformer_rows.clear()
+        observer_mode[0] = case.get('observer', 'transformer')
+        model, = await node('WanVideoModelLoader', dict(case_file['model_loader'], model=model_spec['catalogue_name']))
+        if 'i2v_embeds' in case:
+            embeds = i2v_common.i2v_embeds(case_file, case)
+        else:
+            embeds, = await node('WanVideoEmptyEmbeds', dict(case['empty_embeds']))
+        record['inputs'] = {'image_embeds': common.tree_meta(embeds)}
+        sampler_inputs = dict(case['sampling'], **case.get('extra', {}))
+        started = time.monotonic()
+        error_signature = None
+        try:
+            out = await node('WanVideoSampler', dict(sampler_inputs, model=model, image_embeds=embeds, text_embeds=text))
+            samples, denoised = out
+            record['outcome'] = {'raised': False}
+            record['samples'] = common.tree_meta(samples)
+            record['denoised'] = common.tree_meta(denoised)
+            common.tensor_meta(samples['samples'], 'converted-%s-samples.bin' % name)
+            del out, samples, denoised
+        except Exception as error:
+            record['outcome'] = i2v_common.error_outcome(error)
+            error_signature = (id(error), type(error).__name__, str(error))
+            del error
+        record['seconds'] = round(time.monotonic() - started, 3)
+        record['rng_after_sampler'] = common.rng_sha()
+        record['forward_calls'] = list(forward_calls)
+        record['block0_calls'] = len(block0)
+        record['transformer'] = transformer_rows[0] if transformer_rows else None
+        sampler_inputs = embeds = None
+        gc.collect()
+        in_step = {'owned_transformers_observed': len(owned),
+                   'transformer_released': bool(owned) and all(r() is None for r in owned),
+                   'owner_frames': owner_frame_rows(), 'package_frames': package_frame_rows(),
+                   'private_weight_dirs': sorted(str(p) for p in Path('/tmp').glob('wan-workflow-weights-*'))}
+        if error_signature is not None:
+            in_step['error_alive'] = error_alive(error_signature)
+            in_step['error_holders'] = trace_error_holders(error_signature)
+        if owned and not in_step['transformer_released']:
+            in_step['leak_trace'] = leak_diag.trace_weakref(owned[0])
+        record['in_step'] = in_step
+        for _ in range(2):
+            await asyncio.sleep(0)
+        gc.collect()
+        after = {'loop_turns': 2, 'transformer_released': bool(owned) and all(r() is None for r in owned),
+                 'owner_frames': owner_frame_rows(), 'package_frames': package_frame_rows(),
+                 'private_weight_dirs': sorted(str(p) for p in Path('/tmp').glob('wan-workflow-weights-*'))}
+        if error_signature is not None:
+            after['error_alive'] = error_alive(error_signature)
+            if after['error_alive']:
+                after['error_holders'] = trace_error_holders(error_signature)
+        if owned and not after['transformer_released']:
+            after['leak_trace'] = leak_diag.trace_weakref(owned[0])
+        record['after_release'] = after
+        REPORT['cases'][name] = record
+        del model
+        gc.collect()
+    phase('converted-seam-after')
+    seam['candidate_tree_after'] = i2v_common.tree_listing_digest(PACKAGE_ROOT.rstrip('/'), listing)
+    seam['fixture_digest_absent_from_candidate'] = i2v_common.digest_absent(PACKAGE_ROOT.rstrip('/'), REPORT['fixture']['model_sha256'])
+    seam['registry'] = {'count': len(registry), 'classes_outside_package': sorted(
+        '%s.%s' % (cls.__module__, cls.__qualname__) for cls in registry.values() if not cls.__module__.startswith(PACKAGE))}
+    REPORT['status'] = LABEL + '_SLICES_DONE'
+
+
+def main():
+    phase('setup')
+    listing = common.load_json('/prepared/CANDIDATE_TREE.json')['files']
+    REPORT['seam']['candidate_tree_before'] = i2v_common.tree_listing_digest(PACKAGE_ROOT.rstrip('/'), listing)
+    sys.path[:0] = ['/native-site', '/converted-site', '/native-core', '/candidate']
+    from comfy.cli_args import args
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/converted-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    REPORT['fixture'] = i2v_common.verify_fixture(CASE_FILE)
+    asyncio.run(run(CASE_FILE, listing))
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save(LABEL + '_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != LABEL + '_SLICES_DONE':
+    raise SystemExit(1)

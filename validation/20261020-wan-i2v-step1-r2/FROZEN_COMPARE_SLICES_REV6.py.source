@@ -1,0 +1,334 @@
+"""Stdlib-only comparison for sampler slices on rev 3 (generic, CASE-driven). One COMPARISON_<item>.json per item.
+
+Per case (original upstream vs registered converted, same seed, fresh model each):
+  returned cases: inputs, producers (cache producers: every field equal except cache_device, which V2 carries as the
+    original closed UI label - checked explicitly against the case's label and the original's resolved device), samples
+    dict incl. generator state, denoised, raw latent bytes, expected shape, CPU RNG after seed and after sampler, forward
+    count and forward inputs/outputs (transformer_options excluded, recorded), blocks[0] executions; when the case declares
+    expect_cache_skips, the original must have skipped at least one transformer step (blocks[0] runs < forwards);
+  raising cases: the original's own error raised by both (type, message, raising function and file);
+  converted release (both kinds): one owned transformer, weakref dead after gc right after the node, no sampler/package
+    frames once the error/result is released, private weight files removed.
+Registry size: rev 3 registers 146.
+
+rev 4 (MERVYN R1 ruling m_ac4fbd5c7d) adds one reviewed normalization and changes nothing else.
+- Scope: only for raising cases whose CASE declares "message_normalization": "set_literal_sorted".
+- Normalization: the message must hold exactly one {...} set literal; its elements are compared as sorted lists, and
+  everything outside the braces is compared exactly. Reason: Python set iteration order is hash-randomized per process,
+  and PYTHONHASHSEED cannot be pinned under -I (which implies -E).
+- The exact checks still run and are recorded unchanged; an exact-message mismatch still FAILs that check.
+- An item whose only failing checks are such message checks, each equal after normalization, gets status
+  CLOSED_BY_REVIEWED_NORMALIZATION_SLICE_<item>, never PASS. Both raw messages and the normalized comparison are recorded.
+
+rev 5 (I2V Step 1, MERVYN m_21c672eca8) adds checks and changes nothing else.
+- Raising cases:
+  - When the workers record the full-message digest, same_full_message_digest_and_length compares it exactly. The I2V
+    batched_cfg message starts with str(transformer), far beyond the 2000-character excerpt.
+  - expected_error_form (type, message prefix and suffix, raising function and file) stands in for an exact cited message
+    where the message cannot be cited before the run.
+- expected_samples_sha256_cross_run: both roles' latent bytes must equal a sha256 recorded by an earlier reviewed run.
+- same_transformer_configuration and seam_state_as_declared run when the workers record them.
+- Item i2v_admission_seam (CASE "seam") checks:
+  - p0: the published refusal, with the published ADMITTED table;
+  - exactly one test-only entry for the fixture digest, installed after p0 and the T2V regression case;
+  - the candidate tree equals the bound bytes before and after;
+  - the fixture digest is absent from candidate bytes;
+  - the registry holds only candidate classes;
+  - the module digests;
+  - both roles used the controller-verified fixture (the FIXTURE.json copy in the comparison dir).
+
+rev 6 (I2V Step 1 r2, review L5 + L10) adds and changes nothing else:
+- outputs_finite, for every returning case: each recorded tensor meta in samples, denoised and every forward noise_pred has
+  finite True in both roles. strip() drops "finite" from the equality views, so identical NaN/Inf outputs could otherwise
+  pass every parity check.
+- every COMPARISON item records the CASE label in info.label, so the synthetic scope travels with the result.
+"""
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+SET_LITERAL = re.compile(r'\{([^{}]*)\}')
+NORMALIZATION_REASON = ('Python set iteration order is hash-randomized per process; PYTHONHASHSEED is unavailable under -I (implies -E). '
+                        'Only the set literal is normalized (elements compared as sorted lists); all other text is compared exactly.')
+NORMALIZABLE = ('same_exception_type_and_message', 'original_error_is_the_cited_one')
+
+
+def split_set_literal(message):
+    """(prefix, elements, suffix) for a message holding exactly one flat {...} literal, else None."""
+    if not isinstance(message, str):
+        return None
+    found = list(SET_LITERAL.finditer(message))
+    if len(found) != 1 or message.count('{') != 1 or message.count('}') != 1:
+        return None
+    elements = [element.strip() for element in found[0].group(1).split(',')]
+    if not elements or any(not element for element in elements) or len(set(elements)) != len(elements):
+        return None
+    return message[:found[0].start()], elements, message[found[0].end():]
+
+
+def normalized_equal(first, second):
+    a, b = split_set_literal(first), split_set_literal(second)
+    return a is not None and b is not None and a[0] == b[0] and a[2] == b[2] and sorted(a[1]) == sorted(b[1])
+CACHE_NODES = {'WanVideoTeaCache', 'WanVideoMagCache', 'WanVideoEasyCache'}
+EXPECTED_REGISTERED = 146
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+def strip(value):
+    if isinstance(value, dict):
+        if 'sha256' in value and 'dtype' in value and 'shape' in value:
+            return {k: value[k] for k in ('dtype', 'shape', 'bytes', 'sha256')}
+        return {k: strip(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [strip(v) for v in value]
+    return value
+
+
+def forward_view(calls, drop=('transformer_options',)):
+    return [{'args': strip(c['args']), 'kwargs': {k: strip(v) for k, v in c['kwargs'].items() if k not in drop},
+             'noise_pred': strip(c['noise_pred']), 'rng': c['rng_sha256_after_forward']} for c in calls]
+
+
+def tensor_metas(value, out=None):
+    """rev 6: every recorded tensor meta (a dict with dtype, shape, sha256 and finite) inside value."""
+    out = [] if out is None else out
+    if isinstance(value, dict):
+        if all(key in value for key in ('dtype', 'shape', 'sha256', 'finite')):
+            out.append(value)
+        else:
+            for item in value.values():
+                tensor_metas(item, out)
+    elif isinstance(value, list):
+        for item in value:
+            tensor_metas(item, out)
+    return out
+
+
+class Item:
+    def __init__(self, name):
+        self.name, self.checks, self.details, self.info = name, {}, {}, {}
+        self.normalized = {}  # check key -> reviewed normalization record (rev 4)
+
+    def check(self, key, ok, detail=None):
+        self.checks[key] = bool(ok)
+        if not ok and detail is not None:
+            self.details[key] = detail
+
+    def write(self, results_sha):
+        passed = bool(self.checks) and all(self.checks.values())
+        failed = [k for k, v in self.checks.items() if not v]
+        closed = (not passed and bool(failed) and all(k in self.normalized and self.normalized[k]['equal_after_normalization']
+                                                      for k in failed))
+        status = ('PASS_SLICE_' if passed else 'CLOSED_BY_REVIEWED_NORMALIZATION_SLICE_' if closed else 'FAIL_SLICE_') + self.name.upper()
+        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': failed,
+               'details': self.details, 'info': self.info, 'results_sha256': results_sha,
+               'reviewed_normalization': {'ruling': 'MERVYN m_ac4fbd5c7d R1', 'reason': NORMALIZATION_REASON,
+                                          'records': self.normalized, 'closed_checks': failed if closed else []}}
+        (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+        return status
+
+
+def producer_checks(item, p, case, o, c):
+    for spec in case.get('producers', []):
+        key = spec['sampler_input']
+        po, pc = o.get('producers', {}).get(key), c.get('producers', {}).get(key)
+        if spec['node'] in CACHE_NODES:
+            without = lambda d: {k: v for k, v in (d or {}).items() if k != 'cache_device'}
+            item.check(p + 'producer_%s_equal_except_cache_device' % key, canon(strip(without(po))) == canon(strip(without(pc))),
+                       {'original': po, 'converted': pc})
+            item.check(p + 'producer_%s_cache_device_label_and_original_device' % key,
+                       (pc or {}).get('cache_device') == spec['inputs']['cache_device'] and (po or {}).get('cache_device') == {'torch': 'cpu'},
+                       {'original': (po or {}).get('cache_device'), 'converted': (pc or {}).get('cache_device')})
+        else:
+            item.check(p + 'producer_%s_equal' % key, canon(strip(po)) == canon(strip(pc)), {'original': po, 'converted': pc})
+
+
+def release_checks(item, p, c):
+    ins, aft = c.get('in_step', {}), c.get('after_release', {})
+    item.check(p + 'converted_owned_transformer_observed_once', ins.get('owned_transformers_observed') == 1, ins.get('owned_transformers_observed'))
+    item.check(p + 'converted_transformer_released_after_node', ins.get('transformer_released') is True, ins.get('leak_trace'))
+    item.check(p + 'converted_no_retained_frames_after_release', aft.get('owner_frames') == [] and aft.get('package_frames') == []
+               and aft.get('transformer_released') is True, {k: aft.get(k) for k in ('owner_frames', 'package_frames', 'transformer_released')})
+    item.check(p + 'converted_private_weight_files_removed', ins.get('private_weight_dirs') == [] and aft.get('private_weight_dirs') == [])
+    if 'error_alive' in aft:
+        item.check(p + 'converted_error_object_released_after_caller_drops_it', aft.get('error_alive') is False, aft.get('error_holders'))
+
+
+def case_checks(item, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'inputs_equal', canon(strip(o.get('inputs'))) == canon(strip(c.get('inputs'))),
+               {'original': strip(o.get('inputs')), 'converted': strip(c.get('inputs'))})
+    producer_checks(item, p, case, o, c)
+    oo, co = o.get('outcome', {}), c.get('outcome', {})
+    if case.get('expect') == 'raise':
+        item.check(p + 'both_raised', oo.get('raised') is True and co.get('raised') is True, [oo, co])
+        item.check(p + 'same_exception_type_and_message', (oo.get('type'), oo.get('message')) == (co.get('type'), co.get('message')), [oo, co])
+        item.check(p + 'same_raising_function_and_file', (oo.get('raising_function'), oo.get('raising_file')) == (co.get('raising_function'), co.get('raising_file')), [oo, co])
+        if 'message_sha256' in oo or 'message_sha256' in co:
+            item.check(p + 'same_full_message_digest_and_length', (oo.get('message_sha256'), oo.get('message_length'))
+                       == (co.get('message_sha256'), co.get('message_length')), [oo.get('message_length'), co.get('message_length')])
+        form = case.get('expected_error_form')
+        if form:
+            item.check(p + 'original_error_has_the_cited_form', oo.get('type') == form['type']
+                       and str(oo.get('message') or '').startswith(form['message_startswith'])
+                       and str(oo.get('message_tail') or '').endswith(form['message_endswith'])
+                       and (oo.get('raising_function'), oo.get('raising_file')) == (form['raising_function'], form['raising_file']), oo)
+        if case.get('expected_error'):
+            item.check(p + 'original_error_is_the_cited_one', [oo.get('type'), oo.get('message')] == case['expected_error'], oo)
+        if case.get('message_normalization') == 'set_literal_sorted':
+            pairs = {p + 'same_exception_type_and_message': (oo.get('type') == co.get('type'), oo.get('message'), co.get('message'))}
+            if case.get('expected_error'):
+                pairs[p + 'original_error_is_the_cited_one'] = (oo.get('type') == case['expected_error'][0], oo.get('message'),
+                                                                case['expected_error'][1])
+            for key, (same_type, first, second) in pairs.items():
+                parts = [split_set_literal(first), split_set_literal(second)]
+                item.normalized[key] = {
+                    'raw_messages': [first, second], 'exact_equal': first == second, 'types_equal': same_type,
+                    'normalized_parts': [None if x is None else {'prefix': x[0], 'elements': x[1], 'sorted': sorted(x[1]), 'suffix': x[2]}
+                                         for x in parts],
+                    'equal_after_normalization': bool(same_type) and normalized_equal(first, second)}
+    else:
+        returned = oo.get('raised') is False and co.get('raised') is False
+        item.check(p + 'both_returned', returned, {'original': oo, 'converted': co})
+        if returned:
+            item.check(p + 'samples_dict_equal_incl_generator_state', canon(strip(o['samples'])) == canon(strip(c['samples'])),
+                       {'original': strip(o['samples']), 'converted': strip(c['samples'])})
+            item.check(p + 'denoised_equal', canon(strip(o['denoised'])) == canon(strip(c['denoised'])))
+            raw_o = (OUT / ('original-%s-samples.bin' % case['name'])).read_bytes()
+            raw_c = (OUT / ('converted-%s-samples.bin' % case['name'])).read_bytes()
+            item.check(p + 'latent_raw_bytes_equal', raw_o == raw_c, [len(raw_o), len(raw_c)])
+            item.check(p + 'expected_latent_shape', o['samples']['samples']['shape'] == case['expected_latent_shape'], o['samples']['samples']['shape'])
+            reference = case.get('expected_samples_sha256_cross_run')
+            if reference:
+                shas = [o['samples']['samples']['sha256'], c['samples']['samples']['sha256']]
+                item.check(p + 'samples_equal_cross_run_reference', shas == [reference['sha256']] * 2, {'roles': shas, 'reference': reference})
+            finite = {role: [m.get('finite') for m in tensor_metas([rec.get('samples'), rec.get('denoised')]
+                                                              + [f.get('noise_pred') for f in rec.get('forward_calls', [])])]
+                      for role, rec in (('original', o), ('converted', c))}
+            item.check(p + 'outputs_finite', all(values and all(x is True for x in values) for values in finite.values()),
+                       {role: [i for i, x in enumerate(values) if x is not True] for role, values in finite.items()})
+    if 'transformer' in o or 'transformer' in c:
+        item.check(p + 'same_transformer_configuration', o.get('transformer') is not None and canon(o.get('transformer')) == canon(c.get('transformer'))
+                   and (case.get('expected_model_type') is None or o['transformer'].get('model_type') == case['expected_model_type']),
+                   [o.get('transformer'), c.get('transformer')])
+    if 'seam_active' in c:
+        item.check(p + 'seam_state_as_declared', c.get('seam_active') is bool(case.get('seam_required')), c.get('seam_active'))
+    item.check(p + 'cpu_rng_after_seed_equal', o.get('rng_after_seed') == c.get('rng_after_seed'))
+    item.check(p + 'final_cpu_rng_equal', o.get('rng_after_sampler') == c.get('rng_after_sampler'))
+    fo, fc = o.get('forward_calls', []), c.get('forward_calls', [])
+    item.check(p + 'forward_count_equal', len(fo) == len(fc), [len(fo), len(fc)])
+    vo, vc = forward_view(fo), forward_view(fc)
+    item.check(p + 'forward_inputs_outputs_equal', canon(vo) == canon(vc), [i for i, (x, y) in enumerate(zip(vo, vc)) if canon(x) != canon(y)])
+    item.check(p + 'block0_executions_equal', o.get('block0_calls') == c.get('block0_calls'), [o.get('block0_calls'), c.get('block0_calls')])
+    if case.get('expect_cache_skips'):
+        item.check(p + 'cache_actually_skipped_steps', (o.get('block0_calls') or 0) < len(fo), [o.get('block0_calls'), len(fo)])
+    item.info[p + 'skipped_transformer_steps'] = [len(fo) - (o.get('block0_calls') or 0), len(fc) - (c.get('block0_calls') or 0)]
+    item.info[p + 'transformer_options_equal'] = canon([strip(x['kwargs'].get('transformer_options')) for x in fo]) == \
+        canon([strip(x['kwargs'].get('transformer_options')) for x in fc])
+    item.info[p + 'seconds'] = [o.get('seconds'), c.get('seconds')]
+    release_checks(item, p, c)
+
+
+def effect_checks(item_by_name, case_file, original):
+    """Explicit preconditions: the slice input changes the original's computation (differs_from_case) and the
+    original's transformer forward count (expected_forwards)."""
+    for case in case_file['cases']:
+        item = item_by_name[case['item']]
+        o = original.get('cases', {}).get(case['name'], {})
+        p = case['name'] + ':'
+        if case.get('expected_forwards') is not None:
+            item.check(p + 'original_forward_count_as_expected', len(o.get('forward_calls', [])) == case['expected_forwards'],
+                       [len(o.get('forward_calls', [])), case['expected_forwards']])
+        base = case.get('differs_from_case')
+        if base:
+            b = original.get('cases', {}).get(base, {})
+            sha = lambda rec: ((rec.get('samples') or {}).get('samples') or {}).get('sha256')
+            item.check(p + 'slice_input_changes_original_output', sha(o) is not None and sha(b) is not None and sha(o) != sha(b), [sha(o), sha(b)])
+
+
+def seam_checks(case_file, original, converted, done):
+    """rev 5: the test-only admission seam lives in the converted harness only; the published bytes refuse the synthetic digest."""
+    item = Item('i2v_admission_seam')
+    item.info['label'] = case_file.get('label')
+    item.check('workers_completed', done)
+    if not done:
+        return item
+    spec, seam = case_file['seam'], converted.get('seam') or {}
+    fixture_path = OUT / 'FIXTURE.json'
+    fixture = json.loads(fixture_path.read_text()) if fixture_path.exists() else {}
+    fixture_sha = hashlib.sha256(fixture_path.read_bytes()).hexdigest() if fixture_path.exists() else None
+    model_sha = (fixture.get('model') or {}).get('sha256')
+    p0 = seam.get('p0') or {}
+    item.check('p0_published_admission_refuses_the_synthetic_digest', p0.get('raised') is True and [p0.get('type'), p0.get('message')] == spec['p0_expect']
+               and [p0.get('raising_function'), p0.get('raising_file')] == spec['p0_raising'], p0)
+    item.check('published_admitted_is_the_approved_13b_only', seam.get('admitted_published') == spec['published_admitted'] == seam.get('admitted_after_p0'),
+               [seam.get('admitted_published'), seam.get('admitted_after_p0')])
+    expected = dict(spec['published_admitted'], **{model_sha: spec['entry']}) if model_sha else None
+    item.check('seam_adds_exactly_the_fixture_entry', expected is not None and seam.get('admitted_with_seam') == expected, seam.get('admitted_with_seam'))
+    first = next((c['name'] for c in case_file['cases'] if c.get('seam_required')), None)
+    item.check('seam_installed_after_p0_and_t2v_regression', first is not None and seam.get('installed_before_case') == first, seam.get('installed_before_case'))
+    before, after = seam.get('candidate_tree_before') or {}, seam.get('candidate_tree_after') or {}
+    item.check('candidate_tree_equals_bound_bytes_before_and_after', before.get('equals_bound_listing') is True and after.get('equals_bound_listing') is True
+               and before.get('digest') == after.get('digest') == spec['candidate_tree_digest']
+               and before.get('files') == after.get('files') == spec['candidate_tree_files'], [before, after])
+    item.check('fixture_digest_absent_from_candidate_bytes', seam.get('fixture_digest_absent_from_candidate') is True)
+    registry = seam.get('registry') or {}
+    item.check('registry_holds_only_candidate_classes', registry.get('count') == EXPECTED_REGISTERED and registry.get('classes_outside_package') == [], registry)
+    item.check('candidate_module_digests_as_bound', all(converted.get(k + '_sha256') == case_file[k + '_sha256']
+                                                         for k in ('sampler_runtime', 'model_runtime', 'model_config')))
+    fo, fc = original.get('fixture') or {}, converted.get('fixture') or {}
+    item.check('both_roles_used_the_controller_verified_fixture', bool(fo) and fo == fc and fo.get('fixture_json_sha256') == fixture_sha
+               and fo.get('model_sha256') == model_sha and fo.get('inputs') == {k: v.get('sha256') for k, v in (fixture.get('inputs') or {}).items()},
+               [fo, fc, fixture_sha])
+    item.check('fixture_is_the_declared_architecture', (fixture.get('model') or {}).get('patch_embedding') == spec['entry']['patch_embedding']
+               and (fixture.get('model') or {}).get('has_k_img') is True and fixture.get('seed') == case_file['fixture_seed'], fixture.get('model'))
+    item.info['seam'] = {k: seam.get(k) for k in ('admitted_published', 'admitted_with_seam', 'installed_before_case', 'p0')}
+    item.info['fixture'] = {'fixture_json_sha256': fixture_sha, 'model': fixture.get('model'), 'inputs': fixture.get('inputs')}
+    return item
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    load = lambda name: json.loads((OUT / name).read_text()) if (OUT / name).exists() else {}
+    original, converted = load('ORIGINAL_RESULT.json'), load('CONVERTED_RESULT.json')
+    results_sha = {n: hashlib.sha256((OUT / n).read_bytes()).hexdigest() for n in ('ORIGINAL_RESULT.json', 'CONVERTED_RESULT.json') if (OUT / n).exists()}
+    done = original.get('status') == 'ORIGINAL_SLICES_DONE' and converted.get('status') == 'CONVERTED_SLICES_DONE'
+    statuses, items = {}, {}
+    for item_name in sorted({c['item'] for c in case_file['cases']}):
+        item = Item(item_name)
+        items[item_name] = item
+        item.check('workers_completed', done, {'original': original.get('status'), 'converted': converted.get('status'),
+                                               'tracebacks': [original.get('traceback', '')[-1500:], converted.get('traceback', '')[-1500:]]})
+        cases = [c for c in case_file['cases'] if c['item'] == item_name]
+        if done:
+            item.check('registry_%d' % EXPECTED_REGISTERED, converted.get('registered_count') == EXPECTED_REGISTERED, converted.get('registered_count'))
+            item.check('same_vendor_versions_and_cpu', canon(original.get('versions')) == canon(converted.get('versions'))
+                       and canon(original.get('cpu')) == canon(converted.get('cpu')))
+            for case in cases:
+                case_checks(item, case, original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {}))
+        item.info['cases'] = cases
+        item.info['label'] = case_file.get('label')
+    if done:
+        effect_checks(items, case_file, original)
+    if case_file.get('seam'):
+        items['i2v_admission_seam'] = seam_checks(case_file, original, converted, done)
+    for item_name, item in items.items():
+        statuses[item_name] = item.write(results_sha)
+    failed = [k for k, v in statuses.items() if v.startswith('FAIL')]
+    closed = [k for k, v in statuses.items() if v.startswith('CLOSED_BY_REVIEWED_NORMALIZATION')]
+    prefix = 'FAIL_SLICES_' if failed else 'CLOSED_BY_REVIEWED_NORMALIZATION_SLICES_' if closed else 'PASS_SLICES_'
+    status = prefix + '_'.join(sorted(statuses)).upper()
+    (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha}, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': status, 'items': statuses}))
+    return 0 if not failed else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

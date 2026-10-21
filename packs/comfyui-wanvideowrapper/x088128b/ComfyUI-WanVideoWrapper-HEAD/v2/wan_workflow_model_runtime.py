@@ -11,6 +11,8 @@ from .wan_workflow_resources import describe_asset, inspect_header, private_weig
 
 MODEL_RESOURCE_FORMAT = 'wan-video-model-loader-resource-v1'
 PLAIN_13B_SHA256 = 'bcb3c10ad5bbb03e597ebbf3ec1d1ce3e76180df99d4d11e1cc933ff92c066d5'
+# Digest-bound admission: each admitted trained resource fixes its architecture. Published: the approved 1.3B T2V only.
+ADMITTED = {PLAIN_13B_SHA256: {'model_type': 't2v', 'patch_embedding': [1536, 16, 1, 2, 2]}}
 
 
 async def load_model_context(context, model, base_precision, load_device, quantization,
@@ -31,10 +33,11 @@ async def load_model_context(context, model, base_precision, load_device, quanti
     from .wan_workflow_audio_projection_consumer import projection_recipes
     audio_recipes = projection_recipes(fantasytalking_model, multitalk_model)
     weights = await describe_asset(context.assets, 'diffusion_models', model)
-    if weights['sha256'] != PLAIN_13B_SHA256:
+    admitted = ADMITTED.get(weights['sha256'])
+    if admitted is None:
         raise NotImplementedError('First staged workflow is bound to the approved trained Wan2.1 1.3B resource')
     header = await inspect_header(context.assets, weights)
-    if header['patch_embedding.weight']['shape'] != [1536, 16, 1, 2, 2]:
+    if header['patch_embedding.weight']['shape'] != admitted['patch_embedding']:
         raise ValueError('Trained diffusion resource architecture changed')
     resource = {'format': MODEL_RESOURCE_FORMAT, 'weights': weights,
                 'model_name': model, 'base_precision': base_precision,
@@ -82,13 +85,14 @@ async def materialize_model(model, context):
     from accelerate import init_empty_weights
     from safetensors.torch import load_file
     from .wan_workflow_math.wanvideo.modules.model import WanModel
-    from .wan_workflow_model_config import configuration_13b
+    from .wan_workflow_model_config import configuration_admitted
     resource = model_resource(model)
     fields = {'format', 'weights', 'model_name', 'base_precision', 'load_device',
               'quantization', 'rms_norm_function'}
     if type(resource) is not dict or set(resource) != fields or resource['format'] != MODEL_RESOURCE_FORMAT:
         raise ValueError('Invalid owned diffusion loader resource')
-    if resource['weights']['sha256'] != PLAIN_13B_SHA256 or resource['base_precision'] != 'bf16' or resource['quantization'] != 'disabled' or resource['rms_norm_function'] != 'default':
+    admitted = ADMITTED.get(resource['weights']['sha256'])
+    if admitted is None or resource['base_precision'] != 'bf16' or resource['quantization'] != 'disabled' or resource['rms_norm_function'] != 'default':
         raise ValueError('Diffusion resource is outside the staged trained domain')
     options = model_options(model)
     transformer_options = options.get('transformer_options')
@@ -103,14 +107,14 @@ async def materialize_model(model, context):
     )
     audio_recipes = validate_projection_recipes(options.get('audio_projection_recipes'))
     header = await inspect_header(context.assets, resource['weights'])
-    if header['patch_embedding.weight']['shape'] != [1536, 16, 1, 2, 2]:
+    if header['patch_embedding.weight']['shape'] != admitted['patch_embedding']:
         raise ValueError('Unexpected trained diffusion architecture')
     async with AsyncExitStack() as lifetime:
         path = await lifetime.enter_async_context(private_weight_file(context.assets, resource['weights']))
         state = load_file(str(path), device='cpu')
         transformer = None
         try:
-            configuration = configuration_13b(state)
+            configuration = configuration_admitted(state, resource['model_name'], admitted)
             with init_empty_weights():
                 transformer = WanModel(**configuration).eval()
             if audio_recipes is not None:

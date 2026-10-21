@@ -1,0 +1,35 @@
+{
+ "ruling": "MERVYN m_932f23f1bf",
+ "record_text": "original defect: batched_cfg always raises TypeError; converted reproduces it",
+ "status": "COMPLETE_BOTH_HALVES",
+ "line_refs": [
+  "nodes_sampler.py:1657-1663 batched branch (vendored v2 copy identical)",
+  "nodes_sampler.py:1659 torch.cat([clip_fea, clip_fea]) raises TypeError when clip_fea is None (every T2V dict)",
+  "nodes_sampler.py:1444 + 1661-1664 is_uncond passed twice when clip_fea is present (I2V); the unknown z kwarg (1657) is never reached"
+ ],
+ "T2V_half": {
+  "evidence": "validation/20261020-wan-feta-batched-r3 (case b1, COMPARISON 61ec2016)",
+  "type": "TypeError",
+  "message": "expected Tensor as element 0 in argument 0, but got NoneType",
+  "raising": [
+   "predict_with_cfg",
+   "nodes_sampler.py"
+  ]
+ },
+ "I2V_half": {
+  "evidence": "validation/20261020-wan-i2v-step1-r2 (case i4, COMPARISON 6abc2815); synthetic column",
+  "type": "TypeError",
+  "message_sha256": "956cf0a11c6646127084471c8770af14851ddb590a4eac16341df20205543774",
+  "message_length": 2760,
+  "message_head": "WanModel(\n  (patch_embedding): Conv3d(36, 192, kernel_size=(1, 2, 2), stride=(1, 2, 2))\n  (original_patch_embedding): Co",
+  "message_tail": "se_affine=True)\n    )\n  )\n) got multiple values for keyword argument 'is_uncond'",
+  "raising": [
+   "predict_with_cfg",
+   "nodes_sampler.py"
+  ]
+ },
+ "is_not": [
+  "a computation pass",
+  "REFUSED"
+ ]
+}
