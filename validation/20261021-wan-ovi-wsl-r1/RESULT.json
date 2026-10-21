@@ -1,0 +1,294 @@
+{
+ "comparison_status": "FAIL_OVI_DECODE_DECODE_BF16_ENCODE_LOADER",
+ "receipt_status": "FAILED_OVI_WSL_R1_NO_RETRY",
+ "label": "Ovi trio (OviMMAudioVAELoader, WanVideoEncodeOviAudio, WanVideoDecodeOviAudio), WSL x86 CPU: native CPU, one thread, original vs converted on the default-SDK in-process route at fp32 and bf16; a separate scope from the Mac-bound R6; not Guest, not GPU",
+ "comparison_sha256": "fb830923380db9b71db1bea75cb716ecc3d8da5b8a02245ee438bbda4633cd83",
+ "items": {
+  "decode": "PASS_SLICE_DECODE",
+  "decode_bf16": "FAIL_SLICE_DECODE_BF16",
+  "encode": "PASS_SLICE_ENCODE",
+  "loader": "PASS_SLICE_LOADER"
+ },
+ "check_counts": {
+  "decode": [
+   33,
+   33
+  ],
+  "decode_bf16": [
+   21,
+   23
+  ],
+  "encode": [
+   43,
+   43
+  ],
+  "loader": [
+   25,
+   25
+  ]
+ },
+ "case_outcomes": {
+  "d1_16": {
+   "dtype": "float32",
+   "item": "decode_bf16",
+   "precision": "bf16",
+   "recipe_precision": "bf16",
+   "repeat_identical": [
+    true,
+    true
+   ],
+   "sha256": [
+    "c31fc29138645fdeec78acc3eec98fab48cfa65515c4e7bd9540e4adcecece69",
+    "11fc964337db85b27145eba0e4540654723ef3acf317ef01320ab96f95f7b877"
+   ],
+   "shape": [
+    1,
+    1,
+    16384
+   ]
+  },
+  "d1_32": {
+   "dtype": "float32",
+   "item": "decode",
+   "precision": "fp32",
+   "recipe_precision": "fp32",
+   "repeat_identical": [
+    true,
+    true
+   ],
+   "sha256": [
+    "cd168e2e1b9fd7dc899193d201765b3860c6be43786ab1f06322351e976e4074",
+    "cd168e2e1b9fd7dc899193d201765b3860c6be43786ab1f06322351e976e4074"
+   ],
+   "shape": [
+    1,
+    1,
+    16384
+   ]
+  },
+  "d2": {
+   "item": "decode",
+   "message": [
+    "No Ovi audio latents found in input samples",
+    "No Ovi audio latents found in input samples"
+   ],
+   "precision": "fp32",
+   "raising": [
+    [
+     "decode",
+     "nodes_ovi.py",
+     133
+    ],
+    [
+     "execute",
+     "secure_ovi_nodes.py",
+     83
+    ]
+   ],
+   "recipe_precision": "fp32",
+   "type": [
+    "ValueError",
+    "ValueError"
+   ]
+  },
+  "e1_16": {
+   "item": "encode",
+   "message": [
+    "MKL FFT doesn't support tensors of type: BFloat16",
+    "MKL FFT doesn't support tensors of type: BFloat16"
+   ],
+   "precision": "bf16",
+   "raising": [
+    [
+     "stft",
+     "functional.py",
+     730
+    ],
+    [
+     "stft",
+     "functional.py",
+     730
+    ]
+   ],
+   "recipe_precision": "bf16",
+   "type": [
+    "RuntimeError",
+    "RuntimeError"
+   ]
+  },
+  "e1_32": {
+   "dtype": "float32",
+   "item": "encode",
+   "precision": "fp32",
+   "recipe_precision": "fp32",
+   "repeat_identical": [
+    null,
+    null
+   ],
+   "sha256": [
+    "f58797124c6dcb3772d48ae3da744270bdd785c989dd98df30c1cf80e4d33cea",
+    "f58797124c6dcb3772d48ae3da744270bdd785c989dd98df30c1cf80e4d33cea"
+   ],
+   "shape": [
+    1,
+    20,
+    46
+   ]
+  },
+  "e2_32": {
+   "dtype": "float32",
+   "item": "encode",
+   "precision": "fp32",
+   "recipe_precision": "fp32",
+   "repeat_identical": [
+    null,
+    null
+   ],
+   "sha256": [
+    "a5ed8e5ac993a2d8dea43b7b9b2be8206c200dc2593b5acf8072f59fd89f9141",
+    "a5ed8e5ac993a2d8dea43b7b9b2be8206c200dc2593b5acf8072f59fd89f9141"
+   ],
+   "shape": [
+    1,
+    20,
+    37
+   ]
+  },
+  "l16": {
+   "dtype": "torch.bfloat16",
+   "item": "loader",
+   "model_digest": [
+    "ac2bae38dcc7fd93a01683f274daa0f903150ec786ea2324eb6dbb79fb8eadd8",
+    "ac2bae38dcc7fd93a01683f274daa0f903150ec786ea2324eb6dbb79fb8eadd8"
+   ],
+   "precision": "bf16",
+   "recipe_precision": "bf16",
+   "tensors": 727
+  },
+  "l32": {
+   "dtype": "torch.float32",
+   "item": "loader",
+   "model_digest": [
+    "fa55afebb57f289088553513822663a38a14399deeabed4f4e0c494d03db3572",
+    "fa55afebb57f289088553513822663a38a14399deeabed4f4e0c494d03db3572"
+   ],
+   "precision": "fp32",
+   "recipe_precision": "fp32",
+   "tensors": 727
+  }
+ },
+ "bf16_divergence": {
+  "output": {
+   "count": 16384,
+   "differing": 15981,
+   "equal": false,
+   "max_abs": 0.287109375,
+   "original_peak": 0.96875
+  },
+  "probe_equals_node": true,
+  "taps": {
+   "decoder": {
+    "count": 5120,
+    "differing": 3551,
+    "equal": false,
+    "max_abs": 0.046875,
+    "original_peak": 4.78125
+   },
+   "vocoder": {
+    "count": 16384,
+    "differing": 15981,
+    "equal": false,
+    "max_abs": 0.287109375,
+    "original_peak": 0.96875
+   }
+  }
+ },
+ "fp32_taps": {
+  "decoder": {
+   "equal": true
+  },
+  "vocoder": {
+   "equal": true
+  }
+ },
+ "integrity": {
+  "before_original": "VERIFIED",
+  "before_converted": "VERIFIED"
+ },
+ "roles": {
+  "original": {
+   "exit_code": 0,
+   "seconds": 51.1,
+   "peak_sampled_bytes": 2465311227,
+   "oom_killed": false,
+   "absent_twice": [
+    true,
+    true
+   ]
+  },
+  "converted": {
+   "exit_code": 0,
+   "seconds": 61.5,
+   "peak_sampled_bytes": 2357937045,
+   "oom_killed": false,
+   "absent_twice": [
+    true,
+    true
+   ]
+  }
+ },
+ "environment": {
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "python": "3.13.7",
+  "versions": {
+   "accelerate": "1.10.1",
+   "einops": "0.8.2",
+   "numpy": "2.2.6",
+   "safetensors": "0.6.2",
+   "scipy": "1.18.1",
+   "torch": "2.8.0+cu128",
+   "torchaudio": "2.8.0",
+   "transformers": "5.12.1"
+  },
+  "cpu": {
+   "capability": "AVX512",
+   "threads": 1,
+   "torch": "2.8.0+cu128"
+  },
+  "torchaudio": {
+   "file": "native-site/torchaudio/__init__.py",
+   "version": "2.8.0+cu128"
+  },
+  "numeric_env_equal": true
+ },
+ "independent_intake": {
+  "status": "INTAKE_PASS",
+  "checks": 29,
+  "sha256": "21cef06e09baa650e643ed0a0d96f4bfcb1ec3afea7f88fa62b6c72e0d03fe0b"
+ },
+ "counts_before": {
+  "tested": 130,
+  "converted-untested": 13,
+  "partial": 4
+ },
+ "counts_after": {
+  "tested": 133,
+  "converted-untested": 10,
+  "partial": 4
+ },
+ "rows_class_changed": {
+  "OviMMAudioVAELoader": [
+   "converted-untested",
+   "tested"
+  ],
+  "WanVideoDecodeOviAudio": [
+   "converted-untested",
+   "tested (scoped: fp32 only)"
+  ],
+  "WanVideoEncodeOviAudio": [
+   "converted-untested",
+   "tested"
+  ]
+ },
+ "known_issue": "bf16 decode diverges from the original (max_abs 0.287 on the waveform; first visible at the VAE decoder output); cause under investigation"
+}

@@ -1,0 +1,104 @@
+{
+  "checks": {
+    "checkpoints_pinned_original_side": true,
+    "converted_module_digests_as_bound": true,
+    "d1_32:both_returned": true,
+    "d1_32:converted_recipe_exact": true,
+    "d1_32:expected_waveform_shape": true,
+    "d1_32:inputs_equal": true,
+    "d1_32:output_kind_keys_equal": true,
+    "d1_32:output_meta_equal": true,
+    "d1_32:output_raw_bytes_equal": true,
+    "d1_32:outputs_finite": true,
+    "d1_32:repeat_identical_both_sides": true,
+    "d1_32:rng_after_case_equal": true,
+    "d1_32:rng_after_loader_equal": true,
+    "d1_32:rng_after_seed_equal": true,
+    "d1_32:sample_rate_16000": true,
+    "d2:both_raised": true,
+    "d2:converted_recipe_exact": true,
+    "d2:inputs_equal": true,
+    "d2:original_error_is_the_cited_one": true,
+    "d2:raising_files_as_mapped": true,
+    "d2:raising_functions_as_mapped": true,
+    "d2:rng_after_case_equal": true,
+    "d2:rng_after_loader_equal": true,
+    "d2:rng_after_seed_equal": true,
+    "d2:same_exception_type_and_message": true,
+    "d2:same_full_message_digest_and_length": true,
+    "original_module_digests_as_bound": true,
+    "registry_146": true,
+    "same_numeric_environment_one_thread": true,
+    "same_torchaudio": true,
+    "same_versions_cpu": true,
+    "versions_as_bound": true,
+    "workers_completed": true
+  },
+  "details": {},
+  "failed_checks": [],
+  "info": {
+    "cases": [
+      {
+        "exercises": "decode a deterministic (1, 20, 32) latent at fp32 (as R6 OV-D1-32): VAE decoder, unnormalize, BigVGAN vocoder",
+        "item": "decode",
+        "latent_frames": 32,
+        "name": "d1_32",
+        "node": "WanVideoDecodeOviAudio",
+        "precision": "fp32",
+        "repeat": true,
+        "seed": 16921,
+        "taps": true
+      },
+      {
+        "exercises": "samples without latent_ovi_audio: the original ValueError (nodes_ovi.py:132-133; converted secure_ovi_nodes.py:82-83)",
+        "expect": "raise",
+        "expected_error": [
+          "ValueError",
+          "No Ovi audio latents found in input samples"
+        ],
+        "expected_raising": {
+          "files": {
+            "converted": "secure_ovi_nodes.py",
+            "original": "nodes_ovi.py"
+          },
+          "functions": {
+            "converted": "execute",
+            "original": "decode"
+          }
+        },
+        "item": "decode",
+        "latent_frames": 4,
+        "name": "d2",
+        "node": "WanVideoDecodeOviAudio",
+        "precision": "fp32",
+        "samples_key": "samples_without_ovi_audio",
+        "seed": 16921
+      }
+    ],
+    "d1_32:seconds": [
+      5.574,
+      13.131
+    ],
+    "d1_32:tap_probe_output_equals_node": true,
+    "d1_32:tap_probe_rng_unchanged": true,
+    "d1_32:taps": {
+      "decoder": {
+        "equal": true
+      },
+      "vocoder": {
+        "equal": true
+      }
+    },
+    "d2:seconds": [
+      1.624,
+      1.721
+    ],
+    "label": "Ovi trio (OviMMAudioVAELoader, WanVideoEncodeOviAudio, WanVideoDecodeOviAudio), WSL x86 CPU: native CPU, one thread, original vs converted on the default-SDK in-process route at fp32 and bf16; a separate scope from the Mac-bound R6; not Guest, not GPU"
+  },
+  "item": "decode",
+  "results_sha256": {
+    "CONVERTED_RESULT.json": "501a9b64bd20213bb1529e78bf5771f8282883d8d32de9595ef7f6ed6e62a25c",
+    "ORIGINAL_RESULT.json": "2548d19ed0b2f2799b85556042c164c91e47dd9f33e03fe3431dc25076af306c"
+  },
+  "status": "PASS_SLICE_DECODE"
+}

@@ -1,0 +1,152 @@
+"""Ovi WSL x86 CPU r1 harness helpers shared by both role workers (test harness only, never production).
+
+- seed_all / rng_state: torch CPU, NumPy and Python RNG, seeded and digested identically in both roles.
+- audio / latent: the authored inputs of the r7 Ovi family (case_support): two deterministic tones with a ramp at 16 and 24 kHz,
+  and a deterministic (1, 20, T) latent. Identical bytes in both roles.
+- module_meta: every parameter and buffer of a module, by dtype, shape, device, requires_grad and sha256, plus class, dtype
+  attribute, training flag and repr digest.
+- numeric_env: the numeric settings that can change CPU results (threads, oneDNN/MKL, matmul precision, determinism, CPU
+  capability, default dtype, parallel info).
+- error_outcome: type, message, full-message digest, length, tail and the raising frame.
+- decode_taps: passive forward hooks on tod.vae.decoder and tod.vocoder for one decode call (diagnostic findings, never a check).
+"""
+import hashlib
+import json
+import math
+import os
+import random
+import traceback
+
+import common
+
+THREAD_KEYS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS')
+
+
+def seed_all(value):
+    import numpy as np
+    import torch
+    random.seed(value)
+    np.random.seed(value)
+    torch.manual_seed(value)
+
+
+def rng_state():
+    import numpy as np
+    import torch
+    state = np.random.get_state()
+    numpy_digest = hashlib.sha256(json.dumps([state[0], int(state[2]), int(state[3]), float(state[4])]).encode()
+                                  + state[1].tobytes()).hexdigest()
+    return {'torch_cpu': common.sha_bytes(torch.get_rng_state().numpy().tobytes()), 'numpy': numpy_digest,
+            'python': hashlib.sha256(repr(random.getstate()).encode()).hexdigest()}
+
+
+def audio(name):
+    import torch
+    rate, seconds, tones = {'a16k': (16000, 1.5, (220.0, 550.0)), 'b24k': (24000, 1.2, (180.0, 410.0))}[name]
+    count = int(rate * seconds)
+    t = torch.arange(count, dtype=torch.float64) / rate
+    wave = (0.10 * torch.sin(2 * math.pi * tones[0] * t) + 0.05 * torch.sin(2 * math.pi * tones[1] * t + 0.3)
+            + 0.02 * torch.linspace(-1.0, 1.0, count, dtype=torch.float64))
+    return {'waveform': wave.to(torch.float32).reshape(1, 1, count), 'sample_rate': rate}
+
+
+def latent(frames):
+    import torch
+    t = torch.arange(frames, dtype=torch.float64).reshape(1, 1, frames)
+    channel = torch.arange(20, dtype=torch.float64).reshape(1, 20, 1)
+    value = 0.6 * torch.sin(0.37 * t + 0.11 * channel) + 0.1 * torch.cos(0.05 * t * channel)
+    return value.to(torch.float32)
+
+
+def inputs_for(case):
+    """The consumer node inputs of a case, without the model."""
+    if case['node'] == 'WanVideoEncodeOviAudio':
+        return {'audio': audio(case['audio'])}
+    if case['node'] == 'WanVideoDecodeOviAudio':
+        key = case.get('samples_key', 'latent_ovi_audio')
+        return {'samples': {key: latent(case['latent_frames'])}}
+    return {}
+
+
+def inputs_meta(inputs):
+    meta = {}
+    if 'audio' in inputs:
+        meta['audio'] = {'waveform': common.tensor_meta(inputs['audio']['waveform']), 'sample_rate': inputs['audio']['sample_rate']}
+    if 'samples' in inputs:
+        meta['samples'] = {key: common.tensor_meta(value) for key, value in inputs['samples'].items()}
+    return meta
+
+
+def module_meta(module):
+    import torch
+    rows = {}
+    for name, tensor in list(module.named_parameters()) + list(module.named_buffers()):
+        flat = tensor.detach().contiguous().reshape(-1)
+        rows[name] = {'dtype': str(tensor.dtype).removeprefix('torch.'), 'shape': list(tensor.shape), 'device': str(tensor.device),
+                      'requires_grad': bool(tensor.requires_grad), 'sha256': common.sha_bytes(flat.view(torch.uint8).numpy().tobytes())}
+    return {'class': type(module).__qualname__, 'dtype_attr': str(getattr(module, 'dtype', None)), 'training': bool(module.training),
+            'repr_sha256': hashlib.sha256(repr(module).encode()).hexdigest(), 'tensors': len(rows),
+            'digest': hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(), 'rows': rows}
+
+
+def numeric_env():
+    import torch
+    parallel = torch.__config__.parallel_info()
+    return {'threads': torch.get_num_threads(), 'interop_threads': torch.get_num_interop_threads(),
+            'mkldnn_available': torch.backends.mkldnn.is_available(), 'mkldnn_enabled': bool(torch.backends.mkldnn.enabled),
+            'mkl_available': torch.backends.mkl.is_available(), 'float32_matmul_precision': torch.get_float32_matmul_precision(),
+            'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(), 'cpu_capability': torch.backends.cpu.get_cpu_capability(),
+            'default_dtype': str(torch.get_default_dtype()), 'parallel_info_sha256': hashlib.sha256(parallel.encode()).hexdigest(),
+            'environment': {key: os.environ.get(key) for key in THREAD_KEYS}}
+
+
+def error_outcome(error):
+    frames = traceback.extract_tb(error.__traceback__)
+    text = str(error)
+    return {'raised': True, 'type': type(error).__name__, 'message': text[:2000],
+            'message_sha256': hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest(), 'message_length': len(text),
+            'message_tail': text[-300:], 'raising_function': frames[-1].name, 'raising_file': os.path.basename(frames[-1].filename),
+            'raising_line': frames[-1].lineno}
+
+
+def output_meta(node, result, prefix, case_name):
+    """Record a node output exactly; float tensors get a raw file for the comparator."""
+    assert type(result) is tuple and len(result) == 1, type(result)
+    value = result[0]
+    if node == 'WanVideoEncodeOviAudio':
+        assert type(value) is dict and list(value) == ['latent_ovi_audio'], value.keys()
+        return {'kind': 'LATENT', 'keys': list(value),
+                'latent_ovi_audio': common.tensor_meta(value['latent_ovi_audio'], '%s-%s-latent.bin' % (prefix, case_name))}
+    assert type(value) is dict and sorted(value) == ['sample_rate', 'waveform'], value.keys()
+    return {'kind': 'AUDIO', 'keys': list(value), 'sample_rate': value['sample_rate'],
+            'waveform': common.tensor_meta(value['waveform'], '%s-%s-waveform.bin' % (prefix, case_name))}
+
+
+def same_output(first, second):
+    """Repeat control: the second call's output equals the first, by tensor digest and type."""
+    a, b = first[0], second[0]
+    if sorted(a) != sorted(b):
+        return False
+    for key in a:
+        if hasattr(a[key], 'dtype'):
+            if common.tensor_meta(a[key]) != common.tensor_meta(b[key]):
+                return False
+        elif a[key] != b[key]:
+            return False
+    return True
+
+
+def decode_taps(model, prefix, case_name):
+    """Passive forward hooks for one decode call. Returns (handles, records); raw tap bytes go to /out for the comparator."""
+    records = {}
+
+    def hook_for(label):
+        def hook(module, args, output):
+            if label not in records:
+                tensor = output[0] if isinstance(output, (tuple, list)) else output
+                records[label] = common.tensor_meta(tensor, '%s-%s-tap-%s.bin' % (prefix, case_name, label))
+            return None
+        return hook
+    handles = [model.tod.vae.decoder.register_forward_hook(hook_for('decoder')),
+               model.tod.vocoder.register_forward_hook(hook_for('vocoder'))]
+    return handles, records
