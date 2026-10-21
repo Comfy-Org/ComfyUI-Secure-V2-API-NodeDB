@@ -1,12 +1,15 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: 64 of 64 converted; 47 tested (scoped), 3 converted but untested/partly tested,
-> 14 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> Nodes: 64 of 64 converted; 51 tested (scoped), 3 converted but untested/partly tested,
+> 10 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
 > (Revision 2. The 14: 11 pending capability — `addict` ×4, `yacs` + >4 GiB ×1, transformers bundle constructor ×6; 3 blocked by the platform — FaceMesh: legacy mediapipe API absent on Python 3.13; MeshGraphormer ×2: engine image lacks libEGL/libGLESv2.)
 > **Revision 3 (2026-10-21, docs only): 8 nodes counted as tested refuse on live.** These are DepthAnythingV2, DWPose,
 > AnimalPose, DensePose, LeReS, MiDaS Depth and Normal, and Unimatch. Their published model selections are unapproved, so
 > each raises a selection error before loading anything (request #21). See "Revision 3".
+> **Revision 4 (2026-10-21):** UniFormer, SemSeg and Metric3D Depth/Normal are tested (scoped) under a test-only approved
+> selection and a test-env `addict` (51 tested, 10 open). Live: the 24 tested nodes that declare required weights are
+> refused at dispatch first (request #23). See "Revision 4".
 
-# ControlNet Aux — secure conversion report (in progress, revision 3)
+# ControlNet Aux — secure conversion report (in progress, revision 4)
 
 ## Provenance
 
@@ -14,6 +17,63 @@
 - Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 - Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 - Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
+
+## Revision 4 (2026-10-21): UniFormer, SemSeg and Metric3D (addict)
+
+Revision 4 ports and tests four pending-capability nodes: UniFormer-SemSegPreprocessor, SemSegPreprocessor (its alias),
+Metric3D-DepthMapPreprocessor and Metric3D-NormalMapPreprocessor. Their only missing dependency was `addict`, which the
+vendored mmcv Config imports at module level.
+
+Changes (production code; independent review CLEAR_WITH_NOTES, follow-ups listed below):
+- `_uniformer/selection.py` and `_metric3d/selection.py`:
+  - The whole sealed checkpoint is read through `_sealed_asset_read` (bounded `assets.read_range`, size and sha256
+    verified), because the guest caps `assets.read_bytes` at 64 MiB.
+  - The blanket "no safe globals registered" refusal could never hold under ComfyUI. It is replaced by a per-checkpoint
+    proof that the restricted decode uses only torch's default-allowlisted globals (`_restricted_globals.py`, new).
+- `secure-nodes.json`: the four rows gain `assets` and `models.download`, and one declared weight each:
+  `upernet_global_small.pth` from lllyasviel/Annotators, and `metric_depth_vit_small_800k.pth` from JUGGHM/Metric3D
+  (the upstream default backbone).
+- The selection files stay `approved: false` (request #21).
+
+Evidence (`validation/20261021-controlnet-aux-addict4-a2base-r1/`):
+one selected bounded run on the a2 base (core a2 `d1a9259`, backend a1 `894ead3`), sandbox off, CPU, one thread, 4 GiB.
+- Control rows: the pack as it would ship refuses all four nodes with its own "selection pending" text. On live today,
+  dispatch refuses them before that (request #23).
+- The parity rows ran under a test-only approved selection supplied by the harness (hashes recorded) and with a test-env
+  `addict` 2.4.0:
+  - The genuine pristine original, an ordinary guest and the registered node in process gave exactly equal outputs
+    (checker 64x64, resolution 64; Metric3D with vit-small and fx = fy = 1000).
+  - The guest without `assets` was refused.
+  - Metric3D depth differs from normal, and the original's checkpoint path matched the selection.
+  - Peak memory was 3.39 GB, and the run took 180 s.
+
+Limitation: Metric3D is tested with vit-small only. vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection
+code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them.
+
+Live (request #23, new): every node that declares required weights is refused at dispatch. Live never grants
+`models.download`, and the required-weights check runs before any installed file is reused.
+- This affects 24 of the 51 tested Aux nodes: the 20 rows marked "Live:" plus the four above.
+- With #23 fixed, six of revision 3's eight #21 nodes declare weights and still raise a selection error until #21.
+  AnimalPose and DensePose declare no weights, so #21 is their first refusal.
+- The revision 4 nodes also need `addict` 2.4.0 in the live Aux profile (request #24).
+
+Counts: tested (scoped) 47 → 51; open 14 → 10 (7 pending capability: DiffusionEdge and the six transformers-bundle nodes;
+3 blocked by the platform).
+
+Review follow-ups (fix before any #21 approval). The independent review of the port found no blockers
+(CLEAR_WITH_NOTES). These items become their own small code revision, with a Tier A re-run, before request #21:
+- M1: `resource.pickle_globals` is a new required selection field: approved selections must carry it, sorted and exact,
+  taken from the restricted inspection. It is checked only at decode, after the vendor imports and the config
+  evaluation, which breaks "selection before imports". It fails closed. The fix changes selection.py, so Tier A re-runs.
+- L1: a zip leading-bytes check in `_restricted_globals.py`.
+- L2: a size bound on the `data.pkl` read.
+- L3: more error types wrapped into clean refusals.
+- L4: keep torch pinned (the helper uses private torch helpers).
+- L5: the shipped tests `tests/test_uniformer_native_registered.py:71,75` and
+  `tests/test_metric3d_native_registered.py:69,71` still assert no safe globals and `{raw, assets}`, so they are
+  stale for this port.
+- With consent granted, live would first download the 206 MB or 150 MB weight and only then refuse "selection pending".
+  That is another reason why request #23 option (a), staged pinned weights, is the right fix.
 
 ## Revision 3 (2026-10-21, docs only): live selection status
 
@@ -69,12 +129,12 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 
 | Node id | Display name | Disposition | Evidence or gap |
 | --- | --- | --- | --- |
-| AIO_Preprocessor | AIO Aux Preprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `aio-shared-and-full-cli-original-dispatch-pass-r2` |
+| AIO_Preprocessor | AIO Aux Preprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `aio-shared-and-full-cli-original-dispatch-pass-r2`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | AnimalPosePreprocessor | AnimalPose Estimator (AP10K) | tested | TorchScript pair; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs undeclarable TorchScript weights in the live store. |
 | AnimeFace_SemSegPreprocessor | Anime Face Segmentor | partial | In-process exact vs the genuine original (both background modes). Guest blocked by an SDK gap: guest outputs are typed by value, so upstream's 4-D NCHW MASK is validated as IMAGE and refused. Evidence: `tests/animeface-inprocess-exact-guest-blocked-sdk-output-typing-r1`. Guest route: request #19. |
-| AnimeLineArtPreprocessor | Anime Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anime-shared-and-full-cli-original-model-pass-r1` |
-| AnyLineArtPreprocessor_aux | AnyLine Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anyline-shared-and-full-cli-original-model-pass-r2` |
-| BAE-NormalMapPreprocessor | BAE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `bae-shared-and-full-cli-original-model-pass-r1` |
+| AnimeLineArtPreprocessor | Anime Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anime-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| AnyLineArtPreprocessor_aux | AnyLine Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `anyline-shared-and-full-cli-original-model-pass-r2`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| BAE-NormalMapPreprocessor | BAE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `bae-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | BinaryPreprocessor | Binary Lines | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
 | CannyEdgePreprocessor | Canny Edge | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
 | ColorPreprocessor | Color Pallete | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
@@ -82,54 +142,54 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | ControlNetPreprocessorSelector | Preprocessor Selector | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs its undeclarable TorchScript archive in the live store. |
 | DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
-| DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** |
+| DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
 | DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | pending-capability | needs `yacs` in the private profile and a test memory cap above 4 GiB (1.19 GB checkpoint + swin_b + vgg16); upstream-tracked LPIPS `vgg.pth` excluded from v2. |
-| DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4` |
-| DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs undeclarable TorchScript weights in the live store. |
+| DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** It also needs undeclarable TorchScript weights in the live store. |
 | ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. Correction (revision 3): its execute raises today, because the original 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch (request #20). |
 | FacialPartColoringFromPoseKps | Colorize Facial Parts from PoseKPS | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
-| FakeScribblePreprocessor | Fake Scribble Lines (aka scribble_hed) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
-| HEDPreprocessor | HED Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1` |
+| FakeScribblePreprocessor | Fake Scribble Lines (aka scribble_hed) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| HEDPreprocessor | HED Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `hed-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | HintImageEnchance | Enchance And Resize Hint Images | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ImageGenResolutionFromImage | Generation Resolution From Image | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ImageGenResolutionFromLatent | Generation Resolution From Latent | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ImageIntensityDetector | Image Intensity | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ImageLuminanceDetector | Image Luminance | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | InpaintPreprocessor | Inpaint Preprocessor | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| LeReS-DepthMapPreprocessor | LeReS Depth Map (enable boost for leres++) | tested | Default and boost; in-process and guest exact vs the genuine original — evidence: `tests/leres-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** |
-| LineArtPreprocessor | Realistic Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `lineart-shared-and-full-cli-original-model-pass-r1` |
+| LeReS-DepthMapPreprocessor | LeReS Depth Map (enable boost for leres++) | tested | Default and boost; in-process and guest exact vs the genuine original — evidence: `tests/leres-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
+| LineArtPreprocessor | Realistic Lineart | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `lineart-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | LineartStandardPreprocessor | Standard Lineart | tested | Scoped typed native pass (non-model controls) — evidence: `four-image-nodes-r1` |
-| M-LSDPreprocessor | M-LSD Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `mlsd-shared-and-full-cli-original-model-pass-r1` |
-| Manga2Anime_LineArt_Preprocessor | Manga Lineart (aka lineart_anime_denoise) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `manga-shared-and-full-cli-original-model-pass-r1` |
+| M-LSDPreprocessor | M-LSD Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `mlsd-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| Manga2Anime_LineArt_Preprocessor | Manga Lineart (aka lineart_anime_denoise) | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `manga-shared-and-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | MaskOptFlow | Mask Optical Flow (DragNUWA) | tested | Scoped typed native pass (non-model controls) — evidence: `flow-font-and-complete-source-r1` |
 | MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. Request #17. |
 | MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). Request #18. |
 | MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. Request #18. |
-| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. Also refuses on live until its model selection is approved (request #21). |
-| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. Also refuses on live until its model selection is approved (request #21). |
-| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** Its code also accepts only a test-only selection. |
-| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** Its code also accepts only a test-only selection. |
+| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
+| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
+| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
+| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 | OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
 | OneFormer-COCO-SemSegPreprocessor | OneFormer COCO Segmentor | pending-capability | shi-labs/oneformer_coco_swin_large bundle + class-info JSON (shi-labs/oneformer_demo); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
-| OpenposePreprocessor | OpenPose Pose | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `openpose-original7-HTTP-full1591-CLI-scoped-pass-r5` |
-| PiDiNetPreprocessor | PiDiNet Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
+| OpenposePreprocessor | OpenPose Pose | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `openpose-original7-HTTP-full1591-CLI-scoped-pass-r5`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
+| PiDiNetPreprocessor | PiDiNet Soft-Edge Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | PixelPerfectResolution | Pixel Perfect Resolution | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | PyraCannyPreprocessor | PyraCanny | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | RenderAnimalKps | Render Pose JSON (Animal) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
 | RenderPeopleKps | Render Pose JSON (Human) | tested | Scoped typed native pass (non-model controls) — evidence: `pose-three-nodes-and-profile-r1` |
 | SAMPreprocessor | SAM Segmentor | pending-capability | Upstream default at this pin is `facebook/sam-vit-base` via transformers (`mobile_sam.pt` is only a label; vendored MobileSAM code is unreachable); needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Upstream uses the global numpy RNG (nondeterministic). Request #16. |
 | SavePoseKpsAsJsonFile | Save Pose Keypoints | tested | Scoped original managed-output pass on shared HTTP and full-source CLI — evidence: `savepose-shared-full-cli-original-json-scoped-pass-r4` |
-| Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1` |
+| Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | Scribble_XDoG_Preprocessor | Scribble XDoG Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ScribblePreprocessor | Scribble Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | pending-capability | Alias of UniFormer-SemSegPreprocessor: needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. Also refuses on live until its model selection is approved (request #21). |
+| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
 | ShufflePreprocessor | Content Shuffle | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2` |
+| TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | TilePreprocessor | Tile | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | TTPlanet_TileGF_Preprocessor | TTPlanet Tile GuidedFilter | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | TTPlanet_TileSimple_Preprocessor | TTPlanet Tile Simple | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| UniFormer-SemSegPreprocessor | UniFormer Segmentor | pending-capability | needs `addict` in the private profile (MERVYN-approved; GERALD (B) account-deps path, request with wheel sha256 249bb56b… and import-only proof `tests/aux-addict-import-proof-and-sdk-repros-r1`). Candidate prepared with the shared read_range and pinned-globals fixes. Also refuses on live until its model selection is approved (request #21). |
-| Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** |
+| UniFormer-SemSegPreprocessor | UniFormer Segmentor | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
+| Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
 | UpperBodyTrackingFromPoseKps | Upper Body Tracking From PoseKps (InstanceDiffusion) | partial | Populated multi-person / multi-frame cases: in-process exact vs the genuine original. Guest wire changes plain-data types (int dict keys -> str, numpy float64 -> Tensor); prompt string exact. Evidence: `tests/upperbody-tracking-inprocess-exact-guest-wire-typing-r1`. Guest route: request #19. |
 | Zoe-DepthMapPreprocessor | Zoe Depth Map | pending-capability | Intel/zoedepth-nyu-kitti bundle; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
 | Zoe_DepthAnythingPreprocessor | Zoe Depth Anything | pending-capability | Upstream uses Intel/zoedepth-nyu-kitti for both metric defaults; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -181,7 +241,7 @@ Not declarable today (SDK): executable TorchScript archives (`densepose_r50_fpn_
 
 ## Pending (not yet supported — needs <capability>)
 
-- UniFormer-SemSegPreprocessor, SemSegPreprocessor, Metric3D-DepthMapPreprocessor, Metric3D-NormalMapPreprocessor: not yet supported — needs `addict` in the pack's private profile (approved; in the account-deps queue). Their published model selections are also unapproved, so on live they refuse until request #21 is decided.
+- UniFormer-SemSegPreprocessor, SemSegPreprocessor, Metric3D-DepthMapPreprocessor, Metric3D-NormalMapPreprocessor: tested (scoped) in revision 4. On live they need `addict` 2.4.0 in the Aux profile (request #24), production approval of their selections (request #21), and request #23, because they declare required weights.
 - DiffusionEdge_Preprocessor: not yet supported — needs `yacs` and a test memory cap above 4 GiB.
 - SAMPreprocessor, DepthAnythingPreprocessor, Zoe_DepthAnythingPreprocessor, Zoe-DepthMapPreprocessor, OneFormer-ADE20K-SemSegPreprocessor, OneFormer-COCO-SemSegPreprocessor: not yet supported — needs a sealed transformers bundle constructor (request #16).
 - MediaPipe-FaceMeshPreprocessor: blocked (platform) — needs the legacy mediapipe `mp.solutions` API, absent from every Python 3.13 mediapipe wheel (request #17).
@@ -189,21 +249,23 @@ Not declarable today (SDK): executable TorchScript archives (`densepose_r50_fpn_
 - AnimeFace_SemSegPreprocessor (guest route): needs SDK output typing by the declared output type (request #19).
 - UpperBodyTrackingFromPoseKps (guest route): needs a type-preserving plain-data guest wire (request #19).
 - ExecuteAllControlNetPreprocessors: its execute raises today. The original's 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch, which converted packs cannot target (request #20). A full positive run also needs every child preprocessor to be runnable.
-- Live model selections (request #21): DepthAnythingV2, DWPose, AnimalPose, DensePose, LeReS, MiDaS ×2 and Unimatch (tested, scoped), and UniFormer, SemSeg and Metric3D ×2, refuse on live until their selections are approved for production. MiDaS also needs a code change, and DensePose, DWPose and AnimalPose need undeclarable weights in the live store.
+- Live model selections (request #21): DepthAnythingV2, DWPose, AnimalPose, DensePose, LeReS, MiDaS ×2 and Unimatch (tested, scoped), and UniFormer, SemSeg and Metric3D ×2, refuse on live until their selections are approved for production. MiDaS also needs a code change, and DensePose, DWPose and AnimalPose need undeclarable weights in the live store. The nodes among these that declare required weights are refused at dispatch first (request #23).
+- Live dispatch of nodes that declare required weights (request #23): live never grants `models.download`, and the required-weights check runs before any installed file is reused. So 24 tested nodes (20 since revision 2 and the 4 of revision 4) are refused at dispatch.
 
 ## Open test gates
 
 - Every pending-capability and blocked node above, once its capability lands.
 - AnimeFace and UpperBodyTracking guest routes after the SDK fixes.
 - Live: the 12 nodes of request #21 once their selections are approved and the undeclarable weights are in the live store.
+- Live: request #23 for the 24 tested nodes that declare required weights, and request #24 (`addict`) for the revision 4 nodes.
 - ExecuteAll full run; whole-pack acceptance and normal registry publication: not started.
 
 ## Authority / permissions
 
 | Permission set | Nodes |
 | --- | --- |
-| `raw` | 39 (BinaryPreprocessor, CannyEdgePreprocessor, ColorPreprocessor, ControlNetAuxSimpleAddText, DepthAnythingPreprocessor, DiffusionEdge_Preprocessor, …) |
-| `raw`, `assets`, `models.download` | 21 (AnimalPosePreprocessor, AnimeFace_SemSegPreprocessor, AnimeLineArtPreprocessor, AnyLineArtPreprocessor_aux, BAE-NormalMapPreprocessor, DSINE-NormalMapPreprocessor, …) |
+| `raw` | 35 (BinaryPreprocessor, CannyEdgePreprocessor, ColorPreprocessor, ControlNetAuxSimpleAddText, DepthAnythingPreprocessor, DiffusionEdge_Preprocessor, …) |
+| `raw`, `assets`, `models.download` | 25 (AnimalPosePreprocessor, AnimeFace_SemSegPreprocessor, AnimeLineArtPreprocessor, AnyLineArtPreprocessor_aux, BAE-NormalMapPreprocessor, DSINE-NormalMapPreprocessor, …) |
 | `raw`, `assets` | 1 (DensePosePreprocessor) |
 | `assets`, `output` | 1 (SavePoseKpsAsJsonFile) |
 | `raw`, `assets`, `models.download`, `output` | 1 (AIO_Preprocessor) |
@@ -229,12 +291,16 @@ Declared managed weights in the regenerated manifest:
 | LineArtPreprocessor | `sk_model.pth` (lllyasviel/Annotators, sha256 c686ced2a666); `sk_model2.pth` (lllyasviel/Annotators, sha256 30a534781061) |
 | M-LSDPreprocessor | `mlsd_large_512_fp32.pth` (lllyasviel/Annotators, sha256 5696f168eb2c) |
 | Manga2Anime_LineArt_Preprocessor | `erika.pth` (lllyasviel/Annotators, sha256 badbd6baf013) |
+| Metric3D-DepthMapPreprocessor | `metric_depth_vit_small_800k.pth` (JUGGHM/Metric3D, sha256 b34b2a2be914) |
+| Metric3D-NormalMapPreprocessor | `metric_depth_vit_small_800k.pth` (JUGGHM/Metric3D, sha256 b34b2a2be914) |
 | MiDaS-DepthMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
 | MiDaS-NormalMapPreprocessor | `pytorch_model.bin` (Intel/dpt-hybrid-midas, sha256 b6c4d44f9d96) |
 | OpenposePreprocessor | `body_pose_model.pth` (lllyasviel/Annotators, sha256 25a948c16078); `hand_pose_model.pth` (lllyasviel/Annotators, sha256 b76b00d17509); `facenet.pth` (lllyasviel/Annotators, sha256 8beb52e54862) |
 | PiDiNetPreprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
 | Scribble_PiDiNet_Preprocessor | `table5_pidinet.pth` (lllyasviel/Annotators, sha256 80860ac26725) |
+| SemSegPreprocessor | `upernet_global_small.pth` (lllyasviel/Annotators, sha256 bebfa1264c10) |
 | TEEDPreprocessor | `Annotators/7_model.pth` (bdsqlsz/qinglong_controlnet-lllite, sha256 b9037964149c) |
+| UniFormer-SemSegPreprocessor | `upernet_global_small.pth` (lllyasviel/Annotators, sha256 bebfa1264c10) |
 | Unimatch_OptFlowPreprocessor | `gmflow-scale2-regrefine6-mixdata.pth` (hr16/Unimatch, sha256 4e7b215d5a25) |
 
 Upstream-tracked model files excluded from `v2/` (still present in the pristine tree):

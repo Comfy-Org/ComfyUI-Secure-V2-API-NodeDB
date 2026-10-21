@@ -1,0 +1,30 @@
+{
+ "schema": "ned-port-notes/1",
+ "pack": "comfyui-controlnet-aux (x0cd2904)",
+ "nodes": ["UniFormer-SemSegPreprocessor", "SemSegPreprocessor", "Metric3D-DepthMapPreprocessor", "Metric3D-NormalMapPreprocessor"],
+ "port": "ned-controlnet-aux-addict4-port-20261021-r1",
+ "status": "SOURCE_ONLY_UNRUN",
+ "base": "corpus main b6d0482f (Aux rev 3, docs); the v2 code of these families is unchanged since rev 1",
+ "authority": ["MERVYN m_2b4a04b74e (census)", "MERVYN m_d00149820b (build addict-4; requests #16-#21; do not touch approvals)",
+               "MERVYN m_f7bacb292f (test-only approved selection supplied by the harness; exact label; control row)",
+               "MERVYN m_c4fbc944c6 (inputs copied read-only; unpack-only profile site; launcher r4)"],
+ "files": {
+  "_restricted_globals.py": "new: AMY's shared per-checkpoint pinned-globals helper, byte for byte (sha256 55e55d89...)",
+  "_uniformer/selection.py": "whole-archive read through _sealed_asset_read (bounded assets.read_range, size + sha256 verified; the guest caps assets.read_bytes at 64 MiB); the blanket 'no safe globals registered' refusal, which can never hold under ComfyUI, becomes the pinned proof that the decode resolves only torch default-allowlisted globals. Byte-identical to AMY's reviewed UniFormer candidate.",
+  "_metric3d/selection.py": "the same two changes as _uniformer/selection.py",
+  "secure-nodes.json": "the four rows gain assets + models.download and one declared weight each (upernet_global_small.pth, lllyasviel/Annotators@982e7eda; metric_depth_vit_small_800k.pth, JUGGHM/Metric3D@80d2d141). Nothing else changes."
+ },
+ "unchanged_on_purpose": [
+  "_uniformer/asset-selection.json and _metric3d/asset-selection.json stay approved:false (production approval is request #21; m_d00149820b point 4)",
+  "the selection format and every other check in the guards",
+  "Metric3D vit-large and vit-giant2 stay unselected (no weights declared, selection rows unapproved)"
+ ],
+ "behaviour_vs_original": "intended identical: same upstream code paths (vendored), same checkpoint bytes, same defaults; the test checks exact equality on both routes",
+ "live_today": [
+  "refuses with '... selection pending' (published selections approved:false; request #21)",
+  "dispatch also refuses nodes with required_weights while models.download is never granted on live (request #23)",
+  "addict is not in the live profile f65ac4fe; the addict-extended profile must be admitted (operator lane, with #14)"
+ ],
+ "label_if_tested": "tested (scoped) under a test-only approved selection (harness; hash recorded); on live it refuses ('selection pending') until the selection is approved (request #21)",
+ "imports_tests_or_runs": 0
+}
