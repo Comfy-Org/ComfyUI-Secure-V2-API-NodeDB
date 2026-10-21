@@ -1,0 +1,302 @@
+{
+ "format": "jack-wan-ovi-wsl-comparator-selftest/1",
+ "case_sha256": "10e558b3ca6a7c4620eb40b25e8fcb801692c4bfa70c1f2ba5dd35322d040f15",
+ "comparator": "compare_ovi_r1.py",
+ "comparator_sha256": "7f5bfdf6761e7eceb06fe81a3afc1c6ba0756b4e7edcbbae307b7df8c8269348",
+ "cases": [
+  "l32",
+  "l16",
+  "e1_32",
+  "e2_32",
+  "d1_32",
+  "d1_16",
+  "e1_16",
+  "d2"
+ ],
+ "clean": {
+  "status": "PASS_OVI_DECODE_DECODE_BF16_ENCODE_LOADER",
+  "items": {
+   "decode": "PASS_SLICE_DECODE",
+   "decode_bf16": "PASS_SLICE_DECODE_BF16",
+   "encode": "PASS_SLICE_ENCODE",
+   "loader": "PASS_SLICE_LOADER"
+  },
+  "checks_true_per_item": {
+   "decode": 33,
+   "decode_bf16": 23,
+   "encode": 43,
+   "loader": 25
+  },
+  "checks_total_per_item": {
+   "decode": 33,
+   "decode_bf16": 23,
+   "encode": 43,
+   "loader": 25
+  }
+ },
+ "controls": {
+  "recipe_digest": {
+   "item": "loader",
+   "targeted_check": "l32:converted_recipe_exact",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l32:converted_recipe_exact"
+   ],
+   "result": "REFUSED"
+  },
+  "model_tensor": {
+   "item": "loader",
+   "targeted_check": "l16:model_equal_tensor_by_tensor",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l16:model_equal_tensor_by_tensor"
+   ],
+   "result": "REFUSED"
+  },
+  "dtype": {
+   "item": "loader",
+   "targeted_check": "l16:floating_tensors_have_requested_dtype",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l16:floating_tensors_have_requested_dtype"
+   ],
+   "result": "REFUSED"
+  },
+  "requires_grad": {
+   "item": "loader",
+   "targeted_check": "l32:no_parameter_requires_grad",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l32:no_parameter_requires_grad"
+   ],
+   "result": "REFUSED"
+  },
+  "probe_rng": {
+   "item": "loader",
+   "targeted_check": "l32:converted_rebuild_probe_preserved_rng",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l32:converted_rebuild_probe_preserved_rng"
+   ],
+   "result": "REFUSED"
+  },
+  "loader_rng": {
+   "item": "loader",
+   "targeted_check": "l16:rng_after_loader_equal",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l16:converted_rebuild_probe_preserved_rng",
+    "l16:rng_after_loader_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "encode_inputs": {
+   "item": "encode",
+   "targeted_check": "e1_32:inputs_equal",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "e1_32:inputs_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "encode_raw": {
+   "item": "encode",
+   "targeted_check": "e2_32:output_raw_bytes_equal",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "e2_32:output_raw_bytes_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "latent_layout": {
+   "item": "encode",
+   "targeted_check": "e1_32:expected_latent_layout",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "e1_32:expected_latent_layout"
+   ],
+   "result": "REFUSED"
+  },
+  "case_rng": {
+   "item": "encode",
+   "targeted_check": "e2_32:rng_after_case_equal",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "e2_32:rng_after_case_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "decode_meta": {
+   "item": "decode",
+   "targeted_check": "d1_32:output_meta_equal",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d1_32:output_meta_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "decode_finite": {
+   "item": "decode",
+   "targeted_check": "d1_32:outputs_finite",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d1_32:outputs_finite"
+   ],
+   "result": "REFUSED"
+  },
+  "sample_rate": {
+   "item": "decode_bf16",
+   "targeted_check": "d1_16:sample_rate_16000",
+   "item_status": "FAIL_SLICE_DECODE_BF16",
+   "failed_checks": [
+    "d1_16:sample_rate_16000"
+   ],
+   "result": "REFUSED"
+  },
+  "waveform_shape": {
+   "item": "decode",
+   "targeted_check": "d1_32:expected_waveform_shape",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d1_32:expected_waveform_shape"
+   ],
+   "result": "REFUSED"
+  },
+  "repeat": {
+   "item": "decode_bf16",
+   "targeted_check": "d1_16:repeat_identical_both_sides",
+   "item_status": "FAIL_SLICE_DECODE_BF16",
+   "failed_checks": [
+    "d1_16:repeat_identical_both_sides"
+   ],
+   "result": "REFUSED"
+  },
+  "differs": {
+   "item": "decode_bf16",
+   "targeted_check": "d1_16:slice_input_changes_original_output",
+   "item_status": "FAIL_SLICE_DECODE_BF16",
+   "failed_checks": [
+    "d1_16:slice_input_changes_original_output"
+   ],
+   "result": "REFUSED"
+  },
+  "bf16_decode_bytes": {
+   "item": "decode_bf16",
+   "targeted_check": "d1_16:output_raw_bytes_equal",
+   "item_status": "FAIL_SLICE_DECODE_BF16",
+   "failed_checks": [
+    "d1_16:output_raw_bytes_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "consumer_recipe": {
+   "item": "decode",
+   "targeted_check": "d1_32:converted_recipe_exact",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d1_32:converted_recipe_exact"
+   ],
+   "result": "REFUSED"
+  },
+  "error_message": {
+   "item": "encode",
+   "targeted_check": "e1_16:original_error_is_the_cited_one",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "e1_16:original_error_is_the_cited_one"
+   ],
+   "result": "REFUSED"
+  },
+  "error_function_map": {
+   "item": "decode",
+   "targeted_check": "d2:raising_functions_as_mapped",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d2:raising_functions_as_mapped"
+   ],
+   "result": "REFUSED"
+  },
+  "error_type_parity": {
+   "item": "decode",
+   "targeted_check": "d2:same_exception_type_and_message",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "d2:same_exception_type_and_message"
+   ],
+   "result": "REFUSED"
+  },
+  "numeric_env": {
+   "item": "loader",
+   "targeted_check": "same_numeric_environment_one_thread",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "same_numeric_environment_one_thread"
+   ],
+   "result": "REFUSED"
+  },
+  "torchaudio": {
+   "item": "encode",
+   "targeted_check": "same_torchaudio",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "same_torchaudio"
+   ],
+   "result": "REFUSED"
+  },
+  "registry": {
+   "item": "decode",
+   "targeted_check": "registry_146",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "registry_146"
+   ],
+   "result": "REFUSED"
+  },
+  "module_pin": {
+   "item": "loader",
+   "targeted_check": "converted_module_digests_as_bound",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "converted_module_digests_as_bound"
+   ],
+   "result": "REFUSED"
+  },
+  "original_pin": {
+   "item": "encode",
+   "targeted_check": "original_module_digests_as_bound",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "original_module_digests_as_bound"
+   ],
+   "result": "REFUSED"
+  },
+  "checkpoint_pin": {
+   "item": "decode",
+   "targeted_check": "checkpoints_pinned_original_side",
+   "item_status": "FAIL_SLICE_DECODE",
+   "failed_checks": [
+    "checkpoints_pinned_original_side"
+   ],
+   "result": "REFUSED"
+  },
+  "versions": {
+   "item": "loader",
+   "targeted_check": "versions_as_bound",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "versions_as_bound"
+   ],
+   "result": "REFUSED"
+  },
+  "worker_failed": {
+   "item": "encode",
+   "targeted_check": "workers_completed",
+   "item_status": "FAIL_SLICE_ENCODE",
+   "failed_checks": [
+    "workers_completed"
+   ],
+   "result": "REFUSED"
+  }
+ },
+ "status": "PASS_COMPARATOR_SELFTEST"
+}

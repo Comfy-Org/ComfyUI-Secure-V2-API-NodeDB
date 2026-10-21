@@ -1,0 +1,231 @@
+"""Stdlib-only comparison for Ovi WSL x86 CPU r1. Writes COMPARISON_loader.json, COMPARISON_encode.json, COMPARISON_decode.json,
+COMPARISON_decode_bf16.json and COMPARISON.json. The bf16 decode (the ovi-a divergence case) is its own item, so it cannot hide or
+block the fp32 decode result.
+
+Every case compares the original with the converted role. Both start from the same seed with a fresh load:
+- loader (OviMMAudioVAELoader, fp32 and bf16):
+  - the converted digest-bound recipe is exact (format, precision, both checkpoints by folder, name, bytes and sha256);
+  - the converted rebuild equals the original FeaturesUtils tensor by tensor (every parameter and buffer: dtype, shape, device,
+    requires_grad, bytes), with the same class, dtype attribute, training flag and module repr;
+  - every floating tensor has the requested dtype and no parameter requires grad;
+  - RNG (torch, NumPy, Python) matches after the seed, the loader and the case, and the converted rebuild probe leaves it unchanged.
+- encode / decode returning cases: identical inputs; the output meta and raw bytes are exact and finite; LATENT/AUDIO keys and the
+  16 kHz sample rate match; decode cases repeat identically on both sides; differs_from_case holds.
+- raising cases: the same type and message, full-message digest and length; the raising function and files follow the CASE map;
+  the original error is the cited one.
+- global: workers done, registry 146, identical versions/CPU/numeric environment (the converted one also inside a dispatch scope),
+  the same torchaudio, checkpoints equal to the CASE pins in both roles, converted module digests equal to the CASE pins.
+Taps (VAE decoder output, vocoder output) are findings only: equality and, when different, max_abs/differing counts.
+"""
+import array
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+EXPECTED_REGISTERED = 146
+DTYPES = {'fp32': 'float32', 'bf16': 'bfloat16'}
+FLOAT_DTYPES = ('float32', 'bfloat16', 'float16', 'float64')
+RECIPE_FORMAT = 'wan-ovi-mmaudio-vae-v1'
+ITEMS = ('loader', 'encode', 'decode', 'decode_bf16')
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+class Item:
+    def __init__(self, name, label):
+        self.name, self.checks, self.details, self.info = name, {}, {}, {'label': label}
+
+    def check(self, key, ok, detail=None):
+        self.checks[key] = bool(ok)
+        if not ok and detail is not None:
+            self.details[key] = detail
+
+    def write(self, results_sha):
+        passed = bool(self.checks) and all(self.checks.values())
+        status = ('PASS_SLICE_' if passed else 'FAIL_SLICE_') + self.name.upper()
+        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': [k for k, v in self.checks.items() if not v],
+               'details': self.details, 'info': self.info, 'results_sha256': results_sha}
+        (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+        return status
+
+
+def floats(raw, dtype):
+    if dtype == 'float32':
+        values = array.array('f')
+        values.frombytes(raw)
+        return list(values)
+    if dtype == 'bfloat16':
+        halves = array.array('H')
+        halves.frombytes(raw)
+        words = array.array('I', (h << 16 for h in halves))
+        values = array.array('f')
+        values.frombytes(words.tobytes())
+        return list(values)
+    return None
+
+
+def difference(meta_o, meta_c):
+    """Finding only: equality and, for differing float tensors with raw files, max_abs / differing / peak."""
+    if not meta_o or not meta_c:
+        return {'available': False}
+    result = {'equal': meta_o.get('sha256') == meta_c.get('sha256') and meta_o.get('shape') == meta_c.get('shape')}
+    if result['equal'] or meta_o.get('dtype') != meta_c.get('dtype') or not meta_o.get('raw_file') or not meta_c.get('raw_file'):
+        return result
+    a = floats((OUT / meta_o['raw_file']).read_bytes(), meta_o['dtype'])
+    b = floats((OUT / meta_c['raw_file']).read_bytes(), meta_c['dtype'])
+    if a is None or b is None or len(a) != len(b):
+        return result
+    deltas = [abs(x - y) for x, y in zip(a, b)]
+    result.update(max_abs=max(deltas), differing=sum(1 for d in deltas if d != 0.0), count=len(deltas),
+                  original_peak=max(abs(x) for x in a))
+    return result
+
+
+def global_checks(item, case_file, original, converted, done):
+    item.check('workers_completed', done, {'original': original.get('status'), 'converted': converted.get('status'),
+                                           'tracebacks': [original.get('traceback', '')[-1500:], converted.get('traceback', '')[-1500:]]})
+    if not done:
+        return
+    item.check('registry_%d' % EXPECTED_REGISTERED, converted.get('registered_count') == EXPECTED_REGISTERED, converted.get('registered_count'))
+    item.check('same_versions_cpu', canon(original.get('versions')) == canon(converted.get('versions'))
+               and canon(original.get('cpu')) == canon(converted.get('cpu')), [original.get('cpu'), converted.get('cpu')])
+    envs = [original.get('numeric_env'), original.get('numeric_env_final'), converted.get('numeric_env'),
+            converted.get('numeric_env_in_scope'), converted.get('numeric_env_final')]
+    item.check('same_numeric_environment_one_thread', all(e is not None and canon(e) == canon(envs[0]) for e in envs)
+               and envs[0].get('threads') == 1, envs)
+    item.check('same_torchaudio', original.get('torchaudio') is not None and original.get('torchaudio') == converted.get('torchaudio')
+               and original['torchaudio'].get('file') == case_file['torchaudio_file_expect'],
+               [original.get('torchaudio'), converted.get('torchaudio')])
+    item.check('versions_as_bound', all((original.get('versions') or {}).get(k) == v for k, v in case_file['versions_expect'].items()),
+               original.get('versions'))
+    item.check('checkpoints_pinned_original_side', original.get('models') == {k: v['sha256'] for k, v in case_file['models'].items()},
+               original.get('models'))
+    item.check('converted_module_digests_as_bound', converted.get('module_sha256') == case_file['converted_module_pins'], converted.get('module_sha256'))
+    item.check('original_module_digests_as_bound', original.get('original_module_sha256') == case_file['original_module_pins'],
+               original.get('original_module_sha256'))
+
+
+def rng_checks(item, p, o, c):
+    for key in ('rng_after_seed', 'rng_after_loader', 'rng_after_case'):
+        item.check(p + key + '_equal', o.get(key) is not None and o.get(key) == c.get(key), [o.get(key), c.get(key)])
+
+
+def expected_recipe(case_file, precision):
+    resource = lambda key: {'folder': 'vae', 'name': case_file['models'][key]['catalogue_name'],
+                            'bytes': case_file['models'][key]['bytes'], 'sha256': case_file['models'][key]['sha256']}
+    return {'format': RECIPE_FORMAT, 'precision': precision, 'vae': resource('vae'), 'vocoder': resource('vocoder')}
+
+
+def loader_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    mo, mc = o.get('model') or {}, c.get('model') or {}
+    item.check(p + 'model_equal_tensor_by_tensor', bool(mo.get('rows')) and canon(mo) == canon(mc),
+               {'digests': [mo.get('digest'), mc.get('digest')], 'tensors': [mo.get('tensors'), mc.get('tensors')],
+                'class': [mo.get('class'), mc.get('class')], 'repr': [mo.get('repr_sha256'), mc.get('repr_sha256')]})
+    want = DTYPES[case['precision']]
+    floating = [r['dtype'] for r in (mo.get('rows') or {}).values() if r['dtype'] in FLOAT_DTYPES]
+    item.check(p + 'floating_tensors_have_requested_dtype', bool(floating) and set(floating) == {want} and mo.get('dtype_attr') == 'torch.' + want,
+               sorted(set(floating)))
+    item.check(p + 'no_parameter_requires_grad', bool(mo.get('rows')) and not any(r['requires_grad'] for r in mo['rows'].values()))
+    item.check(p + 'converted_rebuild_probe_preserved_rng', c.get('rng_after_probe') == c.get('rng_after_loader'),
+               [c.get('rng_after_loader'), c.get('rng_after_probe')])
+    item.info[p + 'tensors_seconds'] = [mo.get('tensors'), o.get('seconds'), c.get('seconds')]
+
+
+def consumer_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'inputs_equal', bool(o.get('inputs')) and canon(o.get('inputs')) == canon(c.get('inputs')), [o.get('inputs'), c.get('inputs')])
+    oo, co = o.get('outcome') or {}, c.get('outcome') or {}
+    if case.get('expect') == 'raise':
+        item.check(p + 'both_raised', oo.get('raised') is True and co.get('raised') is True, [oo, co])
+        item.check(p + 'same_exception_type_and_message', (oo.get('type'), oo.get('message')) == (co.get('type'), co.get('message')), [oo, co])
+        item.check(p + 'same_full_message_digest_and_length', (oo.get('message_sha256'), oo.get('message_length'))
+                   == (co.get('message_sha256'), co.get('message_length')))
+        raising = case['expected_raising']
+        item.check(p + 'raising_functions_as_mapped', [oo.get('raising_function'), co.get('raising_function')]
+                   == [raising['functions']['original'], raising['functions']['converted']],
+                   [oo.get('raising_function'), co.get('raising_function')])
+        item.check(p + 'raising_files_as_mapped', [oo.get('raising_file'), co.get('raising_file')]
+                   == [raising['files']['original'], raising['files']['converted']], [oo.get('raising_file'), co.get('raising_file')])
+        item.check(p + 'original_error_is_the_cited_one', [oo.get('type'), oo.get('message')] == case['expected_error'], oo)
+    else:
+        returned = oo.get('raised') is False and co.get('raised') is False
+        item.check(p + 'both_returned', returned, [oo, co])
+        if returned:
+            mo, mc = o['outputs'], c['outputs']
+            key = 'latent_ovi_audio' if mo.get('kind') == 'LATENT' else 'waveform'
+            item.check(p + 'output_kind_keys_equal', (mo.get('kind'), mo.get('keys'), mo.get('sample_rate'))
+                       == (mc.get('kind'), mc.get('keys'), mc.get('sample_rate')), [mo.get('keys'), mc.get('keys')])
+            item.check(p + 'output_meta_equal', canon(dict(mo[key], raw_file=None)) == canon(dict(mc[key], raw_file=None)), [mo[key], mc[key]])
+            raw_o, raw_c = (OUT / mo[key]['raw_file']).read_bytes(), (OUT / mc[key]['raw_file']).read_bytes()
+            item.check(p + 'output_raw_bytes_equal', raw_o == raw_c and hashlib.sha256(raw_o).hexdigest() == mo[key]['sha256'], [len(raw_o), len(raw_c)])
+            item.check(p + 'outputs_finite', mo[key].get('finite') is True and mc[key].get('finite') is True)
+            if mo.get('kind') == 'AUDIO':
+                item.check(p + 'sample_rate_16000', mo.get('sample_rate') == mc.get('sample_rate') == 16000)
+                item.check(p + 'expected_waveform_shape', mo[key]['shape'] == [1, 1, case['latent_frames'] * 512] and mo[key]['dtype'] == 'float32',
+                           mo[key]['shape'])
+            else:
+                item.check(p + 'expected_latent_layout', mo[key]['shape'][:2] == [1, 20] and len(mo[key]['shape']) == 3
+                           and mo[key]['dtype'] == DTYPES[case['precision']], mo[key]['shape'])
+            if not item.checks[p + 'output_raw_bytes_equal']:
+                item.info[p + 'output_difference'] = difference(mo[key], mc[key])
+            if case.get('repeat'):
+                item.check(p + 'repeat_identical_both_sides', o.get('repeat_identical') is True and c.get('repeat_identical') is True
+                           and o.get('repeat_rng_unchanged') is True and c.get('repeat_rng_unchanged') is True,
+                           [o.get('repeat_identical'), c.get('repeat_identical')])
+            if case.get('taps'):
+                item.info[p + 'taps'] = {label: difference((o.get('taps') or {}).get(label), (c.get('taps') or {}).get(label))
+                                         for label in ('decoder', 'vocoder')}
+                item.info[p + 'tap_probe_output_equals_node'] = c.get('tap_probe_output_equals_node')
+                item.info[p + 'tap_probe_rng_unchanged'] = c.get('tap_probe_rng_unchanged')
+    rng_checks(item, p, o, c)
+    item.check(p + 'converted_recipe_exact', c.get('recipe') == expected_recipe(case_file, case['precision']), c.get('recipe'))
+    item.info[p + 'seconds'] = [o.get('seconds'), c.get('seconds')]
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    load = lambda name: json.loads((OUT / name).read_text()) if (OUT / name).exists() else {}
+    original, converted = load('ORIGINAL_RESULT.json'), load('CONVERTED_RESULT.json')
+    results_sha = {n: hashlib.sha256((OUT / n).read_bytes()).hexdigest() for n in ('ORIGINAL_RESULT.json', 'CONVERTED_RESULT.json') if (OUT / n).exists()}
+    done = original.get('status') == 'ORIGINAL_OVI_DONE' and converted.get('status') == 'CONVERTED_OVI_DONE'
+    items = {name: Item(name, case_file['label']) for name in ITEMS}
+    for item in items.values():
+        global_checks(item, case_file, original, converted, done)
+        item.info['cases'] = [c for c in case_file['cases'] if c['item'] == item.name]
+    if done:
+        for case in case_file['cases']:
+            o, c = original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {})
+            item = items[case['item']]
+            if case['item'] == 'loader':
+                loader_checks(item, case_file, case, o, c)
+                rng_checks(item, case['name'] + ':', o, c)
+                item.check(case['name'] + ':converted_recipe_exact', c.get('recipe') == expected_recipe(case_file, case['precision']), c.get('recipe'))
+            else:
+                consumer_checks(item, case_file, case, o, c)
+        for case in case_file['cases']:
+            base = case.get('differs_from_case')
+            if base:
+                def digest(rec):
+                    outputs = rec.get('outputs') or {}
+                    meta = outputs.get('waveform') or outputs.get('latent_ovi_audio') or {}
+                    return meta.get('sha256')
+                o, b = original['cases'].get(case['name'], {}), original['cases'].get(base, {})
+                items[case['item']].check(case['name'] + ':slice_input_changes_original_output', digest(o) is not None and digest(b) is not None
+                                          and digest(o) != digest(b), [digest(o), digest(b)])
+    statuses = {name: item.write(results_sha) for name, item in items.items()}
+    failed = any(v.startswith('FAIL') for v in statuses.values())
+    status = ('FAIL_OVI_' if failed else 'PASS_OVI_') + '_'.join(sorted(statuses)).upper()
+    (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha,
+                                                     'label': case_file['label']}, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': status, 'items': statuses}))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

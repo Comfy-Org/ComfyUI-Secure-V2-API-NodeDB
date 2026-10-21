@@ -1,0 +1,81 @@
+{
+  "status": "SOURCE_ONLY_UNSELECTED_UNRUN",
+  "authority": "MERVYN m_5600b71965",
+  "scope": "WSL x86 CPU (separate from the Mac-bound Ovi R6)",
+  "label": "Ovi trio (OviMMAudioVAELoader, WanVideoEncodeOviAudio, WanVideoDecodeOviAudio), WSL x86 CPU: native CPU, one thread, original vs converted on the default-SDK in-process route at fp32 and bf16; a separate scope from the Mac-bound R6; not Guest, not GPU",
+  "rows": [
+    "OviMMAudioVAELoader",
+    "WanVideoEncodeOviAudio",
+    "WanVideoDecodeOviAudio"
+  ],
+  "candidate": "materials d875d848 candidate = corpus f66757d8 v2; equals current main 06b47fbe v2 except the report; package wan_v2_pt1",
+  "roles": "original (genuine 088128b) then converted (registered wan_v2_pt1, in-process SDK; no original bytes); one container each",
+  "cases": [
+    "l32",
+    "l16",
+    "e1_32",
+    "e2_32",
+    "d1_32",
+    "d1_16",
+    "e1_16",
+    "d2"
+  ],
+  "items": [
+    "loader",
+    "encode",
+    "decode",
+    "decode_bf16"
+  ],
+  "models": {
+    "vae": "mmaudio_vae_16k_bf16.safetensors 5b60e163 (343320940 B)",
+    "vocoder": "mmaudio_vocoder_bigvgan_best_netG_bf16.safetensors 22d61314 (224551036 B)"
+  },
+  "dependencies": {
+    "torchaudio": "2.8.0 from the native-site tree (same as Portrait/I2V), on both roles",
+    "new_downloads": 0
+  },
+  "hardening": {
+    "user": "1000:1000, --cap-drop ALL, no-new-privileges",
+    "network": "none",
+    "root": "read-only",
+    "tmp": "tmpfs 3840 MiB noexec",
+    "writable": "only the role /out",
+    "out_disk_fail_stop": "1 GiB",
+    "threads": "OMP/MKL/OPENBLAS=1 and torch.set_num_threads(1) in both roles; numeric environment recorded and compared",
+    "integrity": "packet + six material trees before each role; CASE parsed from pinned bytes",
+    "isolation": "original sees no candidate/converted-site; converted sees no original tree; no opencv tree",
+    "comparator_inputs": "O_NOFOLLOW copies, re-hashed right before the comparator",
+    "removal": "exact ID, absence twice",
+    "retries": 0
+  },
+  "cap": {
+    "container_memory_bytes": 6442450944,
+    "memory_equals_swap": true,
+    "sampled_stop_bytes": 5905580032,
+    "launch_gate": "MemAvailable >= cap + 4 GiB = 10 GiB",
+    "role_work_seconds": 600,
+    "roles": 2,
+    "basis": "one model at a time per role: 0.57 GB bf16 checkpoints, ~1.1 GB as fp32 modules, plus the rebuilt copy in the converted probe and decode taps; expected peak ~2.5-3.5 GiB"
+  },
+  "envelope": {
+    "expected": "original ~60-120 s, converted ~90-180 s (8 fresh loads per role, plus converted rebuilds)"
+  },
+  "expected_statuses": {
+    "loader": "PASS (rebuild bitwise equal at fp32/bf16)",
+    "encode": "PASS (exact fp32 outputs; bf16 FFT error parity)",
+    "decode": "PASS (exact fp32 decode; missing-latent ValueError parity)",
+    "decode_bf16": "PASS if the ovi-a bf16 divergence does not recur under identical one-thread settings; if it does, this item alone fails and the decoder/vocoder taps localize it"
+  },
+  "not_claimed": [
+    "the Mac-bound R6 scope",
+    "Guest",
+    "GPU/CUDA (the original autocast(\"cuda\") is inert on CPU)",
+    "the menu/catalogue PARTIAL mmaudio entries",
+    "longer audio or other checkpoints",
+    "whole pack"
+  ],
+  "activity": {
+    "runs": 0,
+    "imports_of_pack_code": 0
+  }
+}

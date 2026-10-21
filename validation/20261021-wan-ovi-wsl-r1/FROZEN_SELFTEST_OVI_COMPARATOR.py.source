@@ -1,0 +1,214 @@
+"""Comparator self-test on the SHIPPED capsule/CASE.json (Ovi WSL x86 CPU r1). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_ovi_comparator.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch, torchaudio or SDK.
+1. Build one synthetic ORIGINAL/CONVERTED result pair that satisfies every check the shipped comparator derives from the shipped
+   CASE.json.
+2. Every item must PASS.
+3. Each control mutates recorded fields (or one raw file). The targeted check must then fail and its item must be FAIL; other
+   failing checks are recorded too.
+SELFTEST.json records the CASE.json and comparator sha256 and the per-item check counts.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+COMPARATOR = 'compare_ovi_r1.py'
+DTYPES = {'fp32': 'float32', 'bf16': 'bfloat16'}
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def tensor(raw, shape, dtype, raw_file=None):
+    meta = {'dtype': dtype, 'shape': shape, 'bytes': len(raw), 'sha256': sha(raw), 'finite': True}
+    if raw_file:
+        meta['raw_file'] = raw_file
+    return meta
+
+
+def recipe(case_file, precision):
+    resource = lambda key: {'folder': 'vae', 'name': case_file['models'][key]['catalogue_name'],
+                            'bytes': case_file['models'][key]['bytes'], 'sha256': case_file['models'][key]['sha256']}
+    return {'format': 'wan-ovi-mmaudio-vae-v1', 'precision': precision, 'vae': resource('vae'), 'vocoder': resource('vocoder')}
+
+
+def synthetic(case_file, registered):
+    env = {'threads': 1, 'interop_threads': 2, 'mkldnn_enabled': True, 'cpu_capability': 'AVX512', 'environment': {'OMP_NUM_THREADS': '1'}}
+    torchaudio = {'version': '2.8.0', 'file': case_file['torchaudio_file_expect']}
+    common_role = {'versions': dict(case_file['versions_expect']), 'cpu': {'threads': 1}, 'numeric_env': dict(env),
+                   'numeric_env_final': dict(env), 'torchaudio': dict(torchaudio), 'cases': {}}
+    original = dict(json.loads(json.dumps(common_role)), status='ORIGINAL_OVI_DONE',
+                    models={k: v['sha256'] for k, v in case_file['models'].items()},
+                    original_module_sha256=dict(case_file['original_module_pins']))
+    converted = dict(json.loads(json.dumps(common_role)), status='CONVERTED_OVI_DONE', registered_count=registered,
+                     module_sha256=dict(case_file['converted_module_pins']), numeric_env_in_scope=dict(env))
+    raws = {}
+    for index, case in enumerate(case_file['cases']):
+        name = case['name']
+        base = {'rng_after_seed': {'torch_cpu': 'r0'}, 'rng_after_loader': {'torch_cpu': 'r1'}, 'rng_after_case': {'torch_cpu': 'r2'},
+                'seconds': 1.0}
+        o, c = json.loads(json.dumps(base)), dict(json.loads(json.dumps(base)), recipe=recipe(case_file, case['precision']))
+        if case['item'] == 'loader':
+            want = DTYPES[case['precision']]
+            rows = {'tod.vae.encoder.conv_in.weight': {'dtype': want, 'shape': [384, 80, 3], 'device': 'cpu', 'requires_grad': False,
+                                                       'sha256': '1' * 64},
+                    'mel_converter.mel_basis': {'dtype': want, 'shape': [80, 513], 'device': 'cpu', 'requires_grad': False, 'sha256': '2' * 64}}
+            model = {'class': 'FeaturesUtils', 'dtype_attr': 'torch.' + want, 'training': False, 'repr_sha256': '3' * 64, 'tensors': 2,
+                     'digest': sha(json.dumps(rows, sort_keys=True).encode()), 'rows': rows}
+            o['model'] = json.loads(json.dumps(model))
+            c.update(model=json.loads(json.dumps(model)), rng_after_probe={'torch_cpu': 'r1'})
+        else:
+            if case['node'] == 'WanVideoEncodeOviAudio':
+                inputs = {'audio': {'waveform': tensor(bytes([index]) * 64, [1, 1, 16], 'float32'), 'sample_rate': 16000}}
+            else:
+                inputs = {'samples': {case.get('samples_key', 'latent_ovi_audio'): tensor(bytes([index]) * 64, [1, 20, 16], 'float32')}}
+            o['inputs'], c['inputs'] = json.loads(json.dumps(inputs)), json.loads(json.dumps(inputs))
+            if case.get('expect') == 'raise':
+                kind, message = case['expected_error']
+                outcome = {'raised': True, 'type': kind, 'message': message, 'message_sha256': sha(message.encode()),
+                           'message_length': len(message), 'message_tail': message[-300:], 'raising_line': 1}
+                raising = case['expected_raising']
+                o['outcome'] = dict(outcome, raising_function=raising['functions']['original'], raising_file=raising['files']['original'])
+                c['outcome'] = dict(outcome, raising_function=raising['functions']['converted'], raising_file=raising['files']['converted'])
+            else:
+                raw = bytes([index + 7]) * 256
+                o['outcome'], c['outcome'] = {'raised': False}, {'raised': False}
+                for role, doc in (('original', o), ('converted', c)):
+                    if case['node'] == 'WanVideoEncodeOviAudio':
+                        file_name = '%s-%s-latent.bin' % (role, name)
+                        doc['outputs'] = {'kind': 'LATENT', 'keys': ['latent_ovi_audio'],
+                                          'latent_ovi_audio': tensor(raw, [1, 20, 46], DTYPES[case['precision']], file_name)}
+                    else:
+                        file_name = '%s-%s-waveform.bin' % (role, name)
+                        doc['outputs'] = {'kind': 'AUDIO', 'keys': ['waveform', 'sample_rate'], 'sample_rate': 16000,
+                                          'waveform': tensor(raw, [1, 1, case['latent_frames'] * 512], 'float32', file_name)}
+                    raws[file_name] = raw
+                    if case.get('repeat'):
+                        doc.update(repeat_identical=True, repeat_rng_unchanged=True)
+                    doc['taps'] = {}
+                    if case.get('taps'):
+                        for label in ('decoder', 'vocoder'):
+                            tap_name = '%s-%s-tap-%s.bin' % (role, name, label)
+                            doc['taps'][label] = tensor(raw[:64], [1, 16], DTYPES[case['precision']], tap_name)
+                            raws[tap_name] = raw[:64]
+                if case.get('taps'):
+                    c.update(tap_probe_output_equals_node=True, tap_probe_rng_unchanged=True)
+        original['cases'][name], converted['cases'][name] = o, c
+    return original, converted, raws
+
+
+def run_comparator(packet, root, original, converted, raws):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'ORIGINAL_RESULT.json').write_text(json.dumps(original))
+    (out / 'CONVERTED_RESULT.json').write_text(json.dumps(converted))
+    for name, data in raws.items():
+        (out / name).write_bytes(data)
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule' / COMPARATOR), '--out-dir', str(out),
+                             '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    status = json.loads((out / 'COMPARISON.json').read_text())
+    items = {item: json.loads((out / ('COMPARISON_%s.json' % item)).read_text()) for item in status['items']}
+    return status, items, result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    comparator_bytes = (packet / 'capsule' / COMPARATOR).read_bytes()
+    case_file = json.loads(case_bytes)
+    registered = int(re.search(r'^EXPECTED_REGISTERED = (\d+)$', comparator_bytes.decode(), re.M).group(1))
+    by = {c['name']: c for c in case_file['cases']}
+    assert sorted(by) == sorted(['l32', 'l16', 'e1_32', 'e2_32', 'd1_32', 'd1_16', 'e1_16', 'd2']), sorted(by)
+    status, items, code = run_comparator(packet, out / 'clean', *synthetic(case_file, registered))
+    clean_ok = status['status'].startswith('PASS_OVI_') and all(d['status'].startswith('PASS_SLICE_') for d in items.values()) and code == 0
+    record = {'format': 'jack-wan-ovi-wsl-comparator-selftest/1', 'case_sha256': sha(case_bytes), 'comparator': COMPARATOR,
+              'comparator_sha256': sha(comparator_bytes), 'cases': list(by),
+              'clean': {'status': status['status'], 'items': status['items'],
+                        'checks_true_per_item': {k: sum(1 for v in d['checks'].values() if v) for k, d in items.items()},
+                        'checks_total_per_item': {k: len(d['checks']) for k, d in items.items()}}, 'controls': {}}
+
+    def conv(fn):
+        return lambda o, c, r: fn(c)
+
+    def both(fn):
+        return lambda o, c, r: (fn(o), fn(c))
+
+    def raw_byte(o, c, r):
+        r['converted-e2_32-latent.bin'] = b'\x00' * 256
+
+    def same_as_fp32(o, c, r):
+        for role, doc in (('original', o), ('converted', c)):
+            doc['cases']['d1_16']['outputs']['waveform'] = dict(doc['cases']['d1_32']['outputs']['waveform'],
+                                                                raw_file='%s-d1_16-waveform.bin' % role)
+            r['%s-d1_16-waveform.bin' % role] = r['%s-d1_32-waveform.bin' % role]
+
+    first_pin = lambda d: sorted(d)[0]
+    controls = [
+        ('recipe_digest', 'loader', 'l32:converted_recipe_exact', conv(lambda c: c['cases']['l32']['recipe']['vae'].update(sha256='e' * 64))),
+        ('model_tensor', 'loader', 'l16:model_equal_tensor_by_tensor',
+         conv(lambda c: c['cases']['l16']['model']['rows']['tod.vae.encoder.conv_in.weight'].update(sha256='9' * 64))),
+        ('dtype', 'loader', 'l16:floating_tensors_have_requested_dtype',
+         both(lambda d: d['cases']['l16']['model']['rows']['mel_converter.mel_basis'].update(dtype='float32'))),
+        ('requires_grad', 'loader', 'l32:no_parameter_requires_grad',
+         both(lambda d: d['cases']['l32']['model']['rows']['tod.vae.encoder.conv_in.weight'].update(requires_grad=True))),
+        ('probe_rng', 'loader', 'l32:converted_rebuild_probe_preserved_rng', conv(lambda c: c['cases']['l32'].update(rng_after_probe={'torch_cpu': 'rX'}))),
+        ('loader_rng', 'loader', 'l16:rng_after_loader_equal', conv(lambda c: c['cases']['l16'].update(rng_after_loader={'torch_cpu': 'rX'}))),
+        ('encode_inputs', 'encode', 'e1_32:inputs_equal', conv(lambda c: c['cases']['e1_32']['inputs']['audio']['waveform'].update(sha256='7' * 64))),
+        ('encode_raw', 'encode', 'e2_32:output_raw_bytes_equal', raw_byte),
+        ('latent_layout', 'encode', 'e1_32:expected_latent_layout', both(lambda d: d['cases']['e1_32']['outputs']['latent_ovi_audio'].update(shape=[1, 21, 46]))),
+        ('case_rng', 'encode', 'e2_32:rng_after_case_equal', conv(lambda c: c['cases']['e2_32'].update(rng_after_case={'torch_cpu': 'rX'}))),
+        ('decode_meta', 'decode', 'd1_32:output_meta_equal', conv(lambda c: c['cases']['d1_32']['outputs']['waveform'].update(sha256='6' * 64))),
+        ('decode_finite', 'decode', 'd1_32:outputs_finite', both(lambda d: d['cases']['d1_32']['outputs']['waveform'].update(finite=False))),
+        ('sample_rate', 'decode_bf16', 'd1_16:sample_rate_16000', both(lambda d: d['cases']['d1_16']['outputs'].update(sample_rate=24000))),
+        ('waveform_shape', 'decode', 'd1_32:expected_waveform_shape', both(lambda d: d['cases']['d1_32']['outputs']['waveform'].update(shape=[1, 1, 8]))),
+        ('repeat', 'decode_bf16', 'd1_16:repeat_identical_both_sides', conv(lambda c: c['cases']['d1_16'].update(repeat_identical=False))),
+        ('differs', 'decode_bf16', 'd1_16:slice_input_changes_original_output', same_as_fp32),
+        ('bf16_decode_bytes', 'decode_bf16', 'd1_16:output_raw_bytes_equal',
+         lambda o, c, r: r.update({'converted-d1_16-waveform.bin': b'\x01' * 256})),
+        ('consumer_recipe', 'decode', 'd1_32:converted_recipe_exact', conv(lambda c: c['cases']['d1_32']['recipe'].update(precision='bf16'))),
+        ('error_message', 'encode', 'e1_16:original_error_is_the_cited_one', both(lambda d: d['cases']['e1_16']['outcome'].update(message='other'))),
+        ('error_function_map', 'decode', 'd2:raising_functions_as_mapped', conv(lambda c: c['cases']['d2']['outcome'].update(raising_function='decode'))),
+        ('error_type_parity', 'decode', 'd2:same_exception_type_and_message', conv(lambda c: c['cases']['d2']['outcome'].update(type='KeyError'))),
+        ('numeric_env', 'loader', 'same_numeric_environment_one_thread', conv(lambda c: c['numeric_env_in_scope'].update(threads=2))),
+        ('torchaudio', 'encode', 'same_torchaudio', conv(lambda c: c['torchaudio'].update(file='usr/local/lib/torchaudio/__init__.py'))),
+        ('registry', 'decode', 'registry_146', conv(lambda c: c.update(registered_count=registered - 1))),
+        ('module_pin', 'loader', 'converted_module_digests_as_bound', conv(lambda c: c['module_sha256'].update({first_pin(c['module_sha256']): 'c' * 64}))),
+        ('original_pin', 'encode', 'original_module_digests_as_bound',
+         lambda o, c, r: o['original_module_sha256'].update({first_pin(o['original_module_sha256']): 'b' * 64})),
+        ('checkpoint_pin', 'decode', 'checkpoints_pinned_original_side', lambda o, c, r: o['models'].update(vae='a' * 64)),
+        ('versions', 'loader', 'versions_as_bound', both(lambda d: d['versions'].update(torch='0.0'))),
+        ('worker_failed', 'encode', 'workers_completed', conv(lambda c: c.update(status='FAIL')))]
+    all_ok = clean_ok
+    for name, item, check, mutate in controls:
+        original, converted, raws = synthetic(case_file, registered)
+        mutate(original, converted, raws)
+        status, items, code = run_comparator(packet, out / ('control-' + name), original, converted, raws)
+        doc = items[item]
+        failed = sorted(k for k, v in doc['checks'].items() if not v)
+        ok = doc['status'].startswith('FAIL_SLICE_') and check in failed
+        record['controls'][name] = {'item': item, 'targeted_check': check, 'item_status': doc['status'], 'failed_checks': failed,
+                                    'result': 'REFUSED' if ok else 'NOT DETECTED'}
+        all_ok = all_ok and ok
+    record['status'] = 'PASS_COMPARATOR_SELFTEST' if all_ok else 'FAILED_COMPARATOR_SELFTEST'
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'clean': record['clean']['status'], 'controls': len(controls),
+                      'not_refused': sorted(k for k, v in record['controls'].items() if v['result'] != 'REFUSED'),
+                      'checks_total_per_item': record['clean']['checks_total_per_item']}))
+    return 0 if all_ok else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

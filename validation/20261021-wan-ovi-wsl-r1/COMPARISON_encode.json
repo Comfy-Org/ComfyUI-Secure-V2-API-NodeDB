@@ -1,0 +1,115 @@
+{
+  "checks": {
+    "checkpoints_pinned_original_side": true,
+    "converted_module_digests_as_bound": true,
+    "e1_16:both_raised": true,
+    "e1_16:converted_recipe_exact": true,
+    "e1_16:inputs_equal": true,
+    "e1_16:original_error_is_the_cited_one": true,
+    "e1_16:raising_files_as_mapped": true,
+    "e1_16:raising_functions_as_mapped": true,
+    "e1_16:rng_after_case_equal": true,
+    "e1_16:rng_after_loader_equal": true,
+    "e1_16:rng_after_seed_equal": true,
+    "e1_16:same_exception_type_and_message": true,
+    "e1_16:same_full_message_digest_and_length": true,
+    "e1_32:both_returned": true,
+    "e1_32:converted_recipe_exact": true,
+    "e1_32:expected_latent_layout": true,
+    "e1_32:inputs_equal": true,
+    "e1_32:output_kind_keys_equal": true,
+    "e1_32:output_meta_equal": true,
+    "e1_32:output_raw_bytes_equal": true,
+    "e1_32:outputs_finite": true,
+    "e1_32:rng_after_case_equal": true,
+    "e1_32:rng_after_loader_equal": true,
+    "e1_32:rng_after_seed_equal": true,
+    "e2_32:both_returned": true,
+    "e2_32:converted_recipe_exact": true,
+    "e2_32:expected_latent_layout": true,
+    "e2_32:inputs_equal": true,
+    "e2_32:output_kind_keys_equal": true,
+    "e2_32:output_meta_equal": true,
+    "e2_32:output_raw_bytes_equal": true,
+    "e2_32:outputs_finite": true,
+    "e2_32:rng_after_case_equal": true,
+    "e2_32:rng_after_loader_equal": true,
+    "e2_32:rng_after_seed_equal": true,
+    "e2_32:slice_input_changes_original_output": true,
+    "original_module_digests_as_bound": true,
+    "registry_146": true,
+    "same_numeric_environment_one_thread": true,
+    "same_torchaudio": true,
+    "same_versions_cpu": true,
+    "versions_as_bound": true,
+    "workers_completed": true
+  },
+  "details": {},
+  "failed_checks": [],
+  "info": {
+    "cases": [
+      {
+        "audio": "a16k",
+        "exercises": "16 kHz, 1.5 s two-tone input at fp32 (as R6 OV-E1-32): mel, VAE encoder, posterior mean",
+        "item": "encode",
+        "name": "e1_32",
+        "node": "WanVideoEncodeOviAudio",
+        "precision": "fp32",
+        "seed": 16921
+      },
+      {
+        "audio": "b24k",
+        "differs_from_case": "e1_32",
+        "exercises": "24 kHz, 1.2 s input at fp32: resampled to 16 kHz by torchaudio.functional.resample (original nodes_ovi.py:165-166)",
+        "item": "encode",
+        "name": "e2_32",
+        "node": "WanVideoEncodeOviAudio",
+        "precision": "fp32",
+        "seed": 16921
+      },
+      {
+        "audio": "a16k",
+        "exercises": "bf16 encode: torch.stft rejects bfloat16 on CPU in the vendored mel converter on both sides (ovi-a error parity)",
+        "expect": "raise",
+        "expected_error": [
+          "RuntimeError",
+          "MKL FFT doesn't support tensors of type: BFloat16"
+        ],
+        "expected_raising": {
+          "files": {
+            "converted": "functional.py",
+            "original": "functional.py"
+          },
+          "functions": {
+            "converted": "stft",
+            "original": "stft"
+          }
+        },
+        "item": "encode",
+        "name": "e1_16",
+        "node": "WanVideoEncodeOviAudio",
+        "precision": "bf16",
+        "seed": 16921
+      }
+    ],
+    "e1_16:seconds": [
+      1.809,
+      3.572
+    ],
+    "e1_32:seconds": [
+      1.879,
+      3.811
+    ],
+    "e2_32:seconds": [
+      1.884,
+      4.109
+    ],
+    "label": "Ovi trio (OviMMAudioVAELoader, WanVideoEncodeOviAudio, WanVideoDecodeOviAudio), WSL x86 CPU: native CPU, one thread, original vs converted on the default-SDK in-process route at fp32 and bf16; a separate scope from the Mac-bound R6; not Guest, not GPU"
+  },
+  "item": "encode",
+  "results_sha256": {
+    "CONVERTED_RESULT.json": "501a9b64bd20213bb1529e78bf5771f8282883d8d32de9595ef7f6ed6e62a25c",
+    "ORIGINAL_RESULT.json": "2548d19ed0b2f2799b85556042c164c91e47dd9f33e03fe3431dc25076af306c"
+  },
+  "status": "PASS_SLICE_ENCODE"
+}
