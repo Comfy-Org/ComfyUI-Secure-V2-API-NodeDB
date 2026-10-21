@@ -1,10 +1,13 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,236 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 21 of 21 converted; 18 tested (scoped), 1 converted but untested/partly tested,
 +> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
 +> Status line: source 21/21 · scoped runtime 18/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
++> **Live: Load Image Metadata fails on every image (revision 7, 2026-10-20).** The live service has no `piexif`, which the
++> node imports on every run, and this pack declares no dependency profile. No other node imports a package the live
++> service lacks. See "Revision 7".
 +
 +# LoRA Manager — Secure V2 conversion (in progress)
 +
@@ -20,6 +23,34 @@
 +- `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
 +  (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
 +
++## Revision 7 (2026-10-20, docs only): live dependency status
++
++Only this report changes. No code, manifest or test changed, and nothing was run.
++
++**Load Image Metadata fails on the live service for every image.** For every image, the node's `execute` reads the
++metadata source, and that path imports `piexif` first (`secure_services/image_metadata_source.py`,
++`fields_from_bytes`). This pack's manifest declares no dependency profile, and a read-only filesystem check of the
++live service on 2026-10-20 found no `piexif`. A queued run therefore passes validation (which only checks that the
++image exists), decodes the pixels, and then fails with `ModuleNotFoundError: No module named 'piexif'`. The original
++has the same requirement (`requirements.txt`; `py/utils/exif_utils.py` imports `piexif` at module level). The earlier
++scoped tests supplied piexif 1.1.3 through a trusted dependency root, so their evidence holds only where piexif is
++provided.
++
++No other node is affected. An import census of every module the 21 registered nodes reach finds no other
++third-party import besides the core-provided `torch`, `numpy`, `PIL` and `av`.
++
++Related live facts, with no status change:
++- Unet Loader's GGUF branch is refused in this conversion. The SDK verb a port would use (`models.load_gguf_model`)
++  also needs a host-installed ComfyUI-GGUF custom node and its `gguf` package. The live service has neither.
++- Compressed AVIF `brob` and JPEG XL are refused in this conversion. The live service has neither `brotli` nor a
++  JPEG XL decoder.
++
++Counts are unchanged. Load Image Metadata was already partial; its row now says that it is broken on live. A fix
++needs a dependency profile that declares `piexif` (and `brotli` for compressed `brob`) and that the live service
++provides.
++
++Evidence: `validation/20261020-lora-manager-live-dependencies/` (import census, line references with file hashes, and the live check).
++
 +## Per-node status
 +
 +Dispositions: tested (scoped) = runtime evidence for the listed scope only; converted-untested = source
@@ -32,7 +63,7 @@
 +| Lora Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55); queue validator native-vs-Guest parity 2/2 + permission-denial control | cache acquisition on all paths; opaque metadata; other model branches; frontend |
 +| LoRA Text Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55) | syntax/library/cache/metadata; frontend |
 +| Checkpoint Loader (LoraManager) | tested (scoped) | queue parity 3/3; real SD1.5 + LCM bf16 CPU secure-Guest workflow | extra scanner roots; base-model list; installed gVisor workflow |
-+| Unet Loader (LoraManager) | partial | queue parity 3/3; real extracted SD1.5 UNet bf16 CPU secure-Guest workflow | GGUF path not implemented (rejected clearly); installed gVisor workflow |
++| Unet Loader (LoraManager) | partial | queue parity 3/3; real extracted SD1.5 UNet bf16 CPU secure-Guest workflow | GGUF path not implemented (rejected clearly; the live service also lacks the host-installed ComfyUI-GGUF and `gguf` package the SDK GGUF verb needs); installed gVisor workflow |
 +| TriggerWord Toggle (LoraManager) | tested (scoped) | gVisor workflow (R6) | lifecycle/restore/state; transport identity |
 +| Lora Stacker (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 8 cases, strict queue validator 28, metadata lifecycle 8 phases, stale-file deletion 2 | multi-root order; installed queue; frontend |
 +| Lora Stack Combiner (LoraManager) | tested (scoped) | gVisor workflows (R6/R7) | tuple transport/identity; editor lifecycle |
@@ -47,7 +78,7 @@
 +| LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 +| Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 +| Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
-+| Load Image Metadata (LoraManager) | partial | retained19-case managed decoder; 12 exact named-container and8 exact upstream12/10-bit PQ native comparisons on composed leaf; managed input/output/temp annotations; raw AVIF brob | compressed brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile; installed gVisor and browser/selector lifecycle |
++| Load Image Metadata (LoraManager) | partial | retained19-case managed decoder; 12 exact named-container and8 exact upstream12/10-bit PQ native comparisons on composed leaf; managed input/output/temp annotations; raw AVIF brob | **Broken on live: `piexif` missing (Revision 7).** compressed brob/JXL; full/rotated AVIF animation; HDR rendering; admitted piexif profile; installed gVisor and browser/selector lifecycle |
 +
 +## Refused techniques (never do) and public replacements
 +
@@ -72,7 +103,8 @@
 +| WebP workflow metadata in Save Image | PENDING — not yet supported, needs the `webp_workflow_json` SDK argument |
 +| CLIP hooks in Create Hook LoRA | PENDING — not yet supported, needs the SetClipHooks host operation |
 +| Startup and multi-root catalogue parity (initial scan readiness, root order) | PENDING — not yet supported, needs a host-owned catalogue lifecycle contract |
-+| GGUF UNet loading | PENDING — dependency-gated until the upstream path is shown to work in the runtime with a small GGUF |
++| GGUF UNet loading | PENDING — dependency-gated until the upstream path is shown to work in the runtime with a small GGUF; the SDK verb also needs a host-installed ComfyUI-GGUF and the `gguf` package, which the live service lacks |
++| Third-party dependencies on the live service (`piexif` for Load Image Metadata; `brotli` for compressed AVIF brob) | PENDING — this pack declares no dependency profile and the live service provides neither; Load Image Metadata fails there (Revision 7) |
 +| Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet |
 +
 +## Open test gates
@@ -86,7 +118,7 @@
 +- Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed).
 +- Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 +- Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
-+- Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. Deployed profile admission is not proved here.
++- Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. The live service has no `piexif`, so Load Image Metadata fails there until a declared profile is admitted and provided (Revision 7).
 +- Independent whole-pack review and certificate.
 +
 +## Authority and permissions (declared per node)

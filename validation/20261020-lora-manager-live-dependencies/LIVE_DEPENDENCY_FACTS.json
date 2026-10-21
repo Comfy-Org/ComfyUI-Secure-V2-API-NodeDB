@@ -1,0 +1,128 @@
+{
+ "schema": "ned-lora-live-dependency-facts/1",
+ "corpus_commit": "d6d257a93a5a9cb4d383e5246bc473f69d023c0e",
+ "live_check": {
+  "by": "MERVYN",
+  "message": "m_4d28ff3dee",
+  "at_utc": "2026-10-20T23:59Z",
+  "method": "read-only filesystem find in the live service container; nothing executed",
+  "searched": [
+   "/",
+   "/runtime/engine",
+   "/overlay",
+   "/service",
+   "/usr/lib/python3*"
+  ],
+  "absent": [
+   "piexif",
+   "brotli",
+   "gguf (Python package)",
+   "imagecodecs",
+   "a JPEG XL decoder",
+   "a ComfyUI-GGUF custom node"
+  ]
+ },
+ "manifest_runtime_keys": [
+  "python"
+ ],
+ "load_image_metadata_path": [
+  {
+   "label": "execute reads the metadata source for every image",
+   "file": "v2/secure_image_metadata_node.py",
+   "sha256": "a8e4bdffb069acb167e3de0a1a7612f511c33f54db923c48da06a1e6730b6b36",
+   "lines": "84",
+   "checked_tokens": [
+    "source = await read_image_source("
+   ]
+  },
+  {
+   "label": "read_image_source always parses the bytes",
+   "file": "v2/secure_services/image_metadata_source.py",
+   "sha256": "d1b705d49d87696508db0d1949b4b334ba3ec4d291627ce74ce2f58dd20db5b1",
+   "lines": "138",
+   "checked_tokens": [
+    "source = fields_from_bytes(data, image_name=name)"
+   ]
+  },
+  {
+   "label": "fields_from_bytes imports piexif first",
+   "file": "v2/secure_services/image_metadata_source.py",
+   "sha256": "d1b705d49d87696508db0d1949b4b334ba3ec4d291627ce74ce2f58dd20db5b1",
+   "lines": "44-47",
+   "checked_tokens": [
+    "def fields_from_bytes",
+    "import piexif"
+   ]
+  },
+  {
+   "label": "validate_inputs checks existence only (no piexif)",
+   "file": "v2/secure_image_metadata_node.py",
+   "sha256": "a8e4bdffb069acb167e3de0a1a7612f511c33f54db923c48da06a1e6730b6b36",
+   "lines": "46-59",
+   "checked_tokens": [
+    "async def validate_inputs",
+    "assets.exists"
+   ]
+  }
+ ],
+ "original_requires_piexif": [
+  {
+   "label": "upstream requirements",
+   "file": "requirements.txt",
+   "sha256": "c2c6cfc6d2f44c75d41fd7de6f6418bf7b9b002017fc6170f1f2ecb15eb44a56",
+   "lines": "5",
+   "checked_tokens": [
+    "piexif"
+   ]
+  },
+  {
+   "label": "upstream ExifUtils imports piexif at module level",
+   "file": "py/utils/exif_utils.py",
+   "sha256": "69eef638d48e88fa527f9fe5036671282b9641f1e45b304423e7322d6be09a80",
+   "lines": "9",
+   "checked_tokens": [
+    "import piexif"
+   ]
+  },
+  {
+   "label": "upstream brob decompression needs brotli",
+   "file": "py/utils/exif_utils.py",
+   "sha256": "69eef638d48e88fa527f9fe5036671282b9641f1e45b304423e7322d6be09a80",
+   "lines": "13",
+   "checked_tokens": [
+    "import brotli"
+   ]
+  }
+ ],
+ "gguf_requirement": [
+  {
+   "label": "deployed SDK: GGUF loads need a host-installed ComfyUI-GGUF custom node",
+   "file": "engine comfy_api/latest/_sdk.py (deployed core 6257422)",
+   "sha256": "0d6ec97e8d30a17fc1bd2fa21c3090a889820770b299529165fe66e931a0e2b7",
+   "lines": "3636-3648",
+   "checked_tokens": [
+    "def _fixed_gguf_node_module",
+    "GGUF model loading requires the fixed ComfyUI-GGUF extension"
+   ]
+  },
+  {
+   "label": "deployed SDK: load_gguf_model resolves that module first",
+   "file": "engine comfy_api/latest/_sdk.py (deployed core 6257422)",
+   "sha256": "0d6ec97e8d30a17fc1bd2fa21c3090a889820770b299529165fe66e931a0e2b7",
+   "lines": "4229-4258",
+   "checked_tokens": [
+    "async def load_gguf_model",
+    "gguf = _fixed_gguf_node_module()"
+   ]
+  },
+  {
+   "label": "ComfyUI-GGUF imports the gguf package",
+   "file": "packs/comfyui-gguf/x6ea2651/ComfyUI-GGUF-HEAD/loader.py",
+   "sha256": "ffff39d209ce22654e67378b80c6a3ca3d349cf8f00ec267085bd16e194730c2",
+   "lines": "5",
+   "checked_tokens": [
+    "import gguf"
+   ]
+  }
+ ]
+}
