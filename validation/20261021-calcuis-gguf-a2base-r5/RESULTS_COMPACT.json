@@ -1,0 +1,1041 @@
+{
+ "A": {
+  "status": "PASS_TIER_A",
+  "failures": [],
+  "environment": {
+   "python": "3.13.7",
+   "executable": "/python-env/bin/python",
+   "packages": {
+    "torch": "2.8.0+cu128",
+    "numpy": "2.2.6",
+    "safetensors": "0.6.2",
+    "sentencepiece": "0.2.2",
+    "protobuf": "7.36.2"
+   },
+   "module_files": {
+    "torch": {
+     "path": "/usr/local/lib/python3.13/site-packages/torch/__init__.py",
+     "sha256": "2f0deb66d5dff6b9c02a62832c3bf3824c2ee031c462a3afeb9ca170466da5bf"
+    },
+    "numpy": {
+     "path": "/usr/local/lib/python3.13/site-packages/numpy/__init__.py",
+     "sha256": "6ae17b070c0f70a8e3cad89a510a256942e5a1f37ea5feb120cec167ed2a6236"
+    },
+    "safetensors": {
+     "path": "/usr/local/lib/python3.13/site-packages/safetensors/__init__.py",
+     "sha256": "c1bcca66501582702c8c79aaaf2b922428800efa4367134609f8fc57363402dd"
+    },
+    "sentencepiece": {
+     "path": "/usr/local/lib/python3.13/site-packages/sentencepiece/__init__.py",
+     "sha256": "4654e37d6be2ff8892b2369c853b08d2ff8ac6031f3b13d2e4aafb21864ec768"
+    }
+   },
+   "torch_weights_only_safe": true
+  },
+  "A0": {
+   "nodes": 13,
+   "all_rows_equal_to_a1_encoders": true
+  },
+  "A1_A2": {
+   "types": 26,
+   "provider_refuses": [
+    "Q2_K",
+    "Q3_K",
+    "Q4_0",
+    "Q4_1",
+    "Q5_0",
+    "Q5_1"
+   ],
+   "dequant_cells_bit_exact": 800
+  },
+  "A3_diffusion": [
+   "prefix_mixed",
+   "unprefixed",
+   "arch_absent",
+   "arch_unknown",
+   "sdxl_proj_squeeze",
+   "bf16_rank3",
+   "orig_shape_valid",
+   "orig_shape_prefixed",
+   "orig_shape_bad_type",
+   "ideogram_diffusion",
+   "duplicate_metadata_keys"
+  ],
+  "A3_text_A6": {
+   "clip_identity": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "text_model.encoder.layers.0.mlp.fc1.weight"
+    ]
+   },
+   "pig_identity": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "text_model.encoder.layers.0.mlp.fc1.weight"
+    ]
+   },
+   "gemma4_identity": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "blk.0.attn_q.weight"
+    ]
+   },
+   "t5encoder_T5_map": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "shared.weight",
+     "encoder.block.0.layer.0.SelfAttention.q.weight",
+     "encoder.block.0.layer.1.DenseReluDense.wi_1.weight",
+     "encoder.block.0.layer.1.DenseReluDense.wi_0.weight",
+     "encoder.final_layer_norm.weight"
+    ]
+   },
+   "t5encoder_B5_map": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "shared.weight",
+     "encoder.block.0.layer.0.SelfAttention.q.weight",
+     "encoder.block.0.layer.1.DenseReluDense.wi.weight",
+     "encoder.block.0.ffn_gate.weight",
+     "encoder.final_layer_norm.weight"
+    ]
+   },
+   "t5encoder_rename_collision": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "encoder.block.0.layer.0.SelfAttention.q.weight",
+     "shared.weight"
+    ]
+   },
+   "llama_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (L3 rename + llama_permute(32, 8))",
+    "converted": "GGUFScopeError"
+   },
+   "mistral3_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (L3 rename + llama_permute(32, 8))",
+    "converted": "GGUFScopeError"
+   },
+   "qwen2_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (token_embd dequantized to fp16 + L3 rename)",
+    "converted": "GGUFScopeError"
+   },
+   "qwen3_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (token_embd dequantized to fp16 + L3 rename)",
+    "converted": "GGUFScopeError"
+   },
+   "qwen2vl_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (token_embd dequantized to fp16 + L3 rename + mmproj pair lookup (none present))",
+    "converted": "GGUFScopeError"
+   },
+   "qwen3vl_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (token_embd dequantized to fp16 + L3 rename + mmproj pair lookup (none present))",
+    "converted": "GGUFScopeError"
+   },
+   "gemma3_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (L3+G3 rename + gemma_norm (input_layernorm minus 1.0))",
+    "converted": "GGUFScopeError"
+   },
+   "dog_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (L3 rename + handle_visual_tensor (V7-renamed second copy of every tensor))",
+    "converted": "GGUFScopeError"
+   },
+   "gemma2_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (tokenizer_builder (spiece_model) + G2 rename)",
+    "converted": "GGUFScopeError"
+   },
+   "t5encoder_256384_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (tokenizer_builder (spiece_model) + T5 rename; 256384 rows declared through comfy.gguf.orig_shape)",
+    "converted": "GGUFScopeError"
+   },
+   "ideogram_text_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (quantized tensors dequantized to fp16)",
+    "converted": "GGUFScopeError"
+   },
+   "ideogram4_text_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (quantized tensors dequantized to fp16)",
+    "converted": "GGUFScopeError"
+   },
+   "cat_no_pair_identity": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "blk.0.attn_q.weight"
+    ]
+   },
+   "cow_refused": {
+    "expect": "converted-refuses",
+    "original": "loads (spiece_model cast to uint8)",
+    "converted": "GGUFScopeError"
+   },
+   "qwen3_small_vocab_rename": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "model.embed_tokens.weight",
+     "model.layers.0.self_attn.q_proj.weight"
+    ]
+   },
+   "qwen2_small_vocab_rename": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "model.embed_tokens.weight",
+     "model.layers.0.post_attention_layernorm.weight",
+     "model.layers.0.self_attn.q_norm.weight",
+     "model.layers.0.self_attn.o_proj.weight",
+     "lm_head.weight",
+     "model.norm.weight"
+    ]
+   },
+   "qwen3_no_token_rename": {
+    "expect": "equal",
+    "original": "loads",
+    "converted": "equal",
+    "keys": [
+     "model.layers.0.self_attn.k_proj.weight",
+     "model.layers.0.mlp.gate_proj.weight"
+    ]
+   },
+   "cat_with_pair": {
+    "expect": "converted-refuses",
+    "original": "loads (identity + merge of catpair/tokenizer_cat.safetensors (pair keys win: blk.0.attn_q.weight))",
+    "converted": "GGUFScopeError"
+   }
+  },
+  "A4": {
+   "option_rows": 51,
+   "provider_table": {
+    "None": "None",
+    "'default'": "None",
+    "'target'": "'target'",
+    "'float32'": "torch.float32",
+    "'float16'": "torch.float16",
+    "'bfloat16'": "torch.bfloat16"
+   }
+  },
+  "A5": {
+   "names": 39,
+   "leaf_tests": [
+    "tests/test_clip_types_pinned.py::test_pinned_clip_types_equal_core",
+    "tests/test_core_pins.py::test_clip_type_lists_equal_core_loaders",
+    "tests/test_core_pins.py::test_supported_pt_extensions_equal_core",
+    "tests/test_manifest_rows.py::test_manifest_validator_rows_match_source"
+   ]
+  },
+  "A7": {
+   "single_gguf": true,
+   "single_safetensors": true,
+   "single_sft": true,
+   "single_upper_safetensors": true,
+   "single_torch_container": true,
+   "single_upper_gguf": true,
+   "dual_gguf_safetensors": true,
+   "dual_two_safetensors_default": true,
+   "dual_safetensors_sft_cpu": true,
+   "dual_two_safetensors_cpu": "ConversionPendingError",
+   "triple": true,
+   "quad": true,
+   "loader_plain": true,
+   "loader_upper_gguf": true,
+   "loader_non_gguf": "ValueError",
+   "cat_no_pair": true,
+   "cat_with_pair": "GGUFScopeError"
+  },
+  "A8": {
+   "LoaderGGUF": {
+    "candidates": 71,
+    "accepted": 41,
+    "mismatches": 0
+   },
+   "LoaderGGUFAdvanced": {
+    "candidates": 71,
+    "accepted": 41,
+    "mismatches": 0
+   },
+   "ClipLoaderGGUF": {
+    "candidates": 63,
+    "accepted": 34,
+    "mismatches": 0
+   },
+   "DualClipLoaderGGUF": {
+    "candidates": 63,
+    "accepted": 34,
+    "mismatches": 0
+   },
+   "TripleClipLoaderGGUF": {
+    "candidates": 63,
+    "accepted": 34,
+    "mismatches": 0
+   },
+   "QuadrupleClipLoaderGGUF": {
+    "candidates": 63,
+    "accepted": 34,
+    "mismatches": 0
+   },
+   "VaeGGUF": {
+    "candidates": 29,
+    "accepted": 6,
+    "mismatches": 0
+   },
+   "AudioEncoderLoaderGGUF": {
+    "candidates": 25,
+    "accepted": 5,
+    "mismatches": 0
+   },
+   "TENSORBoost": {
+    "candidates": 71,
+    "accepted": 4,
+    "mismatches": 0
+   },
+   "TENSORCut": {
+    "candidates": 71,
+    "accepted": 4,
+    "mismatches": 0
+   },
+   "GGUFSave": {
+    "candidates": 71,
+    "accepted": 4,
+    "mismatches": 0
+   },
+   "GGUFRun": {
+    "candidates": 71,
+    "accepted": 4,
+    "mismatches": 0
+   },
+   "GGUFUndo": {
+    "candidates": 71,
+    "accepted": 41,
+    "mismatches": 0
+   }
+  },
+  "A9": {
+   "swapped_t5_maps": {
+    "intended": [
+     "A3_text_A6"
+    ],
+    "killed_by": [
+     "A3_text_A6"
+    ],
+    "crashed_in": []
+   },
+   "dropped_prefix_rule": {
+    "intended": [
+     "A3_diffusion"
+    ],
+    "killed_by": [
+     "A3_diffusion"
+    ],
+    "crashed_in": []
+   },
+   "orig_shape_by_stripped_name": {
+    "intended": [
+     "A3_diffusion"
+    ],
+    "killed_by": [
+     "A3_diffusion"
+    ],
+    "crashed_in": []
+   },
+   "text_refusal_dropped": {
+    "intended": [
+     "A3_text_A6"
+    ],
+    "killed_by": [
+     "A3_text_A6"
+    ],
+    "crashed_in": []
+   },
+   "reversed_state_order": {
+    "intended": [
+     "A7_text_arguments"
+    ],
+    "killed_by": [
+     "A7_text_arguments"
+    ],
+    "crashed_in": []
+   },
+   "wrong_clip_fallback": {
+    "intended": [
+     "A5_clip_types"
+    ],
+    "killed_by": [
+     "A5_clip_types"
+    ],
+    "crashed_in": []
+   },
+   "any_extension_validator": {
+    "intended": [
+     "A8_validators"
+    ],
+    "killed_by": [
+     "A8_validators"
+    ],
+    "crashed_in": []
+   },
+   "case_sensitive_validator": {
+    "intended": [
+     "A8_validators"
+    ],
+    "killed_by": [
+     "A8_validators"
+    ],
+    "crashed_in": []
+   },
+   "alias_accepting_validator": {
+    "intended": [
+     "A8_validators"
+    ],
+    "killed_by": [
+     "A8_validators"
+    ],
+    "crashed_in": []
+   },
+   "none_rejecting_validator": {
+    "intended": [
+     "A8_validators"
+    ],
+    "killed_by": [
+     "A8_validators"
+    ],
+    "crashed_in": []
+   },
+   "pickle_refused": {
+    "intended": [
+     "A7_text_arguments"
+    ],
+    "killed_by": [
+     "A7_text_arguments"
+    ],
+    "crashed_in": []
+   },
+   "case_insensitive_gguf_dispatch": {
+    "intended": [
+     "A7_text_arguments"
+    ],
+    "killed_by": [
+     "A7_text_arguments"
+    ],
+    "crashed_in": []
+   },
+   "second_name_unchecked": {
+    "intended": [
+     "A8_validators"
+    ],
+    "killed_by": [
+     "A8_validators"
+    ],
+    "crashed_in": []
+   },
+   "cat_pair_check_dropped": {
+    "intended": [
+     "A7_text_arguments"
+    ],
+    "killed_by": [
+     "A7_text_arguments"
+    ],
+    "crashed_in": []
+   },
+   "cat_guard_dropped": {
+    "intended": [
+     "A3_text_A6"
+    ],
+    "killed_by": [
+     "A3_text_A6"
+    ],
+    "crashed_in": []
+   },
+   "qwen_threshold_off_by_one": {
+    "intended": [
+     "A3_text_A6"
+    ],
+    "killed_by": [
+     "A3_text_A6"
+    ],
+    "crashed_in": []
+   },
+   "l3_polluted_with_g3": {
+    "intended": [
+     "A3_text_A6"
+    ],
+    "killed_by": [
+     "A3_text_A6"
+    ],
+    "crashed_in": []
+   }
+  },
+  "A10": {
+   "order": [
+    "original qwen2_small",
+    "original gemma3_refused",
+    "original qwen2_small"
+   ],
+   "original_first": [
+    "model.embed_tokens.weight",
+    "model.layers.0.post_attention_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "original_gemma3": {
+    "ok": true
+   },
+   "original_after_gemma3": [
+    "model.embed_tokens.weight",
+    "model.layers.0.pre_feedforward_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "original_L3_ffn_norm_after_gemma3": "pre_feedforward_layernorm",
+   "port_before": [
+    "model.embed_tokens.weight",
+    "model.layers.0.post_attention_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "port_gemma3": {
+    "ok": false,
+    "type": "GGUFScopeError",
+    "message": "calcuis 'gemma3' GGUF applies text-encoder data transforms (dequantization, permutation, norm offsets, tokenizer synthesis or paired files); not expressible as file byte ranges"
+   },
+   "port_after": [
+    "model.embed_tokens.weight",
+    "model.layers.0.post_attention_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "expected_pristine": [
+    "model.embed_tokens.weight",
+    "model.layers.0.post_attention_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "expected_polluted": [
+    "model.embed_tokens.weight",
+    "model.layers.0.pre_feedforward_layernorm.weight",
+    "model.layers.0.self_attn.q_norm.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "lm_head.weight",
+    "model.norm.weight"
+   ],
+   "disposition": "deliberate difference: pig.py:507-509 updates arrays['L3'] in place on a gemma3 load, so the original's later qwen2/qwen3/llama-family renames depend on load order; the port always renames with the shipped L3 map (the original's result in a fresh process)"
+  }
+ },
+ "B": {
+  "status": "PASS_TIER_B",
+  "failures": [],
+  "environment": {
+   "python": "3.13.7",
+   "executable": "/python-env/bin/python",
+   "packages": {
+    "torch": "2.8.0+cu128",
+    "numpy": "2.2.6",
+    "safetensors": "0.6.2",
+    "sentencepiece": "0.2.2",
+    "protobuf": "7.36.2"
+   },
+   "module_files": {
+    "torch": {
+     "path": "/usr/local/lib/python3.13/site-packages/torch/__init__.py",
+     "sha256": "2f0deb66d5dff6b9c02a62832c3bf3824c2ee031c462a3afeb9ca170466da5bf"
+    },
+    "numpy": {
+     "path": "/usr/local/lib/python3.13/site-packages/numpy/__init__.py",
+     "sha256": "6ae17b070c0f70a8e3cad89a510a256942e5a1f37ea5feb120cec167ed2a6236"
+    },
+    "safetensors": {
+     "path": "/usr/local/lib/python3.13/site-packages/safetensors/__init__.py",
+     "sha256": "c1bcca66501582702c8c79aaaf2b922428800efa4367134609f8fc57363402dd"
+    },
+    "sentencepiece": {
+     "path": "/usr/local/lib/python3.13/site-packages/sentencepiece/__init__.py",
+     "sha256": "4654e37d6be2ff8892b2369c853b08d2ff8ac6031f3b13d2e4aafb21864ec768"
+    }
+   },
+   "torch_weights_only_safe": true
+  },
+  "rows": {
+   "LoaderGGUF:type_BF16.gguf": "equal",
+   "LoaderGGUF:type_F16.gguf": "equal",
+   "LoaderGGUF:type_F32.gguf": "equal",
+   "LoaderGGUF:type_IQ1_M.gguf": "equal",
+   "LoaderGGUF:type_IQ1_S.gguf": "equal",
+   "LoaderGGUF:type_IQ2_S.gguf": "equal",
+   "LoaderGGUF:type_IQ2_XS.gguf": "equal",
+   "LoaderGGUF:type_IQ2_XXS.gguf": "equal",
+   "LoaderGGUF:type_IQ3_S.gguf": "equal",
+   "LoaderGGUF:type_IQ3_XXS.gguf": "equal",
+   "LoaderGGUF:type_IQ4_NL.gguf": "equal",
+   "LoaderGGUF:type_IQ4_XS.gguf": "equal",
+   "LoaderGGUF:type_MXFP4.gguf": "equal",
+   "LoaderGGUF:type_NVFP4.gguf": "equal",
+   "LoaderGGUF:type_Q4_K.gguf": "equal",
+   "LoaderGGUF:type_Q5_K.gguf": "equal",
+   "LoaderGGUF:type_Q6_K.gguf": "equal",
+   "LoaderGGUF:type_Q8_0.gguf": "equal",
+   "LoaderGGUF:type_TQ1_0.gguf": "equal",
+   "LoaderGGUF:type_TQ2_0.gguf": "equal",
+   "LoaderGGUF:parse_prefix_mixed.gguf": "equal",
+   "LoaderGGUF:parse_unprefixed.gguf": "equal",
+   "LoaderGGUF:parse_arch_absent.gguf": "equal",
+   "LoaderGGUF:parse_sdxl_proj_squeeze.gguf": "equal",
+   "LoaderGGUF:parse_bf16_rank3.gguf": "equal",
+   "LoaderGGUF:parse_orig_shape_valid.gguf": "equal",
+   "LoaderGGUF:parse_orig_shape_prefixed.gguf": "equal",
+   "LoaderGGUF:parse_ideogram_diffusion.gguf": "equal",
+   "LoaderGGUF:parse_duplicate_metadata_keys.gguf": "equal",
+   "LoaderGGUFAdvanced:type_Q8_0.gguf:default:default:False": "equal",
+   "LoaderGGUFAdvanced:type_Q8_0.gguf:target:target:True": "equal",
+   "LoaderGGUFAdvanced:type_Q8_0.gguf:float16:float32:False": "equal",
+   "LoaderGGUFAdvanced:type_Q8_0.gguf:bfloat16:bfloat16:True": "equal",
+   "LoaderGGUFAdvanced:type_Q8_0.gguf:float32:float16:False": "equal",
+   "LoaderGGUFAdvanced:parse_sdxl_proj_squeeze.gguf:float16:target:True": "equal",
+   "LoaderGGUFAdvanced:type_IQ4_NL.gguf:target:bfloat16:False": "equal",
+   "ClipLoaderGGUF:text_clip_identity.gguf:stable_diffusion:default": "equal",
+   "ClipLoaderGGUF:text_t5encoder_T5_map.gguf:sd3:default": "equal",
+   "ClipLoaderGGUF:text_t5encoder_B5_map.gguf:pixart:cpu": "equal",
+   "ClipLoaderGGUF:text_t5encoder_rename_collision.gguf:sd3:default": "equal",
+   "ClipLoaderGGUF:clip_l_shape_only.safetensors:stable_diffusion:cpu": "equal",
+   "ClipLoaderGGUF:clip_l_shape_only.sft:stable_diffusion:default": "equal",
+   "ClipLoaderGGUF:clip_l_torch.pt:stable_diffusion:default": "equal",
+   "ClipLoaderGGUF:text_qwen2_small_vocab_rename.gguf:qwen_image:default": "equal",
+   "ClipLoaderGGUF:text_qwen3_small_vocab_rename.gguf:lumina2:default": "equal",
+   "ClipLoaderGGUF:text_qwen3_no_token_rename.gguf:lumina2:default": "equal",
+   "ClipLoaderGGUF:text_cat_no_pair_identity.gguf:stable_diffusion:default": "equal",
+   "ClipLoaderGGUF:text_llama_refused.gguf:refused": "converted-refuses",
+   "ClipLoaderGGUF:text_qwen3_refused.gguf:refused": "converted-refuses",
+   "ClipLoaderGGUF:text_cow_refused.gguf:refused": "converted-refuses",
+   "ClipLoaderGGUF:catpair/text_cat_paired.gguf:refused": "converted-refuses",
+   "DualClipLoaderGGUF:clip_g_layers_0_30.gguf+clip_l_layers_0_11.gguf:sdxl:default": "equal",
+   "DualClipLoaderGGUF:clip_l_shape_only.safetensors+clip_g_shape_only.safetensors:sdxl:default": "equal",
+   "DualClipLoaderGGUF:text_clip_identity.gguf+clip_l_shape_only.safetensors:flux:cpu": "equal",
+   "DualClipLoaderGGUF:clip_l_shape_only.sft+T5XXL_SHAPE_ONLY.SAFETENSORS:flux:cpu": "equal",
+   "DualClipLoaderGGUF:clip_l_shape_only.safetensors+clip_g_shape_only.safetensors:sdxl:cpu": "converted-refuses",
+   "TripleClipLoaderGGUF:shape-only": "equal",
+   "QuadrupleClipLoaderGGUF:shape-only": "equal"
+  },
+  "cat_with_pair": {
+   "refusal_text_found": true,
+   "original_merge": {
+    "keys": [
+     "blk.0.attn_q.weight",
+     "blk.0.ffn_up.weight",
+     "tokenizer.embedding"
+    ],
+    "colliding_key_sha256": "9de599174e90426c9fd438cf0ca893c06000712e4131545774ed404d4c412b7a"
+   }
+  },
+  "H1": {
+   "limit_one_below_size": {
+    "limit": 1343,
+    "file_bytes": 1344,
+    "ok": false,
+    "construction_calls": 0,
+    "errors": [
+     {
+      "node_type": "LoaderGGUF",
+      "exception_message": "WireError: RemoteError: GGUF mapping exceeds the selected operator byte limit\n",
+      "exception_type": "comfy_secure_nodes.transport.wire.WireError"
+     }
+    ],
+    "documented_message_found": true
+   },
+   "limit_equal_size": {
+    "limit": 1344,
+    "file_bytes": 1344,
+    "ok": true,
+    "construction_calls": 1,
+    "errors": []
+   },
+   "documented_message": "GGUF mapping exceeds the selected operator byte limit"
+  },
+  "B7": {
+   "validated": true,
+   "success": true,
+   "observed": {
+    "raw_result_len": 2,
+    "merged_outputs": 2,
+    "declared_outputs": 1,
+    "call_arity": 2
+   },
+   "sink_received": {
+    "class": "StandInClip",
+    "patcher_class": "GGUFModelPatcher",
+    "is_model_patcher": true,
+    "patch_on_device": "False"
+   },
+   "calls": 1,
+   "link_to_undeclared_slot_1_accepted": false,
+   "decision": "one declared output, final (MERVYN m_f4da836b12); confirmed when the spy observes the call, slot 0 reaches the sink and a link to slot 1 is rejected at queue time"
+  },
+  "B8": {
+   "original": {
+    "first_before_second": [
+     "torch.float16",
+     "'target'"
+    ],
+    "first_after_second": [
+     "None",
+     "None"
+    ],
+    "second": [
+     "None",
+     "None"
+    ],
+    "shared_linear_class": true
+   },
+   "converted": {
+    "first_before_second": [
+     "torch.float16",
+     "'target'"
+    ],
+    "first_after_second": [
+     "torch.float16",
+     "'target'"
+    ],
+    "second": [
+     "None",
+     "None"
+    ],
+    "shared_linear_class": false
+   },
+   "text_after_advanced": {
+    "original": {
+     "dequant_dtype": "torch.float16",
+     "patch_dtype": "'target'"
+    },
+    "converted": {
+     "dequant_dtype": "None",
+     "patch_dtype": "None"
+    }
+   },
+   "original_behaviour": "pig.py sets dequant/patch dtype on the shared GGMLOps.Linear class, so the last GGUF load sets them for every loaded GGUF model's Linear layers (diffusion and text encoders); they are read at forward time",
+   "converted_behaviour": "each load keeps its own dtype settings (fresh ops per load; text encoders always default)",
+   "outputs_can_differ_when": "one workflow holds two or more GGUF loads with different dtype options; single loads match (rows above)",
+   "disposition": "final accepted difference (MERVYN m_f4da836b12)"
+  },
+  "B9": {
+   "original": [
+    {
+     "name": "text_qwen2_small_vocab_rename.gguf",
+     "ok": true,
+     "keys": [
+      "model.embed_tokens.weight",
+      "model.layers.0.post_attention_layernorm.weight",
+      "model.layers.0.self_attn.q_norm.weight",
+      "model.layers.0.self_attn.o_proj.weight",
+      "lm_head.weight",
+      "model.norm.weight"
+     ]
+    },
+    {
+     "name": "text_gemma3_refused.gguf",
+     "ok": true,
+     "keys": [
+      "model.embed_tokens.weight",
+      "model.layers.0.input_layernorm.weight"
+     ]
+    },
+    {
+     "name": "text_qwen2_small_vocab_rename.gguf",
+     "ok": true,
+     "keys": [
+      "model.embed_tokens.weight",
+      "model.layers.0.pre_feedforward_layernorm.weight",
+      "model.layers.0.self_attn.q_norm.weight",
+      "model.layers.0.self_attn.o_proj.weight",
+      "lm_head.weight",
+      "model.norm.weight"
+     ]
+    }
+   ],
+   "original_L3_ffn_norm_after_gemma3": "pre_feedforward_layernorm",
+   "converted": [
+    {
+     "name": "text_qwen2_small_vocab_rename.gguf",
+     "ok": true,
+     "keys": [
+      "model.embed_tokens.weight",
+      "model.layers.0.post_attention_layernorm.weight",
+      "model.layers.0.self_attn.q_norm.weight",
+      "model.layers.0.self_attn.o_proj.weight",
+      "lm_head.weight",
+      "model.norm.weight"
+     ],
+     "construction_calls": 1,
+     "errors": []
+    },
+    {
+     "name": "text_gemma3_refused.gguf",
+     "ok": false,
+     "keys": null,
+     "construction_calls": 0,
+     "errors": [
+      {
+       "node_type": "ClipLoaderGGUF",
+       "exception_message": "GGUFScopeError: calcuis 'gemma3' GGUF applies text-encoder data transforms (dequantization, permutation, norm offsets, tokenizer synthesis or paired files); not expressible as file byte ranges\n",
+       "exception_type": "comfy_secure_nodes.transport.wire.WireError"
+      }
+     ]
+    },
+    {
+     "name": "text_qwen2_small_vocab_rename.gguf",
+     "ok": true,
+     "keys": [
+      "model.embed_tokens.weight",
+      "model.layers.0.post_attention_layernorm.weight",
+      "model.layers.0.self_attn.q_norm.weight",
+      "model.layers.0.self_attn.o_proj.weight",
+      "lm_head.weight",
+      "model.norm.weight"
+     ],
+     "construction_calls": 1,
+     "errors": []
+    }
+   ],
+   "expected": {
+    "original_first": [
+     "model.embed_tokens.weight",
+     "model.layers.0.post_attention_layernorm.weight",
+     "model.layers.0.self_attn.q_norm.weight",
+     "model.layers.0.self_attn.o_proj.weight",
+     "lm_head.weight",
+     "model.norm.weight"
+    ],
+    "original_third": [
+     "model.embed_tokens.weight",
+     "model.layers.0.pre_feedforward_layernorm.weight",
+     "model.layers.0.self_attn.q_norm.weight",
+     "model.layers.0.self_attn.o_proj.weight",
+     "lm_head.weight",
+     "model.norm.weight"
+    ],
+    "converted_first_and_third": [
+     "model.embed_tokens.weight",
+     "model.layers.0.post_attention_layernorm.weight",
+     "model.layers.0.self_attn.q_norm.weight",
+     "model.layers.0.self_attn.o_proj.weight",
+     "lm_head.weight",
+     "model.norm.weight"
+    ],
+    "converted_gemma3_refusal": "calcuis 'gemma3' GGUF applies text-encoder data transforms (dequantization, permutation, norm offsets, tokenizer synthesis or paired files); not expressible as file byte ranges"
+   },
+   "original_behaviour": "a gemma3 GGUF load updates pig.arrays['L3'] in place with the G3 map, so every later llama-family load in the same process (llama, qwen2, qwen3, qwen2vl, qwen3vl, mistral3, dog) renames ffn_norm to pre_feedforward_layernorm instead of post_attention_layernorm",
+   "converted_behaviour": "rename-only qwen2/qwen3 always use the shipped L3 map (the original in a fresh process); gemma3 is refused",
+   "disposition": "deliberate difference (load-order dependent in the original only)"
+  },
+  "operator_env": {
+   "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES": "42991616",
+   "COMFY_SECURE_MAX_STORE_BYTES": "unset (2 GiB default)",
+   "COMFY_SECURE_SANDBOX_MODE": "off (protocol and provider evidence, not sandbox evidence)",
+   "largest_gguf_fixture": {
+    "path": "clip_g_layers_0_30.gguf",
+    "bytes": 42319904
+   }
+  },
+  "event_loops_used": 1
+ },
+ "Q": {
+  "status": "PASS_TIER_Q",
+  "failures": [],
+  "environment": {
+   "python": "3.13.7",
+   "executable": "/python-env/bin/python",
+   "packages": {
+    "torch": "2.8.0+cu128",
+    "numpy": "2.2.6",
+    "safetensors": "0.6.2",
+    "sentencepiece": "0.2.2",
+    "protobuf": "7.36.2"
+   },
+   "module_files": {
+    "torch": {
+     "path": "/usr/local/lib/python3.13/site-packages/torch/__init__.py",
+     "sha256": "2f0deb66d5dff6b9c02a62832c3bf3824c2ee031c462a3afeb9ca170466da5bf"
+    },
+    "numpy": {
+     "path": "/usr/local/lib/python3.13/site-packages/numpy/__init__.py",
+     "sha256": "6ae17b070c0f70a8e3cad89a510a256942e5a1f37ea5feb120cec167ed2a6236"
+    },
+    "safetensors": {
+     "path": "/usr/local/lib/python3.13/site-packages/safetensors/__init__.py",
+     "sha256": "c1bcca66501582702c8c79aaaf2b922428800efa4367134609f8fc57363402dd"
+    },
+    "sentencepiece": {
+     "path": "/usr/local/lib/python3.13/site-packages/sentencepiece/__init__.py",
+     "sha256": "4654e37d6be2ff8892b2369c853b08d2ff8ac6031f3b13d2e4aafb21864ec768"
+    }
+   },
+   "torch_weights_only_safe": true
+  },
+  "summary": {
+   "LoaderGGUF": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "LoaderGGUFAdvanced": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "ClipLoaderGGUF": {
+    "candidates": 37,
+    "accepted": 8
+   },
+   "DualClipLoaderGGUF": {
+    "candidates": 45,
+    "accepted": 12
+   },
+   "TripleClipLoaderGGUF": {
+    "candidates": 53,
+    "accepted": 16
+   },
+   "QuadrupleClipLoaderGGUF": {
+    "candidates": 61,
+    "accepted": 20
+   },
+   "VaeGGUF": {
+    "candidates": 29,
+    "accepted": 6
+   },
+   "AudioEncoderLoaderGGUF": {
+    "candidates": 25,
+    "accepted": 5
+   },
+   "TENSORBoost": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "TENSORCut": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "GGUFSave": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "GGUFRun": {
+    "candidates": 34,
+    "accepted": 4
+   },
+   "GGUFUndo": {
+    "candidates": 34,
+    "accepted": 4
+   }
+  },
+  "rows": 488,
+  "event_loops_used": 1,
+  "slots": [
+   [
+    "AudioEncoderLoaderGGUF",
+    "audio_encoder_name"
+   ],
+   [
+    "ClipLoaderGGUF",
+    "clip_name"
+   ],
+   [
+    "DualClipLoaderGGUF",
+    "clip_name1"
+   ],
+   [
+    "DualClipLoaderGGUF",
+    "clip_name2"
+   ],
+   [
+    "GGUFRun",
+    "select_safetensors"
+   ],
+   [
+    "GGUFSave",
+    "select_safetensors"
+   ],
+   [
+    "GGUFUndo",
+    "select_gguf"
+   ],
+   [
+    "LoaderGGUF",
+    "gguf_name"
+   ],
+   [
+    "LoaderGGUFAdvanced",
+    "gguf_name"
+   ],
+   [
+    "QuadrupleClipLoaderGGUF",
+    "clip_name1"
+   ],
+   [
+    "QuadrupleClipLoaderGGUF",
+    "clip_name2"
+   ],
+   [
+    "QuadrupleClipLoaderGGUF",
+    "clip_name3"
+   ],
+   [
+    "QuadrupleClipLoaderGGUF",
+    "clip_name4"
+   ],
+   [
+    "TENSORBoost",
+    "select_safetensors"
+   ],
+   [
+    "TENSORCut",
+    "select_safetensors"
+   ],
+   [
+    "TripleClipLoaderGGUF",
+    "clip_name1"
+   ],
+   [
+    "TripleClipLoaderGGUF",
+    "clip_name2"
+   ],
+   [
+    "TripleClipLoaderGGUF",
+    "clip_name3"
+   ],
+   [
+    "VaeGGUF",
+    "vae_name"
+   ]
+  ]
+ }
+}

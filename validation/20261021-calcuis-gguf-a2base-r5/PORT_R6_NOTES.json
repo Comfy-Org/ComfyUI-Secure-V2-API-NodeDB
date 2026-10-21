@@ -1,0 +1,461 @@
+{
+  "status": "SOURCE_ONLY_PORT_R6_UNRUN_UNIMPORTED",
+  "observed_utc": "2026-10-21T01:21:47.109832+00:00",
+  "authority": "MERVYN m_19e7a716dd (prepare what NED can; no runs or selection); MERVYN m_0047221d3f (review fixes in r4 / test r3; runs on hold); MERVYN m_b7ee271e32 (the easy cat/qwen parts go in port r6 after the r5 verdict)",
+  "supersedes": "ned-calcuis-gguf-loader-port-20261020-r5 (cat GGUFs without a tokenizer pair; qwen2/qwen3 below 65536 token rows)",
+  "review": "MERVYN coordination/calcuis-gguf-port-r2-review-20261020/REVIEW.md (REQUEST_CHANGES on port r2 + differential r1); mapping to r3/r4 in REVIEW_MAPPING.json",
+  "base": {
+    "corpus": "4d628f38",
+    "pack_rev": 2,
+    "files": {
+      "nodes.py": "e37c30e6ddef7c0e12af8e9f777edcd6dbea23f87f088fd132cb502781dc3c8c",
+      "gguf_state.py": "0e0978bad2777c70ff16423fad1d3932920d8db29e86fc270259c4c4a14acb59"
+    }
+  },
+  "target_sdk": "SDK207 C1 build (core 708e6c01 / overlay bea6cb50): assets.gguf_tensor_state, models.ggml_diffusion_from_state_dict, models.ggml_text_encoders_from_state_dicts, models.load_text_encoder",
+  "run_core_for_tests": "a2 base (deployed core plus GGML SDK additions): core d1a9259 = 6257422 + comfy_api SDK files, backend a1 894ead3",
+  "unchanged": [
+    "leaf/secure-nodes.json byte-identical to r5: schemas, titles, SDK_REFS, permissions and validators unchanged",
+    "leaf clip_types.py, catalogue_pins.py and tests/ byte-identical to r5",
+    "gguf_state build_table, build_diffusion_table and the t5 branch of build_text_table AST-identical to r5 (STATIC_CHECKS_R6.json)",
+    "execution of VaeGGUF, AudioEncoderLoaderGGUF, TENSORBoost, TENSORCut, GGUFSave, GGUFRun, GGUFUndo, except that names the original lists in any case are accepted"
+  ],
+  "mirrors": [
+    "LoaderGGUF passes None for dequant/patch/patch_on_device (pig.py load_model defaults); Advanced passes its widget values",
+    "diffusion table = load_gguf_sd only: no architecture refused except unknown (ideogram/ideogram4 diffusion GGUFs load)",
+    "scalar GGUF metadata exactly as get_gguf_metadata (STRING/INT32/F32/BOOL, reader keys incl. duplicate suffixes)",
+    "t5/t5encoder rename-only branches (T5 or B5 map by token_embd shape) via table names; str.replace order and dict overwrite semantics",
+    "CLIPType fallback to STABLE_DIFFUSION resolved in the guest against the pinned run-core list (drift test)",
+    "Dual: both SafeTensors with device != default is the only load_clip branch; all other combinations take the GGML path, SafeTensors included",
+    "Triple fixed sd3; Quad fixed hunyuan_video (core picks SD3/HiDream by count)",
+    "queue validators = membership in the original's lists: folder, extension set (case-insensitive, as folder_paths), existence; canonical spellings only; linked inputs (None) pass; TAESD presets only with both vae_approx halves",
+    "LoaderGGUF/GGUFUndo accept any-case .gguf and the TENSORBoost family any-case .safetensors at execute, as the original lists them",
+    "ClipLoaderGGUF keeps pig.py's case-sensitive '.safetensors' dispatch to the typed loader; the GGML path sends case-sensitive '.gguf' to GGUF and every other name to assets.load_state_dict, which loads it as comfy.utils.load_torch_file(safe_load=True) does (.sft, any-case SafeTensors and weights-only Torch containers included)",
+    "an upper-case '.GGUF' text encoder takes the load_torch_file path in both, as pig.py load_data does",
+    "qwen2/qwen3 whose token_embd is absent or has fewer than 65536 rows: rename-only with the shipped L3 map through table names (str.replace in map order, later names overwrite earlier ones), as pig.py:499-513 without its dequantization branch",
+    "cat with no '*tokenizer*.safetensors' file in the GGUF's own directory: loaded unchanged (pig_work plus an empty tokenizer state, pig.py:533-536, gguf_connector/mmj.py:18-33)"
+  ],
+  "deliberate_differences_final": [
+    "per-load dequant/patch dtype settings. Original: the last GGUF load sets dequant_dtype/patch_dtype for every loaded GGUF model's Linear layers (shared GGMLOps.Linear class attributes). Outputs can differ only when one workflow holds two or more GGUF loads with different dtype options; a single load matches exactly. Final (MERVYN m_f4da836b12).",
+    "one declared output for the GGUF CLIP branches. Original returns (clip, device options); only slot 0 is declared and linkable. Final (MERVYN m_f4da836b12); Tier B B7 confirms what core does with the extra element."
+  ],
+  "other_differences": [
+    "model-detection failure message omits the host path (refused technique)",
+    "non-.gguf LoaderGGUF names are also rejected at execute (the original's list never offers them)",
+    "the host refuses a container whose load result is not a flat tensor dict (model_cache.py:200-203); load_torch_file alone returns it",
+    "a DIRECTORY named '*tokenizer*.safetensors' beside a cat GGUF: the original takes it as the pair and fails to load; the host listing holds files only, so the port loads the GGUF unchanged"
+  ],
+  "refused_platform_policy": [
+    "names the host cannot address: a listed name containing a backslash (the host treats backslash as a separator) and files whose real path leaves the folder root (symlinks; host confinement). The original lists and loads both."
+  ],
+  "missing": {
+    "operator limits (H1; GERALD/JERRY)": "COMFY_SECURE_MAX_GGUF_MAPPING_BYTES defaults to 0 (backend a1 transport/host.py:1407), so every GGUF mapping is refused until an operator sets it. COMFY_SECURE_MAX_STORE_BYTES (default 2 GiB, host.py:736) caps the guest round trip of a SafeTensors text-encoder state; inside the limit the state is held about three times at peak. The round trip covers every non-.gguf text encoder in the GGML path (SafeTensors and Torch containers).",
+    "host GGUF catalogue (H2; MIKE/GERALD)": "/models/{folder} returns folder_paths.get_filename_list(folder) (core server.py:414-419), which lists supported_pt_extensions only, so no .gguf name is offered for diffusion_models, text_encoders, vae or audio_encoders. Host resolve/exists have no extension filter, so typed or saved .gguf names work.",
+    "provider quant types (GERALD, request d4ddc2de)": "Q4_0, Q4_1, Q5_0, Q5_1, Q2_K, Q3_K",
+    "provider text transforms (GERALD, request d4ddc2de)": "llama, mistral3, gemma2, gemma3, qwen2/qwen3 with >= 65536 token rows (float16 dequantization of token_embd), qwen2vl/qwen3vl (mmproj pair), the 256384-row t5 tokenizer, ideogram, cat with a '*tokenizer*.safetensors' pair (merge), cow, dog; section 2 r2 asks: GERALD_REQUEST_SECTION2_R2.md (per-entry float16 dequantize option; several state refs merged per encoder)",
+    "two-file typed text-encoder loader with device (GERALD, request d4ddc2de)": "DualClipLoaderGGUF: both SafeTensors with an explicit device",
+    "provider parity (M3; GERALD)": "a missing Linear weight raises NotImplementedError (core _ggml.py:130-135) where pig.py zero-fills (pig.py:166-170), e.g. an SD1.5 CLIP-L GGUF without text_projection; dynamic patchers refused (_ggml_patcher.py:20-21); tensor table 1..4096 tensors, at most 512 KiB JSON, 1..8 positive dimensions (_gguf_tensor.py:99-115)"
+  },
+  "recorded_core_differences": {
+    "708e6c01_vs_run_core_6257422": {
+      "CLIPLoader": {
+        "count_708e6c01": 31,
+        "count_run": 29,
+        "added": [
+          "flux3",
+          "moss_image"
+        ],
+        "removed": []
+      },
+      "CLIPType": {
+        "count_708e6c01": 38,
+        "count_run": 36,
+        "added": [
+          "FLUX3",
+          "MOSS_IMAGE"
+        ],
+        "removed": []
+      },
+      "DualCLIPLoader": {
+        "count_708e6c01": 12,
+        "count_run": 12,
+        "added": [],
+        "removed": []
+      },
+      "supported_pt_extensions": {
+        "count_708e6c01": 8,
+        "count_run": 8,
+        "added": [],
+        "removed": []
+      },
+      "sources": "files whose git blob ids equal 708e6c01 PAIR-SOURCES (evidence/LISTS_708e6c01_VS_RUN.json)",
+      "consequence": "the static 29-type list and both pins target the run core; if 708e6c01 ships, re-pin and add flux3/moss_image (the drift tests fail until then)"
+    }
+  },
+  "manifest": {
+    "file": "leaf/secure-nodes.json",
+    "rev2_sha256": "9cd38ff07ac3cc77dea9377c3a4494981310b7060daaa061b6130bc378e1932c",
+    "serialization": "as rev 2: json.dumps(indent=2) in insertion order plus newline (re-serialising rev 2 reproduces its bytes); validation_inputs appended after schema, where the a1 generator build() inserts it",
+    "changes": "methods.validate_inputs true and validation_inputs for all 13 nodes; permissions for the six loaders; schemas and runtime block unchanged",
+    "permission_changes": {
+      "ClipLoaderGGUF": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets",
+          "raw"
+        ]
+      },
+      "DualClipLoaderGGUF": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets",
+          "raw"
+        ]
+      },
+      "LoaderGGUF": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets"
+        ]
+      },
+      "LoaderGGUFAdvanced": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets"
+        ]
+      },
+      "QuadrupleClipLoaderGGUF": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets",
+          "raw"
+        ]
+      },
+      "TripleClipLoaderGGUF": {
+        "rev2": [
+          "models"
+        ],
+        "r4": [
+          "models",
+          "assets",
+          "raw"
+        ]
+      }
+    },
+    "rows": {
+      "AudioEncoderLoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets",
+          "raw"
+        ],
+        "validation_inputs": [
+          "cls",
+          "audio_encoder_name"
+        ]
+      },
+      "ClipLoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets",
+          "raw"
+        ],
+        "validation_inputs": [
+          "cls",
+          "clip_name"
+        ]
+      },
+      "DualClipLoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets",
+          "raw"
+        ],
+        "validation_inputs": [
+          "cls",
+          "clip_name1",
+          "clip_name2"
+        ]
+      },
+      "GGUFRun": {
+        "permissions": [
+          "raw",
+          "assets",
+          "output"
+        ],
+        "validation_inputs": [
+          "cls",
+          "select_safetensors"
+        ]
+      },
+      "GGUFSave": {
+        "permissions": [
+          "raw",
+          "assets",
+          "output"
+        ],
+        "validation_inputs": [
+          "cls",
+          "select_safetensors"
+        ]
+      },
+      "GGUFUndo": {
+        "permissions": [
+          "raw",
+          "assets",
+          "output"
+        ],
+        "validation_inputs": [
+          "cls",
+          "select_gguf"
+        ]
+      },
+      "LoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets"
+        ],
+        "validation_inputs": [
+          "cls",
+          "gguf_name"
+        ]
+      },
+      "LoaderGGUFAdvanced": {
+        "permissions": [
+          "models",
+          "assets"
+        ],
+        "validation_inputs": [
+          "cls",
+          "gguf_name"
+        ]
+      },
+      "QuadrupleClipLoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets",
+          "raw"
+        ],
+        "validation_inputs": [
+          "cls",
+          "clip_name1",
+          "clip_name2",
+          "clip_name3",
+          "clip_name4"
+        ]
+      },
+      "TENSORBoost": {
+        "permissions": [
+          "raw",
+          "assets",
+          "output"
+        ],
+        "validation_inputs": [
+          "cls",
+          "select_safetensors"
+        ]
+      },
+      "TENSORCut": {
+        "permissions": [
+          "raw",
+          "assets",
+          "output"
+        ],
+        "validation_inputs": [
+          "cls",
+          "select_safetensors"
+        ]
+      },
+      "TripleClipLoaderGGUF": {
+        "permissions": [
+          "models",
+          "assets",
+          "raw"
+        ],
+        "validation_inputs": [
+          "cls",
+          "clip_name1",
+          "clip_name2",
+          "clip_name3"
+        ]
+      },
+      "VaeGGUF": {
+        "permissions": [
+          "models",
+          "assets"
+        ],
+        "validation_inputs": [
+          "cls",
+          "vae_name"
+        ]
+      }
+    },
+    "generator_rule": "a1 scripts/generate_popular_pack_manifest.py marks methods from the class's own __dict__, so every class declares validate_inputs (r3 would have shipped LoaderGGUFAdvanced, TENSORCut, GGUFSave and GGUFRun without a validator)",
+    "confirmation": "the a1 generator has no calcuis-gguf profile; test r3 B0 re-encodes the 13 rows with the a1 packmanifest encoders inside the run container and compares",
+    "r6": "leaf/secure-nodes.json byte-identical to r5 (d55ab719fadf7faefaa6141a1f37fb6ea928f84650633297dfa135f5dc505707)"
+  },
+  "validators": {
+    "LoaderGGUF": {
+      "defined_on": "LoaderGGUF",
+      "args": [
+        "cls",
+        "gguf_name"
+      ]
+    },
+    "ClipLoaderGGUF": {
+      "defined_on": "ClipLoaderGGUF",
+      "args": [
+        "cls",
+        "clip_name"
+      ]
+    },
+    "DualClipLoaderGGUF": {
+      "defined_on": "DualClipLoaderGGUF",
+      "args": [
+        "cls",
+        "clip_name1",
+        "clip_name2"
+      ]
+    },
+    "TripleClipLoaderGGUF": {
+      "defined_on": "TripleClipLoaderGGUF",
+      "args": [
+        "cls",
+        "clip_name1",
+        "clip_name2",
+        "clip_name3"
+      ]
+    },
+    "QuadrupleClipLoaderGGUF": {
+      "defined_on": "QuadrupleClipLoaderGGUF",
+      "args": [
+        "cls",
+        "clip_name1",
+        "clip_name2",
+        "clip_name3",
+        "clip_name4"
+      ]
+    },
+    "AudioEncoderLoaderGGUF": {
+      "defined_on": "AudioEncoderLoaderGGUF",
+      "args": [
+        "cls",
+        "audio_encoder_name"
+      ]
+    },
+    "LoaderGGUFAdvanced": {
+      "defined_on": "LoaderGGUFAdvanced",
+      "args": [
+        "cls",
+        "gguf_name"
+      ]
+    },
+    "VaeGGUF": {
+      "defined_on": "VaeGGUF",
+      "args": [
+        "cls",
+        "vae_name"
+      ]
+    },
+    "GGUFUndo": {
+      "defined_on": "GGUFUndo",
+      "args": [
+        "cls",
+        "select_gguf"
+      ]
+    },
+    "GGUFSave": {
+      "defined_on": "GGUFSave",
+      "args": [
+        "cls",
+        "select_safetensors"
+      ]
+    },
+    "GGUFRun": {
+      "defined_on": "GGUFRun",
+      "args": [
+        "cls",
+        "select_safetensors"
+      ]
+    },
+    "TENSORCut": {
+      "defined_on": "TENSORCut",
+      "args": [
+        "cls",
+        "select_safetensors"
+      ]
+    },
+    "TENSORBoost": {
+      "defined_on": "TENSORBoost",
+      "args": [
+        "cls",
+        "select_safetensors"
+      ]
+    }
+  },
+  "uses_ValueRef_from_value": "runtime-public, undeclared in stub; stub fix requested (MERVYN m_649ebaf650): Dual, Triple, Quad, AudioEncoder, TENSORBoost, TENSORCut, GGUFUndo",
+  "open_questions": [
+    "VaeGGUF TAESD presets validate through assets.list('vae_approx') (host get_filename_list, as pig.py); a host without a vae_approx folder rejects the presets at queue time"
+  ],
+  "tests_added": [
+    "tests/test_clip_types_pinned.py (run-core CLIPType drift)",
+    "tests/test_core_pins.py (run-core extensions and CLIP loader lists)",
+    "tests/test_manifest_rows.py (static manifest/validator rows)"
+  ],
+  "imports_tests_or_runs": 0,
+  "manager_decisions": {
+    "m_f4da836b12_1": "queue validators on all 13 nodes in one revision; Tier B keeps recording the core queue result",
+    "m_f4da836b12_2": "keep per-load dtype settings; document the original shared-class behaviour; single-load exact match proven by tests",
+    "m_f4da836b12_3": "one declared output for the GGUF CLIP branches; B7 confirms core behaviour",
+    "m_649ebaf650": "ValueRef.from_value: runtime public export treated as the declaration for the a2-base tests; per-node note",
+    "m_0047221d3f": "review fixes in r4 / test r3; six loaders 'untested' until something runs; a missing API/platform feature is 'missing', not 'blocked'; the two accepted differences are final",
+    "m_15da99bb71 (NED)": "r5 proposed to MERVYN: drop the pickle refusal (host load_state_dict mirrors load_torch_file(safe_load=True))",
+    "m_b7ee271e32": "easy cat/qwen parts in port r6 after the r5 verdict; the gemma3 L3 update is recorded like the dtype leak; GERALD_REQUEST section 2 additions re-sent by MERVYN"
+  },
+  "r5_change": {
+    "what": "text_encoder_state sends case-sensitive '.gguf' to the GGUF table and every other name to assets.load_state_dict (pig.py load_data); ConversionRefusedError removed",
+    "evidence": [
+      "pig.py:627-635 load_data -> comfy.utils.load_torch_file(p, safe_load=True) for non-.gguf names",
+      "backend a1 model_cache.py:192-199: host load_state_dict = safetensors load_file for .safetensors/.sft (any case), else comfy.utils.load_torch_file(path, safe_load=True)",
+      "core a2 _sdk.py:2812-2825: in-process load_state_dict = comfy.utils.load_torch_file(path, safe_load=True)"
+    ],
+    "corrects": "review M1 premise: SafeTensors-only holds for the typed load_text_encoder, not for assets.load_state_dict",
+    "host_check_not_in_original": "the host refuses a container whose load result is not a flat tensor dict (model_cache.py:200-203); load_torch_file alone returns it"
+  },
+  "deliberate_differences_recorded": [
+    "load order: in the original a gemma3 GGUF load updates the shared L3 map in place (pig.py:507-509), so later llama, qwen2, qwen3, qwen2vl, qwen3vl, mistral3 and dog loads in the same process rename ffn_norm to pre_feedforward_layernorm instead of post_attention_layernorm; the port's rename-only qwen2/qwen3 always use the shipped map (the original's result in a fresh process). Evidence planned: Tier A A10, Tier B B9. Recorded like the dtype leak (plan, MERVYN m_b7ee271e32); acceptance as final is MERVYN's call."
+  ],
+  "narrowings_recorded": [
+    "cat GGUF where the host listing shows a '*tokenizer*.safetensors' file in the same relative directory under ANY text_encoders root: refused (fail closed), although the original only looks in the GGUF's own directory; a listing error also refuses",
+    "qwen2vl/qwen3vl with no *mmproj*.gguf pair and below 65536 token rows: the original only renames; the port refuses at any size (mmproj pair lookup not ported)"
+  ],
+  "r6_change": {
+    "what": [
+      "gguf_state.build_text_table(reader, cat_pair_absent=False): qwen2/qwen3 rename-only below 65536 token rows (PRISTINE_L3, a snapshot of the shipped map taken at import); qwen2/qwen3 at or above 65536 rows refused with their own text; cat loaded unchanged only when cat_pair_absent is True, otherwise refused with its own text",
+      "gguf_state.gguf_text_state(..., cat_pair_absent=None): asks the async callable only for a 'cat' file",
+      "nodes.tokenizer_pair_absent: assets.list('text_encoders', prefix=dirname(name), recursive=False); any sibling whose lower-cased basename ends with '.safetensors' and contains 'tokenizer' (or a non-string entry, or a listing error) counts as a possible pair (fail closed)"
+    ],
+    "evidence": [
+      "pig.py:499-513 (L3 rename; token_embd >= 64 * 1024 rows dequantized to fp16 at :501/:506)",
+      "pig.py:507-509 (gemma3 updates arrays[L3] in place with G3)",
+      "pig.py:533-536 and gguf_connector/mmj.py:18-33 (cat pair)",
+      "core a2 d1a9259 comfy_api/latest/_sdk.py:2616-2648 (assets.list for non-managed folders: get_filename_list, prefix filter, non-recursive drops names with a further /)"
+    ],
+    "tests": "test r5: ned-calcuis-gguf-differential-20261021-r5 (Tier A A3t/A6/A7/A9/A10, Tier B r6 rows, cat-with-pair refusal and B9)"
+  }
+}
