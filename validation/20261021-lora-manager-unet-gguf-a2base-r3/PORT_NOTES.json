@@ -1,0 +1,32 @@
+{
+ "schema": "ned-port-notes/1",
+ "pack": "comfyui-lora-manager",
+ "key": "x2dcaf6a",
+ "base": "corpus main d6adf20c, LoRA Manager rev 7 (v2/secure_unet_node.py unchanged since rev 6)",
+ "port": "Unet Loader GGUF port r1 (MERVYN m_4d28ff3dee item 1)",
+ "files": {
+  "v2/secure_unet_node.py": "GGUF branch added (validator + execute); schema and signatures unchanged (STATIC_PRECHECKS.json)",
+  "v2/secure-nodes.json": "Unet Loader row: permissions ['models'] -> ['models', 'assets'] (read-only existence check, as the Checkpoint Loader row); no other byte changes"
+ },
+ "original": "pristine py/nodes/unet_loader.py UNETLoaderLM.load_unet / _load_gguf_unet (lines 182-304) with py/nodes/gguf_import_helper.py",
+ "mapping": {
+  "execute .gguf branch": "models.load_gguf_model(name) = the same machinery as _load_gguf_unet: the host's fixed ComfyUI-GGUF module (gguf_sd_loader, GGMLOps, load_diffusion_model_state_dict with metadata, GGUFModelPatcher.clone); deployed _sdk.py 4229-4328",
+  "weight_dtype on the GGUF branch": "original: ops.Linear.dequant_dtype = getattr(torch, weight_dtype, None) (unet_loader.py:271-277) = None for all four options (torch has no fp8_* attributes); patch dtype and patch_on_device untouched -> the verb's defaults",
+  "load failure wrapper": "RuntimeError(\"Failed to load GGUF diffusion model '<name>': <error>\") as unet_loader.py:300-304; PermissionError passes through unwrapped",
+  "queue validation (.gguf)": "original: membership in the scanner's static list (files that exist, extensions lower-cased); port: _logical(name) + assets.exists('diffusion_models', name), the same roots the host's unet_gguf catalogue uses",
+  "standard branch": "unchanged from rev 6/7"
+ },
+ "recorded_differences": [
+  "The returned model has no cached_patcher_init reload factory (the original sets (_reload_gguf_unet, (path, weight_dtype))).",
+  "Patch dtype is always the default; the original reads the shared GGMLOps.Linear class, which an earlier ComfyUI-GGUF Advanced load can change (Tier U row D:patch_dtype_leak).",
+  "An unknown GGUF name is refused by an existence check in the diffusion-model roots, not by the scanner list; LoRA Manager's extra scanner roots are not searched (existing multi-root gap).",
+  "An upper-case '.GGUF' name is refused at queue time; the original lists it (its scanner lower-cases extensions) and then fails at run time in the standard loader.",
+  "Error texts name the logical file, never a host path (the original's 'Could not detect model type ...: <absolute path>').",
+  "The text after the shared wrapper carries the host exception's type name, e.g. \"Failed to load GGUF diffusion model 'x.gguf': ValueError: Unexpected architecture type ...\" where the original has no 'ValueError: '. The secure transport reports a host failure to the guest as '<Type>: <message>' (backend a1 transport/wire.py:157); stripping it would tie the port to a non-public transport attribute (Tier U r2 attempt 2 diagnosis)."
+ ],
+ "live": [
+  "Fails on the live service until platform request #12 ships: no native ComfyUI-GGUF custom node and no gguf package there (load_gguf_model refuses, deployed _sdk.py 3636-3678).",
+  "The UI dropdown (/models/diffusion_models) does not list .gguf files (platform request #7); GGUF names reach the node from saved workflows or the API."
+ ],
+ "test": "test r1 Tier U (bounded construction-call parity, queue rows, A0 row, 4 mutants); no model built, sandbox off"
+}

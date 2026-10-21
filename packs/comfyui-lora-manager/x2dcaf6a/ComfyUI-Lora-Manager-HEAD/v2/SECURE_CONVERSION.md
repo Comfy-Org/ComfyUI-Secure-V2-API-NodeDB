@@ -1,10 +1,12 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: 21 of 21 converted; 18 tested (scoped), 1 converted but untested/partly tested,
-> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
-> Status line: source 21/21 · scoped runtime 18/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
+> Nodes: 21 of 21 converted; 19 tested (scoped), 1 converted but untested/partly tested,
+> 1 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> Status line: source 21/21 · scoped runtime 19/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
 > **Live: Load Image Metadata fails on every image (revision 7, 2026-10-20).** The live service has no `piexif`, which the
 > node imports on every run, and this pack declares no dependency profile. No other node imports a package the live
 > service lacks. See "Revision 7".
+> **Revision 8 (2026-10-21):** the Unet Loader's GGUF branch is ported and tested (scoped) on the a2 base; on the live
+> service it still fails until the host ships native ComfyUI-GGUF and the gguf package. See "Revision 8".
 
 # LoRA Manager — Secure V2 conversion (in progress)
 
@@ -19,6 +21,38 @@
   pinned SDK (Core `6257422`, backend `745b88f`) on 2026-10-15: 21/21 equal to the expected rows.
 - `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
   (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
+
+## Revision 8 (2026-10-21): Unet Loader GGUF branch
+
+Revision 8 ports the Unet Loader's GGUF branch and changes nothing else. The `.gguf` branch now calls the public
+`models.load_gguf_model`, which builds the model with the host's fixed ComfyUI-GGUF module exactly as the original
+branch does (`gguf_sd_loader`, `GGMLOps`, `load_diffusion_model_state_dict` with metadata, `GGUFModelPatcher`). The
+original resolves `weight_dtype` with `getattr(torch, weight_dtype, None)`, which is `None` for every option this node
+offers, so the verb's default dequantization is the original's effective behaviour. Load failures keep the original's
+"Failed to load GGUF diffusion model '<name>': ..." wrapper. The queue validator checks a `.gguf` name with a read-only
+`assets.exists` in the diffusion-model roots (core's diffusion-model list holds no GGUF files), so the node gains the
+`assets` permission, as the Checkpoint Loader has.
+
+Evidence (`validation/20261021-lora-manager-unet-gguf-a2base-r3/`): one selected bounded run on the a2 base (deployed core plus the GGML SDK files; the GGUF
+verb is identical to the deployed one), sandbox off, no model built. It shows construction-call parity with the
+original GGUF branch on 3 fixtures (one under all 4 `weight_dtype` values), the same refusal on 2 more, 9 queue-validation
+names, 4 mutants each caught by its intended check, and the manifest row equal to the backend encoders. Both sides used
+the pristine upstream ComfyUI-GGUF loaded as a native custom node. Two earlier attempts failed in the test itself and
+are kept on record.
+
+Recorded deliberate differences (`validation/20261021-lora-manager-unet-gguf-a2base-r3/PORT_NOTES.json`):
+- no `cached_patcher_init` reload factory on the returned model;
+- the patch dtype is always the default (the original reads a shared class that an earlier ComfyUI-GGUF Advanced load
+  can change);
+- an unknown GGUF name is refused by the existence check instead of the scanner list, and LoRA Manager's extra scanner
+  roots are not searched;
+- an upper-case `.GGUF` name is refused at queue time (the original lists it and then fails in the standard loader);
+- error texts name the logical file, never a host path, and the text after the wrapper carries the host exception's
+  type name.
+
+On the live service the GGUF branch still fails: the host has no native ComfyUI-GGUF and no `gguf` package
+(request #12). The node's dropdown (`/models/diffusion_models`) does not list GGUF files, so GGUF names reach the node
+from saved workflows or the API.
 
 ## Revision 7 (2026-10-20, docs only): live dependency status
 
@@ -60,7 +94,7 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Lora Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55); queue validator native-vs-Guest parity 2/2 + permission-denial control | cache acquisition on all paths; opaque metadata; other model branches; frontend |
 | LoRA Text Loader (LoraManager) | tested (scoped) | gVisor workflows (R51/R52/R55) | syntax/library/cache/metadata; frontend |
 | Checkpoint Loader (LoraManager) | tested (scoped) | queue parity 3/3; real SD1.5 + LCM bf16 CPU secure-Guest workflow | extra scanner roots; base-model list; installed gVisor workflow |
-| Unet Loader (LoraManager) | partial | queue parity 3/3; real extracted SD1.5 UNet bf16 CPU secure-Guest workflow | GGUF path not implemented (rejected clearly; the live service also lacks the host-installed ComfyUI-GGUF and `gguf` package the SDK GGUF verb needs); installed gVisor workflow |
+| Unet Loader (LoraManager) | tested (scoped) | queue parity 3/3; real extracted SD1.5 UNet bf16 CPU secure-Guest workflow; GGUF branch (revision 8): a2 base: construction-call parity on 3 GGUF fixtures (one under all 4 weight_dtypes) and the same refusal on 2 more, queue validation (9 names), 4 mutants caught; deliberate differences per PORT_NOTES; fails on live until the host ships native ComfyUI-GGUF + gguf (request #12) | installed gVisor workflow; a real GGUF model load; LoRA Manager's extra scanner roots |
 | TriggerWord Toggle (LoraManager) | tested (scoped) | gVisor workflow (R6) | lifecycle/restore/state; transport identity |
 | Lora Stacker (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 8 cases, strict queue validator 28, metadata lifecycle 8 phases, stale-file deletion 2 | multi-root order; installed queue; frontend |
 | Lora Stack Combiner (LoraManager) | tested (scoped) | gVisor workflows (R6/R7) | tuple transport/identity; editor lifecycle |
@@ -100,7 +134,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | WebP workflow metadata in Save Image | PENDING — not yet supported, needs the `webp_workflow_json` SDK argument |
 | CLIP hooks in Create Hook LoRA | PENDING — not yet supported, needs the SetClipHooks host operation |
 | Startup and multi-root catalogue parity (initial scan readiness, root order) | PENDING — not yet supported, needs a host-owned catalogue lifecycle contract |
-| GGUF UNet loading | PENDING — dependency-gated until the upstream path is shown to work in the runtime with a small GGUF; the SDK verb also needs a host-installed ComfyUI-GGUF and the `gguf` package, which the live service lacks |
+| GGUF UNet loading on the live service | PENDING — ported and tested (scoped) in revision 8; the live service lacks the host-installed ComfyUI-GGUF and the `gguf` package the SDK GGUF verb needs (request #12) |
 | Third-party dependencies on the live service (`piexif` for Load Image Metadata; `brotli` for compressed AVIF brob) | PENDING — this pack declares no dependency profile and the live service provides neither; Load Image Metadata fails there (Revision 7) |
 | Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet |
 
@@ -112,7 +146,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 - Debug Metadata and Metadata Overwrite with wired model/sampler fields.
 - Multi-root ordering for Stacker, Randomizer, Cycler and Save Image.
 - LoRA Syntax → Path additional parser cases and installed workflow.
-- Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed).
+- Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed); a real GGUF UNet load (revision 8 is construction-call parity).
 - Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 - Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
 - Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. The live service has no `piexif`, so Load Image Metadata fails there until a declared profile is admitted and provided (Revision 7).
@@ -127,7 +161,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | Lora Loader (LoraManager) | assets, storage, raw |
 | LoRA Text Loader (LoraManager) | assets, storage, raw |
 | Checkpoint Loader (LoraManager) | models, assets (read-only existence check) |
-| Unet Loader (LoraManager) | models |
+| Unet Loader (LoraManager) | models, assets (read-only existence check of a GGUF name) |
 | TriggerWord Toggle (LoraManager) | (none) |
 | Lora Stacker (LoraManager) | assets, storage, raw |
 | Lora Stack Combiner (LoraManager) | (none) |
@@ -158,7 +192,8 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 - `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
 - `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`; `secure_routes/` and `held-registration/`: unregistered route work.
 - Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
-  their queue validators check the selected name, because remote dropdowns carry no static options.
+  their queue validators check the selected name, because remote dropdowns carry no static options. GGUF names, which
+  `/models/diffusion_models` does not list, are checked with a read-only `assets.exists` in the diffusion-model roots.
 - `secure_full_library_nodes.py`, `secure_pool_editor.py`, `secure_text_nodes.py`: in-progress modules, not registered.
 - `secure-nodes.json`: the node manifest, generated by the backend manifest generator (21 nodes, web directory
   `secure_web`, Python `>=3.13,<3.14`, no routes registered yet).
