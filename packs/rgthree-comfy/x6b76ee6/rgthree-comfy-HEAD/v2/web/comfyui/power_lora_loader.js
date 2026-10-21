@@ -3,9 +3,9 @@ import { NodeTypesString } from "./constants.js";
 import { helpMenuItem } from "./base_node.js";
 import { RgthreeBaseWidget, mountRgthreeWidget } from "./utils_widgets.js";
 import { drawInfoIcon, drawNumberWidgetPart, drawRoundedRectangle, drawTogglePart, drawWidgetButton, fitString, } from "./utils_canvas.js";
-import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
+import { rgthreeApi } from "../common/rgthree_api.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
-import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
+import { LORA_INFO_SERVICE } from "../common/model_info_service.js";
 import { RgthreeLoraInfoDialog } from './dialog_info.js';
 
 // CONVERTED — all three of the blockers that decided the last refusal are closed.

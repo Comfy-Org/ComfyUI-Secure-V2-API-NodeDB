@@ -1,6 +1,6 @@
 import { comfy } from '/comfy/api/v2.js';
 import { whereSupported } from "./sandbox_limits.js";
-import { tryToGetWorkflowDataFromEvent } from '../../rgthree/common/utils_workflow.js';
+import { tryToGetWorkflowDataFromEvent } from '../common/utils_workflow.js';
 import { configurePowerLoraValues } from './power_lora_loader.js';
 import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
 

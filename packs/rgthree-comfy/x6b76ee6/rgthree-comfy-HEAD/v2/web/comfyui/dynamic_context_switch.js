@@ -1,5 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
-import { debounce } from "../../rgthree/common/shared_utils.js";
+import { debounce } from "../common/shared_utils.js";
 import { connectedInputNodes, nodeKey } from "./base_any_input_connected_node.js";
 import { NodeTypesString } from "./constants.js";
 import { ensureContextOutput, prepareDynamicContextNode, releaseDynamicContextNode } from "./dynamic_context_base.js";

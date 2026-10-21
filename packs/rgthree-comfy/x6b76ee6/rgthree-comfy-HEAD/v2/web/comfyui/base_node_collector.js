@@ -7,10 +7,14 @@ import { PassThroughFollowing, connectedInputNodes, defineAnyInputConnectedNode,
 // The same node reaching a second slot is refused, and so is a reroute whose own source
 // is already connected — the case that made a node fed through a reroute count twice.
 // Reconnecting a node to the slot it already occupies is allowed, as before.
+// MISSING (F17 connection policy): the veto is not registered in the sandbox; see
+// base_any_input_connected_node.js. `defineAnyInputConnectedNode` no longer reads
+// `beforeConnect`, so this rule, and the Relay's and Repeater's rules it wraps, do not
+// reach `anyInputConnectionRule` either.
 //
 // DROPPED: the two `logger.debugParts(...)` lines that explained a refusal in the
-//   console. They went through `rgthree.newLogSession`, punted with rgthree.js; the
-//   refusal itself is unchanged. Cosmetic.
+//   console. They went through `rgthree.newLogSession`, punted with rgthree.js. The
+//   refusal logic below is still the original's; it is just not registered. Cosmetic.
 export function defineCollectorNode(config) {
     const { beforeConnect } = config;
     return defineAnyInputConnectedNode({

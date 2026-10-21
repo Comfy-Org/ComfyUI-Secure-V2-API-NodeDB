@@ -1,5 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
-import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
+import { rgthreeApi } from "../common/rgthree_api.js";
 
 // `comfy.ui.showMenu` is the published free-floating menu, so all three pickers
 // convert. Three ContextMenu options go and none is a capability:

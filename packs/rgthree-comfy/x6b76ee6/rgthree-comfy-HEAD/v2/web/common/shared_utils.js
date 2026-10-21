@@ -367,7 +367,7 @@ export class Broadcaster extends EventTarget {
     openWindowAndWaitForMessage(rgthreePath, windowName) {
         const id = this.getId();
         this.queue[id] = getResolver();
-        const win = window.open(`/rgthree/${rgthreePath}#broadcastLoadMsgId=${id}`, windowName);
+        const win = window.open(new URL(`../${rgthreePath}#broadcastLoadMsgId=${id}`, import.meta.url).href, windowName);
         return { window: win, promise: this.queue[id].promise };
     }
     onMessage(e) {

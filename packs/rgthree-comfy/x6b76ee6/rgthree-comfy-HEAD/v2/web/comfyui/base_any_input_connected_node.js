@@ -1,5 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
-import { debounce } from "../../rgthree/common/shared_utils.js";
+import { debounce } from "../common/shared_utils.js";
 import { whereSupported } from "./sandbox_limits.js";
 
 // The shared body of every rgthree node that grows an input as the last one fills:
@@ -23,11 +23,15 @@ import { whereSupported } from "./sandbox_limits.js";
 // exactly that, which is what `pinWidth` below does — and it makes the
 // `loadedGraphNode` hook that seeded `_tempWidth` unnecessary rather than lost.
 //
-// The output-side veto is not a gap after all: `b.onBeforeConnect` installs
-// `onConnectOutput` as well as `onConnectInput`, and `event.side` distinguishes them.
-// The loop guard below ("a situation that could create a time paradox") refuses in both
-// directions again, and the Relay and Repeater state their output restrictions the same
-// way.
+// MISSING (F17 connection policy): connection filtering. The original refused links in
+// onConnectInput and onConnectOutput: the loop guard below ("a situation that could
+// create a time paradox"), from either end, and each node's own `beforeConnect` rule
+// (Node Collector, Node Combiner, Mute / Bypass Repeater and Relay). The canvas reads
+// that answer synchronously, so `b.onBeforeConnect` is not available to a sandboxed
+// pack. The rules are not registered (no refusal and no notice). They are kept,
+// unregistered, as `anyInputConnectionRule` for the host's declarative connection policy.
+// So a link that closes a ring is now accepted. `walk` below stops at the nodes it has
+// already entered, so a ring of pass-through nodes no longer overflows the stack.
 //
 // REFUSED, not a gap: replacing core's connection routing for the whole document.
 //   `LGraphNode.prototype.connectByType` was patched at module load so that dropping
@@ -87,7 +91,16 @@ function linksOf(slot, isOutput) {
     const link = slot.link();
     return link ? [link] : [];
 }
-function walk(scope, startId, isOutput, current, slotIndex, following) {
+// `visited` holds every pass-through node this walk has entered, starting with the node it
+// began from. The original kept no such set: its "time paradox" guard refused any link
+// that would close a ring, so a walk never came back to a node it had entered. That guard
+// needs a host connection policy (F17), so a ring can now be built (a Reroute and a Node
+// Collector wired into each other), and without the set the walk recursed until the
+// worker's stack overflowed. With it, each pass-through node is entered once and the node
+// the walk began from is never one of its own results. On a graph without rings the result
+// and its order are the original's: a node reached a second time there has already
+// contributed everything behind it.
+function walk(scope, startId, isOutput, current, slotIndex, following, visited = new Set([startId])) {
     const found = [];
     if (current.id !== startId && !shouldPassThrough(current, following)) {
         return found;
@@ -107,17 +120,18 @@ function walk(scope, startId, isOutput, current, slotIndex, following) {
     }
     for (const link of links) {
         const peer = scope.node(isOutput ? link.targetNodeId : link.sourceNodeId);
-        if (!peer || found.some((node) => node.id === peer.id)) {
+        if (!peer || peer.id === startId || found.some((node) => node.id === peer.id)) {
             continue;
         }
         found.push(peer);
-        if (!shouldPassThrough(peer, following)) {
+        if (!shouldPassThrough(peer, following) || visited.has(peer.id)) {
             continue;
         }
+        visited.add(peer.id);
         // The original widened the follow mode to ALL past the first hop, by passing
         // `undefined` on the recursive call. Kept: a REROUTE_ONLY walk resolves
         // differently otherwise.
-        for (const deeper of walk(scope, startId, isOutput, peer, undefined, PassThroughFollowing.ALL)) {
+        for (const deeper of walk(scope, startId, isOutput, peer, undefined, PassThroughFollowing.ALL, visited)) {
             if (!found.some((node) => node.id === deeper.id)) {
                 found.push(deeper);
             }
@@ -240,12 +254,36 @@ function stabilizeInputs(node, following) {
     }
 }
 /**
+ * The family's connection filtering, as the original's onConnectInput/onConnectOutput
+ * applied it: the loop guard, then the node's own `beforeConnect` rule. MISSING (F17
+ * connection policy): nothing registers it in the sandbox (see the top of this file).
+ * Nothing passes it a node's own rule either: `defineAnyInputConnectedNode` no longer reads
+ * `config.beforeConnect`, so adopting F17 means threading each node's rule through again.
+ * The original's `alert` is the host's notice here, because a worker has no `alert`; the
+ * answer is unchanged.
+ */
+export function anyInputConnectionRule(node, event, beforeConnect) {
+    // `onConnectInput` refused a link from something already downstream;
+    // `onConnectOutput` refused one into something already upstream. Same loop
+    // from either end, and `event.side` says which end this is.
+    const wouldLoop = event.side === "input"
+        ? connectedOutputNodes(node, { filtered: false })
+        : connectedInputNodes(node, { filtered: false });
+    if (event.peerNodeId && wouldLoop.some((n) => n.id === event.peerNodeId)) {
+        comfy.commands.notify({ severity: "warn", summary: TIME_PARADOX });
+        return false;
+    }
+    return beforeConnect ? beforeConnect(node, event) : true;
+}
+/**
  * Assembles a node definition with the base class's behaviour: one trailing `*` input
- * that grows as it fills, names taken from the connected nodes, the cycle guard, and a
- * stabilization pass driven by connection and mode/title changes instead of a poll.
+ * that grows as it fills, names taken from the connected nodes, and a stabilization pass
+ * driven by connection and mode/title changes instead of a poll. The cycle guard and a
+ * `beforeConnect` rule are not registered (MISSING, F17; see `anyInputConnectionRule`),
+ * and `config.beforeConnect` is not read.
  */
 export function defineAnyInputConnectedNode(config) {
-    const { type, title = type, outputs = [], following = PassThroughFollowing.NONE, handleLinkedNodes, beforeConnect, onCreated, onConfigured, onConnectionsChanged, onPropertyChanged, onRemoved, menuItems = [], } = config;
+    const { type, title = type, outputs = [], following = PassThroughFollowing.NONE, handleLinkedNodes, onCreated, onConfigured, onConnectionsChanged, onPropertyChanged, onRemoved, menuItems = [], } = config;
     function stabilize(node) {
         if (node.isDeleted) {
             return;
@@ -260,19 +298,8 @@ export function defineAnyInputConnectedNode(config) {
         for (const item of menuItems) {
             whereSupported(type, `menu item "${typeof item.label === "string" ? item.label : "(dynamic label)"}"`, () => b.addMenuItem(item));
         }
-        whereSupported(type, "connection filtering (onBeforeConnect: loop guard and per-node rules)", () => b.onBeforeConnect((node, event) => {
-            // `onConnectInput` refused a link from something already downstream;
-            // `onConnectOutput` refused one into something already upstream. Same loop
-            // from either end, and `event.side` says which end this is.
-            const wouldLoop = event.side === "input"
-                ? connectedOutputNodes(node, { filtered: false })
-                : connectedInputNodes(node, { filtered: false });
-            if (event.peerNodeId && wouldLoop.some((n) => n.id === event.peerNodeId)) {
-                alert(TIME_PARADOX);
-                return false;
-            }
-            return beforeConnect ? beforeConnect(node, event) : true;
-        }));
+        // MISSING (F17 connection policy): no `b.onBeforeConnect` here; see
+        // `anyInputConnectionRule`.
     });
     return comfy.defs.define({
         type,

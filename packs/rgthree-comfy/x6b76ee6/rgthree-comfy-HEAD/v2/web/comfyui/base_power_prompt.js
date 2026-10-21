@@ -1,5 +1,4 @@
 import { comfy } from '/comfy/api/v2.js';
-import { whereSupported } from "./sandbox_limits.js";
 
 const SERVER_WIDGET_PREFIXES = ['insert_', 'target_', 'crop_', 'values_'];
 const states = new Map();
@@ -239,12 +238,19 @@ export function extendPowerPrompt(builder) {
         const state = states.get(stateKey(node));
         if (state) refreshCombos(state, comfy.defs.get(type) ?? state.def);
     });
-    whereSupported(type, "output connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
-        if (event.side !== 'output') return;
-        const output = node.outputs.at(event.index);
-        return !output || outputEnabled(node, output.type.toLowerCase());
-    }));
+    // MISSING (F17 connection policy): refusing a link from a disabled output. The
+    // original vetoed it in onConnectOutput, whose answer the canvas reads
+    // synchronously, so `onBeforeConnect` is not available to a sandboxed pack. It is
+    // not registered: no refusal and no notice. A disabled output is still drawn grey
+    // (stabilizeOutputs). The rule is kept, unregistered, as
+    // `powerPromptConnectionRule` for the host's declarative connection policy.
     builder.onRemoved(detach);
+}
+
+export function powerPromptConnectionRule(node, event) {
+    if (event.side !== 'output') return;
+    const output = node.outputs.at(event.index);
+    return !output || outputEnabled(node, output.type.toLowerCase());
 }
 
 comfy.defs.onRefreshed(() => {

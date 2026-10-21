@@ -4,9 +4,9 @@ import { comfy } from '/comfy/api/v2.js';
 // services/config_service.js maps the surviving options to host-owned V2 settings;
 // this dialog edits that same data and omits switches for features the prior frontend
 // conversion explicitly retired.
-import { RgthreeDialog } from "../../rgthree/common/dialog.js";
-import { createElement as $el, queryAll as $$ } from "../../rgthree/common/utils_dom.js";
-import { checkmark, logoRgthree } from "../../rgthree/common/media/svgs.js";
+import { RgthreeDialog } from "../common/dialog.js";
+import { createElement as $el, queryAll as $$ } from "../common/utils_dom.js";
+import { checkmark, logoRgthree } from "../common/media/svgs.js";
 import { rgthree } from "./rgthree.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 var ConfigType;
