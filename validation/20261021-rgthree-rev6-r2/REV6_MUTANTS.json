@@ -1,0 +1,256 @@
+{
+ "check": "rev6_unit_tests.mjs mutation check",
+ "status": "PASS",
+ "mutants": 14,
+ "killed": 14,
+ "rows": [
+  {
+   "mutant": "M1 changedNode returns the event's copy",
+   "file": "comfyui/base_node.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 Label, flattened payload (host r3)",
+    "rev6 Label, flattened payload from a subgraph"
+   ],
+   "exit": 1,
+   "failed": [
+    "C onNodeChanged: rev6 Label, flattened payload (host r3): refresh reads the root graph handle, no throw",
+    "C onNodeChanged: rev6 Label, flattened payload from a subgraph: resolved in that subgraph, not the root",
+    "C onNodeChanged: rev6 Label: a node that is gone is skipped",
+    "F relay/repeater: r2 Repeater, flattened payload (host r3): its mode goes to the node wired into it",
+    "F relay/repeater: r2 Relay, flattened payload (host r3), nothing wired in: its mode goes to its Repeater"
+   ],
+   "killed_targets": [
+    "rev6 Label, flattened payload (host r3)",
+    "rev6 Label, flattened payload from a subgraph"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M2 every-node registration back to one /./ pattern",
+   "file": "comfyui/base_node.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 guest: each of the 12 own types gets the queue items exactly once"
+   ],
+   "exit": 1,
+   "failed": [
+    "A every-node: rev6 guest: each of the 12 own types gets the queue items exactly once",
+    "A every-node: rev6 guest: only the opt-in Power Conductor names stay pending (not defined here)",
+    "A every-node: rev6 label.js evaluated with its real imports (guest model): Label gets the queue items once, 0 errors"
+   ],
+   "killed_targets": [
+    "rev6 guest: each of the 12 own types gets the queue items exactly once"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M3 pattern no longer leaves the pack's own types out",
+   "file": "comfyui/base_node.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 in-process: each own type gets the queue items exactly once (no double application)"
+   ],
+   "exit": 1,
+   "failed": [
+    "A every-node: rev6 in-process: each own type gets the queue items exactly once (no double application)",
+    "A every-node: rev6 in-process: each own type gets the drop hooks exactly once"
+   ],
+   "killed_targets": [
+    "rev6 in-process: each own type gets the queue items exactly once (no double application)"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M4 label.js no longer imports the registration modules",
+   "file": "comfyui/label.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 label.js evaluated with its real imports (guest model)"
+   ],
+   "exit": 1,
+   "failed": [
+    "A every-node: rev6 label.js evaluated with its real imports (guest model): Label gets the queue items once, 0 errors"
+   ],
+   "killed_targets": [
+    "rev6 label.js evaluated with its real imports (guest model)"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M5 Power Conductor ignores config-change",
+   "file": "comfyui/power_conductor.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 guest, stored on: registers once, when the stored value arrives",
+    "rev6 guest, stored value after onReady: registers once, on arrival"
+   ],
+   "exit": 1,
+   "failed": [
+    "B power conductor: rev6 guest, stored on: registers once, when the stored value arrives",
+    "B power conductor: rev6 guest, stored value after onReady: registers once, on arrival",
+    "B power conductor: rev6 guest, user turns it on later: registers once"
+   ],
+   "killed_targets": [
+    "rev6 guest, stored on: registers once, when the stored value arrives",
+    "rev6 guest, stored value after onReady: registers once, on arrival"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M6 config_service: declare without onChange",
+   "file": "comfyui/services/config_service.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 guest, stored on: registers once, when the stored value arrives",
+    "rev6 config-change guest"
+   ],
+   "exit": 1,
+   "failed": [
+    "B power conductor: rev6 guest, stored on: registers once, when the stored value arrives",
+    "B power conductor: rev6 guest, stored value after onReady: registers once, on arrival",
+    "B power conductor: rev6 config-change guest: a stored value that differs from the default is announced once; an equal one is not"
+   ],
+   "killed_targets": [
+    "rev6 guest, stored on: registers once, when the stored value arrives",
+    "rev6 config-change guest"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M7 config_service: no de-duplication",
+   "file": "comfyui/services/config_service.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 config-change in-process"
+   ],
+   "exit": 1,
+   "failed": [
+    "B power conductor: rev6 config-change in-process: one event per change although declare.onChange and the watcher both fire"
+   ],
+   "killed_targets": [
+    "rev6 config-change in-process"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M8 Collector does not claim the upgrade",
+   "file": "comfyui/node_collector.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 in-process: one Collector, all 3 incoming",
+    "rev6 guest: replace drops inputs 2-3"
+   ],
+   "exit": 1,
+   "failed": [
+    "D node combiner: rev6 in-process: one Collector, all 3 incoming and 2 outgoing links kept, title unmarked, Combiner gone",
+    "D node combiner: rev6 guest: replace drops inputs 2-3 host-side, the claim re-makes them; title applied on confirmation",
+    "D node combiner: rev6 in-process, awkward input names (empty, \"Output\"): every link on its own index",
+    "D node combiner: rev6 guest, awkward input names: every link on its own index",
+    "D node combiner: r2 guest: a restored Collector pasted during the upgrade is left alone; the replacement takes the claim"
+   ],
+   "killed_targets": [
+    "rev6 in-process: one Collector, all 3 incoming",
+    "rev6 guest: replace drops inputs 2-3"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M10 Combiner inputs keep their names for replace",
+   "file": "comfyui/node_collector.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 in-process, awkward input names"
+   ],
+   "exit": 1,
+   "failed": [
+    "D node combiner: rev6 in-process, awkward input names (empty, \"Output\"): every link on its own index",
+    "D node combiner: rev6 guest, awkward input names: every link on its own index"
+   ],
+   "killed_targets": [
+    "rev6 in-process, awkward input names"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M11 Relay handler uses the event's copy",
+   "file": "comfyui/node_mode_relay.js",
+   "occurrences": 1,
+   "targets": [
+    "r2 Relay, flattened payload (host r3)"
+   ],
+   "exit": 1,
+   "failed": [
+    "F relay/repeater: r2 Relay, flattened payload (host r3), nothing wired in: its mode goes to its Repeater"
+   ],
+   "killed_targets": [
+    "r2 Relay, flattened payload (host r3)"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M12 Repeater handler uses the event's copy",
+   "file": "comfyui/node_mode_repeater.js",
+   "occurrences": 1,
+   "targets": [
+    "r2 Repeater, flattened payload (host r3)"
+   ],
+   "exit": 1,
+   "failed": [
+    "F relay/repeater: r2 Repeater, flattened payload (host r3): its mode goes to the node wired into it"
+   ],
+   "killed_targets": [
+    "r2 Repeater, flattened payload (host r3)"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M13 a restored Collector takes the claim",
+   "file": "comfyui/node_collector.js",
+   "occurrences": 1,
+   "targets": [
+    "r2 guest: a restored Collector pasted during the upgrade is left alone"
+   ],
+   "exit": 1,
+   "failed": [
+    "D node combiner: r2 guest: a restored Collector pasted during the upgrade is left alone; the replacement takes the claim"
+   ],
+   "killed_targets": [
+    "r2 guest: a restored Collector pasted during the upgrade is left alone"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M14 base onCreated drops its event",
+   "file": "comfyui/base_any_input_connected_node.js",
+   "occurrences": 1,
+   "targets": [
+    "r2 base onCreated passes its event"
+   ],
+   "exit": 1,
+   "failed": [
+    "D node combiner: r2 base onCreated passes its event to the node's own onCreated"
+   ],
+   "killed_targets": [
+    "r2 base onCreated passes its event"
+   ],
+   "status": "KILLED"
+  },
+  {
+   "mutant": "M9 queue.run without the id fallback",
+   "file": "comfyui/menu_queue_node.js",
+   "occurrences": 1,
+   "targets": [
+    "rev6 guest: handles are refused (DataCloneError)"
+   ],
+   "exit": 1,
+   "failed": [
+    "E queue.run: rev6 guest: handles are refused (DataCloneError), the same nodes go again as { id } and are queued"
+   ],
+   "killed_targets": [
+    "rev6 guest: handles are refused (DataCloneError)"
+   ],
+   "status": "KILLED"
+  }
+ ]
+}

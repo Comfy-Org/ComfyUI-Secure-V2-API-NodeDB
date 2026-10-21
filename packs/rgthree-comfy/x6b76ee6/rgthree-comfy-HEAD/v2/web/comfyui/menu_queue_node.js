@@ -1,5 +1,6 @@
 import { comfy } from '/comfy/api/v2.js';
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
+import { extendEveryNodeType } from "./base_node.js";
 // Adds "Queue Selected Output Nodes" to a node's context menu — run only the
 // selected output nodes and whatever feeds them.
 //
@@ -55,12 +56,25 @@ function getGroupOutputNodes(node) {
     });
     return group ? group.nodes().filter(isOutputNode) : [];
 }
+// `RunOptions.nodes` is a list of handles, and that is what is passed first. Sandbox guest
+// c6b97a15 forwards `queue.run` through its generic call channel, which copies arguments
+// by structured clone and cannot copy a handle's methods: the call rejects with a
+// DataCloneError before the host sees it. The host's `run` resolves each node by its `id`
+// alone, so the same nodes are then sent as `{ id }`.
+function runNodes(nodes) {
+    return comfy.queue.run({ nodes }).catch((error) => {
+        if (error?.name !== "DataCloneError") {
+            throw error;
+        }
+        return comfy.queue.run({ nodes: nodes.map((node) => ({ id: node.id })) });
+    }).catch((error) => console.error("[rgthree-comfy] queueing output nodes failed:", error));
+}
 function queueSelectedOutputNodes() {
     const nodes = getSelectedOutputNodes();
     if (!nodes.length) {
         return;
     }
-    void comfy.queue.run({ nodes });
+    void runNodes(nodes);
 }
 // `node` stands in for the pointer only before the first frame, when there is no canvas
 // to measure against; from the command there is no node, and the pointer reading is the
@@ -70,7 +84,7 @@ function queueGroupOutputNodes(node) {
     if (!nodes.length) {
         return;
     }
-    void comfy.queue.run({ nodes });
+    void runNodes(nodes);
 }
 comfy.commands.register({
     id: "rgthree.queueSelectedOutputNodes",
@@ -84,7 +98,8 @@ comfy.commands.register({
     scope: "canvas",
     run: () => queueGroupOutputNodes(undefined),
 });
-comfy.defs.extend(/./, (b) => {
+// Every node type, registered before this pack defines its own (see base_node.js).
+extendEveryNodeType((b) => {
     b.addMenuItem({
         label: "Queue Selected Output Nodes (rgthree)",
         when: () => getSelectedOutputNodes().length > 0,

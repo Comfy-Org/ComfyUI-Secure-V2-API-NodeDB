@@ -75,9 +75,6 @@ const SETTINGS = {
 };
 
 const settingId = (key) => `rgthree.${key}`;
-for (const [key, definition] of Object.entries(SETTINGS)) {
-    comfy.settings.declare({ id: settingId(key), ...definition });
-}
 
 class ConfigService extends EventTarget {
     getConfigValue(key, fallback) {
@@ -101,10 +98,32 @@ class ConfigService extends EventTarget {
 }
 
 export const SERVICE = new ConfigService();
+// The last value announced per key, so a value reported twice is announced once.
+const announced = new Map();
+function announce(key, value) {
+    if (announced.has(key) && Object.is(announced.get(key), value)) {
+        return;
+    }
+    announced.set(key, value);
+    SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
+}
+// A declared setting's own `onChange` hears its value change, and, under a host that
+// answers the stored value after `declare` has returned (sandbox guest c6b97a15), it hears
+// that answer arrive. Until then a read gets the default, so a pack listener that gates on
+// a setting hears the stored value here as a 'config-change'. The service exists before
+// the first `declare`, because a host may call `onChange` from inside it.
+for (const [key, definition] of Object.entries(SETTINGS)) {
+    comfy.settings.declare({
+        id: settingId(key),
+        ...definition,
+        onChange: (value) => announce(key, value),
+    });
+    if (!announced.has(key)) {
+        announced.set(key, comfy.settings.get(settingId(key)));
+    }
+}
 // Changes from the host settings screen and another tab must reach the same
 // pack listeners as changes made through rgthree's own settings dialog.
 for (const key of Object.keys(SETTINGS)) {
-    comfy.settings.onChange(settingId(key), (value) => {
-        SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
-    });
+    comfy.settings.onChange(settingId(key), (value) => announce(key, value));
 }

@@ -1,6 +1,10 @@
 import { comfy } from '/comfy/api/v2.js';
 import { debounce } from "../common/shared_utils.js";
 import { whereSupported } from "./sandbox_limits.js";
+// Imported for their registrations, which every node type must receive before this
+// pack's `define` calls run (extendEveryNodeType in base_node.js).
+import "./menu_queue_node.js";
+import "./feature_import_individual_nodes.js";
 
 // The shared body of every rgthree node that grows an input as the last one fills:
 // Fast Muter, Fast Bypasser, Node Collector, Random Unmuter, Mute/Bypass Repeater and
@@ -327,7 +331,7 @@ export function defineAnyInputConnectedNode(config) {
             if (event.restored && !event.loading) {
                 stabilize(node);
             }
-            onCreated?.(node);
+            onCreated?.(node, event);
         },
         onConfigured(node, data) {
             onConfigured?.(node, data);

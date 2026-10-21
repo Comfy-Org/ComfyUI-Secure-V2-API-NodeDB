@@ -1,8 +1,10 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
-> Revision 5 (2026-10-20) is a source-only candidate. It changes the served frontend layout and has not been browser-tested.
+> Revision 5 (corpus PR #54) changed the served frontend layout. Its browser staging on live host stack r3 passed every
+> row except the required Power Conductor row. Revision 6 (2026-10-21) is a source-only candidate with the pack-side
+> fixes, and has not been browser-tested.
 > Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
 > 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-> These are revision 4's counts. They stay unchanged until a browser test of revision 5 passes.
+> These are revision 4's counts. They stay unchanged until a browser test of revision 6 passes.
 > Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
@@ -10,10 +12,69 @@
 
 ## What this revision contains
 
-- **Base:** revision 4 (corpus PR #17), as on corpus main (`d6271b5c`). Revision 4 was built on revision 3 (PR #13).
-  Revision 2 is kept in the corpus but held from the registry, because its `prompt_service.js` raises DataCloneErrors in
-  the sandbox; revision 3 fixed that.
-- **Changed in revision 5** (candidate, source only). Three pack-side problems from a live browser smoke test on
+- **Base:** revision 5 (corpus PR #54, merged as `bef02a60`). Revision 5 was built on revision 4 (PR #17),
+  and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
+  `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
+- **Changed in revision 6** (candidate, source only). Revision 5 was browser-staged as an overlay on live host stack r3
+  (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). Every row passed except the required Power Conductor
+  row. A static live-readiness audit added four findings. Each finding was checked against the published API
+  (`comfy-api.d.ts`) and the live guest's source.
+  - **Pack fixes:**
+    - **Power Conductor registers when its opt-in resolves.** Revision 5 read the setting once, when the module evaluated.
+      The live guest answers a declared setting with its default until the host returns the stored value, so the type never
+      registered.
+      - Each setting is now declared with an `onChange`, which hears the value change, and on the guest also hears the
+        stored value arrive. `config_service.js` announces it as a `config-change`, once per value.
+      - Power Conductor registers the first time the opt-in reads as on: when the module evaluates, on that event, or at
+        `onReady`. Turning it off still needs a reload.
+      - The same event now also reaches the progress badge and the action-bar buttons when a stored value differs from
+        the default.
+    - **Every-node menu items and drop hooks are registered before the pack defines its own types.** Revision 5 called
+      `comfy.defs.extend(/./, …)` from `menu_queue_node.js` and `feature_import_individual_nodes.js`. Those modules could
+      evaluate after other modules had already defined their types. The host then logged "will not be applied" 14–19
+      times per load, and a Fast Muter lacked both Queue items.
+      - `extendEveryNodeType` (`base_node.js`) names each of the 13 types this pack defines (`DEFINED_NODE_TYPES`,
+        `constants.js`). A pattern that leaves those 13 out covers every other type.
+      - The five modules that call `comfy.defs.define` import both registering modules, so those evaluate first.
+      - Maintenance: any type this pack starts defining later must be added to `DEFINED_NODE_TYPES`. The pending
+        Reroute definition is one example. The module that defines it must also import both registering modules.
+        Otherwise the live guest silently drops that type's every-node items.
+    - **Context Merge Big's menu item reads "Convert To Context Merge"**, which is what it does. Upstream labels it
+      "Convert To Context Switch" (see *Accepted differences*).
+  - **Mitigations for platform gaps.** The platform requests are filed separately.
+    - **`onNodeChanged` listeners resolve the node again.** The published event carries the node as a handle. Host r3
+      sends a plain copy without methods.
+      - Label's title refresh threw `getProperties is not a function`, 3 times per workflow load.
+      - The Repeater's and Relay's mode handlers would throw the same way.
+      - `changedNode(event)` returns the event's handle, or the same node resolved again in `event.graphId`.
+    - **Node Combiner → Node Collector uses `comfy.graph.replace`.** Revision 5 added a Collector and wired it straight away.
+      On the live guest a just-added node is unconfirmed, and its input list reads as empty, so the loop that grew the
+      inputs never ended.
+      - `replace` keeps position, a changed title, colours, mode, shared properties and size. It re-makes the links that
+        have a slot.
+      - A fresh Collector has one input. So the upgrade leaves a claim that the new Collector's `onCreated` takes: it grows
+        the inputs and connects the incoming links that are still unconnected. A Collector restored from saved data (a
+        load, a paste or an undo) never takes the claim.
+      - `replace` matches slots by name before index, so the Combiner's inputs are first named by their index. An input
+        whose source has an empty title, or a title of "Output", would otherwise be mis-wired.
+    - **Queue Selected / Group Output Nodes fall back to `{ id }`.** `RunOptions.nodes` is a list of handles, and those are
+      sent first. The live guest forwards `queue.run` through a structured clone, which cannot copy a handle
+      (DataCloneError). The same nodes are then sent as `{ id }`, which is all the host's `run` reads.
+  - **Not changed** (platform gaps; see the host r3 table under *Blocked behaviours*):
+    - a mounted widget's value handle;
+    - a canvas widget's `widget`, theme and value;
+    - `PropertyChangeEvent.setValue`;
+    - `comfy.ui.showMenu` with `run` callbacks;
+    - a synchronous `comfy.defs.nodeColor`.
+  - **Evidence:** static and module-level; no browser run yet.
+    - Every served module parses (acorn 8.17.0, and V8 in Node 25.9.0). All 73 entry modules link, and the static import
+      graph has no cycle.
+    - Each of the five modules that defines a type has both registering modules in its import closure.
+    - 49 module-level checks on the real modules, including the Relay and Repeater mode handlers, against two host models:
+      in-process semantics and the live guest's, ported from their sources. Each fix is also run on revision 5, as the
+      negative control. All 14 mutants that each undo one fix are caught.
+    - The ring-safe walk's unit test still passes with the revision 6 module.
+- **Changed in revision 5** (published as corpus PR #54). Three pack-side problems from a live browser smoke test on
   host-stack r3:
   - **Served layout.** `secure-nodes.json` declares `web_directory: "web"` (was `web/comfyui`). It no longer declares
     `static_directories` (was `rgthree -> web`): the live host parses that field but never serves it. The host serves
@@ -76,7 +137,8 @@
     - "Convert … Reroutes" (`window.confirm`).
 
     The settings themselves remain editable in the host's settings panel.
-  - **Evidence:** static, plus the module-level walk unit test; no browser run yet:
+  - **Evidence at publication:** static, plus the module-level walk unit test. The browser staging on host r3 came after
+    (see revision 6). Static evidence:
     - every served module parses (acorn 8.17.0, and V8 in Node 25.9.0);
     - all 73 entry modules link;
     - every static and dynamic import and every asset URL resolves to a served file under `/extensions/rgthree-comfy/`,
@@ -140,8 +202,9 @@
   tranche, `display_any.js` (F14), and `media/svgs.js` (worker-safe logo URL).
 - **Held back** (listed as open):
   - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
-    pass their tests, but the deployed frontend does not yet carry S01–S03. A combined S01–S04 frontend patch against the
-    deployed sources is in preparation.
+    pass their tests, and their frontend changes are live (served frontend since 2026-10-20 09:06Z). Still missing: S02's
+    guest relay (2 of its 3 `guest.mjs` hunks are absent from live guest `c6b97a15`) and the pack side
+    (`connection_layout.js`, `reroute.js`).
   - The optional Dynamic Context backend, which waits on the repeated-output API.
 - **Resolved since revision 1:** the startup callback error (`comfy.defs.onRefreshed` inside the sandbox). The host fix is
   deployed and passed browser acceptance on 2026-10-15: no DataCloneError at login, and a refresh reaches the pack's
@@ -165,7 +228,7 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | Node id | Disposition | Evidence or gap |
 | --- | --- | --- |
 | `KSampler Config (rgthree)` | tested (scoped) | Backend native cases pass; no custom frontend. |
-| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. Revision 5 moves the load path of its grammar (`common/py_parser.js`); the browser smoke test's required check 9 covers that. |
+| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. Revision 5 moved the load path of its grammar (`common/py_parser.js`). On host r3 the grammar loads from the new path and the parser runs. The type did not register with the opt-in on; revision 6 fixes that (untested). Blocked on host r3: its code box needs the mounted widget's value handle, which the guest does not pass. |
 | `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
 | `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 | `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
@@ -176,7 +239,7 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 | `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
-| `Label (rgthree)` | converted, partly tested | Browser: Classic 7/9 edits persist, Vue 8/9. The remaining focus race is a host renderer fix, still pending. |
+| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6 resolves the node again (untested). |
 | `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 | `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
@@ -186,7 +249,7 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 | `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) and F01 are open. |
@@ -197,11 +260,11 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
 | `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
 | `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Otherwise untested. F01 is open. |
-| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Otherwise untested. F01 is open. |
+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
 | `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
-| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. Legacy node. F01 is open. |
-| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). They are not yet all in the deployed frontend. F05 and F06 are open. |
+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. Otherwise untested. Legacy node. F01 is open. |
+| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
 | `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Missing: F17 connection policy — refusing another Dynamic Context's context output on a non-base input. |
 | `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 
@@ -271,6 +334,9 @@ replacement or is listed as *not yet* with its prerequisite. Line numbers refer 
 - **SDXL Power Prompt - Simple / Negative.** With CLIP width and height set, v2 returns the conditioning that the original
   computes with its intended (pre-V3) SDXL encode. On current Core the original's call fails and returns no conditioning.
   With an SD1 CLIP, v2 falls back to the plain encode described by the original's own log message.
+- **Context Merge Big's menu label** (revision 6). The original labels the item "Convert To Context Switch"
+  (`src_web/comfyui/context.ts:418`), but it converts the node to Context Merge. Every other Context type's item names its
+  own big or small form. v2 labels it "Convert To Context Merge"; the conversion is unchanged.
 
 ## Blocked behaviours (missing host capability, not refused)
 
@@ -291,6 +357,21 @@ Each of these needs a host capability that does not exist yet; none is a refused
 | Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
 | Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
 | Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
+
+The published API declares the following, and the live sandbox guest (`c6b97a15`) does not provide it yet. Each was found
+in the browser staging of revision 5 or in the static live-readiness audit. Platform requests are filed; the pack code
+follows the published API and needs no change when the guest catches up.
+
+| Behaviour on host r3 | Needs (published API) | Nodes |
+| --- | --- | --- |
+| A mounted widget's stored value: the code and text boxes render no value | `MountDef.render(container, value)` with `MountedValue`, and `defaultValue` / `serialize` honoured | Power Conductor, Power Puter, Power Primitive (multiline value), Display Any, Display Int, Seed (last-seed box) |
+| A canvas widget's handle, palette and value: setting its height, reading its value, drawing in theme colours | `CanvasHandle.widget`; `CanvasDef.draw(context, size, theme, value)` | Power Lora Loader rows, Power Puter output chips, Image Comparer |
+| Correcting a property as it is edited (clamping, normalising) | `PropertyChangeEvent.setValue` / `reject` | Seed (`randomMax`, `randomMin`), Fast Actions Button (shortcut key) |
+| Menus a pack raises itself (pickers, row menus, the rgthree menu) | `comfy.ui.showMenu` with `run` callbacks kept in the worker | Power Lora Loader, Power Puter, rgthree menu, Bookmarks button |
+| Filtering groups by a colour name (hex codes work) | A synchronous `comfy.defs.nodeColor` | Fast Groups Muter, Fast Groups Bypasser |
+
+Revision 6 works around four more such gaps, as described above: the `onNodeChanged` node, a stored setting read at
+load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 
 ## Pending items (not yet supported)
 
@@ -322,21 +403,29 @@ Each of these needs a host capability that does not exist yet; none is a refused
 
 ## Open test gates
 
-- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. They still have
-  to be deployed together as one frontend patch.
+- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. Their frontend
+  changes are live (since 2026-10-20 09:06Z). Open: S02's guest relay (absent from live guest `c6b97a15`), a re-run of
+  the S01–S04 suites on the live frontend source, and a browser check.
 - Backend native cases running inside the Guest (sandboxed), and Core prompt validation at runtime for the Lora Loader Stack
   validator. Its checks pass structurally and in the Guest.
 - Image Comparer with an empty image batch.
 - Original-comparison runs for the eight frontend-only nodes listed as untested.
-- Label browser acceptance after the host focus-race fix.
-- A browser smoke test of revision 5's layout. Until it passes, the node counts above stay at revision 4's. It checks:
+- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 6's title refresh on host r3 is untested.
+- Revision 5's layout passed its browser staging on host r3, row 9 apart:
   - 0 module-load failures across the 73 entry modules;
   - the progress badge;
-  - asset delivery and CORS under `/extensions/rgthree-comfy/` for the logo SVG;
-  - the tree-sitter WASM, which is required: Power Conductor stays "tested (scoped)" only if its grammar loads from the
-    new path;
-  - no `addMenuItem` or `onBeforeConnect` refusal rows;
-  - a ring of pass-through nodes that no longer overflows.
+  - asset delivery for the logo SVG;
+  - the tree-sitter WASM loads from the new path;
+  - no refusal rows beyond the 8 expected notices;
+  - a ring of pass-through nodes no longer overflows.
+- A browser smoke test of revision 6's changes. Until it passes, the node counts above stay at revision 4's. It checks:
+  - Power Conductor registering with the opt-in on;
+  - 0 "will not be applied" errors for rgthree's own types, and the Queue items on a Fast Muter;
+  - the Label title refresh;
+  - the Node Combiner upgrade;
+  - the Queue items queueing;
+  - the Context Merge Big label;
+  - the Repeater and Relay mode handlers.
 - gVisor admission and whole-pack acceptance review.
 
 ## Authority and permissions

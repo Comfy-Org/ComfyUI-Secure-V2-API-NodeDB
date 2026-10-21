@@ -1,4 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
+import { DEFINED_NODE_TYPES } from "./constants.js";
 
 // MOSTLY DISSOLVED — 316 lines in, three exports out.
 //
@@ -152,3 +153,52 @@ comfy.commands.register({
         }
     },
 });
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Every node type except the ones this pack defines (constants.js DEFINED_NODE_TYPES).
+const NOT_DEFINED_HERE = new RegExp(`^(?!(?:${DEFINED_NODE_TYPES.map(escapeRegExp).join("|")})$)`);
+
+/**
+ * Registers `apply` for every node type, once per type.
+ *
+ * Revision 5 called `comfy.defs.extend(/./, …)` from modules that could evaluate after
+ * this pack's own `define` calls. An extension is applied when its type is defined, so it
+ * must be registered first — "Register the extension before defining the type." Every
+ * module that defines a type imports the modules that call this (menu_queue_node.js and
+ * feature_import_individual_nodes.js), which makes them evaluate first.
+ *
+ * The pack's own types are registered by name, one call each. Sandbox guest c6b97a15
+ * keeps an extension waiting for a later `define` only when its selector is a name: it
+ * matches a pattern against the definitions that exist when `extend` is called and drops
+ * it for the rest. The pattern for every other type leaves the pack's own types out, so a
+ * host that also applies patterns to later definitions does not apply the extension twice.
+ */
+export function extendEveryNodeType(apply) {
+    for (const type of DEFINED_NODE_TYPES) {
+        comfy.defs.extend(type, apply);
+    }
+    comfy.defs.extend(NOT_DEFINED_HERE, apply);
+}
+
+/**
+ * The node an `onNodeChanged` event is about, as a handle.
+ *
+ * The event declares `node` as a handle resolved in the graph the change happened in
+ * (`event.graphId`). Host stack r3 (host-entry 63d9437e) delivers the worker a plain copy
+ * instead: `id`, `type` and `graphId` survive and its methods do not, so a listener that
+ * calls one throws. Such a copy is resolved again here, in its own graph, because ids
+ * repeat across graphs. `undefined` if the node is gone.
+ */
+export function changedNode(event) {
+    const node = event?.node;
+    if (!node || typeof node.getTitle === "function") {
+        return node;
+    }
+    const id = String(node.id);
+    const graphId = event.graphId ?? node.graphId;
+    if (graphId == null || graphId === comfy.graph.id) {
+        return comfy.graph.node(id);
+    }
+    const scope = [comfy.graph.root(), ...comfy.graph.subgraphs()].find((s) => s?.id === graphId);
+    return scope?.node(id);
+}

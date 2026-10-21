@@ -3,6 +3,10 @@ import { SERVICE as KEY_EVENT_SERVICE } from "./services/key_events_services.js"
 import { SERVICE as BOOKMARKS_SERVICE } from "./services/bookmarks_services.js";
 import { NodeTypesString } from "./constants.js";
 import { getClosestOrSelf } from "../common/utils_dom.js";
+// Imported for their registrations, which every node type must receive before this
+// pack's `define` calls run (extendEveryNodeType in base_node.js).
+import "./menu_queue_node.js";
+import "./feature_import_individual_nodes.js";
 
 // Bookmark — a collapsed marker node with a shortcut key and a zoom level; press the key
 // anywhere and the canvas jumps to it.
