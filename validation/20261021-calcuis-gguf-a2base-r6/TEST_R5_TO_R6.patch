@@ -1,0 +1,200 @@
+--- r5/tier_a_driver.py
++++ r6/tier_a_driver.py
+@@ -1,4 +1,8 @@
+-"""Tier A (DRAFT, UNRUN): calcuis-gguf parity on synthetic tiny fixtures for loader port r6 (test r5). In-process, CPU, one thread.
++"""Tier A (DRAFT, UNRUN): calcuis-gguf parity on synthetic tiny fixtures for loader port r7 (test r6). In-process, CPU, one thread.
++
++test r6 (port r7, rev 5): the live guest has no tqdm (MERVYN m_d8caf14335). The converted package is imported with tqdm absent
++(sys.modules['tqdm'] = None while it is imported); T0 shows the published rev 4 encoding_math refusing under the same block; after
++the import no converted module may hold a tqdm object. The original (pristine calcuis) keeps its tqdm, as the live host does.
+ 
+ test r5 (port r6): qwen2/qwen3 below 65536 rows and cat without a pair are equal rows; qwen at exactly 65536 rows and cat
+ with a pair are refusals with their own messages; every original text load restores the shipped L3 map first; A10 records
+@@ -6,7 +10,7 @@
+ and re-anchors 2 for port r6's text_encoder_state.
+ 
+ Original  = pristine calcuis/gguf cb433968 (pig.py + gguf_connector) imported as a package from NED_NATIVE_ROOT.
+-Converted = loader port r6 leaf (/leaf) over corpus rev-2 v2 (/pack-v2), assembled in tmpfs, plus the host provider
++Converted = loader port r7 leaf (/leaf) over corpus rev-2 v2 (/pack-v2), assembled in tmpfs, plus the host provider
+             modules comfy_api.latest._gguf_tensor/_ggml of the run core (a2 base: deployed core plus GGML SDK additions).
+ No Guests, models, network or workspace writes; fixtures live in NED_WORK (tmpfs).
+ 
+@@ -32,6 +36,7 @@
+ """
+ import ast
+ import asyncio
++import contextlib
+ import copy
+ import hashlib
+ import importlib
+@@ -101,7 +106,7 @@
+     'second_name_unchecked': ['A8_validators'],
+     'cat_pair_check_dropped': ['A7_text_arguments'], 'cat_guard_dropped': ['A3_text_A6'],
+     'qwen_threshold_off_by_one': ['A3_text_A6'], 'l3_polluted_with_g3': ['A3_text_A6']}
+-record = {'status': 'IN_PROGRESS', 'tier': 'A', 'candidate': 'loader port r6 leaf over corpus rev-2 v2', 'cases': {}, 'failures': []}
++record = {'status': 'IN_PROGRESS', 'tier': 'A', 'candidate': 'loader port r7 leaf over corpus rev-2 v2', 'cases': {}, 'failures': []}
+ 
+ 
+ def load_package(name, root):
+@@ -110,6 +115,23 @@
+     sys.modules[name] = module
+     spec.loader.exec_module(module)
+     return module
++
++
++TQDM_BLOCK = {'mode': "sys.modules['tqdm'] = None while the converted package is imported (the live guest has no tqdm)", 'imports': []}
++
++
++@contextlib.contextmanager
++def tqdm_absent(label):
++    saved = {k: v for k, v in sys.modules.items() if k == 'tqdm' or k.startswith('tqdm.')}
++    for k in saved:
++        del sys.modules[k]
++    sys.modules['tqdm'] = None
++    try:
++        yield
++    finally:
++        del sys.modules['tqdm']
++        sys.modules.update(saved)
++        TQDM_BLOCK['imports'].append(label)
+ 
+ 
+ class Port:
+@@ -437,7 +459,28 @@
+     from safetensors.torch import save_file
+     from comfy_api.latest import _gguf_tensor, _ggml, _sdk
+     import comfy.sd
+-    candidate = Port('calcuis_port', PORT_ROOT)
++    # T0 control: the published rev 4 encoding_math (unchanged since rev 2, in /pack-v2) cannot be imported without tqdm.
++    t0 = {'case': 'T0_rev4_encoding_math_without_tqdm', 'module_sha256': hashlib.sha256(Path('/pack-v2/encoding_math.py').read_bytes()).hexdigest()}
++    rev4 = WORK / 'rev4-control'
++    shutil.copytree('/pack-v2', rev4)
++    try:
++        with tqdm_absent('T0 rev 4 control'):
++            load_package('calcuis_rev4_control', rev4)
++            importlib.import_module('calcuis_rev4_control.encoding_math')
++        t0.update(outcome='imported', ok=False)
++    except ImportError as error:
++        t0.update(outcome='raised', type=type(error).__name__, message=str(error)[:300], ok='tqdm' in str(error))
++    record['cases']['T0_rev4_without_tqdm'] = t0
++    if not t0['ok']:
++        fail('T0', t0)
++    with tqdm_absent('candidate'):
++        candidate = Port('calcuis_port', PORT_ROOT)
++    leaked = sorted(name for name, module in list(sys.modules.items()) if name.startswith('calcuis_port') and module is not None
++                    and any(str(getattr(value, '__module__', '') or '').startswith('tqdm') for value in vars(module).values()))
++    TQDM_BLOCK['converted_modules_holding_tqdm_objects'] = leaked
++    if leaked:
++        fail('T0', {'converted modules hold tqdm objects': leaked})
++    record['tqdm_block'] = TQDM_BLOCK
+     c = type('Context', (), {})()
+     c.torch, c.pig, c.CLIPType, c._gguf_tensor = torch, pig, comfy.sd.CLIPType, _gguf_tensor
+     c.cat_pair_message = fixtures_lib.CAT_PAIR_MESSAGE
+@@ -760,7 +803,8 @@
+             text = (root / relative).read_text()
+             assert text.count(old) == 1, (name, relative)
+             (root / relative).write_text(text.replace(old, new))
+-        mutant = Port(f'calcuis_mutant_{index}', root)
++        with tqdm_absent(f'mutant {name}'):
++            mutant = Port(f'calcuis_mutant_{index}', root)
+         failed_in, errored = {}, {}
+         for label, check in CHECKS:
+             try:
+--- r5/tier_b_driver.py
++++ r6/tier_b_driver.py
+@@ -1,4 +1,7 @@
+-"""Tier B (DRAFT, UNRUN): construction-call comparison for the six calcuis-gguf loaders (loader port r6, test r5); no model built.
++"""Tier B (DRAFT, UNRUN): construction-call comparison for the six calcuis-gguf loaders (loader port r7, test r6); no model built.
++
++test r6 (port r7, rev 5): every guest starts with /driver/no_tqdm first on its PYTHONPATH, a tqdm package that raises ImportError,
++so the converted nodes import as on the live guest (no tqdm). The host-side original keeps its tqdm, as the live host engine does.
+ 
+ test r5 (port r6): four new ClipLoaderGGUF 'equal' rows (qwen2/qwen3 below 65536 token rows or without token_embd: L3
+ rename only; cat with no tokenizer pair: identity) and one 'converted-refuses' row (cat with a '*tokenizer*.safetensors'
+@@ -53,7 +56,7 @@
+                        'the SDK has only a single-file typed loader')
+ FOLDERS = ('diffusion_models', 'text_encoders', 'vae', 'vae_approx', 'audio_encoders')
+ DRIVER_DIR = Path(__file__).resolve().parent
+-record = {'status': 'IN_PROGRESS', 'tier': 'B', 'candidate': 'loader port r6', 'cases': [], 'failures': [], 'labels': {}}
++record = {'status': 'IN_PROGRESS', 'tier': 'B', 'candidate': 'loader port r7', 'cases': [], 'failures': [], 'labels': {}}
+ CALLS = []
+ OPS = []
+ SUNK = {}
+@@ -129,6 +132,19 @@
+     from comfy_api.latest import _sdk
+     import comfy_secure_nodes
+     from comfy_secure_nodes import packdb
++    TQDM_SPAWNS = []
++    original_spawn = asyncio.create_subprocess_exec
++
++    async def spawn_without_tqdm(*argv, env=None, **kwargs):
++        env = dict(env or {})
++        parts = [p for p in env.get('PYTHONPATH', '').split(os.pathsep) if p]
++        env['PYTHONPATH'] = os.pathsep.join(['/driver/no_tqdm'] + parts)
++        TQDM_SPAWNS.append({'argv0': str(argv[0]) if argv else None, 'pythonpath_head': env['PYTHONPATH'].split(os.pathsep)[0]})
++        return await original_spawn(*argv, env=env, **kwargs)
++
++    asyncio.create_subprocess_exec = spawn_without_tqdm
++    record['tqdm_block'] = {'mode': 'guest PYTHONPATH starts with /driver/no_tqdm (a tqdm package that raises ImportError)',
++                            'spawns': TQDM_SPAWNS}
+ 
+     def summary(state):
+         rows = []
+@@ -481,6 +497,8 @@
+         record['event_loops_used'] = len(loop_ids)
+ 
+     asyncio.run(rows())
++    if not TQDM_SPAWNS or any(s['pythonpath_head'] != '/driver/no_tqdm' for s in TQDM_SPAWNS):
++        record['failures'].append({'case': 'T:guest_tqdm_block', 'detail': 'no guest, or a guest started without the tqdm blocker'})
+     record['status'] = 'PASS_TIER_B' if not record['failures'] else 'FAILED_TIER_B'
+ 
+ 
+--- r5/tier_q_driver.py
++++ r6/tier_q_driver.py
+@@ -1,4 +1,7 @@
+-"""Tier Q (DRAFT, UNRUN): queue validation for all 13 calcuis-gguf nodes through core's validate_prompt (loader port r5, test r4).
++"""Tier Q (DRAFT, UNRUN): queue validation for all 13 calcuis-gguf nodes through core's validate_prompt (loader port r7, test r6).
++
++test r6 (port r7, rev 5): every guest starts with /driver/no_tqdm first on its PYTHONPATH, a tqdm package that raises ImportError,
++so the converted nodes import as on the live guest (no tqdm). The host-side original keeps its tqdm, as the live host engine does.
+ 
+ The converted nodes are the host proxies built from the shipped r5 manifest (methods.validate_inputs true,
+ validation_inputs as getfullargspec), so core calls the Guest validators; the ORIGINAL nodes are the pristine pig.py
+@@ -40,7 +43,7 @@
+ FOLDER_OF = {'gguf_name': 'diffusion_models', 'select_safetensors': 'diffusion_models', 'select_gguf': 'diffusion_models',
+              'clip_name': 'text_encoders', 'clip_name1': 'text_encoders', 'vae_name': 'vae', 'audio_encoder_name': 'audio_encoders'}
+ OUTPUT_NODES = {'TENSORBoost', 'TENSORCut', 'GGUFSave', 'GGUFRun', 'GGUFUndo'}
+-record = {'status': 'IN_PROGRESS', 'tier': 'Q', 'candidate': 'loader port r5', 'rows': [], 'failures': [], 'labels': {}}
++record = {'status': 'IN_PROGRESS', 'tier': 'Q', 'candidate': 'loader port r7', 'rows': [], 'failures': [], 'labels': {}}
+ 
+ 
+ def load_package(name, root):
+@@ -96,6 +99,19 @@
+     from comfy_api.latest import _sdk
+     import comfy_secure_nodes
+     from comfy_secure_nodes import packdb
++    TQDM_SPAWNS = []
++    original_spawn = asyncio.create_subprocess_exec
++
++    async def spawn_without_tqdm(*argv, env=None, **kwargs):
++        env = dict(env or {})
++        parts = [p for p in env.get('PYTHONPATH', '').split(os.pathsep) if p]
++        env['PYTHONPATH'] = os.pathsep.join(['/driver/no_tqdm'] + parts)
++        TQDM_SPAWNS.append({'argv0': str(argv[0]) if argv else None, 'pythonpath_head': env['PYTHONPATH'].split(os.pathsep)[0]})
++        return await original_spawn(*argv, env=env, **kwargs)
++
++    asyncio.create_subprocess_exec = spawn_without_tqdm
++    record['tqdm_block'] = {'mode': 'guest PYTHONPATH starts with /driver/no_tqdm (a tqdm package that raises ImportError)',
++                            'spawns': TQDM_SPAWNS}
+ 
+     comfy_secure_nodes.register(_sdk.providers)
+     manifest = json.loads((port / 'secure-nodes.json').read_bytes())  # shipped r5 manifest, unmodified
+@@ -190,6 +206,8 @@
+     asyncio.run(run_cases())
+     record['summary'] = {node_id: {'candidates': sum(1 for r in record['rows'] if r['node'] == node_id),
+                                    'accepted': sum(1 for r in record['rows'] if r['node'] == node_id and r['converted_accepts'])} for node_id in KEYS}
++    if not TQDM_SPAWNS or any(s['pythonpath_head'] != '/driver/no_tqdm' for s in TQDM_SPAWNS):
++        record['failures'].append({'case': 'T:guest_tqdm_block', 'detail': 'no guest, or a guest started without the tqdm blocker'})
+     record['status'] = 'PASS_TIER_Q' if not record['failures'] else 'FAILED_TIER_Q'
+ 
+ 

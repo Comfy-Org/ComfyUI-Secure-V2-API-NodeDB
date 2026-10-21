@@ -1,0 +1,29 @@
+{
+ "schema": "ned-node-changes/1",
+ "from": "rev 4 (corpus main d5228370)",
+ "to": "rev 5 (loader port r7)",
+ "production_files_changed": [
+  "encoding_math.py"
+ ],
+ "docs_changed_after_testing": [
+  "SECURE_CONVERSION.md"
+ ],
+ "change": "encoding_math.py: `from tqdm import tqdm as loading` replaced by a local no-op `loading` (identity: returns the iterable, ignores tqdm options) whose `write` prints like tqdm.write (message + end to stdout)",
+ "why": "the live guest has no tqdm (not in the common layer, LIVE_FACTS python_environment.common_layer; calcuis declares no profile), so nodes -> conversion_artifact -> encoding_math failed to import on live: every node and validator",
+ "encoding_math_sha256": {
+  "rev4": "eacafdee80c9c0b00435cbaafd450d06935c957b7c6c57ba82f2cf54f7807b40",
+  "rev5": "d1c4f6cad440b865c8b392f6c0c913500bc79cbc6394df041f18abf9e0d07dd6"
+ },
+ "nodes_affected_at_import": "all 13 (nodes -> conversion_artifact -> encoding_math, module level)",
+ "nodes_reaching_the_replaced_loading_calls": [
+  "GGUFRun",
+  "GGUFSave"
+ ],
+ "how_found": "AST: in encoding_math only handle_tensors uses `loading`; in conversion_artifact only prepare_conversion calls handle_tensors; in the import closure only conversion_artifact imports encoding_math and only nodes imports conversion_artifact; node classes (and base classes) calling prepare_conversion: GGUFSave, GGUFRun",
+ "class_changes": [],
+ "counts": {
+  "tested (scoped)": 7,
+  "converted, partly tested": 6,
+  "partial or missing": 0
+ }
+}

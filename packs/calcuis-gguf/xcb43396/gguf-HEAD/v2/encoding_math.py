@@ -1,6 +1,23 @@
 """Exact lifted pinned architecture selection and tensor encoding arithmetic."""
+import sys
 import torch
-from tqdm import tqdm as loading
+
+
+def loading(iterable=None, *args, **kwargs):
+    """Local stand-in for tqdm.tqdm (rev 5). The live guest has no tqdm: it is not in the common layer and this pack
+    declares no dependency profile, so the former module-level `from tqdm import tqdm as loading` failed to import
+    there. Iteration is unchanged; tqdm's options are ignored and no progress bar is drawn."""
+    return iterable
+
+
+def _loading_write(s, file=None, end='\n', nolock=False):
+    """Same output as tqdm.write: the message, then `end`, to `file` (default stdout)."""
+    fp = file if file is not None else sys.stdout
+    fp.write(s)
+    fp.write(end)
+
+
+loading.write = _loading_write
 from .gguf_math.const import GGMLQuantizationType
 from .gguf_math.quant5 import quantize, QuantError
 QUANTIZATION_THRESHOLD = 1024

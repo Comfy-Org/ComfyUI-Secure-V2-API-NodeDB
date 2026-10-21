@@ -1,0 +1,44 @@
+{
+ "driver": {
+  "file": "test-r7/tier_h_driver.py",
+  "sha256": "a94e71546cc27bb179237f5925d9a5d32e5917e9f981f128c297e08a8785aea4",
+  "compiles": true
+ },
+ "encoding_math": {
+  "rev4": {
+   "sha256": "eacafdee80c9c0b00435cbaafd450d06935c957b7c6c57ba82f2cf54f7807b40",
+   "loop_and_write_lines": [
+    63,
+    91,
+    96
+   ]
+  },
+  "rev5": {
+   "sha256": "d1c4f6cad440b865c8b392f6c0c913500bc79cbc6394df041f18abf9e0d07dd6",
+   "loop_and_write_lines": [
+    80,
+    108,
+    113
+   ]
+  }
+ },
+ "fallback_reachability": "handle_tensors asks quantize() only for F32, F16 or BF16. F32/F16 are astype (never raise); BF16 has block size 1, so can_quantize is always true and QuantError cannot occur for a 1-D or larger tensor. The fallback is reached only by a test-only injected QuantError (the package's own class), on one BF16 tensor, identically in both revisions (cases H2 and H4).",
+ "cases": {
+  "H0_imports": "rev 4 encoding_math imports the real tqdm; rev 5 imports with sys.modules[tqdm] = None and holds no tqdm object",
+  "H1_alpha": "prepare_conversion(mode=alpha), 9 tensors (8 kept): BF16, F32 (1-D, blacklisted, small bf16), F16 (f16, f32 > 1024), float8",
+  "H2_alpha_fallback": "as H1, plus one injected QuantError on the BF16 tensor (64, 48): fallback line + F16",
+  "H3_zero": "prepare_conversion(mode=zero), 7 tensors: BF16, f16 1-D, small f32, int32 scalar, empty f32, f32 > 1024, float8",
+  "H4_zero_fallback": "as H3, plus one injected QuantError on the BF16 tensor (48, 64)"
+ },
+ "compared": [
+  "full GGUF bytes (iter_chunks) and total_bytes",
+  "output filename",
+  "stdout text (every loading.write line)",
+  "Python warnings raised outside tqdm (category, message, file)",
+  "per-tensor lines against an independent qtype oracle"
+ ],
+ "recorded_not_compared": [
+  "stderr: rev 4 must show a tqdm bar (the real tqdm ran); rev 5 must show none (the documented difference)",
+  "warnings raised inside tqdm's own code (only rev 4 runs tqdm)"
+ ]
+}

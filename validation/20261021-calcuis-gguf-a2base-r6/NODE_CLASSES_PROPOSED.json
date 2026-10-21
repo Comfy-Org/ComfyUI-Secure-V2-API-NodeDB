@@ -1,0 +1,81 @@
+{
+ "schema": "ned-node-classes/1",
+ "pack": "calcuis-gguf",
+ "revision": 5,
+ "supersedes": "NODE_CLASSES_PROPOSED.json of validation/20261021-calcuis-gguf-a2base-r5 (revision 4)",
+ "ruling": "MERVYN m_fba3174463: rev-2 'tested' nodes whose only change is the queue validator keep 'tested (scoped)' with the gates in the label; see NODE_CHANGES_REV2_TO_REV3.json. Revision 4: no class changes; port r6 widens scope inside the four CLIP rows, which stay partly tested. Revision 5: no class changes; the 7 tested rows stay tested on the r6 re-runs (rev 5 bytes, tqdm absent from the converted role), MERVYN m_383c3576f5.",
+ "counts": {
+  "tested (scoped)": 7,
+  "converted, partly tested": 6,
+  "partial or missing": 0
+ },
+ "nodes": {
+  "LoaderGGUF": {
+   "class": "tested (scoped)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (Tier A, B and Q re-run in full; every result reproduced); earlier evidence produced in a test env that supplied tqdm; a2 base (undeployed GGML SDK); construction-call parity for the 20 provider-supported GGML types, every load_gguf_sd rule and the metadata, bit-exact dequantization (800 cells), queue validation equal to the original list; no real model load or forward; Q4_0/Q4_1/Q5_0/Q5_1/Q2_K/Q3_K missing in the provider; needs SDK deploy + GGUF mapping limit",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): models.ggml_diffusion_from_state_dict and assets.gguf_tensor_state are absent; operator_limit_zero_default (node): COMFY_SECURE_MAX_GGUF_MAPPING_BYTES = 0 by default; host_catalogue_listing (feature): gguf_name combo lists no .gguf on live"
+  },
+  "LoaderGGUFAdvanced": {
+   "class": "converted, partly tested",
+   "label": "as LoaderGGUF plus 51 option combinations compared as values through the provider's table; patch_dtype/patch_on_device effect (LoRA patching) not exercised; per-load dtype settings final accepted difference",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): GGML verbs absent (inherits LoaderGGUF.execute); operator_limit_zero_default (node): GGUF mapping limit 0"
+  },
+  "ClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "construction-call parity (a2 base) for identity GGUF, t5 maps, qwen2/qwen3 below 65,536 token rows (rename, rev 4), cat without a tokenizer file (rev 4), typed SafeTensors, .sft and Torch containers; exact refusals where the original changes data or merges files (qwen2/qwen3 >= 65,536 rows, cat with a tokenizer file, 256384-row t5 tokenizer, 10 more architectures: missing); real construction not exercised (missing Linear weights refused: M3); one declared output and the shipped L3 map (final)",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (feature): The GGUF branch calls models.ggml_text_encoders_from_state_dicts, which is absent. The .safetensors branch uses the live models.load_text_encoder; operator_limit_zero_default (feature): GGUF mapping limit 0"
+  },
+  "DualClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "as ClipLoaderGGUF for two files incl. construction-only CLIP-G/CLIP-L; rev-4 qwen/cat rows ran through ClipLoaderGGUF only (same text path); two SafeTensors with a device missing (named refusal); full encode blocked: encoder not local",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): models.ggml_text_encoders_from_state_dicts is absent"
+  },
+  "TripleClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "shape-only construction-call parity; rev-4 qwen/cat rows ran through ClipLoaderGGUF only (same text path); full-model test blocked: encoder not local; T5-XXL SafeTensors exceeds the 2 GiB store cap (missing)",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): models.ggml_text_encoders_from_state_dicts is absent. A T5-XXL fp16 SafeTensors also exceeds the 2 GiB store cap"
+  },
+  "QuadrupleClipLoaderGGUF": {
+   "class": "converted, partly tested",
+   "label": "as Triple; llama GGUF refused (transforms missing), Llama-class SafeTensors exceeds the store cap",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): models.ggml_text_encoders_from_state_dicts is absent"
+  },
+  "VaeGGUF": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q); earlier evidence produced in a test env that supplied tqdm; rev-2 differential applies (node code unchanged; build_table refactor statement-identical, helpers exercised on rev-3 bytes); validator equal to the original list incl. TAESD; .gguf needs the GGUF mapping limit",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (feature): The .gguf branch calls models.vae_from_state_dict, which is absent. Non-gguf VAEs use the live models.load_vae; operator_limit_zero_default (feature): GGUF mapping limit 0 (.gguf branch)"
+  },
+  "AudioEncoderLoaderGGUF": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q); earlier evidence produced in a test env that supplied tqdm; rev-2 differential applies (as VaeGGUF); validator equal to the original list; .gguf needs the mapping limit; non-GGUF limited by the 2 GiB store cap; Torch containers need host torch >= 2.6",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): Both branches end in models.audio_encoder_from_state_dict, which is absent; operator_limit_zero_default (feature): GGUF mapping limit 0 (.gguf branch)"
+  },
+  "TENSORBoost": {
+   "class": "tested (scoped)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q); earlier evidence produced in a test env that supplied tqdm; rev-2 evidence applies for every lower-case name; any-case .safetensors acceptance (rev 3, as the original lists) verified by reading only; validator equal to the original list; results above the 2 GiB store cap refused",
+   "live": "imports on live (rev 5); no other static blocker (registration pending)"
+  },
+  "GGUFUndo": {
+   "class": "tested (scoped)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q); earlier evidence produced in a test env that supplied tqdm; rev-2 evidence applies for every lower-case name; any-case .gguf acceptance verified by reading only; validator equal to the original list; results above the 2 GiB store cap refused",
+   "live": "imports on live (rev 5); deployed verbs only; live /models routes list no .gguf, so choose by name (API or saved workflow)"
+  },
+  "GGUFSave": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q; the conversion loop that used tqdm, `encoding_math.handle_tensors`: Tier H, with GGUF bytes and printed lines identical to revision 4 run with tqdm, and the F16 fallback reached by an injected error); earlier evidence produced in a test env that supplied tqdm; rev-2 writer differential applies for every lower-case name; any-case acceptance by reading; validator equal to the original list; needs COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES > 0 (default 0)",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): output.save_binary is not in the live table or the guest _RemoteOutput; operator_limit_zero_default (node): COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES defaults to 0 (refuse) once the verb ships"
+  },
+  "GGUFRun": {
+   "class": "tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment)",
+   "label": "rev 5: the revision-5 bytes were re-tested with tqdm absent from the converted role, as on the live guest (import, manifest row and queue validator: Tier A and Tier Q; the conversion loop that used tqdm, `encoding_math.handle_tensors`: Tier H, with GGUF bytes and printed lines identical to revision 4 run with tqdm, and the F16 fallback reached by an injected error); earlier evidence produced in a test env that supplied tqdm; as GGUFSave",
+   "live": "imports on live (rev 5); still blocked (audit): sdk_verb_missing (node): output.save_binary (inherited GGUFSave.execute); operator_limit_zero_default (node): COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES = 0 by default"
+  },
+  "TENSORCut": {
+   "class": "converted, partly tested",
+   "label": "rev-2 r3 CUDA fixture; production guest output on a CUDA worker not qualified; validator equal to the original list; store cap applies",
+   "live": "imports on live (rev 5); no other static blocker; CUDA worker output not qualified"
+  }
+ },
+ "registry": "Rev 5 stays out of the registry until the GGML SDK, the Phase-1 SDK verbs and the operator limits ship.",
+ "live_source": "live-readiness audit (static, MERVYN; per-node file PER_NODE_calcuis-gguf.json) with the tqdm blocker removed by rev 5"
+}
