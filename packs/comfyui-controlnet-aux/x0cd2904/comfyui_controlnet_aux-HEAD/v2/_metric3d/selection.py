@@ -105,7 +105,8 @@ async def selected_archive(item, repo, filename):
     ref = await assets.resolve(r['folder'], r['catalogue_name'])
     if await assets.size(ref) != r['bytes'] or await assets.digest(ref, 'sha256') != r['sha256']:
         raise RuntimeError('Metric3D sealed checkpoint count/digest differs')
-    payload = await assets.read_bytes(ref)
+    from .._sealed_asset_read import read_sealed_asset
+    payload = await read_sealed_asset(assets, ref, r['bytes'], r['sha256'])
     if type(payload) is not bytes or len(payload) != r['bytes'] or hashlib.sha256(payload).hexdigest() != r['sha256']:
         raise RuntimeError('Metric3D actual raw archive bytes differ')
     return SealedCheckpoint(payload, item)
@@ -167,9 +168,12 @@ def load_raw_checkpoint(archive):
     from io import BytesIO
     import torch
     # This is real retained Torch restricted decoding, not the SDK tensor-only
-    # projection. No safe-global additions, unrestricted pickle or fallback.
-    if torch.serialization.get_safe_globals():
-        raise RuntimeError('Metric3D restricted decoder requires unchanged default safe globals')
+    # projection. No safe-global additions by this pack, unrestricted pickle or
+    # fallback. torch and the ComfyUI host register their own safe globals, so
+    # "none registered" never holds; instead the pinned per-checkpoint proof shows
+    # this decode resolves only torch DEFAULT-allowlisted globals (consulted first).
+    from .._restricted_globals import require_default_allowlisted
+    require_default_allowlisted(archive.payload, archive.selection['resource'].get('pickle_globals'))
     raw = torch.load(BytesIO(archive.payload), map_location="cpu", weights_only=True)
     return validate_raw(raw, archive.selection)
 
