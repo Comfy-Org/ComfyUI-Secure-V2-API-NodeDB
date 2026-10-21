@@ -1,12 +1,14 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-> Nodes: 21 of 21 converted; 19 tested (scoped), 1 converted but untested/partly tested,
-> 1 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
-> Status line: source 21/21 · scoped runtime 19/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
+> Nodes: 21 of 21 converted; 19 tested (scoped), 0 converted but untested/partly tested,
+> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
+> Status line: source 21/21 · scoped runtime 19/21 · certificates 0/21 · node-facing routes 3 declared, 0 working on live (request #15) · frontend 0/17 browser-tested.
 > **Live: Load Image Metadata fails on every image (revision 7, 2026-10-20).** The live service has no `piexif`, which the
 > node imports on every run, and this pack declares no dependency profile. No other node imports a package the live
 > service lacks. See "Revision 7".
 > **Revision 8 (2026-10-21):** the Unet Loader's GGUF branch is ported and tested (scoped) on the a2 base; on the live
 > service it still fails until the host ships native ComfyUI-GGUF and the gguf package. See "Revision 8".
+> **Revision 9 (2026-10-21):** Lora Info's frontend and its 3 routes are ported; the node is partial. Every route
+> function needs platform request #15, so on live the widget shows "No LoRA selected" or route errors. See "Revision 9".
 
 # LoRA Manager — Secure V2 conversion (in progress)
 
@@ -21,6 +23,60 @@
   pinned SDK (Core `6257422`, backend `745b88f`) on 2026-10-15: 21/21 equal to the expected rows.
 - `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
   (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
+
+## Revision 9 (2026-10-21): Lora Info frontend and routes
+
+Revision 9 ports the Lora Info node's frontend and the 3 server routes it calls, and changes nothing else. The node's
+backend stays a no-op, as upstream.
+
+- `secure_web/lora_info.js` (new) mirrors the original `web/comfyui/lora_info.js` and `LoraInfoWidget.vue`: the
+  wire-only `lora_source` input, the selection pushed from directly wired LoRA list nodes (stale answers dropped),
+  clearing when the wire is removed, the Notes tab (file name, editable notes, Save with the original's toasts) and the
+  Description tab. It registers itself through the public frontend API (`comfy.defs.extend`), calls only the pack's own
+  routes with `comfy.backend.fetch` and pack-relative paths, and uses only members the live guest implements.
+- `secure_services/lora_info_routes.py` (new) holds the 3 route handlers. They read the sidecar `.metadata.json`
+  through read-only SDK `assets` calls, never a host path, and return logical names.
+- `secure-nodes.json` gains a top-level `routes` list with these 3 routes. The 21 node rows, the runtime and the web
+  directory are unchanged, and the node's own permissions stay (none).
+
+| Route (pack-relative) | Handler | Permissions | Original |
+| --- | --- | --- | --- |
+| `GET /lm/loras/get-notes` | `get_notes` | assets, storage | `GET /api/lm/loras/get-notes?name=` |
+| `GET /lm/loras/metadata` | `get_metadata` | assets | `GET /api/lm/loras/metadata?file_path=` |
+| `POST /lm/loras/save-metadata` | `save_notes` | assets, storage | `POST /api/lm/loras/save-metadata` |
+
+Recorded deliberate differences (`validation/20261021-lora-manager-lora-info-a2base-r3/PORT_NOTES.json`):
+- Save writes the notes to a pack-owned storage record, never to the model's sidecar file. The record is shown instead
+  of the sidecar notes when it exists.
+- Descriptions are shown as plain text. The original renders third-party Civitai HTML with `v-html`, an XSS sink in
+  the host page.
+- The saved workflow keeps the logical file name, never a host path. An original workflow's absolute `filePath` is
+  dropped.
+
+Other recorded differences: two LoRAs with the same stem resolve the exact relative path first; only the default
+sidecar layout is read; the original's side effects (default sidecar creation, example-image pruning, cache sync) are
+absent.
+
+Lora Info is **partial**: every route function (saved notes, sidecar notes, descriptions) needs platform request #15
+(route assets runtime); on live today the widget shows 'No LoRA selected' / route errors; parity proven only under a
+harness stand-in. Today a route call gets no execution runtime on the host, so its first `assets` call is refused
+("no active execution for this guest"). No LoRA selection reaches the node on live yet either: the LoRA list widget it
+listens to is not registered (request #11).
+
+Evidence (`validation/20261021-lora-manager-lora-info-a2base-r3/`): one selected bounded run (Tier R) on the a2
+base (core a2 `d1a9259`, backend a1 `894ead3`), sandbox off, no model.
+- Live behaviour: 3 control rows on the unmodified backend, with no stand-in. All 3 routes are refused with
+  "no active execution for this guest".
+- Parity with the original's own handler and service code on synthetic sidecars. These rows ran under a test-harness
+  stand-in that binds a runtime to each route call, labelled "parity under a harness stand-in for platform request #15
+  (not live behaviour)". Its code and hash are in the evidence; it is not part of the pack. Results: notes 15 of 16
+  cases equal plus 1 recorded difference, descriptions 11 of 11, save and read-back 16 of 16 checks.
+- Frontend logic: 29 checks against a fake of the live guest API (Node.js, no browser). The browser smoke plan waits
+  for request #15.
+- Two earlier attempts failed in the test harness and in the run image, not in the port; both are kept on record.
+
+A route request body near 1 MiB cannot reach its handler, because the host's wire frame limit (1 MiB including the
+envelope) stops it first. This is recorded for the route documentation.
 
 ## Revision 8 (2026-10-21): Unet Loader GGUF branch
 
@@ -105,7 +161,7 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Lora Pool (LoraManager) | tested (scoped) | gVisor workflow (R49) | mutation/persistence/preview; frontend seed/index |
 | Lora Randomizer (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 10 cases, strict queue validation 22 + 2 error controls, fixed mode 5 | full queue; global RNG; multi-root; frontend |
 | Lora Cycler (LoraManager) | tested (scoped) | native-vs-Guest parity: 14 cases | multi-root/tie order; mutation/cache; frontend index |
-| Lora Info (LoraManager) | converted-untested | - (backend is a no-op, as upstream) | frontend source selection; filename/notes |
+| Lora Info (LoraManager) | partial | revision 9 (frontend + 3 declared routes), Tier R on the a2 base: 3 control rows show the live refusal; under a harness stand-in, notes 15/16 equal + 1 recorded difference, descriptions 11/11, save and read-back 16/16; frontend logic 29 checks (no browser) | every route function (saved notes, sidecar notes, descriptions) needs platform request #15 (route assets runtime); on live today the widget shows 'No LoRA selected' / route errors; parity proven only under a harness stand-in; no selection source on live (LoRA list widget, request #11); browser smoke (queued until #15) |
 | LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 | Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 | Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
@@ -119,7 +175,8 @@ converted, no runtime evidence yet; partial = known missing behavior. No node ha
 | Importing ComfyUI internals from node code (`comfy`, `folder_paths`, `nodes`, `server`, `execution`, ...) | `comfy_api.latest` (`io` schemas and `sdk` context) only |
 | Reading or writing model folders and sidecar files directly (directory walks, `.metadata.json` next to models) | SDK assets (`list`, `resolve`, `exists`, `digest`, image loading) and pack-owned durable records in SDK storage |
 | Process-global services started at import (scanner registries, background tasks, websocket broadcasts) | A pack-owned catalogue cache refreshed through the SDK; per-node outputs and UI payloads |
-| Registering handlers directly on the ComfyUI server | Declared secure routes (`secure_routes/`); registration is still held, see Pending |
+| Registering handlers directly on the ComfyUI server | Declared, pack-relative routes in `secure-nodes.json`, mounted by the host under the pack's own route base (the 3 Lora Info routes, revision 9); the routes in `secure_routes/` are still held, see Pending |
+| Rendering third-party HTML (Civitai descriptions) in the host page with `v-html` | Plain text: tags stripped, entities decoded (Lora Info, revision 9) |
 
 ## Pending — not yet supported (can't yet, not never)
 
@@ -136,7 +193,8 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | Startup and multi-root catalogue parity (initial scan readiness, root order) | PENDING — not yet supported, needs a host-owned catalogue lifecycle contract |
 | GGUF UNet loading on the live service | PENDING — ported and tested (scoped) in revision 8; the live service lacks the host-installed ComfyUI-GGUF and the `gguf` package the SDK GGUF verb needs (request #12) |
 | Third-party dependencies on the live service (`piexif` for Load Image Metadata; `brotli` for compressed AVIF brob) | PENDING — this pack declares no dependency profile and the live service provides neither; Load Image Metadata fails there (Revision 7) |
-| Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet |
+| Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet (the 3 Lora Info routes of revision 9 are declared separately) |
+| Lora Info on the live service | PENDING — the frontend and 3 routes are declared (revision 9), but every route call is refused on live until a route call gets an execution runtime (request #15); no LoRA selection reaches the node until the LoRA list widget is registered (request #11) |
 
 ## Open test gates
 
@@ -149,6 +207,7 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 - Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed); a real GGUF UNet load (revision 8 is construction-call parity).
 - Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 - Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
+- Lora Info: the 3 routes on a host with request #15 (live behaviour, not a stand-in); the browser smoke plan B1-B8 (queued for BART until #15), including whether an original workflow's saved value reaches the node (B3).
 - Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. The live service has no `piexif`, so Load Image Metadata fails there until a declared profile is admitted and provided (Revision 7).
 - Independent whole-pack review and certificate.
 
@@ -172,11 +231,20 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 | Lora Pool (LoraManager) | (none) |
 | Lora Randomizer (LoraManager) | assets, storage |
 | Lora Cycler (LoraManager) | assets, storage |
-| Lora Info (LoraManager) | (none) |
+| Lora Info (LoraManager) | (none) for the node (its backend is a no-op); its 3 routes declare their own, see below |
 | LoRA Syntax → Path (LoraManager) | assets |
 | Create Hook LoRA (LoraManager) | models, assets, storage |
 | Metadata Overwrite (LoraManager) | (none) |
 | Load Image Metadata (LoraManager) | assets, storage, raw |
+
+Declared routes (revision 9). They are pack-relative; the host mounts them under the pack's own route base, and each
+call runs with only the permissions listed.
+
+| Route | Handler (`secure_services/lora_info_routes.py`) | SDK permissions |
+| --- | --- | --- |
+| `GET /lm/loras/get-notes` | `get_notes` | assets (read-only), storage (the pack's own notes records) |
+| `GET /lm/loras/metadata` | `get_metadata` | assets (read-only) |
+| `POST /lm/loras/save-metadata` | `save_notes` | assets (read-only existence check), storage (the pack's own notes records) |
 
 ## Assets and weights
 
@@ -190,13 +258,16 @@ Out of scope for this milestone (node-facing acceptance first). Each must fail c
 ## What is in v2/
 
 - `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
-- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`; `secure_routes/` and `held-registration/`: unregistered route work.
+- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) registers itself when
+  loaded; the other modules only export functions, and none registers on load. `secure_services/lora_info_routes.py`:
+  the 3 declared Lora Info routes. `secure_routes/` and `held-registration/`: unregistered route work.
 - Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
   their queue validators check the selected name, because remote dropdowns carry no static options. GGUF names, which
   `/models/diffusion_models` does not list, are checked with a read-only `assets.exists` in the diffusion-model roots.
 - `secure_full_library_nodes.py`, `secure_pool_editor.py`, `secure_text_nodes.py`: in-progress modules, not registered.
 - `secure-nodes.json`: the node manifest, generated by the backend manifest generator (21 nodes, web directory
-  `secure_web`, Python `>=3.13,<3.14`, no routes registered yet).
+  `secure_web`, Python `>=3.13,<3.14`), plus a top-level `routes` list added in revision 9 (the 3 Lora Info routes,
+  checked with the backend route decoder).
 - `pyproject.toml`: upstream's file with `requires-python = ">=3.13,<3.14"` added (the runtime declaration).
 - Every other file is the upstream file unchanged. Internal review notes and private test harnesses are not published.
 

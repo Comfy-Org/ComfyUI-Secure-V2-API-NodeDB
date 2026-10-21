@@ -1,15 +1,17 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,342 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
-+> Nodes: 21 of 21 converted; 19 tested (scoped), 1 converted but untested/partly tested,
-+> 1 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
-+> Status line: source 21/21 · scoped runtime 19/21 · certificates 0/21 · node-facing routes 0 behavior-tested · frontend 0/17 browser-tested.
++> Nodes: 21 of 21 converted; 19 tested (scoped), 0 converted but untested/partly tested,
++> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
++> Status line: source 21/21 · scoped runtime 19/21 · certificates 0/21 · node-facing routes 3 declared, 0 working on live (request #15) · frontend 0/17 browser-tested.
 +> **Live: Load Image Metadata fails on every image (revision 7, 2026-10-20).** The live service has no `piexif`, which the
 +> node imports on every run, and this pack declares no dependency profile. No other node imports a package the live
 +> service lacks. See "Revision 7".
 +> **Revision 8 (2026-10-21):** the Unet Loader's GGUF branch is ported and tested (scoped) on the a2 base; on the live
 +> service it still fails until the host ships native ComfyUI-GGUF and the gguf package. See "Revision 8".
++> **Revision 9 (2026-10-21):** Lora Info's frontend and its 3 routes are ported; the node is partial. Every route
++> function needs platform request #15, so on live the widget shows "No LoRA selected" or route errors. See "Revision 9".
 +
 +# LoRA Manager — Secure V2 conversion (in progress)
 +
@@ -24,6 +26,60 @@
 +  pinned SDK (Core `6257422`, backend `745b88f`) on 2026-10-15: 21/21 equal to the expected rows.
 +- `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
 +  (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
++
++## Revision 9 (2026-10-21): Lora Info frontend and routes
++
++Revision 9 ports the Lora Info node's frontend and the 3 server routes it calls, and changes nothing else. The node's
++backend stays a no-op, as upstream.
++
++- `secure_web/lora_info.js` (new) mirrors the original `web/comfyui/lora_info.js` and `LoraInfoWidget.vue`: the
++  wire-only `lora_source` input, the selection pushed from directly wired LoRA list nodes (stale answers dropped),
++  clearing when the wire is removed, the Notes tab (file name, editable notes, Save with the original's toasts) and the
++  Description tab. It registers itself through the public frontend API (`comfy.defs.extend`), calls only the pack's own
++  routes with `comfy.backend.fetch` and pack-relative paths, and uses only members the live guest implements.
++- `secure_services/lora_info_routes.py` (new) holds the 3 route handlers. They read the sidecar `.metadata.json`
++  through read-only SDK `assets` calls, never a host path, and return logical names.
++- `secure-nodes.json` gains a top-level `routes` list with these 3 routes. The 21 node rows, the runtime and the web
++  directory are unchanged, and the node's own permissions stay (none).
++
++| Route (pack-relative) | Handler | Permissions | Original |
++| --- | --- | --- | --- |
++| `GET /lm/loras/get-notes` | `get_notes` | assets, storage | `GET /api/lm/loras/get-notes?name=` |
++| `GET /lm/loras/metadata` | `get_metadata` | assets | `GET /api/lm/loras/metadata?file_path=` |
++| `POST /lm/loras/save-metadata` | `save_notes` | assets, storage | `POST /api/lm/loras/save-metadata` |
++
++Recorded deliberate differences (`validation/20261021-lora-manager-lora-info-a2base-r3/PORT_NOTES.json`):
++- Save writes the notes to a pack-owned storage record, never to the model's sidecar file. The record is shown instead
++  of the sidecar notes when it exists.
++- Descriptions are shown as plain text. The original renders third-party Civitai HTML with `v-html`, an XSS sink in
++  the host page.
++- The saved workflow keeps the logical file name, never a host path. An original workflow's absolute `filePath` is
++  dropped.
++
++Other recorded differences: two LoRAs with the same stem resolve the exact relative path first; only the default
++sidecar layout is read; the original's side effects (default sidecar creation, example-image pruning, cache sync) are
++absent.
++
++Lora Info is **partial**: every route function (saved notes, sidecar notes, descriptions) needs platform request #15
++(route assets runtime); on live today the widget shows 'No LoRA selected' / route errors; parity proven only under a
++harness stand-in. Today a route call gets no execution runtime on the host, so its first `assets` call is refused
++("no active execution for this guest"). No LoRA selection reaches the node on live yet either: the LoRA list widget it
++listens to is not registered (request #11).
++
++Evidence (`validation/20261021-lora-manager-lora-info-a2base-r3/`): one selected bounded run (Tier R) on the a2
++base (core a2 `d1a9259`, backend a1 `894ead3`), sandbox off, no model.
++- Live behaviour: 3 control rows on the unmodified backend, with no stand-in. All 3 routes are refused with
++  "no active execution for this guest".
++- Parity with the original's own handler and service code on synthetic sidecars. These rows ran under a test-harness
++  stand-in that binds a runtime to each route call, labelled "parity under a harness stand-in for platform request #15
++  (not live behaviour)". Its code and hash are in the evidence; it is not part of the pack. Results: notes 15 of 16
++  cases equal plus 1 recorded difference, descriptions 11 of 11, save and read-back 16 of 16 checks.
++- Frontend logic: 29 checks against a fake of the live guest API (Node.js, no browser). The browser smoke plan waits
++  for request #15.
++- Two earlier attempts failed in the test harness and in the run image, not in the port; both are kept on record.
++
++A route request body near 1 MiB cannot reach its handler, because the host's wire frame limit (1 MiB including the
++envelope) stops it first. This is recorded for the route documentation.
 +
 +## Revision 8 (2026-10-21): Unet Loader GGUF branch
 +
@@ -108,7 +164,7 @@
 +| Lora Pool (LoraManager) | tested (scoped) | gVisor workflow (R49) | mutation/persistence/preview; frontend seed/index |
 +| Lora Randomizer (LoraManager) | tested (scoped) | native-vs-Guest parity: getter 10 cases, strict queue validation 22 + 2 error controls, fixed mode 5 | full queue; global RNG; multi-root; frontend |
 +| Lora Cycler (LoraManager) | tested (scoped) | native-vs-Guest parity: 14 cases | multi-root/tie order; mutation/cache; frontend index |
-+| Lora Info (LoraManager) | converted-untested | - (backend is a no-op, as upstream) | frontend source selection; filename/notes |
++| Lora Info (LoraManager) | partial | revision 9 (frontend + 3 declared routes), Tier R on the a2 base: 3 control rows show the live refusal; under a harness stand-in, notes 15/16 equal + 1 recorded difference, descriptions 11/11, save and read-back 16/16; frontend logic 29 checks (no browser) | every route function (saved notes, sidecar notes, descriptions) needs platform request #15 (route assets runtime); on live today the widget shows 'No LoRA selected' / route errors; parity proven only under a harness stand-in; no selection source on live (LoRA list widget, request #11); browser smoke (queued until #15) |
 +| LoRA Syntax → Path (LoraManager) | tested (scoped) | real CPU workflow: library-relative name with extension; saved PNG contains no host path | additional parser cases; installed gVisor workflow |
 +| Create Hook LoRA (LoraManager) | tested (scoped) | gVisor workflows (R64/R70) | CLIP hooks need the SetClipHooks host operation; lifecycle |
 +| Metadata Overwrite (LoraManager) | tested (scoped) | gVisor workflow (R8) | wired MODEL/SAMPLER identity; ancestry |
@@ -122,7 +178,8 @@
 +| Importing ComfyUI internals from node code (`comfy`, `folder_paths`, `nodes`, `server`, `execution`, ...) | `comfy_api.latest` (`io` schemas and `sdk` context) only |
 +| Reading or writing model folders and sidecar files directly (directory walks, `.metadata.json` next to models) | SDK assets (`list`, `resolve`, `exists`, `digest`, image loading) and pack-owned durable records in SDK storage |
 +| Process-global services started at import (scanner registries, background tasks, websocket broadcasts) | A pack-owned catalogue cache refreshed through the SDK; per-node outputs and UI payloads |
-+| Registering handlers directly on the ComfyUI server | Declared secure routes (`secure_routes/`); registration is still held, see Pending |
++| Registering handlers directly on the ComfyUI server | Declared, pack-relative routes in `secure-nodes.json`, mounted by the host under the pack's own route base (the 3 Lora Info routes, revision 9); the routes in `secure_routes/` are still held, see Pending |
++| Rendering third-party HTML (Civitai descriptions) in the host page with `v-html` | Plain text: tags stripped, entities decoded (Lora Info, revision 9) |
 +
 +## Pending — not yet supported (can't yet, not never)
 +
@@ -139,7 +196,8 @@
 +| Startup and multi-root catalogue parity (initial scan readiness, root order) | PENDING — not yet supported, needs a host-owned catalogue lifecycle contract |
 +| GGUF UNet loading on the live service | PENDING — ported and tested (scoped) in revision 8; the live service lacks the host-installed ComfyUI-GGUF and the `gguf` package the SDK GGUF verb needs (request #12) |
 +| Third-party dependencies on the live service (`piexif` for Load Image Metadata; `brotli` for compressed AVIF brob) | PENDING — this pack declares no dependency profile and the live service provides neither; Load Image Metadata fails there (Revision 7) |
-+| Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet |
++| Remaining in-graph routes and settings | PENDING — 9 routes written in `secure_routes/` and 3 registrations held in `held-registration/`; none registered or behavior-tested yet (the 3 Lora Info routes of revision 9 are declared separately) |
++| Lora Info on the live service | PENDING — the frontend and 3 routes are declared (revision 9), but every route call is refused on live until a route call gets an execution runtime (request #15); no LoRA selection reaches the node until the LoRA list widget is registered (request #11) |
 +
 +## Open test gates
 +
@@ -152,6 +210,7 @@
 +- Further real model branches and installed gVisor workflows for Checkpoint and Unet loaders (SD1.5 CPU pre-flights passed); a real GGUF UNet load (revision 8 is construction-call parity).
 +- Installed runtime + gVisor TEST workflows of this source, one per node family, then whole-node certificates (0/21 today).
 +- Node-facing routes, settings and widgets: behavior tests in a browser (0 tested today); negative tests for every Pending item.
++- Lora Info: the 3 routes on a host with request #15 (live behaviour, not a stand-in); the browser smoke plan B1-B8 (queued for BART until #15), including whether an original workflow's saved value reaches the node (B3).
 +- Dependency profile: `piexif==1.1.3` admission requested; tests emulated that profile through a trusted runtime dependency root. The live service has no `piexif`, so Load Image Metadata fails there until a declared profile is admitted and provided (Revision 7).
 +- Independent whole-pack review and certificate.
 +
@@ -175,11 +234,20 @@
 +| Lora Pool (LoraManager) | (none) |
 +| Lora Randomizer (LoraManager) | assets, storage |
 +| Lora Cycler (LoraManager) | assets, storage |
-+| Lora Info (LoraManager) | (none) |
++| Lora Info (LoraManager) | (none) for the node (its backend is a no-op); its 3 routes declare their own, see below |
 +| LoRA Syntax → Path (LoraManager) | assets |
 +| Create Hook LoRA (LoraManager) | models, assets, storage |
 +| Metadata Overwrite (LoraManager) | (none) |
 +| Load Image Metadata (LoraManager) | assets, storage, raw |
++
++Declared routes (revision 9). They are pack-relative; the host mounts them under the pack's own route base, and each
++call runs with only the permissions listed.
++
++| Route | Handler (`secure_services/lora_info_routes.py`) | SDK permissions |
++| --- | --- | --- |
++| `GET /lm/loras/get-notes` | `get_notes` | assets (read-only), storage (the pack's own notes records) |
++| `GET /lm/loras/metadata` | `get_metadata` | assets (read-only) |
++| `POST /lm/loras/save-metadata` | `save_notes` | assets (read-only existence check), storage (the pack's own notes records) |
 +
 +## Assets and weights
 +
@@ -193,13 +261,16 @@
 +## What is in v2/
 +
 +- `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
-+- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`; `secure_routes/` and `held-registration/`: unregistered route work.
++- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) registers itself when
++  loaded; the other modules only export functions, and none registers on load. `secure_services/lora_info_routes.py`:
++  the 3 declared Lora Info routes. `secure_routes/` and `held-registration/`: unregistered route work.
 +- Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
 +  their queue validators check the selected name, because remote dropdowns carry no static options. GGUF names, which
 +  `/models/diffusion_models` does not list, are checked with a read-only `assets.exists` in the diffusion-model roots.
 +- `secure_full_library_nodes.py`, `secure_pool_editor.py`, `secure_text_nodes.py`: in-progress modules, not registered.
 +- `secure-nodes.json`: the node manifest, generated by the backend manifest generator (21 nodes, web directory
-+  `secure_web`, Python `>=3.13,<3.14`, no routes registered yet).
++  `secure_web`, Python `>=3.13,<3.14`), plus a top-level `routes` list added in revision 9 (the 3 Lora Info routes,
++  checked with the backend route decoder).
 +- `pyproject.toml`: upstream's file with `requires-python = ">=3.13,<3.14"` added (the runtime declaration).
 +- Every other file is the upstream file unchanged. Internal review notes and private test harnesses are not published.
 +
@@ -7243,7 +7314,7 @@
      "aiohttp",
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,2982 @@
+@@ -0,0 +1,3013 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -10218,6 +10289,37 @@
 +      "sdk_refs": true
 +    }
 +  },
++  "routes": [
++    {
++      "handler": "get_notes",
++      "method": "get",
++      "module": "secure_services.lora_info_routes",
++      "path": "/lm/loras/get-notes",
++      "permissions": [
++        "assets",
++        "storage"
++      ]
++    },
++    {
++      "handler": "get_metadata",
++      "method": "get",
++      "module": "secure_services.lora_info_routes",
++      "path": "/lm/loras/metadata",
++      "permissions": [
++        "assets"
++      ]
++    },
++    {
++      "handler": "save_notes",
++      "method": "post",
++      "module": "secure_services.lora_info_routes",
++      "path": "/lm/loras/save-metadata",
++      "permissions": [
++        "assets",
++        "storage"
++      ]
++    }
++  ],
 +  "runtime": {
 +    "python": {
 +      "requires": ">=3.13,<3.14",
@@ -17741,6 +17843,217 @@
 +            formatted.append(f"<lora:{item['name']}:{item['model_strength']}>")
 +    return model, clip, ',, '.join(triggers) if triggers else '', ' '.join(formatted)
 --- /dev/null
++++ b/v2/secure_services/lora_info_routes.py
+@@ -0,0 +1,208 @@
++"""Lora Info routes: the original's notes, description and save calls, over read-only assets and pack storage.
++
++Original (ComfyUI-Lora-Manager 2dcaf6a):
++- GET  /api/lm/loras/get-notes?name=   handler model_handlers.py:1414, lookup base_model_service.py:1049
++- GET  /api/lm/loras/metadata?file_path= handler model_handlers.py:1530, base_model_service.py:1181 + filter_civitai_data
++- POST /api/lm/loras/save-metadata     handler model_handlers.py:932 (the widget sends {file_path, notes})
++- sidecars: utils/metadata_manager.py:27 load_metadata, utils/models.py BaseModelMetadata.from_dict
++
++Platform replacements (deliberate differences, recorded in SECURE_CONVERSION.md):
++- The LoRA is named by its logical catalogue name; no host path is accepted or returned.
++- Sidecars are read through read-only assets in the default 'alongside' layout. Nothing is written to model folders:
++  saved notes go to a pack-owned storage record, which is shown in place of the sidecar notes when it exists.
++- The description response carries only the fields the widget reads (description, model.description).
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import posixpath
++
++from comfy_api.latest import sdk
++
++from .managed_library import _logical
++
++FOLDER = 'loras'
++# The original LoRA scanner caches '.safetensors' files only (services/lora_scanner.py:19), matched in any case
++# (model_scanner.py:414), and skips hidden folders (model_scanner.py:410).
++LORA_EXTENSIONS = ('.safetensors',)
++SIDECAR_SUFFIX = '.metadata.json'
++SIDECAR_READ_MAX = 16 * 1024 * 1024        # one assets.read_range
++REQUEST_BODY_MAX = 1024 * 1024             # the host's route request bound
++NOTES_KEY_PREFIX = 'lora_info.notes.'      # + sha256(logical name): at most 80 bytes (storage keys <= 128)
++NOTES_FORMAT = 'loramanager.lora-info-notes.v1'
++NOTES_VALUE_MAX = 1024 * 1024              # host PackStorage value bound
++# BaseModelMetadata fields without a default: from_dict raises without them, load_metadata returns
++# (None, should_skip=True) and the scanner leaves the model out of its cache (metadata_manager.py:54-57).
++REQUIRED_FIELDS = ('file_name', 'model_name', 'file_path', 'size', 'modified', 'sha256', 'base_model', 'preview_url')
++
++
++def _json(status, data):
++    return {'status': status, 'content_type': 'application/json',
++            'body': json.dumps(data, ensure_ascii=False, allow_nan=False)}
++
++
++def _text(status, text):
++    return {'status': status, 'content_type': 'text/plain', 'body': text}
++
++
++def _request(request, method):
++    if (type(request) is not dict or set(request) != {'method', 'path', 'query', 'body'}
++            or str(request['method']).upper() != method or type(request['query']) is not dict
++            or type(request['body']) is not str):
++        raise ValueError('invalid route request')
++    return request['query']
++
++
++def _model_extension(name):
++    lowered = name.lower()
++    return next((extension for extension in LORA_EXTENSIONS if lowered.endswith(extension)), None)
++
++
++def _hidden(name):
++    return any(part.startswith('.') for part in name.split('/')[:-1])
++
++
++def _stem(name):
++    extension = _model_extension(name)
++    return name[:-len(extension)] if extension else name
++
++
++def _is_logical(name):
++    try:
++        _logical(name)
++        return True
++    except ValueError:
++        return False
++
++
++async def _existing(file):
++    """A confined logical file present in the LoRA folders.
++
++    The original's description and save calls take any model path (no cache, no extension check); here the file is
++    named logically and must be inside the 'loras' roots.
++    """
++    return type(file) is str and _is_logical(file) and await sdk.ctx().assets.exists(FOLDER, file)
++
++
++async def find_lora(name):
++    """The logical name of the LoRA the original's get_model_notes would match, or None.
++
++    The original walks its scanner cache and takes the first model whose file_name (the stem) equals the name, or
++    that the name ends with after '/' or '\\'. Here: the exact relative path first, then the first match in sorted
++    catalogue order (the original's cache order is not reproducible; see the recorded difference).
++    """
++    if _is_logical(name) and not _hidden(name):
++        for extension in LORA_EXTENSIONS:
++            candidate = name + extension
++            if await sdk.ctx().assets.exists(FOLDER, candidate):
++                return candidate
++    for candidate in await sdk.ctx().assets.list(FOLDER):
++        if not _model_extension(candidate) or _hidden(candidate):
++            continue
++        file_name = _stem(candidate).rsplit('/', 1)[-1]
++        if file_name == name or name.endswith('/' + file_name) or name.endswith('\\' + file_name):
++            return candidate
++    return None
++
++
++async def read_sidecar(logical):
++    """('absent'|'corrupt'|'ok', mapping|None) for the LoRA's alongside sidecar, as load_metadata decides it."""
++    sidecar = posixpath.splitext(logical)[0] + SIDECAR_SUFFIX  # get_metadata_path: splitext of the model file
++    if not await sdk.ctx().assets.exists(FOLDER, sidecar):
++        return 'absent', None
++    ref = await sdk.ctx().assets.resolve(FOLDER, sidecar)
++    size = await sdk.ctx().assets.size(ref)
++    if size > SIDECAR_READ_MAX:
++        raise ValueError(f'sidecar metadata exceeds {SIDECAR_READ_MAX} bytes')
++    data = await sdk.ctx().assets.read_range(ref, 0, size) if size else b''
++    try:
++        document = json.loads(bytes(data).decode('utf-8'))
++    except (UnicodeDecodeError, ValueError):
++        return 'corrupt', None
++    if type(document) is not dict or any(field not in document for field in REQUIRED_FIELDS):
++        return 'corrupt', None
++    return 'ok', document
++
++
++def notes_key(logical):
++    return NOTES_KEY_PREFIX + hashlib.sha256(logical.encode('utf-8')).hexdigest()
++
++
++async def read_saved_notes(logical):
++    """The pack-owned record's notes for this logical name, or None when no record exists."""
++    value = await sdk.ctx().storage.get(notes_key(logical))
++    if value is None:
++        return None
++    record = json.loads(value)
++    if (type(record) is not dict or set(record) != {'format', 'name', 'notes'} or record['format'] != NOTES_FORMAT
++            or record['name'] != logical or type(record['notes']) is not str):
++        raise ValueError('corrupt Lora Info notes record')
++    return record['notes']
++
++
++async def get_notes(request):
++    """GET get-notes?name=: {success, notes, file} like the original's {success, notes, file_path}."""
++    query = _request(request, 'GET')
++    name = query.get('name')
++    if not name:
++        return _text(400, 'Lora file name is required')
++    logical = await find_lora(name)
++    if logical is None:
++        return _json(404, {'success': False, 'error': 'Lora not found in cache'})
++    state, document = await read_sidecar(logical)
++    # The original's scanner leaves out a model whose sidecar is corrupt (metadata_manager.py:54-57) or marked
++    # 'exclude' (model_scanner.py:2654), so get-notes cannot find it.
++    if state == 'corrupt' or (state == 'ok' and document.get('exclude', False)):
++        return _json(404, {'success': False, 'error': 'Lora not found in cache'})
++    saved = await read_saved_notes(logical)
++    notes = saved if saved is not None else ('' if document is None else document.get('notes', ''))
++    return _json(200, {'success': True, 'notes': notes, 'file': logical})
++
++
++async def get_metadata(request):
++    """GET metadata?file=: the description fields of the original's filtered CivitAI data."""
++    query = _request(request, 'GET')
++    file = query.get('file')
++    if not file:
++        return _text(400, 'File path is required')
++    if not await _existing(file):
++        return _json(404, {'success': False, 'error': 'Lora not found or no CivitAI metadata available'})
++    state, document = await read_sidecar(file)
++    if state != 'ok':
++        return _json(404, {'success': False, 'error': 'Lora not found or no CivitAI metadata available'})
++    civitai = document.get('civitai') or {}
++    metadata = {}
++    if type(civitai) is dict:
++        if 'description' in civitai:
++            metadata['description'] = civitai['description']
++        model = civitai.get('model')
++        if 'model' in civitai:
++            metadata['model'] = {'description': model.get('description')} if type(model) is dict and 'description' in model else {}
++    return _json(200, {'success': True, 'metadata': metadata})
++
++
++async def save_notes(request):
++    """POST save-metadata {file, notes}: notes go to the pack-owned record (last write wins, as the sidecar write)."""
++    _request(request, 'POST')
++    body = request['body']
++    if len(body.encode('utf-8')) > REQUEST_BODY_MAX:
++        return _text(413, 'request body is too large')
++    try:
++        data = json.loads(body)
++    except ValueError:
++        return _text(400, 'invalid JSON body')
++    if type(data) is not dict:
++        return _text(400, 'invalid JSON body')
++    file = data.get('file')
++    if not file:
++        return _text(400, 'File path is required')
++    if set(data) != {'file', 'notes'} or type(data['notes']) is not str:
++        return _text(400, 'only {file, notes} with string notes can be saved')
++    if not await _existing(file):
++        return _text(500, f'Lora not found: {file}')
++    value = json.dumps({'format': NOTES_FORMAT, 'name': file, 'notes': data['notes']}, ensure_ascii=False)
++    if len(value.encode('utf-8')) > NOTES_VALUE_MAX:
++        return _text(413, f'notes exceed the {NOTES_VALUE_MAX}-byte storage record limit')
++    await sdk.ctx().storage.set(notes_key(file), value)
++    return _json(200, {'success': True})
+--- /dev/null
 +++ b/v2/secure_services/managed_library.py
 @@ -0,0 +1,161 @@
 +"""Managed catalogue + owned editable records; no scanner/path/HTTP authority.
@@ -21686,6 +21999,303 @@
 +    };
 +  } });
 +}
+--- /dev/null
++++ b/v2/secure_web/lora_info.js
+@@ -0,0 +1,294 @@
++/**
++ * Lora Info (LoraManager) on the published sandbox API, using only members the live guest (c6b97a15) implements.
++ *
++ * Original (ComfyUI-Lora-Manager 2dcaf6a):
++ * - web/comfyui/lora_info.js: a wire-only `lora_source` input (`*`, shape 7); LoRA list widgets push their selection
++ *   to the Lora Info nodes wired directly to them; a request id drops stale answers; removing the last `lora_source`
++ *   wire clears the display.
++ * - vue-widgets/src/components/LoraInfoWidget.vue: a Notes tab (filename, editable notes, Save -> toast), a Description
++ *   tab (version and model descriptions), "No LoRA selected" when empty; value {name, notes, filePath, activeTab}.
++ *
++ * Platform replacements (recorded as deliberate differences):
++ * - the pack's own routes, reached by relative path through comfy.backend.fetch (the host adds the pack's base);
++ * - Save writes a pack-owned record: packs never write host model files;
++ * - descriptions are shown as plain text: third-party HTML is never rendered in the host page;
++ * - the saved node keeps the logical file name under the pack-owned key `lora_info`, never a host path. An original
++ *   workflow's widgets_values[0] {name, notes, filePath, activeTab} is read when the host hands it to onConfigured;
++ *   its absolute filePath is dropped and the logical file is looked up by name when the description or a save needs it;
++ * - Save stays enabled while idle (Save on unchanged notes is a no-op, as in the original): re-rendering the button
++ *   while the user types would rebuild the textarea and drop the caret.
++ */
++const LORA_INFO_CLASS = 'Lora Info (LoraManager)';
++const SOURCE_INPUT = 'lora_source';
++const PANEL = 'lora_info_display';
++const SAVED_KEY = 'lora_info';
++const ROUTE = Object.freeze({ notes: 'lm/loras/get-notes', metadata: 'lm/loras/metadata', save: 'lm/loras/save-metadata' });
++const NAME_MAX = 4096;
++const NOTES_MAX = 1024 * 1024;
++
++const views = new Map(); // `${graphId}\0${id}` -> view
++
++const api = () => globalThis.comfy;
++const keyOf = (node) => `${node?.graphId ?? ''}\0${node?.id}`;
++
++function blankDescription() {
++  return { loading: false, loaded: false, error: false, version: '', model: '' };
++}
++
++function viewFor(node) {
++  const key = keyOf(node);
++  let view = views.get(key);
++  if (!view) {
++    view = { name: '', notes: '', originalNotes: '', file: '', activeTab: 'notes', saving: false,
++             description: blankDescription(), reqId: 0, container: null, nodeId: String(node.id) };
++    views.set(key, view);
++  }
++  return view;
++}
++
++/** Plain text from a description that may hold HTML; the result is only ever written as text. */
++export function plainText(html) {
++  if (typeof html !== 'string') return '';
++  return html
++    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
++    .replace(/<\/\s*(p|div|li|h[1-6]|tr)\s*>/gi, '\n')
++    .replace(/<[^>]*>/g, '')
++    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
++    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
++    .replace(/\n{3,}/g, '\n\n')
++    .trim();
++}
++
++/** The value restored from a saved node: this port's own key first, then an original workflow's widget value. */
++export function restoredValue(data) {
++  const text = (value, max) => typeof value === 'string' && value.length <= max;
++  const tab = (value) => (value === 'description' ? 'description' : 'notes');
++  const own = data && typeof data === 'object' ? data[SAVED_KEY] : undefined;
++  if (own && typeof own === 'object' && text(own.name, NAME_MAX) && text(own.notes, NOTES_MAX) &&
++      text(own.file ?? '', NAME_MAX)) {
++    return { name: own.name, notes: own.notes, file: own.file ?? '', activeTab: tab(own.activeTab), legacy: false };
++  }
++  const values = data && typeof data === 'object' ? data.widgets_values : undefined;
++  const legacy = Array.isArray(values) ? values[0] : undefined;
++  if (legacy && typeof legacy === 'object' && !Array.isArray(legacy) && text(legacy.name ?? '', NAME_MAX) &&
++      text(legacy.notes ?? '', NOTES_MAX)) {
++    // An original workflow: keep the name, notes and tab; never keep its absolute host filePath.
++    return { name: legacy.name ?? '', notes: legacy.notes ?? '', file: '', activeTab: tab(legacy.activeTab), legacy: true };
++  }
++  return null;
++}
++
++async function request(path, init) {
++  const response = await api().backend.fetch(path, init);
++  if (!response.ok) return { ok: false, status: response.status, text: await response.text() };
++  return { ok: true, status: response.status, data: await response.json() };
++}
++
++function notify(severity, summary, detail, life) {
++  try {
++    // comfy.commands.notify crosses as an RPC: it answers with a promise, so its failure is caught there.
++    Promise.resolve(api().commands.notify({ severity, summary, detail, life }))
++      .catch((error) => console.error('[LoraInfo] notify failed:', error));
++  } catch (error) {
++    console.error('[LoraInfo] notify failed:', error);
++  }
++}
++
++/** Looks the logical file up by name (an original workflow's value carries only a host path). */
++async function resolveFile(view) {
++  if (view.file || !view.name) return view.file;
++  try {
++    const answer = await request(`${ROUTE.notes}?name=${encodeURIComponent(view.name)}`, { method: 'GET' });
++    if (answer.ok && typeof answer.data?.file === 'string') view.file = answer.data.file;
++  } catch (error) {
++    console.error('[LoraInfo] file lookup failed:', error);
++  }
++  return view.file;
++}
++
++async function fetchDescription(view) {
++  if (view.description.loading || !view.name) return;
++  if (!(await resolveFile(view))) return;
++  view.description = { ...blankDescription(), loading: true };
++  paint(view);
++  try {
++    const answer = await request(`${ROUTE.metadata}?file=${encodeURIComponent(view.file)}`, { method: 'GET' });
++    if (!answer.ok) throw new Error(`Failed to fetch metadata: HTTP ${answer.status}`);
++    const metadata = answer.data?.success ? answer.data.metadata : null;
++    view.description = { ...blankDescription(), loaded: true,
++      version: metadata ? plainText(metadata.description || '') : '',
++      model: metadata ? plainText(metadata.model?.description || '') : '' };
++  } catch (error) {
++    console.error('[LoraInfo] Failed to fetch description:', error);
++    view.description = { ...blankDescription(), error: true }; // not loaded: the next tab switch retries
++  }
++  paint(view);
++}
++
++function setInfo(view, data) {
++  if (!data) {
++    Object.assign(view, { name: '', notes: '', originalNotes: '', file: '' });
++  } else {
++    Object.assign(view, { name: data.name, notes: data.notes, originalNotes: data.notes, file: data.file || '' });
++  }
++  view.description = blankDescription();
++  paint(view);
++  if (data && view.activeTab === 'description') void fetchDescription(view);
++}
++
++async function save(view) {
++  if (view.notes === view.originalNotes || view.saving) return;
++  if (!(await resolveFile(view))) return;
++  view.saving = true;
++  paint(view);
++  const notes = view.notes;
++  try {
++    const answer = await request(ROUTE.save, {
++      method: 'POST', headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ file: view.file, notes }),
++    });
++    if (answer.ok && answer.data?.success) {
++      notify('success', 'Saved', 'Notes updated successfully', 2000);
++      view.originalNotes = notes;
++    } else {
++      notify('error', 'Error', answer.data?.message || answer.data?.error || answer.text || 'Failed to save notes', 3000);
++    }
++  } catch (error) {
++    console.error('[LoraInfo] Failed to save notes:', error);
++    notify('error', 'Error', error?.message || 'Failed to save notes', 3000);
++  } finally {
++    view.saving = false;
++    paint(view);
++  }
++}
++
++// Remote-DOM ships these as element properties (guest serializeStub); everything else goes as an attribute.
++const STUB_PROPS = new Set(['value', 'placeholder', 'type', 'checked', 'disabled']);
++
++function element(doc, tag, props = {}, text) {
++  const el = doc.createElement(tag);
++  for (const [key, value] of Object.entries(props)) {
++    if (STUB_PROPS.has(key)) el[key] = value;
++    else el.setAttribute(key, String(value));
++  }
++  if (text !== undefined) el.textContent = text;
++  return el;
++}
++
++function paint(view) {
++  const container = view.container;
++  if (!container) return;
++  const doc = container.ownerDocument;
++  if (!view.name) {
++    container.replaceChildren(element(doc, 'div', { style: 'padding:8px;opacity:.7' }, 'No LoRA selected'));
++    return;
++  }
++  const tabs = element(doc, 'div', { style: 'display:flex;gap:12px;margin-bottom:6px' });
++  for (const [value, label] of [['notes', 'Notes'], ['description', 'Description']]) {
++    const tab = element(doc, 'label', { style: 'cursor:pointer' });
++    const radio = element(doc, 'input', { type: 'radio', name: `lora-info-tab-${view.nodeId}`, value,
++                                          checked: view.activeTab === value });
++    radio.addEventListener('change', (event) => {
++      if (!event.checked) return;
++      view.activeTab = value;
++      paint(view);
++      if (value === 'description' && !view.description.loaded) void fetchDescription(view);
++    });
++    tab.append(radio, element(doc, 'span', {}, ` ${label}`));
++    tabs.append(tab);
++  }
++  const body = element(doc, 'div', {});
++  if (view.activeTab === 'notes') {
++    body.append(element(doc, 'div', { style: 'font-size:11px;opacity:.7' }, 'Filename'),
++                element(doc, 'div', { style: 'margin-bottom:6px;word-break:break-all' }, view.name),
++                element(doc, 'div', { style: 'font-size:11px;opacity:.7' }, 'Notes'));
++    const notes = element(doc, 'textarea', { value: view.notes, placeholder: 'Add notes about this LoRA...', rows: 5,
++                                             disabled: view.saving, style: 'width:100%;box-sizing:border-box' });
++    // Typing only records the text: changing the markup here would rebuild the textarea and drop the caret.
++    notes.addEventListener('input', (event) => { view.notes = typeof event.value === 'string' ? event.value : view.notes; });
++    const button = element(doc, 'button', { type: 'button', disabled: view.saving }, view.saving ? 'Saving...' : 'Save');
++    button.addEventListener('click', () => { void save(view); });
++    body.append(notes, button);
++  } else {
++    const d = view.description;
++    if (d.loading) body.append(element(doc, 'div', {}, 'Loading description...'));
++    else if (d.error) body.append(element(doc, 'div', {}, 'Failed to load description'));
++    else if (!d.version && !d.model) body.append(element(doc, 'div', { style: 'opacity:.7' }, 'No description available'));
++    else {
++      if (d.version) body.append(element(doc, 'div', { style: 'font-size:11px;opacity:.7' }, 'About this version'),
++                                 element(doc, 'div', { style: 'white-space:pre-wrap;margin-bottom:6px' }, d.version));
++      if (d.model) body.append(element(doc, 'div', { style: 'font-size:11px;opacity:.7' }, 'Model Description'),
++                               element(doc, 'div', { style: 'white-space:pre-wrap' }, d.model));
++    }
++  }
++  container.replaceChildren(tabs, body);
++}
++
++function sourceConnected(node) {
++  return node.inputs.all().some((slot) => slot.name === SOURCE_INPUT && slot.isConnected);
++}
++
++/** The Lora Info nodes wired directly to a source node's outputs (no chain walk), as the original. */
++function connectedInfoNodes(sourceNode) {
++  const found = [];
++  for (const slot of sourceNode?.outputs?.all?.() ?? []) {
++    for (const target of slot.targets?.() ?? []) {
++      const node = api().graph.node(target.nodeId);
++      if (node && node.comfyClass === LORA_INFO_CLASS && !found.includes(node)) found.push(node);
++    }
++  }
++  return found;
++}
++
++/**
++ * Called by the LoRA list widgets when their selection changes (the original's updateConnectedLoraInfoNodes):
++ * fetches the notes of `selection.name` and shows them on every directly wired Lora Info node. A null selection clears.
++ */
++export async function updateConnectedLoraInfoNodes(sourceNode, selection) {
++  const targets = connectedInfoNodes(sourceNode).map(viewFor);
++  if (!targets.length) return;
++  if (!selection?.name) {
++    for (const view of targets) { view.reqId += 1; setInfo(view, null); }
++    return;
++  }
++  const snapshot = new Map(targets.map((view) => [view, (view.reqId += 1)]));
++  let data;
++  try {
++    const answer = await request(`${ROUTE.notes}?name=${encodeURIComponent(selection.name)}`, { method: 'GET' });
++    if (!answer.ok) throw new Error(`Failed to fetch notes for ${selection.name}`);
++    data = { name: selection.name, notes: answer.data?.notes || '', file: answer.data?.file || '' };
++  } catch (error) {
++    console.error('Error fetching notes for lora info:', error);
++    data = { name: selection.name, notes: '[Error loading notes]', file: '' };
++  }
++  for (const [view, reqId] of snapshot) {
++    if (view.reqId === reqId) setInfo(view, data); // a newer request supersedes this answer
++  }
++}
++
++api().defs.extend(LORA_INFO_CLASS, (b) => {
++  b.onCreated((node) => {
++    if (!node.inputs.names().includes(SOURCE_INPUT)) node.inputs.add(SOURCE_INPUT, '*', { shape: 'optional' });
++    const view = viewFor(node);
++    node.widgets.mount({ name: PANEL, render(container) { view.container = container; paint(view); } });
++  });
++  b.onConfigured((node, data) => {
++    const view = viewFor(node);
++    const value = restoredValue(data);
++    if (!value) return;
++    Object.assign(view, { name: value.name, notes: value.notes, originalNotes: value.notes, file: value.file,
++                          activeTab: value.activeTab, description: blankDescription() });
++    paint(view);
++    if (view.name && view.activeTab === 'description') void fetchDescription(view);
++  });
++  b.onConnectionsChanged((node, event) => {
++    if (event?.side !== 'input' || event.connected) return;
++    if (!sourceConnected(node)) setInfo(viewFor(node), null);
++  });
++  b.onRemoved((node) => { views.delete(keyOf(node)); });
++  b.onSerialize((node) => {
++    const view = views.get(keyOf(node));
++    if (!view || !view.name) return {};
++    return { [SAVED_KEY]: { name: view.name, notes: view.notes, file: view.file, activeTab: view.activeTab } };
++  });
++});
 --- /dev/null
 +++ b/v2/secure_web/main.js
 @@ -0,0 +1,32 @@

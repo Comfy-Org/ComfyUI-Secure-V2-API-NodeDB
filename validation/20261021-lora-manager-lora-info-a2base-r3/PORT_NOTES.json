@@ -1,0 +1,64 @@
+{
+ "schema": "ned-port-notes/1",
+ "node": "Lora Info (LoraManager)",
+ "port": "ned-lora-info-port-20261021-r1",
+ "status": "SOURCE_ONLY_UNRUN",
+ "authority": ["MERVYN m_8d1abddf63 (start; constraints)", "MERVYN m_39a32fab49 (option A: mirror with platform replacements)",
+               "MERVYN m_9e5a6312ee (request #15, gap-proof controls, stand-in labelling, class partial)"],
+ "base": "corpus main d21c2c0d, packs/comfyui-lora-manager/x2dcaf6a/ComfyUI-Lora-Manager-HEAD",
+ "original_sources": ["web/comfyui/lora_info.js", "vue-widgets/src/components/LoraInfoWidget.vue",
+                      "py/routes/handlers/model_handlers.py:932 (save_metadata), :1414 (get_model_notes), :1530 (get_model_metadata)",
+                      "py/services/base_model_service.py:1049 (get_model_notes), :1181 (get_model_metadata), filter_civitai_data",
+                      "py/utils/metadata_manager.py:27 (load_metadata)", "py/services/lora_scanner.py:19, model_scanner.py:410-415, 2654 (cache rules)"],
+ "files": {
+  "secure-nodes.json": "top-level routes added (3); nodes/runtime/web_directory unchanged (STATIC_CHECKS.json)",
+  "secure_services/lora_info_routes.py": "new: get_notes, get_metadata, save_notes",
+  "secure_web/lora_info.js": "new: self-registering entry module (every .js under web_directory is loaded); exports updateConnectedLoraInfoNodes for the LoRA list widgets"
+ },
+ "routes": [
+  {"method": "GET", "path": "/lm/loras/get-notes", "permissions": ["assets", "storage"], "mirrors": "GET /api/lm/loras/get-notes?name="},
+  {"method": "GET", "path": "/lm/loras/metadata", "permissions": ["assets"], "mirrors": "GET /api/lm/loras/metadata?file_path= (the widget's description call)"},
+  {"method": "POST", "path": "/lm/loras/save-metadata", "permissions": ["assets", "storage"], "mirrors": "POST /api/lm/loras/save-metadata {file_path, notes} (the widget's save call)"}
+ ],
+ "constraints_checked": {
+  "routes declared and pack-relative; the host adds the pack's route base": "manifest routes + packroutes.decode (STATIC_CHECKS.json); host-entry 1774-1781 prefixes the pack's own base",
+  "sidecar reads through assets only, no raw paths; logical names returned": "lora_info_routes.py (assets.exists/list/resolve/size/read_range only; no os/pathlib)",
+  "frontend registered through the public API, comfy.backend.fetch to its own routes": "lora_info.js (comfy.defs.extend; relative 'lm/loras/...' paths)",
+  "only members the live guest c6b97a15 implements; no getProperties": "STATIC_CHECKS.json member_audit (25 members: guest line + d.ts declaration); test/js asserts no getProperties"
+ },
+ "mirrors": [
+  "wire-only lora_source input (*), shape 7 = published 'optional'",
+  "selection push to directly wired Lora Info nodes only, stale answers dropped by request id; null selection clears",
+  "removing the last lora_source wire clears the display",
+  "Notes tab: filename, notes, Save -> toast 'Saved / Notes updated successfully' or the error text; Description tab: 'About this version', 'Model Description', loading/error/empty texts; 'No LoRA selected'",
+  "get-notes lookup: stem equality or name ending in '/'+stem or '\\\\'+stem over '.safetensors' files (any case), hidden folders and 'exclude' models skipped, corrupt sidecar = not in cache (404 'Lora not found in cache'); missing name -> 400 'Lora file name is required'",
+  "descriptions: civitai.description and civitai.model.description of a valid sidecar; missing/corrupt sidecar -> 404; missing parameter -> 400 'File path is required'"
+ ],
+ "deliberate_differences_final": [
+  "notes are saved to a pack-owned storage record (key lora_info.notes.<sha256(logical name)>, value {format, name, notes}); the record is shown in place of the sidecar notes when it exists. Packs never write host model files (MERVYN m_39a32fab49).",
+  "descriptions are shown as plain text (tags stripped, entities decoded, written as text): the original renders third-party Civitai HTML with v-html, an XSS sink in the host page (MERVYN m_39a32fab49).",
+  "the saved node keeps {name, notes, file (logical), activeTab} under the pack-owned key 'lora_info', never a host path; an original workflow's widgets_values[0] is read when the host passes it to onConfigured, its absolute filePath is dropped and the logical file is looked up by name when needed (browser smoke B3 records whether the host passes it)."
+ ],
+ "other_differences_recorded": [
+  "two LoRAs with the same stem: the original returns the first in its scanner cache order; the conversion resolves the exact relative path first, then sorted catalogue order (Tier R row duplicate_stem_relative)",
+  "only the default 'alongside' sidecar layout is read; LoRA Manager's 'centralized' sidecar setting and its extra scanner roots are not supported",
+  "the original's side effects are absent: no default sidecar creation, no example-image pruning, no cache sync, no sidecar write",
+  "the description response carries only description and model.description; the save response carries no auto_tags (the widget reads neither)",
+  "the description and save calls take a logical file inside the 'loras' roots (the original takes any host path)",
+  "a bare-stem lookup lists the catalogue (at most 4096 names); a relative name is resolved directly",
+  "pack storage budget: at most 256 records / 8 MiB per user, shared with the rest of LoRA Manager; one record at most 1 MiB",
+  "Save stays enabled while idle and does nothing when the notes are unchanged: re-rendering the button while the user types would rebuild the textarea and drop the caret",
+  "a workflow saved by the conversion keeps the value under 'lora_info'; opened in the original, the panel starts empty"
+ ],
+ "platform_observations": [
+  "route request bodies near 1 MiB cannot reach the handler on a1: packroutes accepts up to 1 MiB (packroutes.py:142, 197-202), but the host-to-guest wire caps a frame at 1 MiB including its JSON envelope (wire.py:43). The host raises FrameTooLarge before sending (wire.py:450-454), which is a 500 'route handler failed' in production. The handler's own 413 record bound (notes record over 1 MiB) is therefore unreachable; Tier R r2 row S:record_value_bound expects FrameTooLarge (MERVYN m_6c597971dd)."
+ ],
+ "platform_dependencies": {
+  "request #15 (GERALD)": "serve_route binds no execution runtime on a1, so every assets.* call from a route is refused ('no active execution for this guest'); all three Lora Info routes need it (PLATFORM_REQUEST_15_ROUTE_RUNTIME.md)",
+  "request #11 + LoRA list widget port": "no selection source on live until the LORAS widget is registered; Lora Info exports updateConnectedLoraInfoNodes for it"
+ },
+ "class_proposed": "partial (MERVYN m_9e5a6312ee)",
+ "label": "every route function (saved notes, sidecar notes, descriptions) needs platform request #15 (route assets runtime); on live today the widget shows 'No LoRA selected' / route errors; parity proven only under a harness stand-in",
+ "label_decision": "MERVYN m_88392ddf8b: option 1 (all or nothing on #15; no name-keyed workaround)",
+ "imports_tests_or_runs": 0
+}
