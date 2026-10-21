@@ -1,0 +1,13 @@
+--- a/v2/secure_download_wav2vec_runtime.py
++++ b/v2/secure_download_wav2vec_runtime.py
+@@ -45,7 +45,9 @@
+     context = sdk.current_context()
+     weight = bundle['required_weight']
+     logical = 'huggingface/'+weight['repo_id']+'/'+weight['revision']+'/'+weight['filename']
+-    if allow_download:
++    # The original downloads only when the model is absent (fantasytalking/nodes.py:52-66). Check the
++    # pinned catalogue name first, so an installed weight never needs the consent-gated download verb.
++    if allow_download and not await context.assets.exists(weight['folder'], logical):
+         admitted_name = await context.models.download_huggingface_weights(**weight)
+         if admitted_name != logical:
+             raise ValueError('Public Wav2Vec weight catalogue identity changed')

@@ -1,0 +1,66 @@
+{
+  "status": "SOURCE_ONLY_UNSELECTED_UNRUN",
+  "authority": "MERVYN m_c53a20b61c, m_b23c9a1f22",
+  "label": "DownloadAndLoadWav2VecModel r12 exists-first, WSL x86 CPU: native CPU, one thread, original vs converted (corpus main 552b2e36 + H1) on the default-SDK in-process route; the live consent gate is emulated by a harness wrapper that refuses the download verb with the live text; not Guest, not GPU, not live",
+  "rows": [
+    "DownloadAndLoadWav2VecModel"
+  ],
+  "candidate": "corpus main 552b2e36 v2 + H1 (54eaa42e -> 54f18030); package wan_v2_w2v",
+  "roles": "original (genuine 088128b; models/transformers from pinned bundle data + bound weights) then converted (registered wan_v2_w2v, in-process SDK; harness seams on assets.exists and the download verb); one container each",
+  "cases": [
+    "w1",
+    "w2",
+    "w3",
+    "w4",
+    "w5"
+  ],
+  "items": [
+    "loader",
+    "absent",
+    "control",
+    "embeds"
+  ],
+  "models": {
+    "facebook": "wav2vec2-base-960h 8aa76ab2 (377607901 B)",
+    "tencent": "chinese-wav2vec2-base be2da40c (380261837 B)",
+    "fantasytalking": "fantasytalking_fp16.safetensors 7eb1edf1 (1684038568 B)"
+  },
+  "mervyn_additions": {
+    "1": "assets.exists is declared in the published stubs (FINDINGS.md of the candidate)",
+    "2": "exists calls counted per step: exactly 1 per loader execution (pinned folder + logical name); 0 for rebuilds, whose allow_download=False short-circuits before exists; w3: exists False then exactly 1 download",
+    "3": "report text for the stage after the run"
+  },
+  "hardening": {
+    "user": "1000:1000, --cap-drop ALL, no-new-privileges",
+    "network": "none",
+    "root": "read-only",
+    "tmp": "tmpfs 3840 MiB noexec",
+    "writable": "only the role /out",
+    "threads": "one thread, numeric env compared",
+    "integrity": "packet + six material trees before each role; CASE parsed from pinned bytes",
+    "isolation": "original sees no candidate/converted-site; converted sees no original tree or transformers-data",
+    "comparator_inputs": "O_NOFOLLOW copies, re-hashed right before the comparator",
+    "removal": "exact ID, absence twice",
+    "retries": 0
+  },
+  "cap": {
+    "container_memory_bytes": 6442450944,
+    "memory_equals_swap": true,
+    "sampled_stop_bytes": 5905580032,
+    "launch_gate": "MemAvailable >= cap + 4 GiB = 10 GiB",
+    "role_work_seconds": 600,
+    "roles": 2,
+    "basis": "wav2vec 0.38 GB weights (fp32 ~0.75 GB) + the 1.68 GB FantasyTalking state in w5 (rebuilt once more by the converted embeds node); expected peak ~3-4 GiB"
+  },
+  "not_claimed": [
+    "live behavior (the operator must stage the pinned weights; live consent is emulated)",
+    "Guest",
+    "GPU",
+    "DWPose (platform request #23)",
+    "whole pack"
+  ],
+  "activity": {
+    "runs": 0,
+    "imports_of_pack_code": 0
+  }
+}

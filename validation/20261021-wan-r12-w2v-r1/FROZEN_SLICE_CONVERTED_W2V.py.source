@@ -1,0 +1,227 @@
+"""CONVERTED side for WAN r11 wav2vec exists-first r1: the registered r11 candidate nodes DownloadAndLoadWav2VecModel,
+FantasyTalkingModelLoader and FantasyTalkingWav2VecEmbeds on the SDK in-process route.
+
+The in-process SDK grants models.download by declaration, so two harness-only seams are installed after the registry import:
+- a counting wrapper on _InProcessAssets.exists (it calls through and records folder, name and result);
+- a counting wrapper on _InProcessModels.download_huggingface_weights that records the request and raises the live text
+  `capability 'models.download' not granted to node DownloadAndLoadWav2VecModel` (the live host under the unset consent policy,
+  host.py:2324/414-417). The raised type is the harness stand-in WireError.
+Cases:
+- w1/w2 (loader, installed): the node returns its recipe; a probe rebuilds it with rebuild_downloaded_wav2vec (the consumers'
+  path, allow_download=False) and records the state. Calls are logged per step.
+- w3 (absent): the audio_encoders root points at an empty dir for that case only.
+- w4 (control): the PUBLISHED runtime bytes (54eaa42e), loaded from the capsule as a separate harness module object whose
+  __file__ is the candidate runtime path (so its bundle data resolves), run the published node's execute body.
+- w5 (embeds): the loader recipe and a FantasyTalkingModelLoader recipe feed FantasyTalkingWav2VecEmbeds.
+"""
+import asyncio
+import gc
+import importlib.util
+import inspect
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import w2v_common  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+PACKAGE_ROOT = '/candidate/%s/' % PACKAGE
+LABEL = 'CONVERTED'
+REPORT = {'status': 'RUNNING', 'route': 'registered_inprocess_sdk', 'package': PACKAGE, 'cases': {}}
+phase = common.Phases(REPORT, LABEL)
+LOG = {'exists': [], 'download': []}
+
+
+def take_log():
+    taken = {'exists': list(LOG['exists']), 'download': list(LOG['download'])}
+    LOG['exists'].clear()
+    LOG['download'].clear()
+    return taken
+
+
+async def run(case_file):
+    import importlib
+    import torch
+    import folder_paths
+    from comfy_api.latest import _sdk, io
+    package = importlib.import_module(PACKAGE)
+    registry = package.NODE_CLASS_MAPPINGS
+    REPORT['registered_count'] = len(registry)
+    REPORT['module_sha256'] = {rel: common.sha_file(PACKAGE_ROOT + rel) for rel in case_file['converted_module_pins']}
+    runtime = importlib.import_module(PACKAGE + '.secure_download_wav2vec_runtime')
+    assert runtime.__file__ == PACKAGE_ROOT + 'secure_download_wav2vec_runtime.py', runtime.__file__
+    published_spec = case_file['published_module']
+    published_bytes = Path('/prepared/' + published_spec['capsule_file']).read_bytes()
+    assert common.sha_bytes(published_bytes) == published_spec['sha256'], 'published module bytes'
+    spec = importlib.util.spec_from_loader(PACKAGE + '._jack_published_w2v_runtime', loader=None, origin=runtime.__file__)
+    published = importlib.util.module_from_spec(spec)
+    published.__file__ = runtime.__file__
+    published.__package__ = PACKAGE
+    exec(compile(published_bytes, runtime.__file__ + ' (published 54eaa42e bytes)', 'exec'), published.__dict__)
+    REPORT['published_module'] = {'sha256': common.sha_bytes(published_bytes), 'file_attr': published.__file__}
+    original_exists = _sdk._InProcessAssets.exists
+    live_text = case_file['live_error'][1]
+
+    async def counting_exists(self, folder, name):
+        result = await original_exists(self, folder, name)
+        LOG['exists'].append([folder, name, bool(result)])
+        return result
+
+    async def refusing_download(self, repo_id, filename, folder, revision='main', sha256=None):
+        LOG['download'].append({'repo_id': repo_id, 'filename': filename, 'folder': folder, 'revision': revision, 'sha256': sha256})
+        raise w2v_common.WireError(live_text)
+    _sdk._InProcessAssets.exists = counting_exists
+    _sdk._InProcessModels.download_huggingface_weights = refusing_download
+    REPORT['seams'] = 'installed after the registry import: counting _InProcessAssets.exists, refusing _InProcessModels.download_huggingface_weights'
+    providers = _sdk.providers
+    assert not providers.overlay_active and not providers.engaged
+    counter = iter(range(1, 1000))
+
+    async def dispatch(cls, inputs, call):
+        plan = _sdk.ExecutionPlan(prompt_id='jack-wan-r11-w2v-r1', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs,
+                                  input_mode='refs' if cls.SDK_REFS else 'values', permissions=tuple(cls.SDK_PERMISSIONS))
+        refs = providers.ref_resolver_factory()
+        scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        try:
+            values = await _sdk.wrap_inputs(refs, inputs) if cls.SDK_REFS else inputs
+
+            async def local_call():
+                with scope:
+                    value = call(values)
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value
+            result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+            result = await _sdk.unwrap_outputs(refs, result)
+            return tuple(result.result)
+        finally:
+            refs.clear()
+
+    async def node(name, inputs):
+        cls = registry[name]
+        return await dispatch(cls, inputs, lambda values: cls.execute(**values))
+
+    loader_cls = registry['DownloadAndLoadWav2VecModel']
+
+    async def provider_types(values):
+        context = _sdk.current_context() if hasattr(_sdk, 'current_context') else None
+        from comfy_api.latest import sdk
+        context = sdk.current_context()
+        return io.NodeOutput({'assets': type(context.assets).__name__, 'models': type(context.models).__name__,
+                              'assets_patched': type(context.assets).exists is counting_exists,
+                              'models_patched': type(context.models).download_huggingface_weights is refusing_download,
+                              'numeric_env': w2v_common.numeric_env()})
+    REPORT['provider_check'] = (await dispatch(loader_cls, {}, provider_types))[0]
+
+    async def probe_state(recipe):
+        async def rebuild(values):
+            value = await runtime.rebuild_downloaded_wav2vec(values['recipe'])
+            state, stated = w2v_common.wav2vec_state(value)
+            del value
+            return io.NodeOutput({'state': state, 'stated': stated})
+        return (await dispatch(loader_cls, {'recipe': recipe}, rebuild))[0]
+
+    async def published_execute(values):
+        materialized, recipe = await published.load_downloaded_wav2vec(values['model'], values['base_precision'], values['load_device'])
+        del materialized
+        return io.NodeOutput(recipe)
+
+    exts = set(folder_paths.supported_pt_extensions)
+    empty = Path('/tmp/converted-empty-audio-encoders')
+    empty.mkdir(exist_ok=True)
+    models = case_file['models']
+    for case in case_file['cases']:
+        name = case['name']
+        phase('converted-' + name)
+        w2v_common.seed_all(case['seed'])
+        record = {'rng_after_seed': w2v_common.rng_state()}
+        started = time.monotonic()
+        take_log()
+        inputs = {'model': case['model'], 'base_precision': case['base_precision'], 'load_device': case['load_device']}
+        if case['item'] == 'absent':
+            folder_paths.folder_names_and_paths['audio_encoders'] = ([str(empty)], exts)
+        recipe = None
+        try:
+            if case['item'] == 'control':
+                recipe, = await dispatch(loader_cls, inputs, published_execute)
+            else:
+                recipe, = await node('DownloadAndLoadWav2VecModel', inputs)
+            record['outcome'] = {'raised': False}
+        except Exception as error:
+            record['outcome'] = w2v_common.error_outcome(error)
+            del error
+        finally:
+            folder_paths.folder_names_and_paths['audio_encoders'] = (['/models/audio_encoders'], exts)
+        record['calls_loader'] = take_log()
+        record['rng_after_loader'] = w2v_common.rng_state()
+        record['recipe'] = recipe
+        if recipe is not None and case['item'] == 'loader':
+            probed = await probe_state(recipe)
+            record['state'], record['stated'] = probed['state'], probed['stated']
+            record['calls_probe'] = take_log()
+            record['rng_after_probe'] = w2v_common.rng_state()
+        if recipe is not None and case['item'] == 'embeds':
+            ft_recipe, = await node('FantasyTalkingModelLoader', {'model': models['fantasytalking']['catalogue_name'],
+                                                                  'base_precision': case['fantasytalking_precision']})
+            record['calls_fantasytalking_loader'] = take_log()
+            audio = w2v_common.audio(case['audio'])
+            record['inputs'] = {'waveform': common.tensor_meta(audio['waveform']), 'sample_rate': audio['sample_rate']}
+            out, = await node('FantasyTalkingWav2VecEmbeds', {'wav2vec_model': recipe, 'fantasytalking_model': ft_recipe, 'fps': case['fps'],
+                                                              'num_frames': case['num_frames'], 'audio_scale': case['audio_scale'],
+                                                              'audio_cfg_scale': case['audio_cfg_scale'], 'audio': audio})
+            record['calls_embeds'] = take_log()
+            record['outputs'] = w2v_common.embeds_meta(out, 'converted', name)
+            del out, audio
+        record['rng_after_case'] = w2v_common.rng_state()
+        record['seconds'] = round(time.monotonic() - started, 3)
+        REPORT['cases'][name] = record
+        gc.collect()
+    REPORT['numeric_env_final'] = w2v_common.numeric_env()
+    REPORT['status'] = LABEL + '_W2V_DONE'
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/converted-site', '/native-core', '/candidate']
+    from comfy.cli_args import args
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/converted-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    exts = set(folder_paths.supported_pt_extensions)
+    folder_paths.folder_names_and_paths['audio_encoders'] = (['/models/audio_encoders'], exts)
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    for key in ('audio_encoders', 'diffusion_models'):
+        folder_paths.filename_list_cache.pop(key, None)
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    REPORT['numeric_env'] = w2v_common.numeric_env()
+    asyncio.run(run(CASE_FILE))
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save(LABEL + '_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != LABEL + '_W2V_DONE':
+    raise SystemExit(1)

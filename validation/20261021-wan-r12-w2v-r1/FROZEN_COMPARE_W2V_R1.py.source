@@ -1,0 +1,208 @@
+"""Stdlib-only comparison for WAN r12 wav2vec exists-first r1. Writes COMPARISON_loader.json, COMPARISON_absent.json,
+COMPARISON_control.json, COMPARISON_embeds.json and COMPARISON.json.
+
+- loader (w1 facebook fp16, w2 Tencent fp32; weights installed): the converted recipe is exact; the converted rebuild state
+  equals the original loader value (model parameters and buffers, config, processor / feature extractor; wav2vec-d stated
+  exclusions: path provenance and masked_spec_embed values); floating tensors have the requested dtype; RNG equal; the probe
+  preserves RNG. Call logs: the original made no snapshot_download call (exists branch); the converted loader made exactly one
+  assets.exists call (pinned folder + logical name, True) and no download request; the rebuild made neither.
+- absent (w3): the converted loader made exactly one assets.exists call (False), then exactly one download request with the
+  pinned weight, and raised the live text; the original made exactly one snapshot_download attempt (for the same repo).
+- control (w4, converted only, the published 54eaa42e bytes): no assets.exists call, exactly one download request with the
+  pinned weight, and the live text raised: the block r12 removes.
+- embeds (w5): FantasyTalkingWav2VecEmbeds from the loader recipe: embeds meta and raw bytes exact and finite; the converted
+  loader made one exists call (True) and no download; the FantasyTalking loader and the embeds node (rebuild, allow_download=False)
+  made no exists and no download call; the original made no snapshot_download call.
+- global: workers done, registry 146, identical versions/CPU/numeric environment (one thread; the converted one also inside a
+  dispatch scope), module and weight pins, the published module pin, and both seams installed and effective.
+"""
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+EXPECTED_REGISTERED = 146
+DTYPES = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16'}
+FLOAT_DTYPES = ('float32', 'bfloat16', 'float16', 'float64')
+RECIPE_FORMAT = 'wan-download-wav2vec-model-v1'
+ITEMS = ('loader', 'absent', 'control', 'embeds')
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+class Item:
+    def __init__(self, name, label):
+        self.name, self.checks, self.details, self.info = name, {}, {}, {'label': label}
+
+    def check(self, key, ok, detail=None):
+        self.checks[key] = bool(ok)
+        if not ok and detail is not None:
+            self.details[key] = detail
+
+    def write(self, results_sha):
+        passed = bool(self.checks) and all(self.checks.values())
+        status = ('PASS_SLICE_' if passed else 'FAIL_SLICE_') + self.name.upper()
+        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': [k for k, v in self.checks.items() if not v],
+               'details': self.details, 'info': self.info, 'results_sha256': results_sha}
+        (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+        return status
+
+
+def weight_key(case_file, model):
+    return next(k for k, v in case_file['models'].items() if v.get('repo_id') == model)
+
+
+def expected_recipe(case_file, case):
+    spec = case_file['models'][weight_key(case_file, case['model'])]
+    return {'format': RECIPE_FORMAT, 'model_type': case['model'], 'bundle_id': spec['bundle_id'], 'base_precision': case['base_precision'],
+            'load_device': case['load_device']}
+
+
+def exists_call(case_file, case, result):
+    spec = case_file['models'][weight_key(case_file, case['model'])]
+    return [[spec['required_weight']['folder'], spec['logical'], result]]
+
+
+def download_call(case_file, case):
+    return [dict(case_file['models'][weight_key(case_file, case['model'])]['required_weight'])]
+
+
+def global_checks(item, case_file, original, converted, done):
+    item.check('workers_completed', done, {'original': original.get('status'), 'converted': converted.get('status'),
+                                           'tracebacks': [original.get('traceback', '')[-1500:], converted.get('traceback', '')[-1500:]]})
+    if not done:
+        return
+    item.check('registry_%d' % EXPECTED_REGISTERED, converted.get('registered_count') == EXPECTED_REGISTERED, converted.get('registered_count'))
+    item.check('same_versions_cpu', canon(original.get('versions')) == canon(converted.get('versions'))
+               and canon(original.get('cpu')) == canon(converted.get('cpu')), [original.get('cpu'), converted.get('cpu')])
+    envs = [original.get('numeric_env'), original.get('numeric_env_final'), converted.get('numeric_env'),
+            (converted.get('provider_check') or {}).get('numeric_env'), converted.get('numeric_env_final')]
+    item.check('same_numeric_environment_one_thread', all(e is not None and canon(e) == canon(envs[0]) for e in envs)
+               and envs[0].get('threads') == 1, envs)
+    item.check('versions_as_bound', all((original.get('versions') or {}).get(k) == v for k, v in case_file['versions_expect'].items()),
+               original.get('versions'))
+    item.check('converted_module_digests_as_bound', converted.get('module_sha256') == case_file['converted_module_pins'], converted.get('module_sha256'))
+    item.check('published_module_pinned', (converted.get('published_module') or {}).get('sha256') == case_file['published_module']['sha256'],
+               converted.get('published_module'))
+    item.check('original_module_digests_as_bound', original.get('original_module_sha256') == case_file['original_module_pins'],
+               original.get('original_module_sha256'))
+    item.check('weights_pinned_original_side', original.get('weights') == {k: v['sha256'] for k, v in case_file['models'].items()},
+               original.get('weights'))
+    check = converted.get('provider_check') or {}
+    item.check('seams_installed_and_effective', check.get('assets') == '_InProcessAssets' and check.get('models') == '_InProcessModels'
+               and check.get('assets_patched') is True and check.get('models_patched') is True and bool(original.get('seam'))
+               and bool(converted.get('seams')), check)
+
+
+def rng_checks(item, p, o, c):
+    for key in ('rng_after_seed', 'rng_after_loader', 'rng_after_case'):
+        item.check(p + key + '_equal', o.get(key) is not None and o.get(key) == c.get(key), [o.get(key), c.get(key)])
+
+
+def raised_live(case_file, outcome):
+    return (outcome or {}).get('raised') is True and [outcome.get('type'), outcome.get('message')] == case_file['live_error']
+
+
+def loader_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'both_returned', (o.get('outcome') or {}).get('raised') is False and (c.get('outcome') or {}).get('raised') is False,
+               [o.get('outcome'), c.get('outcome')])
+    item.check(p + 'converted_recipe_exact', c.get('recipe') == expected_recipe(case_file, case), c.get('recipe'))
+    so, sc = o.get('state') or {}, c.get('state') or {}
+    item.check(p + 'state_equal', bool(so) and canon(so) == canon(sc),
+               {'model_digest': [(so.get('model') or {}).get('digest'), (sc.get('model') or {}).get('digest')],
+                'config_equal': canon(so.get('config')) == canon(sc.get('config')),
+                'processor_equal': canon(so.get('processor')) == canon(sc.get('processor')),
+                'extractor_equal': canon(so.get('feature_extractor')) == canon(sc.get('feature_extractor'))})
+    want = DTYPES[case['base_precision']]
+    floating = [r['dtype'] for r in ((so.get('model') or {}).get('rows') or {}).values() if r['dtype'] in FLOAT_DTYPES]
+    item.check(p + 'floating_tensors_have_requested_dtype', bool(floating) and set(floating) == {want}, sorted(set(floating)))
+    rng_checks(item, p, o, c)
+    item.check(p + 'converted_rebuild_probe_preserved_rng', c.get('rng_after_probe') == c.get('rng_after_loader'))
+    item.check(p + 'original_took_exists_branch_no_download', o.get('download_calls_loader') == [], o.get('download_calls_loader'))
+    item.check(p + 'converted_exists_once_true', (c.get('calls_loader') or {}).get('exists') == exists_call(case_file, case, True),
+               c.get('calls_loader'))
+    item.check(p + 'converted_no_download_request', (c.get('calls_loader') or {}).get('download') == [], c.get('calls_loader'))
+    item.check(p + 'converted_rebuild_no_exists_no_download', c.get('calls_probe') == {'exists': [], 'download': []}, c.get('calls_probe'))
+    item.info[p + 'stated_exclusions'] = {'original': sorted(((o.get('stated') or {}).get('excluded_values') or {}).keys()),
+                                          'converted': sorted(((c.get('stated') or {}).get('excluded_values') or {}).keys())}
+    item.info[p + 'seconds'] = [o.get('seconds'), c.get('seconds')]
+
+
+def absent_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'converted_exists_once_false', (c.get('calls_loader') or {}).get('exists') == exists_call(case_file, case, False),
+               c.get('calls_loader'))
+    item.check(p + 'converted_download_requested_once_pinned', (c.get('calls_loader') or {}).get('download') == download_call(case_file, case),
+               c.get('calls_loader'))
+    item.check(p + 'converted_raised_live_text', raised_live(case_file, c.get('outcome')), c.get('outcome'))
+    calls = o.get('download_calls_loader') or []
+    item.check(p + 'original_download_attempted_once', len(calls) == 1 and calls[0].get('kwargs', {}).get('repo_id') == case['model'], calls)
+    item.check(p + 'original_raised_the_harness_refusal', (o.get('outcome') or {}).get('raised') is True
+               and (o.get('outcome') or {}).get('type') == 'RuntimeError', o.get('outcome'))
+    rng_checks(item, p, o, c)
+
+
+def control_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'published_bytes_no_exists_call', (c.get('calls_loader') or {}).get('exists') == [], c.get('calls_loader'))
+    item.check(p + 'published_bytes_download_requested_once_pinned', (c.get('calls_loader') or {}).get('download') == download_call(case_file, case),
+               c.get('calls_loader'))
+    item.check(p + 'published_bytes_raised_live_text', raised_live(case_file, c.get('outcome')), c.get('outcome'))
+    item.check(p + 'original_not_applicable', 'not_applicable' in o, o)
+
+
+def embeds_checks(item, case_file, case, o, c):
+    p = case['name'] + ':'
+    item.check(p + 'both_returned', (o.get('outcome') or {}).get('raised') is False and (c.get('outcome') or {}).get('raised') is False
+               and bool(o.get('outputs')) and bool(c.get('outputs')), [o.get('outcome'), c.get('outcome')])
+    item.check(p + 'converted_recipe_exact', c.get('recipe') == expected_recipe(case_file, case), c.get('recipe'))
+    item.check(p + 'inputs_equal', bool(o.get('inputs')) and canon(o.get('inputs')) == canon(c.get('inputs')))
+    mo, mc = o.get('outputs') or {}, c.get('outputs') or {}
+    if mo and mc:
+        item.check(p + 'embeds_meta_equal', canon(dict(mo, audio_proj=dict(mo['audio_proj'], raw_file=None)))
+                   == canon(dict(mc, audio_proj=dict(mc['audio_proj'], raw_file=None))), [mo, mc])
+        raw_o, raw_c = (OUT / mo['audio_proj']['raw_file']).read_bytes(), (OUT / mc['audio_proj']['raw_file']).read_bytes()
+        item.check(p + 'embeds_raw_bytes_equal', raw_o == raw_c and hashlib.sha256(raw_o).hexdigest() == mo['audio_proj']['sha256'])
+        item.check(p + 'outputs_finite', mo['audio_proj'].get('finite') is True and mc['audio_proj'].get('finite') is True)
+    item.check(p + 'converted_loader_exists_once_true_no_download', c.get('calls_loader') == {'exists': exists_call(case_file, case, True),
+                                                                                           'download': []}, c.get('calls_loader'))
+    item.check(p + 'converted_fantasytalking_loader_no_calls', c.get('calls_fantasytalking_loader') == {'exists': [], 'download': []},
+               c.get('calls_fantasytalking_loader'))
+    item.check(p + 'converted_embeds_rebuild_no_exists_no_download', c.get('calls_embeds') == {'exists': [], 'download': []}, c.get('calls_embeds'))
+    item.check(p + 'original_no_download', o.get('download_calls_loader') == [] and o.get('download_calls_embeds') == [],
+               [o.get('download_calls_loader'), o.get('download_calls_embeds')])
+    rng_checks(item, p, o, c)
+    item.info[p + 'seconds'] = [o.get('seconds'), c.get('seconds')]
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    load = lambda name: json.loads((OUT / name).read_text()) if (OUT / name).exists() else {}
+    original, converted = load('ORIGINAL_RESULT.json'), load('CONVERTED_RESULT.json')
+    results_sha = {n: hashlib.sha256((OUT / n).read_bytes()).hexdigest() for n in ('ORIGINAL_RESULT.json', 'CONVERTED_RESULT.json') if (OUT / n).exists()}
+    done = original.get('status') == 'ORIGINAL_W2V_DONE' and converted.get('status') == 'CONVERTED_W2V_DONE'
+    items = {name: Item(name, case_file['label']) for name in ITEMS}
+    for item in items.values():
+        global_checks(item, case_file, original, converted, done)
+        item.info['cases'] = [c for c in case_file['cases'] if c['item'] == item.name]
+    functions = {'loader': loader_checks, 'absent': absent_checks, 'control': control_checks, 'embeds': embeds_checks}
+    if done:
+        for case in case_file['cases']:
+            o, c = original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {})
+            functions[case['item']](items[case['item']], case_file, case, o, c)
+    statuses = {name: item.write(results_sha) for name, item in items.items()}
+    failed = any(v.startswith('FAIL') for v in statuses.values())
+    status = ('FAIL_W2V_' if failed else 'PASS_W2V_') + '_'.join(sorted(statuses)).upper()
+    (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha,
+                                                     'label': case_file['label']}, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': status, 'items': statuses}))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
