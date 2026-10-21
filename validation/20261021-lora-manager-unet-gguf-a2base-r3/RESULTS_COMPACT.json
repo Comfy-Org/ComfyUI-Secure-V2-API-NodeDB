@@ -1,0 +1,251 @@
+{
+ "status": "PASS_TIER_U",
+ "failures": [],
+ "environment": {
+  "python": "3.13.7",
+  "torch": "2.8.0+cu128",
+  "numpy": "2.2.6",
+  "gguf_file": "/deps/site/gguf/__init__.py",
+  "gguf_init_sha256": "3ccfc0104cd7ea88c6028743b7bf3f2c89b5f474425de03a217a6072320d7c2f"
+ },
+ "native_gguf": {
+  "loaded": true,
+  "unet_gguf_registered": true
+ },
+ "construction": [
+  {
+   "case": "U:flux_prefixed.gguf:default",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:flux_prefixed.gguf:fp8_e4m3fn",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:flux_prefixed.gguf:fp8_e4m3fn_fast",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:flux_prefixed.gguf:fp8_e5m2",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:nested/sd1_plain.gguf:default",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:orig_shape.gguf:default",
+   "expect": "equal",
+   "construction_equal": true,
+   "dtypes_equal": true,
+   "patcher_equal": true,
+   "converted_wrapped_like_original": null,
+   "original_wrapped": null,
+   "inner_ok": null
+  },
+  {
+   "case": "U:llama_arch.gguf:default",
+   "expect": "both-refuse",
+   "construction_equal": null,
+   "dtypes_equal": null,
+   "patcher_equal": null,
+   "converted_wrapped_like_original": true,
+   "original_wrapped": true,
+   "inner_ok": true
+  },
+  {
+   "case": "U:model_none.gguf:default",
+   "expect": "both-refuse",
+   "construction_equal": null,
+   "dtypes_equal": null,
+   "patcher_equal": null,
+   "converted_wrapped_like_original": true,
+   "original_wrapped": true,
+   "inner_ok": true
+  }
+ ],
+ "queue": [
+  {
+   "case": "Q:flux_prefixed.gguf",
+   "original_ok": true,
+   "converted_ok": true,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:nested/sd1_plain.gguf",
+   "original_ok": true,
+   "converted_ok": true,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:missing.gguf",
+   "original_ok": false,
+   "converted_ok": false,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:UPPER.GGUF",
+   "original_ok": true,
+   "converted_ok": false,
+   "recorded_difference": "original lists it (scanner lower-cases extensions) and fails at run time in the standard loader; the conversion refuses at queue time"
+  },
+  {
+   "case": "Q:../escape.gguf",
+   "original_ok": false,
+   "converted_ok": false,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:/abs/flux_prefixed.gguf",
+   "original_ok": false,
+   "converted_ok": false,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:nested\\sd1_plain.gguf",
+   "original_ok": false,
+   "converted_ok": false,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:std_model.safetensors",
+   "original_ok": true,
+   "converted_ok": true,
+   "recorded_difference": null
+  },
+  {
+   "case": "Q:std_missing.safetensors",
+   "original_ok": false,
+   "converted_ok": false,
+   "recorded_difference": null
+  }
+ ],
+ "mutants": {
+  "M1_no_existence_check": {
+   "killer": "Q:missing.gguf",
+   "converted_queue_ok": true,
+   "original_queue_ok": false,
+   "killed": true
+  },
+  "M2_dequant_from_weight_dtype": {
+   "killer": "U:flux_prefixed.gguf:fp8_e4m3fn",
+   "killed": true,
+   "row": {
+    "construction_equal": true,
+    "dtypes_equal": false,
+    "patcher_equal": true,
+    "converted_wrapped_like_original": null
+   }
+  },
+  "M3_case_insensitive_gguf": {
+   "killer": "Q:UPPER.GGUF",
+   "converted_queue_ok": true,
+   "original_queue_ok": true,
+   "killed": true
+  },
+  "M4_no_error_wrap": {
+   "killer": "U:model_none.gguf:default",
+   "killed": true,
+   "row": {
+    "construction_equal": null,
+    "dtypes_equal": null,
+    "patcher_equal": null,
+    "converted_wrapped_like_original": false
+   }
+  }
+ },
+ "A0_unet_row": {
+  "fields_equal": {
+   "module": true,
+   "class": true,
+   "sdk_refs": true,
+   "permissions": true,
+   "methods": true,
+   "validation_inputs": true
+  },
+  "schema_equal": true,
+  "permissions": [
+   "models",
+   "assets"
+  ],
+  "schema_note": null
+ },
+ "differences": {
+  "cached_patcher_init": {
+   "original": {
+    "factory": "_reload_gguf_unet",
+    "args": [
+     "flux_prefixed.gguf",
+     "default"
+    ]
+   },
+   "converted": null
+  },
+  "error_texts": {
+   "U:llama_arch.gguf:default": {
+    "original": "Failed to load GGUF diffusion model 'llama_arch.gguf': Unexpected architecture type in GGUF file: 'llama'",
+    "converted": [
+     "RuntimeError: Failed to load GGUF diffusion model 'llama_arch.gguf': ValueError: Unexpected architecture type in GGUF file: 'llama'\n"
+    ]
+   },
+   "U:model_none.gguf:default": {
+    "original": "Failed to load GGUF diffusion model 'model_none.gguf': Could not detect model type for GGUF diffusion model: /tmp/ned-lora-unet/diffusion_models/model_none.gguf",
+    "converted": [
+     "RuntimeError: Failed to load GGUF diffusion model 'model_none.gguf': RuntimeError: could not detect GGUF model type for 'model_none.gguf'\n"
+    ]
+   }
+  },
+  "patch_dtype_after_advanced_load": {
+   "original": {
+    "dequant_dtype": "None",
+    "patch_dtype": "torch.float16",
+    "ops_class": "GGMLOps",
+    "linear_is_shared_class": true,
+    "other_options": []
+   },
+   "converted": {
+    "dequant_dtype": "None",
+    "patch_dtype": "None",
+    "ops_class": "GGMLOps",
+    "linear_is_shared_class": false,
+    "other_options": []
+   }
+  },
+  "upper_case_original_run": {
+   "ok": false,
+   "type": "UnpicklingError",
+   "message": "Weights only load failed. In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.\nPlease file an issue with the following so that we can make `weights_only=Tru"
+  }
+ },
+ "event_loops_used": 1
+}
