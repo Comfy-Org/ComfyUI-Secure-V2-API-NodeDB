@@ -1,0 +1,328 @@
+"""CROSS diagnostic for the Ovi bf16 decode divergence (MERVYN m_9b09ac53a1, m_b23c9a1f22). Findings only; no parity claim.
+
+One interpreter holds both the original and the converted Ovi code, with one thread throughout. It answers: do the two decoders
+give the same bf16 output when they share one process? If yes, the wan-ovi-wsl-r1 divergence is process state, not code.
+
+Stages (each reproduces more of one role's import environment):
+- S0 minimal: Core + the in-process SDK; the original Ovi modules (namespace 'ovi_orig' -> /original/wan_original) and the
+  converted Ovi modules (namespace 'ovi_conv' -> /candidate/<pkg>) are imported without either package __init__. Both models are
+  built here: orig_model by the original loader node, conv_model by the converted loader node + rebuild_ovi in an SDK dispatch.
+- S1 original pack: the full original package is imported (as the original role did) with converted-site NOT on sys.path.
+- S2 converted pack: converted-site is added to sys.path and the full converted package is imported (as the converted role did).
+At every stage, for each model, the VAE decoder runs on the same bf16 latent: outside any SDK scope and inside an SDK dispatch
+scope, twice each. Recorded per measurement: the decoder output (meta + raw), a per-submodule forward trace (input/output digest,
+dtype, shape, strides), and a oneDNN verbose summary (primitive, implementation, memory descriptors). Recorded per stage: an
+extended numeric environment (threads, oneDNN/MKL flags, SDP flags, CPU autocast, a denormal probe, torch config digest) and the
+shared libraries newly mapped into the process. At S2 the full nodes also run: the original WanVideoDecodeOviAudio.decode on
+orig_model and the converted node through dispatch (it rebuilds its own model).
+Model dumps (both models): every parameter/buffer with strides, storage offset, contiguity, alignment and inference flag, plus
+plain module attributes.
+"""
+import asyncio
+import collections
+import ctypes
+import gc
+import hashlib
+import inspect
+import itertools
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+import types
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import ovi_common  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+REPORT = {'status': 'RUNNING', 'route': 'cross_single_interpreter', 'stages': {}, 'measurements': []}
+phase = common.Phases(REPORT, 'CROSS')
+COUNTER = itertools.count(1)
+LIBC = ctypes.CDLL(None)
+
+
+def namespace(name, directory):
+    module = types.ModuleType(name)
+    module.__path__ = [directory]
+    module.__package__ = name
+    sys.modules[name] = module
+
+
+def mapped_libraries():
+    libs = set()
+    for line in Path('/proc/self/maps').read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 6 and ('.so' in parts[5]):
+            libs.add(parts[5])
+    return libs
+
+
+def extended_env():
+    import torch
+    env = ovi_common.numeric_env()
+    env['sdp'] = {'flash': torch.backends.cuda.flash_sdp_enabled(), 'math': torch.backends.cuda.math_sdp_enabled(),
+                  'mem_efficient': torch.backends.cuda.mem_efficient_sdp_enabled(), 'cudnn': torch.backends.cuda.cudnn_sdp_enabled()}
+    env['autocast_cpu'] = [torch.is_autocast_enabled('cpu'), str(torch.get_autocast_dtype('cpu'))]
+    tiny = torch.tensor([1e-40], dtype=torch.float32)
+    env['denormal_preserved_fp32'] = bool((tiny * 1.0).item() != 0.0)
+    env['config_show_sha256'] = hashlib.sha256(torch.__config__.show().encode()).hexdigest()
+    env['mkldnn_deterministic'] = repr(getattr(torch.backends.mkldnn, 'deterministic', None))
+    return env
+
+
+def meta(value):
+    import torch
+    if not isinstance(value, torch.Tensor):
+        return {'type': type(value).__name__}
+    t = value.detach()
+    flat = t.contiguous().reshape(-1)
+    return {'dtype': str(t.dtype).removeprefix('torch.'), 'shape': list(t.shape), 'stride': list(t.stride()),
+            'contiguous': t.is_contiguous(), 'sha256': common.sha_bytes(flat.view(torch.uint8).numpy().tobytes())}
+
+
+def onednn_capture(fn):
+    """Run fn with oneDNN verbose on (best effort), capturing fd 1 into a file; returns (result, summary, line_count).
+
+    The summary key is every comma field after 'exec' except the trailing time: engine, primitive kind, implementation,
+    propagation, memory descriptors, attributes and problem shape. If verbose mode cannot be entered, fn still runs and the
+    summary says why (no oneDNN finding for that measurement).
+    """
+    import torch
+    path = Path('/tmp/onednn-%d.txt' % next(COUNTER))
+    sys.stdout.flush()
+    LIBC.fflush(None)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    saved = os.dup(1)
+    os.dup2(fd, 1)
+    entered, note = None, None
+    try:
+        try:
+            entered = torch.backends.mkldnn.verbose(torch.backends.mkldnn.VERBOSE_ON)
+            entered.__enter__()
+        except Exception as error:  # verbose unavailable in this build: measure anyway
+            entered, note = None, type(error).__name__ + ': ' + str(error)[:200]
+        try:
+            result = fn()
+        finally:
+            if entered is not None:
+                entered.__exit__(None, None, None)
+    finally:
+        LIBC.fflush(None)
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(saved)
+        os.close(fd)
+    summary = collections.Counter()
+    count = 0
+    for line in path.read_text(errors='replace').splitlines():
+        if not (line.startswith('onednn_verbose') or line.startswith('dnnl_verbose')) or ',exec,' not in line:
+            continue
+        count += 1
+        parts = line.split(',')
+        index = parts.index('exec')
+        summary[','.join(parts[index + 1:-1])] += 1
+    path.unlink()
+    summary = dict(sorted(summary.items()))
+    if note:
+        summary = {'<verbose unavailable>': note}
+    return result, summary, count
+
+
+def decoder_measure(model, z, label, stage, scope, raw_prefix):
+    import torch
+    records = []
+    handles = []
+    for name, module in model.tod.vae.decoder.named_modules():
+        if not name:
+            continue
+
+        def hook(mod, args, output, name=name):
+            records.append({'module': name, 'in': meta(args[0]) if args else None, 'out': meta(output)})
+            return None
+        handles.append(module.register_forward_hook(hook))
+
+    def run():
+        with torch.amp.autocast('cuda', dtype=model.dtype):
+            with torch.inference_mode():
+                return model.tod.vae.decoder(z)
+    try:
+        out, summary, lines = onednn_capture(run)
+    finally:
+        for handle in handles:
+            handle.remove()
+    record = {'stage': stage, 'model': label, 'scope': scope, 'decoder_out': common.tensor_meta(out, raw_prefix + '.bin'),
+              'trace': records, 'onednn': summary, 'onednn_lines': lines}
+    return record
+
+
+def model_dump(model):
+    import torch
+    tensors = {}
+    for name, tensor in list(model.named_parameters()) + list(model.named_buffers()):
+        tensors[name] = {'dtype': str(tensor.dtype), 'shape': list(tensor.shape), 'stride': list(tensor.stride()),
+                         'storage_offset': tensor.storage_offset(), 'contiguous': tensor.is_contiguous(),
+                         'align64': tensor.data_ptr() % 64, 'inference': tensor.is_inference(), 'requires_grad': tensor.requires_grad,
+                         'sha256': common.sha_bytes(tensor.detach().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes())}
+    attributes = {}
+    for name, module in model.named_modules():
+        plain = {k: repr(v) for k, v in sorted(vars(module).items())
+                 if not k.startswith('_') and isinstance(v, (bool, int, float, str, tuple, list)) and k != 'training'}
+        attributes[name or '<root>'] = {'class': type(module).__qualname__, 'training': module.training, 'plain': plain,
+                                        'forward_hooks': len(module._forward_hooks), 'pre_hooks': len(module._forward_pre_hooks),
+                                        'parametrized': hasattr(module, 'parametrizations')}
+    return {'tensors': tensors, 'attributes': attributes,
+            'digest': hashlib.sha256(json.dumps({'t': tensors, 'a': attributes}, sort_keys=True).encode()).hexdigest()}
+
+
+async def main_async():
+    import torch
+    import folder_paths
+    from comfy_api.latest import _sdk, io
+    models = CASE_FILE['models']
+    stage_libs = {'before': sorted(mapped_libraries())}
+    REPORT['stages']['S0'] = {'env_before_imports': extended_env()}
+    namespace('ovi_orig', '/original/wan_original')
+    namespace('ovi_conv', '/candidate/' + PACKAGE)
+    import importlib
+    orig_nodes = importlib.import_module('ovi_orig.Ovi.nodes_ovi')
+    conv_nodes = importlib.import_module('ovi_conv.secure_ovi_nodes')
+    conv_runtime = importlib.import_module('ovi_conv.secure_ovi_runtime')
+    bound = {row['path']: row['sha256'] for row in common.load_json('/original/PRISTINE_GIT_BINDINGS.json')['files']}
+    assert common.sha_file(orig_nodes.__file__) == bound['Ovi/nodes_ovi.py']
+    REPORT['module_sha256'] = {'ovi_orig.Ovi.nodes_ovi': common.sha_file(orig_nodes.__file__),
+                               'ovi_conv.secure_ovi_nodes': common.sha_file(conv_nodes.__file__),
+                               'ovi_conv.secure_ovi_runtime': common.sha_file(conv_runtime.__file__)}
+    assert REPORT['module_sha256'] == CASE_FILE['module_pins'], REPORT['module_sha256']
+    providers = _sdk.providers
+    counter = iter(range(1, 10000))
+
+    async def dispatch(cls, inputs, call):
+        plan = _sdk.ExecutionPlan(prompt_id='jack-wan-ovi-cross-r1', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs, input_mode='values',
+                                  permissions=tuple(cls.SDK_PERMISSIONS))
+        refs = providers.ref_resolver_factory()
+        scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        try:
+            async def local_call():
+                with scope:
+                    value = call(inputs)
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value
+            result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+            result = await _sdk.unwrap_outputs(refs, result)
+            return tuple(result.result)
+        finally:
+            refs.clear()
+
+    loader_cls = conv_nodes.OviMMAudioVAELoader
+    ovi_common.seed_all(16921)
+    orig_loader = orig_nodes.OviMMAudioVAELoader
+    orig_loader.INPUT_TYPES()
+    orig_model, = orig_loader().loadmodel(vae=models['vae']['catalogue_name'], vocoder=models['vocoder']['catalogue_name'], precision='bf16')
+    recipe, = await dispatch(loader_cls, {'vae': models['vae']['catalogue_name'], 'vocoder': models['vocoder']['catalogue_name'],
+                                          'precision': 'bf16'}, lambda v: loader_cls.execute(**v))
+    holder = {}
+
+    async def rebuild(values):
+        holder['model'] = await conv_runtime.rebuild_ovi(values['recipe'])
+        return io.NodeOutput('built')
+    await dispatch(loader_cls, {'recipe': recipe}, rebuild)
+    conv_model = holder.pop('model')
+    REPORT['recipe'] = recipe
+    REPORT['model_dumps'] = {'orig_model': model_dump(orig_model), 'conv_model': model_dump(conv_model)}
+    latent = ovi_common.latent(CASE_FILE['latent_frames'])
+    z = latent.to(device=torch.device('cpu'), dtype=torch.bfloat16)
+    REPORT['latent'] = common.tensor_meta(latent)
+
+    async def measure_stage(stage):
+        for label, model in (('orig_model', orig_model), ('conv_model', conv_model)):
+            for repeat in (1, 2):
+                REPORT['measurements'].append(decoder_measure(model, z, label, stage, 'outside', '%s-%s-outside-%d' % (stage, label, repeat)))
+                holder.clear()
+
+                async def inside(values, model=model, label=label, repeat=repeat):
+                    holder['record'] = decoder_measure(model, z, label, stage, 'in_scope', '%s-%s-in_scope-%d' % (stage, label, repeat))
+                    return io.NodeOutput('measured')
+                await dispatch(loader_cls, {}, inside)
+                REPORT['measurements'].append(holder.pop('record'))
+        REPORT['stages'][stage].update(env=extended_env(), libs_new=sorted(mapped_libraries() - set(stage_libs['before'])))
+        stage_libs['before'] = sorted(mapped_libraries())
+
+    phase('S0-measure')
+    await measure_stage('S0')
+    phase('S1-original-pack')
+    REPORT['stages']['S1'] = {'sys_path_has_converted_site': '/converted-site' in sys.path}
+    importlib.import_module('wan_original')
+    await measure_stage('S1')
+    phase('S2-converted-pack')
+    sys.path.insert(1, '/converted-site')
+    REPORT['stages']['S2'] = {'sys_path_has_converted_site': '/converted-site' in sys.path}
+    package = importlib.import_module(PACKAGE)
+    REPORT['registered_count'] = len(package.NODE_CLASS_MAPPINGS)
+    await measure_stage('S2')
+    phase('S2-nodes')
+    samples = {'latent_ovi_audio': latent}
+    handles, taps = ovi_common.decode_taps(orig_model, 'node-original', 'S2')
+    try:
+        waveform, = orig_nodes.WanVideoDecodeOviAudio().decode(mmaudio_vae=orig_model, samples=samples)
+    finally:
+        for handle in handles:
+            handle.remove()
+    REPORT['node_original'] = {'waveform': common.tensor_meta(waveform['waveform'], 'S2-node-original-waveform.bin'), 'taps': taps}
+    registered = package.NODE_CLASS_MAPPINGS['WanVideoDecodeOviAudio']
+    result, = await dispatch(registered, {'mmaudio_vae': recipe, 'samples': samples}, lambda v: registered.execute(**v))
+    REPORT['node_converted'] = {'waveform': common.tensor_meta(result['waveform'], 'S2-node-converted-waveform.bin')}
+    REPORT['env_final'] = extended_env()
+    del orig_model, conv_model
+    gc.collect()
+    REPORT['status'] = 'CROSS_DONE'
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/native-core', '/original', '/candidate']
+    from comfy.cli_args import args, LatentPreviewMethod
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    args.preview_method = LatentPreviewMethod.NoPreviews
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/cross-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['vae'] = (['/models/vae'], set(folder_paths.supported_pt_extensions))
+    folder_paths.filename_list_cache.pop('vae', None)
+    import server
+    from app.assets.manager import default_asset_manager
+    args.front_end_root = '/tmp/cross-headless-web'
+    Path(args.front_end_root).mkdir(exist_ok=True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server.PromptServer(loop, default_asset_manager())
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    REPORT['models'] = {key: common.sha_file(spec['container_path']) for key, spec in CASE_FILE['models'].items()}
+    loop.run_until_complete(main_async())
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save('CROSS_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != 'CROSS_DONE':
+    raise SystemExit(1)

@@ -1,0 +1,45 @@
+"""Role entry for the Ovi bf16 CROSS diagnostic r1. Runs inside the single container as uid/gid 1000 with no capabilities.
+
+usage (container entrypoint): /usr/local/bin/python3.13 -I -B -X faulthandler /prepared/role_entry.py --role cross
+Diagnostic scope: this one role deliberately sees BOTH the original and the converted trees (no parity claim is made). It checks
+the hardened environment and the mounts, then runs cross_ovi_bf16.py with runpy. The opencv tree is not mounted.
+"""
+import json
+import os
+import runpy
+import sys
+
+SCRIPT = 'cross_ovi_bf16.py'
+
+
+def require(condition, message):
+    if not condition:
+        print(json.dumps({'role_entry': 'REFUSED', 'reason': message}))
+        raise SystemExit(2)
+
+
+def main():
+    require('--role' in sys.argv and sys.argv[sys.argv.index('--role') + 1] == 'cross', '--role cross required')
+    require(os.getuid() == 1000 and os.getgid() == 1000, 'uid/gid 1000 required')
+    require(list(sys.version_info[:3]) == [3, 13, 7] and os.path.realpath(sys.executable) == '/usr/local/bin/python3.13',
+            'image python 3.13.7 required')
+    require(sys.flags.isolated == 1 and sys.flags.dont_write_bytecode == 1 and sys.flags.no_site == 0, '-I -B with site required')
+    for key, value in (('HOME', '/tmp'), ('HF_HUB_OFFLINE', '1'), ('TRANSFORMERS_OFFLINE', '1'), ('CUDA_VISIBLE_DEVICES', '-1'),
+                       ('OMP_NUM_THREADS', '1'), ('MKL_NUM_THREADS', '1'), ('OPENBLAS_NUM_THREADS', '1')):
+        require(os.environ.get(key) == value, key + ' must be ' + value)
+    with open('/prepared/CASE.json', 'rb') as stream:
+        case = json.loads(stream.read())
+    paths = ['/prepared/common.py', '/prepared/ovi_common.py', '/prepared/' + SCRIPT, '/native-core', '/native-site', '/converted-site',
+             '/original/wan_original', '/original/PRISTINE_GIT_BINDINGS.json', '/candidate/' + case['package']]
+    paths += [spec['container_path'] for spec in case['models'].values()]
+    for path in paths:
+        require(os.path.exists(path), 'missing mount: ' + path)
+    require(not os.path.exists('/opencv-site'), 'unexpected mount: /opencv-site')
+    require(os.access('/out', os.W_OK) and os.listdir('/out') == [], '/out must be fresh and writable')
+    require(os.access('/tmp', os.W_OK), '/tmp must be writable')
+    print(json.dumps({'role_entry': 'OK', 'role': 'cross', 'uid_gid': [os.getuid(), os.getgid()], 'sys_path_head': sys.path[:4]}), flush=True)
+    sys.argv = ['/prepared/' + SCRIPT]
+    runpy.run_path('/prepared/' + SCRIPT, run_name='__main__')
+
+
+main()

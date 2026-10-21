@@ -1,0 +1,40 @@
+{
+  "status": "SOURCE_ONLY_UNSELECTED_UNRUN",
+  "authority": "MERVYN m_9b09ac53a1, m_b23c9a1f22",
+  "label": "Ovi bf16 CROSS diagnostic, WSL x86 CPU: one interpreter holds the original and the converted Ovi decoders (both trees mounted in one container), one thread; findings only, no parity claim",
+  "question": "do the original and converted Ovi decoders agree at bf16 inside one interpreter? if yes, the run divergence is process state",
+  "role": "cross: one container, both trees, one thread; stages S0 (minimal) -> S1 (+ original pack) -> S2 (+ converted-site, converted pack)",
+  "outputs": "CROSS_RESULT.json + raw decoder outputs; DIAGNOSIS.json (verdict CODE_OR_OBJECT / IMPORT_EFFECT_<stage> / PROCESS_STATE)",
+  "models": "mmaudio_vae_16k_bf16 5b60e163 + BigVGAN vocoder 22d61314 (as wan-ovi-wsl-r1)",
+  "new_downloads": 0,
+  "hardening": {
+    "user": "1000:1000, --cap-drop ALL, no-new-privileges",
+    "network": "none",
+    "root": "read-only",
+    "tmp": "tmpfs 3840 MiB noexec",
+    "writable": "only /out",
+    "threads": "one thread",
+    "integrity": "packet + six material trees before the role; CASE parsed from pinned bytes",
+    "comparator_inputs": "O_NOFOLLOW copies, re-hashed right before the analyzer",
+    "retries": 0
+  },
+  "cap": {
+    "container_memory_bytes": 6442450944,
+    "memory_equals_swap": true,
+    "sampled_stop_bytes": 5905580032,
+    "launch_gate": "MemAvailable >= 10 GiB",
+    "role_work_seconds": 600,
+    "roles": 1,
+    "basis": "two bf16 Ovi models resident (~0.6 GB each) plus both packs imported; expected ~2-3 GiB"
+  },
+  "not_claimed": [
+    "parity",
+    "any row change",
+    "Guest",
+    "GPU"
+  ],
+  "activity": {
+    "runs": 0,
+    "imports_of_pack_code": 0
+  }
+}

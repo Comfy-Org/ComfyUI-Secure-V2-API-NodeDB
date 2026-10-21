@@ -1,0 +1,93 @@
+{
+ "rule": "code-read only; nothing was run against either engine",
+ "live_fact": "live runs engine SDK _sdk.py 0d6ec97e (Core 0.37.0), per the audit LIVE_FACTS (MERVYN m_36d4c28c6e)",
+ "deployed_engine_sdk": {
+  "path": "native-core/comfy_api/latest/_sdk.py (frozen materials d875d848)",
+  "sha256": "0d6ec97e8d30a17fc1bd2fa21c3090a889820770b299529165fe66e931a0e2b7",
+  "lines": {
+   "class LatentRef": [
+    342
+   ],
+   "class CondRef": [
+    443
+   ],
+   "class ClipRef": [
+    943
+   ],
+   "LatentRef.samples": [],
+   "CondRef.embedding": [],
+   "ClipRef.encode(text)": [
+    1054
+   ],
+   "ClipRef.encode(text, *, images, llama_template)": [],
+   "TensorRef.from_value": [],
+   "MaskRef.from_value": []
+  }
+ },
+ "sdk207_core": {
+  "commit": "708e6c013927b130c3a6c8b071e3034cefe7293e",
+  "repo": "https://github.com/Comfy-Org/ComfyUI",
+  "path": "comfy_api/latest/_sdk.py",
+  "sha256": "cdf37afc7f7b3befb277499baa219628f4f4de03ad8836dd69b99b3b88c68c21",
+  "lines": {
+   "class LatentRef": [
+    370
+   ],
+   "class CondRef": [
+    475
+   ],
+   "class ClipRef": [
+    999
+   ],
+   "LatentRef.samples": [
+    373
+   ],
+   "CondRef.embedding": [
+    478
+   ],
+   "ClipRef.encode(text)": [],
+   "ClipRef.encode(text, *, images, llama_template)": [
+    1131,
+    10962
+   ],
+   "TensorRef.from_value": [
+    268
+   ],
+   "MaskRef.from_value": [
+    354
+   ]
+  },
+  "provenance_sha256": "f53237b552c4409f8c613ed26a0d995c379a69a056ab861dd7963aa5a87cd582"
+ },
+ "converted_calls": {
+  "v2/secure_bindweave_nodes.py": {
+   "sha256": "1208a3b84536dbe7c873a407f9301d03a29f1375238b513790ff906492bf4803",
+   "lines": {
+    "reference_latents.samples()": [
+     208
+    ],
+    "TensorRef.from_value": [
+     220,
+     223,
+     230,
+     233
+    ],
+    "MaskRef.from_value": [
+     231
+    ]
+   }
+  },
+  "v2/secure_qwenvl_nodes.py": {
+   "sha256": "04a5a7608ecd910e212cdaf82378f25b537d04ca0ef1b911c27ee6b1307927db",
+   "lines": {
+    "clip.encode(images=, llama_template=)": [
+     28
+    ],
+    "conditioning.embedding()": [
+     30
+    ]
+   }
+  }
+ },
+ "conclusion": "Both converted nodes call SDK207 APIs that the deployed 0d6ec97e engine lacks: Bindweave fails at reference_latents.samples() (LatentRef has no samples there); TextImageEncodeQwenVL at clip.encode(prompt, images=..., llama_template=...) (ClipRef.encode takes text only) and conditioning.embedding()."
+}
