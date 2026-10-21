@@ -1,0 +1,233 @@
+{
+ "format": "jack-wan-portrait-comparator-selftest/1",
+ "case_sha256": "f1148fdd38290c001f3fae1b98ddbe8f6edcb73f1aee77d36d6c94e6392a8a2f",
+ "comparator": "compare_portrait_r1.py",
+ "comparator_sha256": "75cd6e7abd86bb8b293ed2ab8016b1b83d57c380b7e6b42e7018dbce8df3e28e",
+ "cases": [
+  "l1_fp16",
+  "l2_bf16",
+  "l3_fp32",
+  "d1_face5_default",
+  "d2_face9_scales",
+  "d3_noface5",
+  "d4_short3"
+ ],
+ "clean": {
+  "status": "PASS_PORTRAIT_DETECTOR_LOADER",
+  "items": {
+   "detector": "PASS_SLICE_DETECTOR",
+   "loader": "PASS_SLICE_LOADER"
+  },
+  "checks_true_per_item": {
+   "detector": 56,
+   "loader": 34
+  },
+  "checks_total_per_item": {
+   "detector": 56,
+   "loader": 34
+  }
+ },
+ "controls": {
+  "recipe_digest": {
+   "item": "loader",
+   "targeted_check": "l1_fp16:converted_recipe_exact",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l1_fp16:converted_recipe_exact"
+   ],
+   "result": "REFUSED"
+  },
+  "rebuild_differs": {
+   "item": "loader",
+   "targeted_check": "l2_bf16:converted_recipe_rebuild_repeats_it",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l2_bf16:converted_recipe_rebuild_repeats_it"
+   ],
+   "result": "REFUSED"
+  },
+  "proj_tensor": {
+   "item": "loader",
+   "targeted_check": "l1_fp16:proj_model_equal_tensor_by_tensor",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l1_fp16:proj_model_equal_tensor_by_tensor"
+   ],
+   "result": "REFUSED"
+  },
+  "state_dict": {
+   "item": "loader",
+   "targeted_check": "l3_fp32:state_dict_equal",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l3_fp32:state_dict_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "dtype": {
+   "item": "loader",
+   "targeted_check": "l2_bf16:proj_model_dtype_as_requested",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l2_bf16:proj_model_dtype_as_requested"
+   ],
+   "result": "REFUSED"
+  },
+  "probe_rng": {
+   "item": "loader",
+   "targeted_check": "l1_fp16:converted_rebuild_probe_preserved_rng",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l1_fp16:converted_rebuild_probe_preserved_rng"
+   ],
+   "result": "REFUSED"
+  },
+  "loader_rng": {
+   "item": "loader",
+   "targeted_check": "l3_fp32:rng_after_loader_equal",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "l3_fp32:converted_rebuild_probe_preserved_rng",
+    "l3_fp32:rng_after_loader_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "inputs": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:inputs_equal",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:inputs_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "embeds_bytes": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:portrait_embeds_raw_bytes_equal",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:portrait_embeds_raw_bytes_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "bbox": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:bbox_equal",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:bbox_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "landmarks": {
+   "item": "detector",
+   "targeted_check": "d2_face9_scales:landmarks_equal",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d2_face9_scales:landmarks_equal"
+   ],
+   "result": "REFUSED"
+  },
+  "non_finite": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:outputs_finite",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:outputs_finite"
+   ],
+   "result": "REFUSED"
+  },
+  "shape": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:expected_embeds_shape",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:expected_embeds_shape"
+   ],
+   "result": "REFUSED"
+  },
+  "no_face_fill": {
+   "item": "detector",
+   "targeted_check": "d1_face5_default:no_face_frame_2_forward_filled",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d1_face5_default:no_face_frame_2_forward_filled"
+   ],
+   "result": "REFUSED"
+  },
+  "differs": {
+   "item": "detector",
+   "targeted_check": "d2_face9_scales:slice_input_changes_original_output",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d2_face9_scales:expected_embeds_shape",
+    "d2_face9_scales:slice_input_changes_original_output"
+   ],
+   "result": "REFUSED"
+  },
+  "noface_message": {
+   "item": "detector",
+   "targeted_check": "d3_noface5:original_error_is_the_cited_one",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d3_noface5:original_error_is_the_cited_one"
+   ],
+   "result": "REFUSED"
+  },
+  "noface_file_map": {
+   "item": "detector",
+   "targeted_check": "d3_noface5:raising_files_as_mapped",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d3_noface5:raising_files_as_mapped"
+   ],
+   "result": "REFUSED"
+  },
+  "short_function": {
+   "item": "detector",
+   "targeted_check": "d4_short3:same_raising_function",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "d4_short3:same_raising_function"
+   ],
+   "result": "REFUSED"
+  },
+  "onnx_asset": {
+   "item": "detector",
+   "targeted_check": "onnx_assets_pinned_in_both_roles",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "onnx_assets_pinned_in_both_roles"
+   ],
+   "result": "REFUSED"
+  },
+  "module_pin": {
+   "item": "loader",
+   "targeted_check": "converted_module_digests_as_bound",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "converted_module_digests_as_bound"
+   ],
+   "result": "REFUSED"
+  },
+  "registry": {
+   "item": "loader",
+   "targeted_check": "registry_146",
+   "item_status": "FAIL_SLICE_LOADER",
+   "failed_checks": [
+    "registry_146"
+   ],
+   "result": "REFUSED"
+  },
+  "environment": {
+   "item": "detector",
+   "targeted_check": "environment_as_bound",
+   "item_status": "FAIL_SLICE_DETECTOR",
+   "failed_checks": [
+    "environment_as_bound"
+   ],
+   "result": "REFUSED"
+  }
+ },
+ "status": "PASS_COMPARATOR_SELFTEST"
+}

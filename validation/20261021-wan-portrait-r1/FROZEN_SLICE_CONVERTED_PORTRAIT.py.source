@@ -1,0 +1,156 @@
+"""CONVERTED side for FantasyPortrait r1: the registered candidate nodes FantasyPortraitModelLoader and FantasyPortraitFaceDetector
+on the SDK in-process route.
+
+Each case starts from a fresh seed:
+- loader cases:
+  - the node returns its digest-bound recipe;
+  - a harness probe then runs the converted rebuild_portrait_resource(recipe), the same function the detector uses, on the
+    same dispatch path as a node. It returns only metas: the rebuilt proj_model and the state, tensor by tensor;
+  - the CPU RNG is recorded after the node and again after the probe. The probe must leave it unchanged (preserve_rng).
+- detector cases: the loader node recipe feeds the detector node with the same deterministic frames as the original role.
+  Outputs or the raised error are recorded exactly.
+Module digests of the converted portrait files and the vendored ONNX assets are recorded for the comparator.
+"""
+import asyncio
+import gc
+import inspect
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import portrait_common  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+PACKAGE_ROOT = '/candidate/%s/' % PACKAGE
+LABEL = 'CONVERTED'
+REPORT = {'status': 'RUNNING', 'route': 'registered_inprocess_sdk', 'package': PACKAGE, 'cases': {}}
+phase = common.Phases(REPORT, LABEL)
+
+
+async def run(case_file):
+    import importlib
+    import torch
+    from comfy_api.latest import _sdk, io
+    package = importlib.import_module(PACKAGE)
+    registry = package.NODE_CLASS_MAPPINGS
+    REPORT['registered_count'] = len(registry)
+    REPORT['module_sha256'] = {}
+    for rel in case_file['converted_module_pins']:
+        REPORT['module_sha256'][rel] = common.sha_file(PACKAGE_ROOT + rel)
+    resource_module = importlib.import_module(PACKAGE + '.secure_portrait_resource')
+    assert resource_module.__file__.startswith(PACKAGE_ROOT), resource_module.__file__
+    REPORT['onnx_assets'] = {rel: common.sha_file(PACKAGE_ROOT + rel) for rel in case_file['onnx_assets']}
+    providers = _sdk.providers
+    assert not providers.overlay_active and not providers.engaged
+    counter = iter(range(1, 1000))
+
+    async def dispatch(cls, inputs, call):
+        plan = _sdk.ExecutionPlan(prompt_id='jack-wan-portrait-r1', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs,
+                                  input_mode='refs' if cls.SDK_REFS else 'values', permissions=tuple(cls.SDK_PERMISSIONS))
+        refs = providers.ref_resolver_factory()
+        scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+        try:
+            values = await _sdk.wrap_inputs(refs, inputs) if cls.SDK_REFS else inputs
+
+            async def local_call():
+                with scope:
+                    value = call(values)
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value
+            result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+            result = await _sdk.unwrap_outputs(refs, result)
+            return result.result
+        finally:
+            refs.clear()
+
+    async def node(name, inputs):
+        cls = registry[name]
+        return await dispatch(cls, inputs, lambda values: cls.execute(**values))
+
+    async def probe(recipe):
+        async def rebuild(values):
+            resource, rebuilt = await resource_module.rebuild_portrait_resource(values['portrait_model'])
+            meta = {'proj_model': portrait_common.module_meta(resource['proj_model']), 'sd': portrait_common.state_meta(resource['sd']),
+                    'recipe': rebuilt}
+            del resource
+            return io.NodeOutput(meta)
+        return (await dispatch(registry['FantasyPortraitModelLoader'], {'portrait_model': recipe}, rebuild))[0]
+
+    model_name = case_file['model']['catalogue_name']
+    for case in case_file['cases']:
+        name = case['name']
+        phase('converted-' + name)
+        torch.manual_seed(case_file['seed'])
+        record = {'rng_after_seed': common.rng_sha()}
+        started = time.monotonic()
+        recipe, = await node('FantasyPortraitModelLoader', {'model': model_name, 'base_precision': case['base_precision']})
+        record['rng_after_loader'] = common.rng_sha()
+        record['recipe'] = recipe
+        if case['item'] == 'loader':
+            probed = await probe(recipe)
+            record['rng_after_probe'] = common.rng_sha()
+            record['resource'] = {'proj_model': probed['proj_model'], 'sd': probed['sd']}
+            record['recipe_rebuilt'] = probed['recipe']
+            del probed
+        else:
+            images = portrait_common.frames(case_file, case['frames'])
+            record['inputs'] = {'images': common.tensor_meta(images), 'frames': case['frames']}
+            try:
+                result = await node('FantasyPortraitFaceDetector', dict(case['scales'], images=images, portrait_model=recipe,
+                                                                        device=case['device']))
+                record['outcome'] = {'raised': False}
+                record['outputs'] = portrait_common.detector_outputs(result, name, 'converted')
+                del result
+            except Exception as error:
+                record['outcome'] = portrait_common.error_outcome(error)
+                del error
+            del images
+        record['rng_after_case'] = common.rng_sha()
+        record['seconds'] = round(time.monotonic() - started, 3)
+        REPORT['cases'][name] = record
+        gc.collect()
+    REPORT['status'] = LABEL + '_PORTRAIT_DONE'
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/converted-site', '/native-core', '/candidate']
+    from comfy.cli_args import args
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/converted-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['environment'] = portrait_common.environment()
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    asyncio.run(run(CASE_FILE))
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save(LABEL + '_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != LABEL + '_PORTRAIT_DONE':
+    raise SystemExit(1)

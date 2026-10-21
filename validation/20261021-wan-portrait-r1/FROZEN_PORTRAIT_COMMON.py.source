@@ -1,0 +1,118 @@
+"""FantasyPortrait r1 harness helpers shared by both role workers (test harness only, never production).
+
+- frames: deterministic IMAGE batches built from the pristine pack's example_inputs/woman.jpg. Each is decoded by cv2, converted
+  BGR -> RGB, resized to CASE size (INTER_AREA) and scaled to float32 [0, 1]. The variants are face, shift_r/shift_d (np.roll by
+  CASE pixels) and black. Both roles run identical code on the identical opencv binary (opencv-python-headless 4.12.0.88).
+- metas: torch tensors, numpy arrays, nested lists and state dicts, recorded by dtype, shape and sha256 (plus finiteness for
+  floating types). The original and the converted outputs are compared on these records and on raw bytes.
+- error_outcome: type, message (first 2000 characters), full-message digest, length, tail and the raising frame.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import traceback
+
+import common
+
+FRAME_VARIANTS = ('face', 'shift_r', 'shift_d', 'black')
+
+
+def frames(case_file, names):
+    import cv2
+    import numpy as np
+    import torch
+    spec = case_file['image']
+    data = Path(spec['path']).read_bytes()
+    assert len(data) == spec['bytes'] and common.sha_bytes(data) == spec['sha256'], 'input image pin'
+    bgr = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    rgb = cv2.resize(rgb, tuple(spec['resize']), interpolation=cv2.INTER_AREA)
+    face = rgb.astype(np.float32) / np.float32(255.0)
+    variants = {'face': face, 'shift_r': np.roll(face, spec['shift'], axis=1), 'shift_d': np.roll(face, spec['shift'], axis=0),
+                'black': np.zeros_like(face)}
+    assert all(name in FRAME_VARIANTS for name in names), names
+    return torch.from_numpy(np.ascontiguousarray(np.stack([variants[name] for name in names])))
+
+
+def numpy_meta(array):
+    import numpy as np
+    array = np.ascontiguousarray(array)
+    meta = {'dtype': str(array.dtype), 'shape': list(array.shape), 'sha256': common.sha_bytes(array.tobytes())}
+    if np.issubdtype(array.dtype, np.floating):
+        meta['finite'] = bool(np.isfinite(array).all())
+    return meta
+
+
+def value_meta(value):
+    """Exact record of detector outputs: tensors/arrays by meta (+ exact values when small), containers recursively."""
+    import numpy as np
+    import torch
+    if isinstance(value, torch.Tensor):
+        return {'tensor': common.tensor_meta(value)}
+    if isinstance(value, np.ndarray):
+        meta = numpy_meta(value)
+        if value.size <= 16:
+            meta['values'] = [repr(x) for x in value.reshape(-1).tolist()]
+        return {'ndarray': meta}
+    if isinstance(value, (list, tuple)):
+        return {type(value).__name__: [value_meta(item) for item in value]}
+    if isinstance(value, dict):
+        return {'dict': {str(k): value_meta(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}}
+    if isinstance(value, (np.floating, float)):
+        return {'float': repr(float(value))}
+    if isinstance(value, (np.integer, int, bool)) or value is None or isinstance(value, str):
+        return {'scalar': value if not isinstance(value, np.integer) else int(value)}
+    return {'object': type(value).__qualname__}
+
+
+def state_meta(state):
+    import torch
+    rows = {}
+    for key in sorted(state):
+        tensor = state[key]
+        assert isinstance(tensor, torch.Tensor), key
+        flat = tensor.detach().contiguous().reshape(-1)
+        rows[key] = {'dtype': str(tensor.dtype).removeprefix('torch.'), 'shape': list(tensor.shape),
+                     'sha256': common.sha_bytes(flat.view(torch.uint8).numpy().tobytes())}
+    return {'keys': len(rows), 'digest': hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(), 'rows': rows}
+
+
+def module_meta(module):
+    import torch
+    rows = {}
+    for name, tensor in list(module.named_parameters()) + list(module.named_buffers()):
+        flat = tensor.detach().contiguous().reshape(-1)
+        rows[name] = {'dtype': str(tensor.dtype).removeprefix('torch.'), 'shape': list(tensor.shape), 'device': str(tensor.device),
+                      'sha256': common.sha_bytes(flat.view(torch.uint8).numpy().tobytes())}
+    return {'class': type(module).__qualname__, 'dtype_attr': str(getattr(module, 'dtype', None)), 'training': bool(module.training),
+            'repr_sha256': hashlib.sha256(repr(module).encode()).hexdigest(), 'tensors': len(rows),
+            'digest': hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(), 'rows': rows}
+
+
+def environment():
+    import cv2
+    import numpy
+    import onnx
+    import onnxruntime
+    import scipy
+    return {'onnxruntime': onnxruntime.__version__, 'onnxruntime_providers': onnxruntime.get_available_providers(),
+            'onnx': onnx.__version__, 'cv2': cv2.__version__, 'numpy': numpy.__version__, 'scipy': scipy.__version__,
+            'cv2_file': os.path.relpath(cv2.__file__, '/'), 'onnxruntime_file': os.path.relpath(onnxruntime.__file__, '/')}
+
+
+def error_outcome(error):
+    frames_ = traceback.extract_tb(error.__traceback__)
+    text = str(error)
+    return {'raised': True, 'type': type(error).__name__, 'message': text[:2000],
+            'message_sha256': hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest(), 'message_length': len(text),
+            'message_tail': text[-300:], 'raising_function': frames_[-1].name, 'raising_file': os.path.basename(frames_[-1].filename),
+            'raising_line': frames_[-1].lineno}
+
+
+def detector_outputs(result, name, prefix):
+    """Record (portrait_embeds, bbox, landmarks). The embeds tensor raw bytes are written for the comparator."""
+    proj_split, rects, landmarks = result
+    meta = {'portrait_embeds': common.tensor_meta(proj_split, '%s-%s-embeds.bin' % (prefix, name)),
+            'bbox': value_meta(rects), 'landmarks': value_meta(landmarks)}
+    return meta
