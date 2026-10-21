@@ -1,26 +1,70 @@
-"""Original loader configuration for its approved trained 1.3B T2V case."""
+"""Original loader configuration for admitted trained resources (approved 1.3B T2V; I2V code path behind digest admission)."""
 import torch
 import numpy as np
 
 
-def configuration_13b(sd):
+def model_type_from_state(sd, in_channels, model_name):
+    """The original loader's inference (nodes_model_loading.py:1294-1306), unchanged."""
+    model_type = "t2v"
+    if not "text_embedding.0.weight" in sd:
+        model_type = "no_cross_attn"
+    elif "model_type.Wan2_1-FLF2V-14B-720P" in sd or "img_emb.emb_pos" in sd or "flf2v" in model_name.lower():
+        model_type = "fl2v"
+    if "blocks.0.cross_attn.k_img.weight" in sd:
+        model_type = "i2v"
+    elif in_channels == 16:
+        model_type = "t2v"
+    elif "control_adapter.conv.weight" in sd:
+        model_type = "t2v"
+    if "audio_injector.injector.0.k.weight" in sd:
+        model_type = "s2v"
+    return model_type
+
+
+def model_variant_for(model_type, dim, model_name):
+    """The original loader's variant rules (nodes_model_loading.py:1374-1392), unchanged."""
+    model_variant = "14B"
+    if model_type == "i2v" or model_type == "fl2v":
+        if "480" in model_name or "fun" in model_name.lower() or "a2" in model_name.lower() or "540" in model_name:
+            model_variant = "i2v_480"
+        elif "720" in model_name:
+            model_variant = "i2v_720"
+    elif model_type == "t2v":
+        model_variant = "14B"
+    if dim == 1536:
+        model_variant = "1_3B"
+    if "high" in model_name.lower() or "low" in model_name.lower():
+        if "i2v" in model_name.lower():
+            model_variant = "i2v_14B_2.2"
+        else:
+            model_variant = "14B_2.2"
+    return model_variant
+
+
+def configuration_admitted(sd, model_name, admitted):
     dim = sd['patch_embedding.weight'].shape[0]
     in_channels = sd['patch_embedding.weight'].shape[1]
     in_features = sd['blocks.0.self_attn.k.weight'].shape[1]
     out_features = sd['blocks.0.self_attn.k.weight'].shape[0]
     ffn_dim = sd['blocks.0.ffn.0.bias'].shape[0]
     ffn2_dim = sd['blocks.0.ffn.2.weight'].shape[1]
-    if (dim, in_channels, in_features, out_features) != (1536, 16, 1536, 1536):
-        raise ValueError('Unexpected approved 1.3B model dimensions')
+    if list(sd['patch_embedding.weight'].shape) != admitted['patch_embedding']:
+        raise ValueError('Admitted resource architecture differs from its admission record')
+    model_type = model_type_from_state(sd, in_channels, model_name)
+    if model_type != admitted['model_type'] or model_type not in ('t2v', 'i2v'):
+        raise ValueError('Admitted resource model type differs from its admission record')
+    if 'vace_blocks.0.after_proj.weight' in sd or dim in (3072, 4096):
+        raise NotImplementedError('VACE, 5B and LongCat resources are outside the admitted domain')
     patch_size = (1, 2, 2)
-    model_type = 't2v'
     out_dim = 16
-    num_heads = 12
-    num_layers = 30
+    if dim == 5120:
+        num_heads, num_layers = 40, 40
+    else:
+        num_heads, num_layers = 12, 30
     attention_mode = 'sdpa'
     base_dtype = torch.bfloat16
     device = offload_device = torch.device('cpu')
-    model_variant = '1_3B'
+    model_variant = model_variant_for(model_type, dim, model_name)
     vace_layers = vace_in_dim = None
     is_humo = 'audio_proj.audio_proj_glob_1.layer.weight' in sd
     is_wananimate = 'pose_patch_embedding.weight' in sd

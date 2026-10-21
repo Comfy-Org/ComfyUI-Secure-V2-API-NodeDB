@@ -1,0 +1,55 @@
+--- a/capsule/compare_slices_rev5.py (r1)
++++ b/capsule/compare_slices_rev6.py (r2)
+@@ -37,4 +37,10 @@
+   - the module digests;
+   - both roles used the controller-verified fixture (the FIXTURE.json copy in the comparison dir).
++
++rev 6 (I2V Step 1 r2, review L5 + L10) adds and changes nothing else:
++- outputs_finite, for every returning case: each recorded tensor meta in samples, denoised and every forward noise_pred has
++  finite True in both roles. strip() drops "finite" from the equality views, so identical NaN/Inf outputs could otherwise
++  pass every parity check.
++- every COMPARISON item records the CASE label in info.label, so the synthetic scope travels with the result.
+ """
+ import hashlib
+@@ -89,4 +95,19 @@
+     return [{'args': strip(c['args']), 'kwargs': {k: strip(v) for k, v in c['kwargs'].items() if k not in drop},
+              'noise_pred': strip(c['noise_pred']), 'rng': c['rng_sha256_after_forward']} for c in calls]
++
++
++def tensor_metas(value, out=None):
++    """rev 6: every recorded tensor meta (a dict with dtype, shape, sha256 and finite) inside value."""
++    out = [] if out is None else out
++    if isinstance(value, dict):
++        if all(key in value for key in ('dtype', 'shape', 'sha256', 'finite')):
++            out.append(value)
++        else:
++            for item in value.values():
++                tensor_metas(item, out)
++    elif isinstance(value, list):
++        for item in value:
++            tensor_metas(item, out)
++    return out
+ 
+ 
+@@ -189,4 +210,9 @@
+                 shas = [o['samples']['samples']['sha256'], c['samples']['samples']['sha256']]
+                 item.check(p + 'samples_equal_cross_run_reference', shas == [reference['sha256']] * 2, {'roles': shas, 'reference': reference})
++            finite = {role: [m.get('finite') for m in tensor_metas([rec.get('samples'), rec.get('denoised')]
++                                                              + [f.get('noise_pred') for f in rec.get('forward_calls', [])])]
++                      for role, rec in (('original', o), ('converted', c))}
++            item.check(p + 'outputs_finite', all(values and all(x is True for x in values) for values in finite.values()),
++                       {role: [i for i, x in enumerate(values) if x is not True] for role, values in finite.items()})
+     if 'transformer' in o or 'transformer' in c:
+         item.check(p + 'same_transformer_configuration', o.get('transformer') is not None and canon(o.get('transformer')) == canon(c.get('transformer'))
+@@ -231,4 +257,5 @@
+     """rev 5: the test-only admission seam lives in the converted harness only; the published bytes refuse the synthetic digest."""
+     item = Item('i2v_admission_seam')
++    item.info['label'] = case_file.get('label')
+     item.check('workers_completed', done)
+     if not done:
+@@ -288,4 +315,5 @@
+                 case_checks(item, case, original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {}))
+         item.info['cases'] = cases
++        item.info['label'] = case_file.get('label')
+     if done:
+         effect_checks(items, case_file, original)

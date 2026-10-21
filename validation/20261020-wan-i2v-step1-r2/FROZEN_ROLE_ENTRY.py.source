@@ -1,0 +1,55 @@
+"""Role entry for I2V Step 1 (synthetic code-path parity). Runs inside a role container as uid/gid 1000 with no capabilities.
+
+usage (container entrypoint): /usr/local/bin/python3.13 -I -B -X faulthandler /prepared/role_entry.py --role fixture|original|converted
+Checks the hardened environment and the role's mounts, then runs the role script with runpy:
+- fixture: fixture_i2v.py;
+- original / converted: slice_<role>_i2v.py.
+The script's own exit status is the container's exit status.
+"""
+import json
+import os
+import runpy
+import sys
+
+SCRIPTS = {'fixture': 'fixture_i2v.py', 'original': 'slice_original_i2v.py', 'converted': 'slice_converted_i2v.py'}
+
+
+def require(condition, message):
+    if not condition:
+        print(json.dumps({'role_entry': 'REFUSED', 'reason': message}))
+        raise SystemExit(2)
+
+
+def main():
+    require('--role' in sys.argv, '--role required')
+    role = sys.argv[sys.argv.index('--role') + 1]
+    require(role in SCRIPTS, 'unknown role')
+    require(os.getuid() == 1000 and os.getgid() == 1000, 'uid/gid 1000 required')
+    require(list(sys.version_info[:3]) == [3, 13, 7] and os.path.realpath(sys.executable) == '/usr/local/bin/python3.13',
+            'image python 3.13.7 required')
+    require(sys.flags.isolated == 1 and sys.flags.dont_write_bytecode == 1 and sys.flags.no_site == 0, '-I -B with site required')
+    for key, value in (('HOME', '/tmp'), ('HF_HUB_OFFLINE', '1'), ('TRANSFORMERS_OFFLINE', '1'), ('CUDA_VISIBLE_DEVICES', '-1')):
+        require(os.environ.get(key) == value, key + ' must be ' + value)
+    with open('/prepared/CASE.json', 'rb') as stream:
+        case = json.loads(stream.read())
+    paths = ['/prepared/common.py', '/prepared/i2v_common.py', '/prepared/' + SCRIPTS[role], '/original/wan_original',
+             '/original/PRISTINE_GIT_BINDINGS.json', '/native-core', '/native-site']
+    if role == 'fixture':
+        paths.append('/prepared/FIXTURE_SPEC.json')
+        absent = ['/candidate', '/fixture']  # the fixture is built from the original constructor only
+    else:
+        paths += ['/candidate/' + case['package'], '/converted-site', '/inputs', '/fixture/FIXTURE.json',
+                  case['models']['real_13b_t2v']['container_path'], case['models']['synthetic_i2v']['container_path']]
+        absent = []
+    for path in paths:
+        require(os.path.exists(path), 'missing mount: ' + path)
+    for path in absent:
+        require(not os.path.exists(path), 'unexpected mount for the fixture role: ' + path)
+    require(os.access('/out', os.W_OK) and os.listdir('/out') == [], '/out must be fresh and writable')
+    require(os.access('/tmp', os.W_OK), '/tmp must be writable')
+    print(json.dumps({'role_entry': 'OK', 'role': role, 'uid_gid': [os.getuid(), os.getgid()], 'sys_path_head': sys.path[:4]}), flush=True)
+    sys.argv = ['/prepared/' + SCRIPTS[role]]
+    runpy.run_path('/prepared/' + SCRIPTS[role], run_name='__main__')
+
+
+main()

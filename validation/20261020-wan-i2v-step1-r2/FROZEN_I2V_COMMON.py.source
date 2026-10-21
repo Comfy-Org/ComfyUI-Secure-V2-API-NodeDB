@@ -1,0 +1,89 @@
+"""I2V Step 1 harness helpers shared by both role workers (test harness only, never production).
+
+- verify_fixture: the controller-verified fixture copies under /fixture must equal FIXTURE.json (sha256 and bytes), and so must
+  the bound model file.
+- i2v_embeds: the plain 13-key I2V conditioning dict, with keys in WanVideoImageToVideoEncode's order (original nodes.py
+  1159-1173). It is built from the fixture inputs, with fresh tensors for every case, and is identical for both roles. No VAE
+  or CLIP model runs.
+- error_outcome: a raising-case record with the full message digest, length and tail, as well as the first 2000 characters.
+  The I2V batched_cfg message starts with str(transformer), so it is long.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import traceback
+
+import common
+
+FIXTURE_DIR = Path('/fixture')
+PLAIN_I2V_KEY_ORDER = ('image_embeds', 'clip_context', 'negative_clip_context', 'max_seq_len', 'num_frames', 'lat_h', 'lat_w',
+                       'control_embeds', 'end_image', 'fun_or_fl2v_model', 'has_ref', 'add_cond_latents', 'mask')
+
+
+def verify_fixture(case_file):
+    """The comparator cross-checks the returned FIXTURE.json digest against the controller's copy and the other role."""
+    fixture = json.loads((FIXTURE_DIR / 'FIXTURE.json').read_text())
+    assert fixture['format'] == 'jack-wan-i2v-fixture/1' and fixture['seed'] == case_file['fixture_seed'], 'fixture identity'
+    model_spec = case_file['models']['synthetic_i2v']
+    path = Path(model_spec['container_path'])
+    assert path.is_file() and not path.is_symlink(), path
+    assert path.stat().st_size == fixture['model']['bytes'] and common.sha_file(path) == fixture['model']['sha256'], 'fixture model'
+    assert fixture['model']['catalogue_name'] == model_spec['catalogue_name'], 'fixture catalogue name'
+    for name, item in fixture['inputs'].items():
+        data = (FIXTURE_DIR / item['file']).read_bytes()
+        assert len(data) == item['bytes'] and common.sha_bytes(data) == item['sha256'], name
+    return {'fixture_json_sha256': common.sha_file(FIXTURE_DIR / 'FIXTURE.json'), 'model_sha256': fixture['model']['sha256'],
+            'model_bytes': fixture['model']['bytes'], 'inputs': {k: v['sha256'] for k, v in fixture['inputs'].items()}}
+
+
+def load_input(fixture, name):
+    import torch
+    item = fixture['inputs'][name]
+    data = (FIXTURE_DIR / item['file']).read_bytes()
+    assert len(data) == item['bytes'] and common.sha_bytes(data) == item['sha256'], name
+    return torch.frombuffer(bytearray(data), dtype=getattr(torch, item['dtype'])).reshape(item['shape'])
+
+
+def i2v_embeds(case_file, case):
+    fixture = json.loads((FIXTURE_DIR / 'FIXTURE.json').read_text())
+    spec = case['i2v_embeds']
+    values = {'image_embeds': load_input(fixture, 'y'),
+              'clip_context': load_input(fixture, 'clip_context') if spec['clip_context'] else None,
+              'negative_clip_context': None, 'max_seq_len': spec['max_seq_len'], 'num_frames': spec['num_frames'],
+              'lat_h': spec['lat_h'], 'lat_w': spec['lat_w'], 'control_embeds': None, 'end_image': None,
+              'fun_or_fl2v_model': False, 'has_ref': False, 'add_cond_latents': None, 'mask': load_input(fixture, 'mask')}
+    return {key: values[key] for key in PLAIN_I2V_KEY_ORDER}
+
+
+def error_outcome(error):
+    frames = traceback.extract_tb(error.__traceback__)
+    text = str(error)
+    return {'raised': True, 'type': type(error).__name__, 'message': text[:2000],
+            'message_sha256': hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest(), 'message_length': len(text),
+            'message_tail': text[-300:], 'raising_function': frames[-1].name, 'raising_file': os.path.basename(frames[-1].filename),
+            'raising_line': frames[-1].lineno}
+
+
+def tree_listing_digest(root, listing):
+    """sha256 over the sorted (relative path, sha256) rows of every file under root, and equality with the bound listing."""
+    rows = {}
+    for directory, names, files in os.walk(root):
+        names[:] = sorted(n for n in names if n != '__pycache__')
+        for name in sorted(files):
+            full = os.path.join(directory, name)
+            assert not os.path.islink(full), full
+            rows[os.path.relpath(full, root)] = common.sha_file(full)
+    digest = hashlib.sha256(json.dumps(sorted(rows.items())).encode()).hexdigest()
+    return {'files': len(rows), 'digest': digest, 'equals_bound_listing': rows == listing}
+
+
+def digest_absent(root, digest):
+    """True when no file under root contains the hex digest text (ASCII), so it cannot sit in v2 bytes."""
+    needle = digest.encode('ascii')
+    for directory, names, files in os.walk(root):
+        names[:] = [n for n in names if n != '__pycache__']
+        for name in files:
+            if needle in Path(os.path.join(directory, name)).read_bytes():
+                return False
+    return True

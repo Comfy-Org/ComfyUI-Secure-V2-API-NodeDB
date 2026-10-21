@@ -1,0 +1,253 @@
+"""Comparator self-test on the SHIPPED capsule/CASE.json (I2V Step 1 r2, review M1). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_comparator.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch or SDK, and needs no docker.
+1. Build one synthetic ORIGINAL/CONVERTED result pair, plus a FIXTURE.json, that satisfies every check the shipped comparator
+   derives from the shipped CASE.json. All cases are covered, with their real names, items, expectations and effect chains.
+2. Run the shipped comparator (subprocess, -I -S -B) with --prepared-dir <packet>/capsule. Every item must PASS.
+3. Run each control: one mutation of recorded fields, after which the targeted check must fail and its item must be FAIL.
+   Other failing checks are recorded too.
+4. Write SELFTEST.json with the CASE.json and comparator sha256 and the per-item check counts.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+COMPARATOR = 'compare_slices_rev6.py'
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def meta(raw, shape):
+    return {'dtype': 'float32', 'shape': shape, 'bytes': len(raw), 'sha256': sha(raw), 'finite': True}
+
+
+def by_item(case_file, item):
+    return [c for c in case_file['cases'] if c['item'] == item]
+
+
+def raise_outcome(case):
+    form = case.get('expected_error_form') or {}
+    if case.get('expected_error'):
+        kind, message = case['expected_error']
+    else:
+        kind = form.get('type', 'RuntimeError')
+        message = form.get('message_startswith', '') + '\n' + '  (synthetic)\n' * 300 + form.get('message_endswith', '')
+    return {'raised': True, 'type': kind, 'message': message[:2000], 'message_sha256': sha(message.encode()),
+            'message_length': len(message), 'message_tail': message[-300:],
+            'raising_function': form.get('raising_function', 'process'), 'raising_file': form.get('raising_file', 'nodes_sampler.py'),
+            'raising_line': 1}
+
+
+def synthetic(case_file, registered):
+    """(original, converted, fixture_bytes, raw_files) satisfying every check derived from case_file."""
+    model_sha = '9' * 64
+    fixture = {'format': 'jack-wan-i2v-fixture/1', 'seed': case_file['fixture_seed'],
+               'model': {'sha256': model_sha, 'patch_embedding': case_file['seam']['entry']['patch_embedding'], 'has_k_img': True},
+               'inputs': {'y': {'sha256': '8' * 64}, 'clip_context': {'sha256': '7' * 64}, 'mask': {'sha256': '6' * 64}}}
+    fixture_bytes = json.dumps(fixture).encode()
+    role_fixture = {'fixture_json_sha256': sha(fixture_bytes), 'model_sha256': model_sha, 'model_bytes': 10,
+                    'inputs': {k: v['sha256'] for k, v in fixture['inputs'].items()}}
+    spec = case_file['seam']
+    first_seam = next(c['name'] for c in case_file['cases'] if c.get('seam_required'))
+    original = {'status': 'ORIGINAL_SLICES_DONE', 'versions': {'torch': 'x'}, 'cpu': {'threads': 1}, 'cases': {}, 'fixture': dict(role_fixture)}
+    converted = {'status': 'CONVERTED_SLICES_DONE', 'versions': {'torch': 'x'}, 'cpu': {'threads': 1}, 'cases': {}, 'fixture': dict(role_fixture),
+                 'registered_count': registered, 'sampler_runtime_sha256': case_file['sampler_runtime_sha256'],
+                 'model_runtime_sha256': case_file['model_runtime_sha256'], 'model_config_sha256': case_file['model_config_sha256'],
+                 'seam': {'p0': {'raised': True, 'type': spec['p0_expect'][0], 'message': spec['p0_expect'][1],
+                                 'raising_function': spec['p0_raising'][0], 'raising_file': spec['p0_raising'][1]},
+                          'admitted_published': json.loads(json.dumps(spec['published_admitted'])),
+                          'admitted_after_p0': json.loads(json.dumps(spec['published_admitted'])),
+                          'installed_before_case': first_seam,
+                          'admitted_with_seam': dict(json.loads(json.dumps(spec['published_admitted'])), **{model_sha: dict(spec['entry'])}),
+                          'candidate_tree_before': {'files': spec['candidate_tree_files'], 'digest': spec['candidate_tree_digest'], 'equals_bound_listing': True},
+                          'candidate_tree_after': {'files': spec['candidate_tree_files'], 'digest': spec['candidate_tree_digest'], 'equals_bound_listing': True},
+                          'fixture_digest_absent_from_candidate': True, 'registry': {'count': registered, 'classes_outside_package': []}}}
+    raw_files = {}
+    for index, case in enumerate(case_file['cases']):
+        name = case['name']
+        synthetic_model = case['model'] == 'synthetic_i2v'
+        base = {'rng_after_seed': 'r0', 'rng_after_sampler': 'r1', 'model': case['model'],
+                'inputs': {'image_embeds': {'num_frames': 5, 'i2v': 'i2v_embeds' in case}},
+                'transformer': {'class': 'WanModel', 'model_type': case.get('expected_model_type'), 'dim': 192 if synthetic_model else 1536,
+                                'in_dim': 36 if synthetic_model else 16, 'num_layers': 30}}
+        if case.get('expect') == 'raise':
+            o = dict(base, outcome=raise_outcome(case), forward_calls=[], block0_calls=0)
+            c = json.loads(json.dumps(o))
+            after_error = {'error_alive': False}
+        else:
+            raw = bytes([index + 1]) * 32
+            sample = meta(raw, case['expected_latent_shape'])
+            reference = case.get('expected_samples_sha256_cross_run')
+            if reference:
+                sample['sha256'] = reference['sha256']  # synthetic: the record carries the reviewed run's digest
+            forwards = [{'args': [], 'kwargs': {'t': step}, 'noise_pred': [meta(bytes([index + 1, step]) * 16, [1, 2])],
+                         'rng_sha256_after_forward': 'f%d' % step} for step in range(case.get('expected_forwards', 1))]
+            o = dict(base, outcome={'raised': False}, samples={'samples': sample, 'generator_state': meta(b'g' * 8, [8])},
+                     denoised={'samples': dict(sample)}, forward_calls=forwards, block0_calls=len(forwards))
+            c = json.loads(json.dumps(o))
+            for role in ('original', 'converted'):
+                raw_files['%s-%s-samples.bin' % (role, name)] = raw
+            after_error = {}
+        c['seam_active'] = bool(case.get('seam_required'))
+        c['in_step'] = {'owned_transformers_observed': 1, 'transformer_released': True, 'owner_frames': [], 'package_frames': [],
+                        'private_weight_dirs': []}
+        c['after_release'] = dict({'loop_turns': 2, 'transformer_released': True, 'owner_frames': [], 'package_frames': [],
+                                   'private_weight_dirs': []}, **after_error)
+        original['cases'][name], converted['cases'][name] = o, c
+    return original, converted, fixture_bytes, raw_files
+
+
+def run_comparator(packet, root, original, converted, fixture_bytes, raw_files):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'ORIGINAL_RESULT.json').write_text(json.dumps(original))
+    (out / 'CONVERTED_RESULT.json').write_text(json.dumps(converted))
+    (out / 'FIXTURE.json').write_bytes(fixture_bytes)
+    for name, data in raw_files.items():
+        (out / name).write_bytes(data)
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule' / COMPARATOR), '--out-dir', str(out),
+                             '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    status = json.loads((out / 'COMPARISON.json').read_text())
+    items = {item: json.loads((out / ('COMPARISON_%s.json' % item)).read_text()) for item in status['items']}
+    return status, items, result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    comparator_bytes = (packet / 'capsule' / COMPARATOR).read_bytes()
+    case_file = json.loads(case_bytes)
+    registered = int(re.search(r'^EXPECTED_REGISTERED = (\d+)$', comparator_bytes.decode(), re.M).group(1))
+    t0 = by_item(case_file, 't2v_regression')[0]['name']
+    t1 = by_item(case_file, 'i2v_dict_on_t2v_model')[0]['name']
+    i1, i2, i3 = [c['name'] for c in by_item(case_file, 'i2v_plain')]
+    i4 = by_item(case_file, 'batched_cfg_i2v')[0]['name']
+
+    def clean():
+        return synthetic(case_file, registered)
+    status, items, code = run_comparator(packet, out / 'clean', *clean())
+    expected_items = sorted({c['item'] for c in case_file['cases']} | {'i2v_admission_seam'})
+    clean_ok = (sorted(status['items']) == expected_items and status['status'].startswith('PASS_SLICES_')
+                and all(d['status'].startswith('PASS_SLICE_') for d in items.values()) and code == 0)
+    record = {'format': 'jack-wan-i2v-comparator-selftest/2', 'case_sha256': sha(case_bytes), 'comparator': COMPARATOR,
+              'comparator_sha256': sha(comparator_bytes), 'cases': [c['name'] for c in case_file['cases']],
+              'clean': {'status': status['status'], 'items': status['items'],
+                        'checks_true_per_item': {k: sum(1 for v in d['checks'].values() if v) for k, d in items.items()},
+                        'checks_total_per_item': {k: len(d['checks']) for k, d in items.items()}},
+              'controls': {}}
+
+    def case_of(doc, name):
+        return doc['cases'][name]
+
+    def both(fn):
+        def mutate(o, c, fixture, raws):
+            fn(o)
+            fn(c)
+            return fixture
+        return mutate
+
+    def conv(fn):
+        def mutate(o, c, fixture, raws):
+            fn(c)
+            return fixture
+        return mutate
+
+    def cross_run(o, c, fixture, raws):
+        other = b'\x55' * 32
+        for role, doc in (('original', o), ('converted', c)):
+            new = meta(other, case_of(doc, t0)['samples']['samples']['shape'])
+            case_of(doc, t0)['samples']['samples'] = new
+            case_of(doc, t0)['denoised']['samples'] = dict(new)
+            raws['%s-%s-samples.bin' % (role, t0)] = other
+        return fixture
+
+    def i3_like_i2(o, c, fixture, raws):
+        for role, doc in (('original', o), ('converted', c)):
+            case_of(doc, i3)['samples'] = json.loads(json.dumps(case_of(doc, i2)['samples']))
+            case_of(doc, i3)['denoised'] = json.loads(json.dumps(case_of(doc, i2)['denoised']))
+        return fixture
+
+    def architecture(o, c, fixture, raws):
+        doc = json.loads(fixture)
+        doc['model']['patch_embedding'] = [192, 16, 1, 2, 2]
+        new = json.dumps(doc).encode()
+        for role_doc in (o, c):
+            role_doc['fixture']['fixture_json_sha256'] = sha(new)
+        return new
+
+    def t1_message(doc):
+        outcome = case_of(doc, t1)['outcome']
+        text = outcome['message'].replace('detected, encoded', 'detected; encoded')
+        outcome.update(message=text[:2000], message_sha256=sha(text.encode()), message_length=len(text), message_tail=text[-300:])
+
+    published_other = {'2' * 64: {'model_type': 't2v', 'patch_embedding': [1536, 16, 1, 2, 2]}}
+    controls = [
+        ('message_digest', 'batched_cfg_i2v', i4 + ':same_full_message_digest_and_length',
+         conv(lambda d: case_of(d, i4)['outcome'].update(message_sha256='e' * 64))),
+        ('cited_form', 'batched_cfg_i2v', i4 + ':original_error_has_the_cited_form',
+         both(lambda d: case_of(d, i4)['outcome'].update(message_tail="got an unexpected keyword argument 'z'"))),
+        ('cross_run_reference', 't2v_regression', t0 + ':samples_equal_cross_run_reference', cross_run),
+        ('transformer_config', 'i2v_plain', i1 + ':same_transformer_configuration', conv(lambda d: case_of(d, i1)['transformer'].update(dim=193))),
+        ('seam_state', 'i2v_plain', i1 + ':seam_state_as_declared', conv(lambda d: case_of(d, i1).update(seam_active=False))),
+        ('i3_effect', 'i2v_plain', i3 + ':slice_input_changes_original_output', i3_like_i2),
+        ('non_finite', 'i2v_plain', i2 + ':outputs_finite', both(lambda d: case_of(d, i2)['samples']['samples'].update(finite=False))),
+        ('non_finite_forward', 'i2v_plain', i1 + ':outputs_finite',
+         conv(lambda d: case_of(d, i1)['forward_calls'][0]['noise_pred'][0].update(finite=False))),
+        ('t1_cited_error', 'i2v_dict_on_t2v_model', t1 + ':original_error_is_the_cited_one', both(t1_message)),
+        ('t1_seam_state', 'i2v_dict_on_t2v_model', t1 + ':seam_state_as_declared', conv(lambda d: case_of(d, t1).update(seam_active=True))),
+        ('t1_model_type', 'i2v_dict_on_t2v_model', t1 + ':same_transformer_configuration',
+         both(lambda d: case_of(d, t1)['transformer'].update(model_type='i2v'))),
+        ('t1_raising_site', 'i2v_dict_on_t2v_model', t1 + ':original_error_has_the_cited_form',
+         both(lambda d: case_of(d, t1)['outcome'].update(raising_function='load_model_context'))),
+        ('p0_not_refused', 'i2v_admission_seam', 'p0_published_admission_refuses_the_synthetic_digest',
+         conv(lambda d: d['seam'].update(p0={'raised': False}))),
+        ('published_table', 'i2v_admission_seam', 'published_admitted_is_the_approved_13b_only',
+         conv(lambda d: d['seam'].update(admitted_published=published_other))),
+        ('extra_admission', 'i2v_admission_seam', 'seam_adds_exactly_the_fixture_entry',
+         conv(lambda d: d['seam']['admitted_with_seam'].update({'f' * 64: dict(case_file['seam']['entry'])}))),
+        ('seam_before_t0', 'i2v_admission_seam', 'seam_installed_after_p0_and_t2v_regression', conv(lambda d: d['seam'].update(installed_before_case=t0))),
+        ('tree_changed', 'i2v_admission_seam', 'candidate_tree_equals_bound_bytes_before_and_after',
+         conv(lambda d: d['seam']['candidate_tree_after'].update(digest='e' * 64))),
+        ('digest_in_candidate', 'i2v_admission_seam', 'fixture_digest_absent_from_candidate_bytes',
+         conv(lambda d: d['seam'].update(fixture_digest_absent_from_candidate=False))),
+        ('registry_seam', 'i2v_admission_seam', 'registry_holds_only_candidate_classes',
+         conv(lambda d: d['seam']['registry'].update(classes_outside_package=['harness.Seam']))),
+        ('module_digest', 'i2v_admission_seam', 'candidate_module_digests_as_bound', conv(lambda d: d.update(model_runtime_sha256='e' * 64))),
+        ('fixture_mismatch', 'i2v_admission_seam', 'both_roles_used_the_controller_verified_fixture',
+         lambda o, c, fixture, raws: (o['fixture'].update(model_sha256='e' * 64), fixture)[1]),
+        ('fixture_architecture', 'i2v_admission_seam', 'fixture_is_the_declared_architecture', architecture)]
+    all_ok = clean_ok
+    for name, item, check, mutate in controls:
+        original, converted, fixture_bytes, raws = clean()
+        fixture_bytes = mutate(original, converted, fixture_bytes, raws)
+        status, items, code = run_comparator(packet, out / ('control-' + name), original, converted, fixture_bytes, raws)
+        doc = items[item]
+        failed = sorted(k for k, v in doc['checks'].items() if not v)
+        ok = doc['status'].startswith('FAIL_SLICE_') and check in failed
+        record['controls'][name] = {'item': item, 'targeted_check': check, 'item_status': doc['status'], 'failed_checks': failed,
+                                    'result': 'REFUSED' if ok else 'NOT DETECTED'}
+        all_ok = all_ok and ok
+    record['status'] = 'PASS_COMPARATOR_SELFTEST' if all_ok else 'FAILED_COMPARATOR_SELFTEST'
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'clean': record['clean']['status'], 'controls': len(controls),
+                      'not_refused': sorted(k for k, v in record['controls'].items() if v['result'] != 'REFUSED'),
+                      'checks_total_per_item': record['clean']['checks_total_per_item']}))
+    return 0 if all_ok else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

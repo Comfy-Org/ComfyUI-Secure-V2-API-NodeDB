@@ -1,0 +1,327 @@
+{
+  "approval": "MERVYN m_ac4fbd5c7d (Step 1: go, source only, design first), m_932f23f1bf (batched_cfg ruling: I2V error parity with the Step 1 fixture), m_21c672eca8 (H1-H3 shape and seam design approved; T2V regression in the same run); r2: MERVYN m_11da48bcaf after the independent review (CLEAR_WITH_NOTES): t1 (M2)",
+  "label": "I2V code path: synthetic code-path parity only; no real I2V model admitted",
+  "package": "wan_v2_i2v1",
+  "bytes_under_test": {
+    "candidate": "corpus main d6271b5c v2 + c2d97473 + 6d3a4b67 (r8 stage bytes) + H1-H3 (delta-r1)",
+    "materials_sha256": "4d2aa51fe7f3fcc969bde2b237385bbf6666c82434a0b5f7e1976c60da8d110f",
+    "candidate_tree_digest": "487df3cf6ad679daa72db1be9ed24391dcf8b05b2e27e536f3914964593fd586"
+  },
+  "sampler_runtime_sha256": "23b1dd70c041d47a4df2b9a60da149d1e17fefb4e44f54cbec04874cbfdd38eb",
+  "model_runtime_sha256": "f58bd270e72b4cf6329580c997b657ee4e7791f7b1818b1483a9f6ac7c02f0f2",
+  "model_config_sha256": "22b4dbc5a8eae34b7edbd2570e89711358bdc6262032dec4d5aa9fecea5ea7a4",
+  "seed": 314159,
+  "fixture_seed": 20261020,
+  "model_loader": {
+    "attention_mode": "sdpa",
+    "base_precision": "bf16",
+    "load_device": "offload_device",
+    "quantization": "disabled",
+    "rms_norm_function": "default"
+  },
+  "models": {
+    "real_13b_t2v": {
+      "bytes": 2874796712,
+      "catalogue_name": "huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/Wan2_1-T2V-1_3B_bf16.safetensors",
+      "container_path": "/models/diffusion_models/huggingface/Kijai/WanVideo_comfy/8260d429d19fd7a72304cad059160b95d843913f/Wan2_1-T2V-1_3B_bf16.safetensors",
+      "sha256": "bcb3c10ad5bbb03e597ebbf3ec1d1ce3e76180df99d4d11e1cc933ff92c066d5"
+    },
+    "synthetic_i2v": {
+      "catalogue_name": "synthetic/jack-wan-i2v-synthetic-d192-s20261020.safetensors",
+      "container_path": "/models/diffusion_models/synthetic/jack-wan-i2v-synthetic-d192-s20261020.safetensors",
+      "source": "fixture container (FIXTURE.json; controller-verified copy under /fixture)"
+    }
+  },
+  "text_embeds": {
+    "echoshot": false,
+    "negative_prompt_embeds": {
+      "bytes": 49152,
+      "container_path": "/inputs/internal_unipc_complete_workflow-text-negative_prompt_embeds-i0.bin",
+      "dtype": "bfloat16",
+      "sha256": "97fc473361185f65006fe6590a6a6746ccbacc0774c6ae8bfb077554b1b0e39c",
+      "shape": [
+        6,
+        4096
+      ]
+    },
+    "prompt_embeds": {
+      "bytes": 90112,
+      "container_path": "/inputs/internal_unipc_complete_workflow-text-prompt_embeds-i0.bin",
+      "dtype": "bfloat16",
+      "sha256": "9041b84752a8389cadc4a508943f243fab5829874f65c534b79b1b530afdb24b",
+      "shape": [
+        11,
+        4096
+      ]
+    }
+  },
+  "vendor_versions": [
+    "accelerate",
+    "diffusers",
+    "ftfy",
+    "gguf",
+    "huggingface-hub",
+    "protobuf",
+    "sentencepiece",
+    "tokenizers",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "wcwidth"
+  ],
+  "seam": {
+    "where": "converted role harness only (slice_converted_i2v.py), in-process, after p0 and t0; never in v2 or the registry",
+    "p0_expect": [
+      "NotImplementedError",
+      "First staged workflow is bound to the approved trained Wan2.1 1.3B resource"
+    ],
+    "p0_raising": [
+      "load_model_context",
+      "wan_workflow_model_runtime.py"
+    ],
+    "published_admitted": {
+      "bcb3c10ad5bbb03e597ebbf3ec1d1ce3e76180df99d4d11e1cc933ff92c066d5": {
+        "model_type": "t2v",
+        "patch_embedding": [
+          1536,
+          16,
+          1,
+          2,
+          2
+        ]
+      }
+    },
+    "entry": {
+      "model_type": "i2v",
+      "patch_embedding": [
+        192,
+        36,
+        1,
+        2,
+        2
+      ]
+    },
+    "candidate_tree_digest": "487df3cf6ad679daa72db1be9ed24391dcf8b05b2e27e536f3914964593fd586",
+    "candidate_tree_files": 544
+  },
+  "cases": [
+    {
+      "item": "t2v_regression",
+      "name": "t0_t2v_regression_cfg2",
+      "model": "real_13b_t2v",
+      "expected_model_type": "t2v",
+      "exercises": "T2V regression on the H1-H3 candidate with the published admission (before the seam): r3 x0_baseline_cfg2 inputs; the latent must equal r3 (pre-H1-H3 candidate) byte for byte",
+      "empty_embeds": {
+        "height": 64,
+        "num_frames": 5,
+        "width": 64
+      },
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 3
+      },
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "expected_forwards": 6,
+      "expected_samples_sha256_cross_run": {
+        "sha256": "0302c14864cc3d4ac9a775fc4041b5bd5097d7278c2acb91050df67b9ccfb946",
+        "source": "feta r3 attempt 2 (m_ee23614b11) x0_baseline_cfg2, original and converted (COMPARISON 61ec2016); candidate then wan_v2_r3 = r8 stage bytes"
+      }
+    },
+    {
+      "item": "i2v_dict_on_t2v_model",
+      "name": "t1_t2v_model_with_plain_i2v_dict",
+      "model": "real_13b_t2v",
+      "expected_model_type": "t2v",
+      "exercises": "The one H1 change users can reach (review M2): on the published admission (before the seam), the plain 13-key I2V dict with the approved 1.3B T2V model. r8 refused it before load (NotImplementedError). H1 admits the dict, the model loads, and the vendored original raises its own ValueError in process (nodes_sampler.py:230-232), after its own load as in the original. Error parity, not a computation pass.",
+      "i2v_embeds": {
+        "max_seq_len": 32,
+        "num_frames": 5,
+        "lat_h": 8,
+        "lat_w": 8,
+        "clip_context": true
+      },
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expect": "raise",
+      "observer": "head",
+      "expected_forwards": 0,
+      "expected_error": [
+        "ValueError",
+        "T2V (text to video) model detected, encoded images only work with I2V (Image to video) models"
+      ],
+      "expected_error_form": {
+        "type": "ValueError",
+        "message_startswith": "T2V (text to video) model detected",
+        "message_endswith": "encoded images only work with I2V (Image to video) models",
+        "raising_function": "process",
+        "raising_file": "nodes_sampler.py"
+      }
+    },
+    {
+      "item": "i2v_plain",
+      "name": "i1_i2v_clip_cfg1",
+      "model": "synthetic_i2v",
+      "seam_required": true,
+      "expected_model_type": "i2v",
+      "exercises": "plain I2V with clip_context, cfg 1.0: cond pass only (y + mask -> 20 channels, in_dim 36; image cross-attention via img_emb/k_img/v_img)",
+      "i2v_embeds": {
+        "max_seq_len": 32,
+        "num_frames": 5,
+        "lat_h": 8,
+        "lat_w": 8,
+        "clip_context": true
+      },
+      "sampling": {
+        "cfg": 1.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "expected_forwards": 2
+    },
+    {
+      "item": "i2v_plain",
+      "name": "i2_i2v_clip_cfg2",
+      "model": "synthetic_i2v",
+      "seam_required": true,
+      "expected_model_type": "i2v",
+      "exercises": "plain I2V with clip_context, cfg 2.0: the uncond pass reuses clip_fea and y (nodes_sampler.py 1545-1547)",
+      "i2v_embeds": {
+        "max_seq_len": 32,
+        "num_frames": 5,
+        "lat_h": 8,
+        "lat_w": 8,
+        "clip_context": true
+      },
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "expected_forwards": 4,
+      "differs_from_case": "i1_i2v_clip_cfg1"
+    },
+    {
+      "item": "i2v_plain",
+      "name": "i3_i2v_noclip_cfg2",
+      "model": "synthetic_i2v",
+      "seam_required": true,
+      "expected_model_type": "i2v",
+      "exercises": "plain I2V without clip_context, cfg 2.0: clip_fea None, image cross-attention skipped (model.py 2820-2824, 771)",
+      "i2v_embeds": {
+        "max_seq_len": 32,
+        "num_frames": 5,
+        "lat_h": 8,
+        "lat_w": 8,
+        "clip_context": false
+      },
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "expected_forwards": 4,
+      "differs_from_case": "i2_i2v_clip_cfg2"
+    },
+    {
+      "item": "batched_cfg_i2v",
+      "name": "i4_i2v_batched_cfg2_error_parity",
+      "model": "synthetic_i2v",
+      "seam_required": true,
+      "expected_model_type": "i2v",
+      "exercises": "original defect: batched_cfg always raises TypeError; converted reproduces it (I2V half; nodes_sampler.py:1657-1663). With clip_fea present, torch.cat at 1659 succeeds; the call at 1661-1664 passes is_uncond explicitly and again through **base_params (1444), and the unknown z kwarg (1657) is never reached. CPython reports the duplicate keyword before the call, naming the callee by str(transformer). Error parity, not a computation pass.",
+      "i2v_embeds": {
+        "max_seq_len": 32,
+        "num_frames": 5,
+        "lat_h": 8,
+        "lat_w": 8,
+        "clip_context": true
+      },
+      "sampling": {
+        "cfg": 2.0,
+        "force_offload": true,
+        "riflex_freq_index": 0,
+        "rope_function": "comfy",
+        "scheduler": "unipc",
+        "seed": 314159,
+        "shift": 5.0,
+        "steps": 2
+      },
+      "expected_latent_shape": [
+        1,
+        16,
+        2,
+        8,
+        8
+      ],
+      "expected_forwards": 0,
+      "expect": "raise",
+      "observer": "head",
+      "extra": {
+        "batched_cfg": true
+      },
+      "expected_error_form": {
+        "type": "TypeError",
+        "message_startswith": "WanModel(",
+        "message_endswith": " got multiple values for keyword argument 'is_uncond'",
+        "raising_function": "predict_with_cfg",
+        "raising_file": "nodes_sampler.py"
+      }
+    }
+  ]
+}

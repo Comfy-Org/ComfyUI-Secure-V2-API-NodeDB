@@ -1,0 +1,105 @@
+--- a/capsule/compare_slices_rev4.py (r3)
++++ b/capsule/compare_slices_rev5.py
+@@ -20,4 +20,21 @@
+ - An item whose only failing checks are such message checks, each equal after normalization, gets status
+   CLOSED_BY_REVIEWED_NORMALIZATION_SLICE_<item>, never PASS. Both raw messages and the normalized comparison are recorded.
++
++rev 5 (I2V Step 1, MERVYN m_21c672eca8) adds checks and changes nothing else.
++- Raising cases:
++  - When the workers record the full-message digest, same_full_message_digest_and_length compares it exactly. The I2V
++    batched_cfg message starts with str(transformer), far beyond the 2000-character excerpt.
++  - expected_error_form (type, message prefix and suffix, raising function and file) stands in for an exact cited message
++    where the message cannot be cited before the run.
++- expected_samples_sha256_cross_run: both roles' latent bytes must equal a sha256 recorded by an earlier reviewed run.
++- same_transformer_configuration and seam_state_as_declared run when the workers record them.
++- Item i2v_admission_seam (CASE "seam") checks:
++  - p0: the published refusal, with the published ADMITTED table;
++  - exactly one test-only entry for the fixture digest, installed after p0 and the T2V regression case;
++  - the candidate tree equals the bound bytes before and after;
++  - the fixture digest is absent from candidate bytes;
++  - the registry holds only candidate classes;
++  - the module digests;
++  - both roles used the controller-verified fixture (the FIXTURE.json copy in the comparison dir).
+ """
+ import hashlib
+@@ -134,4 +151,13 @@
+         item.check(p + 'same_exception_type_and_message', (oo.get('type'), oo.get('message')) == (co.get('type'), co.get('message')), [oo, co])
+         item.check(p + 'same_raising_function_and_file', (oo.get('raising_function'), oo.get('raising_file')) == (co.get('raising_function'), co.get('raising_file')), [oo, co])
++        if 'message_sha256' in oo or 'message_sha256' in co:
++            item.check(p + 'same_full_message_digest_and_length', (oo.get('message_sha256'), oo.get('message_length'))
++                       == (co.get('message_sha256'), co.get('message_length')), [oo.get('message_length'), co.get('message_length')])
++        form = case.get('expected_error_form')
++        if form:
++            item.check(p + 'original_error_has_the_cited_form', oo.get('type') == form['type']
++                       and str(oo.get('message') or '').startswith(form['message_startswith'])
++                       and str(oo.get('message_tail') or '').endswith(form['message_endswith'])
++                       and (oo.get('raising_function'), oo.get('raising_file')) == (form['raising_function'], form['raising_file']), oo)
+         if case.get('expected_error'):
+             item.check(p + 'original_error_is_the_cited_one', [oo.get('type'), oo.get('message')] == case['expected_error'], oo)
+@@ -159,4 +185,14 @@
+             item.check(p + 'latent_raw_bytes_equal', raw_o == raw_c, [len(raw_o), len(raw_c)])
+             item.check(p + 'expected_latent_shape', o['samples']['samples']['shape'] == case['expected_latent_shape'], o['samples']['samples']['shape'])
++            reference = case.get('expected_samples_sha256_cross_run')
++            if reference:
++                shas = [o['samples']['samples']['sha256'], c['samples']['samples']['sha256']]
++                item.check(p + 'samples_equal_cross_run_reference', shas == [reference['sha256']] * 2, {'roles': shas, 'reference': reference})
++    if 'transformer' in o or 'transformer' in c:
++        item.check(p + 'same_transformer_configuration', o.get('transformer') is not None and canon(o.get('transformer')) == canon(c.get('transformer'))
++                   and (case.get('expected_model_type') is None or o['transformer'].get('model_type') == case['expected_model_type']),
++                   [o.get('transformer'), c.get('transformer')])
++    if 'seam_active' in c:
++        item.check(p + 'seam_state_as_declared', c.get('seam_active') is bool(case.get('seam_required')), c.get('seam_active'))
+     item.check(p + 'cpu_rng_after_seed_equal', o.get('rng_after_seed') == c.get('rng_after_seed'))
+     item.check(p + 'final_cpu_rng_equal', o.get('rng_after_sampler') == c.get('rng_after_sampler'))
+@@ -190,4 +226,44 @@
+             sha = lambda rec: ((rec.get('samples') or {}).get('samples') or {}).get('sha256')
+             item.check(p + 'slice_input_changes_original_output', sha(o) is not None and sha(b) is not None and sha(o) != sha(b), [sha(o), sha(b)])
++
++
++def seam_checks(case_file, original, converted, done):
++    """rev 5: the test-only admission seam lives in the converted harness only; the published bytes refuse the synthetic digest."""
++    item = Item('i2v_admission_seam')
++    item.check('workers_completed', done)
++    if not done:
++        return item
++    spec, seam = case_file['seam'], converted.get('seam') or {}
++    fixture_path = OUT / 'FIXTURE.json'
++    fixture = json.loads(fixture_path.read_text()) if fixture_path.exists() else {}
++    fixture_sha = hashlib.sha256(fixture_path.read_bytes()).hexdigest() if fixture_path.exists() else None
++    model_sha = (fixture.get('model') or {}).get('sha256')
++    p0 = seam.get('p0') or {}
++    item.check('p0_published_admission_refuses_the_synthetic_digest', p0.get('raised') is True and [p0.get('type'), p0.get('message')] == spec['p0_expect']
++               and [p0.get('raising_function'), p0.get('raising_file')] == spec['p0_raising'], p0)
++    item.check('published_admitted_is_the_approved_13b_only', seam.get('admitted_published') == spec['published_admitted'] == seam.get('admitted_after_p0'),
++               [seam.get('admitted_published'), seam.get('admitted_after_p0')])
++    expected = dict(spec['published_admitted'], **{model_sha: spec['entry']}) if model_sha else None
++    item.check('seam_adds_exactly_the_fixture_entry', expected is not None and seam.get('admitted_with_seam') == expected, seam.get('admitted_with_seam'))
++    first = next((c['name'] for c in case_file['cases'] if c.get('seam_required')), None)
++    item.check('seam_installed_after_p0_and_t2v_regression', first is not None and seam.get('installed_before_case') == first, seam.get('installed_before_case'))
++    before, after = seam.get('candidate_tree_before') or {}, seam.get('candidate_tree_after') or {}
++    item.check('candidate_tree_equals_bound_bytes_before_and_after', before.get('equals_bound_listing') is True and after.get('equals_bound_listing') is True
++               and before.get('digest') == after.get('digest') == spec['candidate_tree_digest']
++               and before.get('files') == after.get('files') == spec['candidate_tree_files'], [before, after])
++    item.check('fixture_digest_absent_from_candidate_bytes', seam.get('fixture_digest_absent_from_candidate') is True)
++    registry = seam.get('registry') or {}
++    item.check('registry_holds_only_candidate_classes', registry.get('count') == EXPECTED_REGISTERED and registry.get('classes_outside_package') == [], registry)
++    item.check('candidate_module_digests_as_bound', all(converted.get(k + '_sha256') == case_file[k + '_sha256']
++                                                         for k in ('sampler_runtime', 'model_runtime', 'model_config')))
++    fo, fc = original.get('fixture') or {}, converted.get('fixture') or {}
++    item.check('both_roles_used_the_controller_verified_fixture', bool(fo) and fo == fc and fo.get('fixture_json_sha256') == fixture_sha
++               and fo.get('model_sha256') == model_sha and fo.get('inputs') == {k: v.get('sha256') for k, v in (fixture.get('inputs') or {}).items()},
++               [fo, fc, fixture_sha])
++    item.check('fixture_is_the_declared_architecture', (fixture.get('model') or {}).get('patch_embedding') == spec['entry']['patch_embedding']
++               and (fixture.get('model') or {}).get('has_k_img') is True and fixture.get('seed') == case_file['fixture_seed'], fixture.get('model'))
++    item.info['seam'] = {k: seam.get(k) for k in ('admitted_published', 'admitted_with_seam', 'installed_before_case', 'p0')}
++    item.info['fixture'] = {'fixture_json_sha256': fixture_sha, 'model': fixture.get('model'), 'inputs': fixture.get('inputs')}
++    return item
+ 
+ 
+@@ -214,4 +290,6 @@
+     if done:
+         effect_checks(items, case_file, original)
++    if case_file.get('seam'):
++        items['i2v_admission_seam'] = seam_checks(case_file, original, converted, done)
+     for item_name, item in items.items():
+         statuses[item_name] = item.write(results_sha)

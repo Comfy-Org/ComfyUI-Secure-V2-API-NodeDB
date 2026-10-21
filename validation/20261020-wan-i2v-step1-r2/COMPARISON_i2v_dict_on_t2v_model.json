@@ -1,0 +1,93 @@
+{
+  "checks": {
+    "registry_146": true,
+    "same_vendor_versions_and_cpu": true,
+    "t1_t2v_model_with_plain_i2v_dict:block0_executions_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:both_raised": true,
+    "t1_t2v_model_with_plain_i2v_dict:converted_error_object_released_after_caller_drops_it": true,
+    "t1_t2v_model_with_plain_i2v_dict:converted_no_retained_frames_after_release": true,
+    "t1_t2v_model_with_plain_i2v_dict:converted_owned_transformer_observed_once": true,
+    "t1_t2v_model_with_plain_i2v_dict:converted_private_weight_files_removed": true,
+    "t1_t2v_model_with_plain_i2v_dict:converted_transformer_released_after_node": true,
+    "t1_t2v_model_with_plain_i2v_dict:cpu_rng_after_seed_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:final_cpu_rng_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:forward_count_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:forward_inputs_outputs_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:inputs_equal": true,
+    "t1_t2v_model_with_plain_i2v_dict:original_error_has_the_cited_form": true,
+    "t1_t2v_model_with_plain_i2v_dict:original_error_is_the_cited_one": true,
+    "t1_t2v_model_with_plain_i2v_dict:original_forward_count_as_expected": true,
+    "t1_t2v_model_with_plain_i2v_dict:same_exception_type_and_message": true,
+    "t1_t2v_model_with_plain_i2v_dict:same_full_message_digest_and_length": true,
+    "t1_t2v_model_with_plain_i2v_dict:same_raising_function_and_file": true,
+    "t1_t2v_model_with_plain_i2v_dict:same_transformer_configuration": true,
+    "t1_t2v_model_with_plain_i2v_dict:seam_state_as_declared": true,
+    "workers_completed": true
+  },
+  "details": {},
+  "failed_checks": [],
+  "info": {
+    "cases": [
+      {
+        "exercises": "The one H1 change users can reach (review M2): on the published admission (before the seam), the plain 13-key I2V dict with the approved 1.3B T2V model. r8 refused it before load (NotImplementedError). H1 admits the dict, the model loads, and the vendored original raises its own ValueError in process (nodes_sampler.py:230-232), after its own load as in the original. Error parity, not a computation pass.",
+        "expect": "raise",
+        "expected_error": [
+          "ValueError",
+          "T2V (text to video) model detected, encoded images only work with I2V (Image to video) models"
+        ],
+        "expected_error_form": {
+          "message_endswith": "encoded images only work with I2V (Image to video) models",
+          "message_startswith": "T2V (text to video) model detected",
+          "raising_file": "nodes_sampler.py",
+          "raising_function": "process",
+          "type": "ValueError"
+        },
+        "expected_forwards": 0,
+        "expected_model_type": "t2v",
+        "i2v_embeds": {
+          "clip_context": true,
+          "lat_h": 8,
+          "lat_w": 8,
+          "max_seq_len": 32,
+          "num_frames": 5
+        },
+        "item": "i2v_dict_on_t2v_model",
+        "model": "real_13b_t2v",
+        "name": "t1_t2v_model_with_plain_i2v_dict",
+        "observer": "head",
+        "sampling": {
+          "cfg": 2.0,
+          "force_offload": true,
+          "riflex_freq_index": 0,
+          "rope_function": "comfy",
+          "scheduler": "unipc",
+          "seed": 314159,
+          "shift": 5.0,
+          "steps": 2
+        }
+      }
+    ],
+    "label": "I2V code path: synthetic code-path parity only; no real I2V model admitted",
+    "t1_t2v_model_with_plain_i2v_dict:seconds": [
+      0.047,
+      3.982
+    ],
+    "t1_t2v_model_with_plain_i2v_dict:skipped_transformer_steps": [
+      0,
+      0
+    ],
+    "t1_t2v_model_with_plain_i2v_dict:transformer_options_equal": true
+  },
+  "item": "i2v_dict_on_t2v_model",
+  "results_sha256": {
+    "CONVERTED_RESULT.json": "843c494f4eed028479906e557c6ebb212481ad741ea44fc007693ceb432af01a",
+    "ORIGINAL_RESULT.json": "9b63169b39746ae6d0742aeeab315b8fb9e1048432243dc22fda2007f079e836"
+  },
+  "reviewed_normalization": {
+    "closed_checks": [],
+    "reason": "Python set iteration order is hash-randomized per process; PYTHONHASHSEED is unavailable under -I (implies -E). Only the set literal is normalized (elements compared as sorted lists); all other text is compared exactly.",
+    "records": {},
+    "ruling": "MERVYN m_ac4fbd5c7d R1"
+  },
+  "status": "PASS_SLICE_I2V_DICT_ON_T2V_MODEL"
+}

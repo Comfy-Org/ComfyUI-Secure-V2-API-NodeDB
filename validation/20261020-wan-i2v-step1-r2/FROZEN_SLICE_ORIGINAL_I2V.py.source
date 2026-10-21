@@ -1,0 +1,127 @@
+"""ORIGINAL side for I2V Step 1 (synthetic code-path parity plus a T2V regression case), derived from the r3 slice worker.
+
+Untouched upstream nodes (088128b): WanVideoModelLoader.loadmodel, then WanVideoSampler.process. There is one fresh seeded
+model load per case, with the r5 text buffers (no T5 run). Per case:
+- T2V (t0): WanVideoEmptyEmbeds with the trained 1.3B T2V checkpoint, as r3 x0;
+- I2V (i1-i4): the controller-verified synthetic i2v checkpoint and the plain 13-key dict from the fixture inputs (no VAE or
+  CLIP run).
+Observers are passive only:
+- a forward hook on the loaded transformer (forward parity);
+- a forward hook on transformer.blocks[0] (block executions);
+- for raising cases, a hook on transformer.head only (R1 principle).
+"""
+import gc
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import i2v_common  # noqa: E402
+
+REPORT = {'status': 'RUNNING', 'route': 'original_native_process', 'cases': {}}
+phase = common.Phases(REPORT, 'ORIGINAL')
+
+
+def main():
+    case_file = common.load_json('/prepared/CASE.json')
+    phase('setup')
+    sys.path[:0] = ['/native-site', '/native-core', '/original']
+    from comfy.cli_args import args, LatentPreviewMethod
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    args.preview_method = LatentPreviewMethod.NoPreviews
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/original-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    folder_paths.folder_names_and_paths['diffusion_models'] = (['/models/diffusion_models'], {'.safetensors'})
+    import asyncio
+    import server
+    from app.assets.manager import default_asset_manager
+    args.front_end_root = '/tmp/original-headless-web'
+    Path(args.front_end_root).mkdir(exist_ok=True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server.PromptServer(loop, default_asset_manager())
+    REPORT['versions'] = common.versions(case_file['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    from wan_original import nodes, nodes_model_loading, nodes_sampler
+    from wan_original.wanvideo.modules import model as model_module
+    bound = {row['path']: row['sha256'] for row in common.load_json('/original/PRISTINE_GIT_BINDINGS.json')['files']}
+    for module in (nodes, nodes_model_loading, nodes_sampler, model_module):
+        rel = os.path.relpath(module.__file__, '/original/wan_original')
+        assert common.sha_file(module.__file__) == bound[rel], rel
+    REPORT['fixture'] = i2v_common.verify_fixture(case_file)
+    text = common.load_text_embeds(case_file)
+    for case in case_file['cases']:
+        name = case['name']
+        phase('original-' + name)
+        model_spec = case_file['models'][case['model']]
+        torch.manual_seed(case_file['seed'])
+        record = {'rng_after_seed': common.rng_sha(), 'model': case['model']}
+        model, = nodes_model_loading.WanVideoModelLoader().loadmodel(model_spec['catalogue_name'], **case_file['model_loader'])
+        forward_calls, block0 = [], []
+
+        def count_block0(module, args, output):
+            block0.append(1)
+        transformer = model.model.diffusion_model
+        record['transformer'] = {'class': type(transformer).__qualname__, 'model_type': transformer.model_type, 'dim': transformer.dim,
+                                 'in_dim': transformer.in_dim, 'num_layers': len(transformer.blocks)}
+        if case.get('observer') == 'head':
+            hooks = [transformer.head.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True)]
+        else:
+            hooks = [transformer.register_forward_hook(common.forward_observer(forward_calls, limit=12), with_kwargs=True),
+                     transformer.blocks[0].register_forward_hook(count_block0)]
+        del transformer
+        if 'i2v_embeds' in case:
+            embeds = i2v_common.i2v_embeds(case_file, case)
+        else:
+            with torch.inference_mode():
+                embeds, = nodes.WanVideoEmptyEmbeds().process(**case['empty_embeds'])
+        record['inputs'] = {'image_embeds': common.tree_meta(embeds)}
+        sampler_inputs = dict(case['sampling'], **case.get('extra', {}))
+        started = time.monotonic()
+        try:
+            with torch.inference_mode():
+                samples, denoised = nodes_sampler.WanVideoSampler().process(model=model, image_embeds=embeds, text_embeds=text, **sampler_inputs)
+            record['outcome'] = {'raised': False}
+            record['samples'] = common.tree_meta(samples)
+            record['denoised'] = common.tree_meta(denoised)
+            common.tensor_meta(samples['samples'], 'original-%s-samples.bin' % name)
+            del samples, denoised
+        except Exception as error:
+            record['outcome'] = i2v_common.error_outcome(error)
+            del error
+        record['seconds'] = round(time.monotonic() - started, 3)
+        record['rng_after_sampler'] = common.rng_sha()
+        record['forward_calls'] = forward_calls
+        record['block0_calls'] = len(block0)
+        REPORT['cases'][name] = record
+        for hook in hooks:
+            hook.remove()
+        del model, embeds, hooks, sampler_inputs
+        gc.collect()
+    REPORT['status'] = 'ORIGINAL_SLICES_DONE'
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save('ORIGINAL_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != 'ORIGINAL_SLICES_DONE':
+    raise SystemExit(1)
