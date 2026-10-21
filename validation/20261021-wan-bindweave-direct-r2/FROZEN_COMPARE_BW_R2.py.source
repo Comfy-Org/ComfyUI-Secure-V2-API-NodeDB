@@ -1,0 +1,202 @@
+"""Stdlib-only comparison for the Bindweave direct-half r2 (WSL x86 CPU, SDK207 Core 708e6c01, comfy-kitchen 0.2.39 test-only root).
+Writes COMPARISON_direct.json and COMPARISON.json. Exact, with no tolerance. r2 adds one global check: both roles resolve
+comfy-kitchen 0.2.39 from /test-site (first on sys.path), and the original loaded comfy_kitchen from there.
+
+Per case (the reviewed new207 contract's direct cases: (references, context_length, with_ref_masks) = (0, 7, False),
+(2, 1028, True), (4, 1030, False)):
+- both sides returned; identical inputs;
+- the full output tuple is equal: container types, dict key sets, tensor dtype/shape/stride/sha256 and every raw byte (the contract's
+  equal(): exact bits/dtype/shape of the full typed tuple), plain values equal; outputs finite;
+- the contract's facts: on the original, the Qwen-VL inputs come back as the same objects and image_embeds shares storage with the
+  preview samples; on the converted direct route, both Qwen-VL handles come back unchanged, the clip_context handle is forwarded
+  when the context is at least 1028 long, and the resolved image_embeds shares storage with the resolved preview samples;
+- RNG equal on both sides after the seed and after the case, and unchanged by the node.
+Global: both workers done, registry 146, the same SDK207 Core (_sdk.py digest) on both sides, identical versions/CPU/numeric
+environment (one thread; the converted one also inside a dispatch scope), module pins, the registered class (SDK_REFS, raw +
+inspect) and the in-process providers.
+Recorded only: dict key order, the converted output handle kinds, clip_context identity on the original, and whether the MASK
+output shares storage with the embedded mask on each side.
+"""
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+EXPECTED_REGISTERED = 146
+PROVIDERS = {'execution_backend': 'InProcessExecutionBackend', 'ops_provider': 'InProcessOps', 'ref_resolver_factory': 'InProcessRefResolver'}
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+class Item:
+    def __init__(self, name, label):
+        self.name, self.checks, self.details, self.info = name, {}, {}, {'label': label}
+
+    def check(self, key, ok, detail=None):
+        self.checks[key] = bool(ok)
+        if not ok and detail is not None:
+            self.details[key] = detail
+
+    def write(self, results_sha):
+        passed = bool(self.checks) and all(self.checks.values())
+        status = ('PASS_SLICE_' if passed else 'FAIL_SLICE_') + self.name.upper()
+        doc = {'item': self.name, 'status': status, 'checks': self.checks, 'failed_checks': [k for k, v in self.checks.items() if not v],
+               'details': self.details, 'info': self.info, 'results_sha256': results_sha}
+        (OUT / ('COMPARISON_%s.json' % self.name)).write_text(json.dumps(doc, indent=2, sort_keys=True) + '\n')
+        return status
+
+
+LAYOUT_KEYS = ('stride', 'contiguous', 'requires_grad')
+
+
+def stripped(tree):
+    """The typed tree without raw file names, key order and tensor layout (the contract compares bits/dtype/shape; layout and key
+    order are recorded separately)."""
+    if isinstance(tree, dict):
+        drop = ('raw_file', 'key_order') + (LAYOUT_KEYS if tree.get('kind') == 'tensor' else ())
+        return {k: stripped(v) for k, v in tree.items() if k not in drop}
+    if isinstance(tree, list):
+        return [stripped(v) for v in tree]
+    return tree
+
+
+def tensor_leaves(tree, path=()):
+    if not isinstance(tree, dict):
+        return []
+    if tree.get('kind') == 'tensor':
+        return [(path, tree)]
+    leaves = []
+    if tree.get('kind') == 'dict':
+        for key in sorted(tree.get('items', {})):
+            leaves += tensor_leaves(tree['items'][key], path + (key,))
+    elif tree.get('kind') in ('tuple', 'list'):
+        for index, item in enumerate(tree.get('items', [])):
+            leaves += tensor_leaves(item, path + (index,))
+    return leaves
+
+
+def key_orders(tree, path=()):
+    if not isinstance(tree, dict):
+        return {}
+    found = {}
+    if tree.get('kind') == 'dict':
+        found['.'.join(map(str, path)) or 'root'] = tree.get('key_order')
+        for key in sorted(tree.get('items', {})):
+            found.update(key_orders(tree['items'][key], path + (key,)))
+    elif tree.get('kind') in ('tuple', 'list'):
+        for index, item in enumerate(tree.get('items', [])):
+            found.update(key_orders(item, path + (index,)))
+    return found
+
+
+def global_checks(item, case_file, original, converted, done):
+    item.check('workers_completed', done, {'original': original.get('status'), 'converted': converted.get('status'),
+                                           'tracebacks': [original.get('traceback', '')[-1500:], converted.get('traceback', '')[-1500:]]})
+    if not done:
+        return
+    item.check('registry_%d' % EXPECTED_REGISTERED, converted.get('registered_count') == EXPECTED_REGISTERED, converted.get('registered_count'))
+    want_core = case_file['core']['sdk_py_sha256']
+    item.check('same_sdk207_core_both_roles', (original.get('core') or {}).get('sha256') == want_core == (converted.get('core') or {}).get('sha256'),
+               [original.get('core'), converted.get('core')])
+    item.check('same_versions_cpu', canon(original.get('versions')) == canon(converted.get('versions'))
+               and canon(original.get('cpu')) == canon(converted.get('cpu')), [original.get('cpu'), converted.get('cpu')])
+    envs = [original.get('numeric_env'), original.get('numeric_env_final'), converted.get('numeric_env'), converted.get('numeric_env_in_scope'),
+            converted.get('numeric_env_final')]
+    item.check('same_numeric_environment_one_thread', all(e is not None and canon(e) == canon(envs[0]) for e in envs)
+               and envs[0].get('threads') == 1, envs)
+    item.check('versions_as_bound', all((original.get('versions') or {}).get(k) == v for k, v in case_file['versions_expect'].items()),
+               original.get('versions'))
+    item.check('converted_module_digests_as_bound', converted.get('module_sha256') == case_file['converted_module_pins'], converted.get('module_sha256'))
+    item.check('original_module_digests_as_bound', original.get('original_module_sha256') == case_file['original_module_pins'],
+               original.get('original_module_sha256'))
+    item.check('converted_registered_class', converted.get('class') == {'module': case_file['package'] + '.secure_bindweave_nodes',
+                                                                        'sdk_refs': True, 'permissions': ['raw', 'inspect']}, converted.get('class'))
+    item.check('inprocess_providers', converted.get('providers') == PROVIDERS, converted.get('providers'))
+    item.check('original_class', (original.get('class') or {}).get('function') == 'add'
+               and (original.get('class') or {}).get('return_types') == ['WANVIDIMAGE_EMBEDS', 'LATENT', 'MASK'], original.get('class'))
+    want = case_file['test_site']['version']
+    to, tc, ts = original.get('test_site') or {}, converted.get('test_site') or {}, original.get('test_site_after_server') or {}
+    item.check('test_site_comfy_kitchen_both_roles',
+               to.get('comfy_kitchen_version') == tc.get('comfy_kitchen_version') == ts.get('comfy_kitchen_version') == want
+               and str(to.get('comfy_kitchen_file')).startswith('/test-site/comfy_kitchen/')
+               and str(ts.get('comfy_kitchen_file')).startswith('/test-site/comfy_kitchen/')
+               and (tc.get('comfy_kitchen_file') is None or str(tc.get('comfy_kitchen_file')).startswith('/test-site/comfy_kitchen/'))
+               and (to.get('sys_path_first') or [None])[0] == (tc.get('sys_path_first') or [None])[0] == '/test-site', [ts, to, tc])
+
+
+def case_checks(item, case, o, c):
+    p = case['name'] + ':'
+    returned = (o.get('outcome') or {}).get('raised') is False and (c.get('outcome') or {}).get('raised') is False
+    item.check(p + 'both_returned', returned and bool(o.get('outputs')) and bool(c.get('outputs')), [o.get('outcome'), c.get('outcome')])
+    item.check(p + 'inputs_equal', bool(o.get('inputs')) and canon(o.get('inputs')) == canon(c.get('inputs')), [o.get('inputs'), c.get('inputs')])
+    if not returned or not o.get('outputs') or not c.get('outputs'):
+        return
+    to, tc = o['outputs'], c['outputs']
+    item.check(p + 'output_tree_equal', canon(stripped(to)) == canon(stripped(tc)), [stripped(to), stripped(tc)])
+    lo, lc = tensor_leaves(to), tensor_leaves(tc)
+    same_paths = [path for path, _ in lo] == [path for path, _ in lc]
+    raw_equal = same_paths and bool(lo)
+    unequal = []
+    for (path, mo), (_, mc) in zip(lo, lc):
+        files = [OUT / str(m.get('raw_file')) for m in (mo, mc)]
+        if not all(f.is_file() for f in files):
+            unequal.append('.'.join(map(str, path)) + ' (raw file missing)')
+            raw_equal = False
+            continue
+        raw_o, raw_c = files[0].read_bytes(), files[1].read_bytes()
+        good = raw_o == raw_c and hashlib.sha256(raw_o).hexdigest() == mo['sha256'] and hashlib.sha256(raw_c).hexdigest() == mc['sha256']
+        if not good:
+            unequal.append('.'.join(map(str, path)))
+        raw_equal = raw_equal and good
+    item.check(p + 'output_raw_bytes_equal', raw_equal, {'same_paths': same_paths, 'unequal': unequal})
+    item.check(p + 'outputs_finite', all(m.get('finite') is True for _, m in lo + lc))
+    fo, fc = o.get('facts') or {}, c.get('facts') or {}
+    item.check(p + 'original_qwen_inputs_returned_as_same_objects', fo.get('qwen_pos_identity') is True and fo.get('qwen_neg_identity') is True, fo)
+    item.check(p + 'original_image_embeds_share_storage_with_preview', fo.get('image_preview_share_storage') is True, fo)
+    item.check(p + 'converted_qwen_handles_unchanged', fc.get('qwen_pos_handle_forwarded') is True and fc.get('qwen_neg_handle_forwarded') is True, fc)
+    if case['context_length'] >= 1028:
+        item.check(p + 'converted_long_clip_context_handle_forwarded', fc.get('clip_context_handle_forwarded') is True, fc)
+    item.check(p + 'converted_in_process_view_identity', fc.get('image_preview_share_storage') is True, fc)
+    for key in ('rng_after_seed', 'rng_after_case'):
+        item.check(p + key + '_equal', o.get(key) is not None and o.get(key) == c.get(key), [o.get(key), c.get(key)])
+    item.check(p + 'node_left_rng_unchanged', o.get('rng_after_seed') == o.get('rng_after_case') and c.get('rng_after_seed') == c.get('rng_after_case'))
+    item.info[p + 'recorded'] = {
+        'key_orders_equal': key_orders(to) == key_orders(tc), 'key_orders': [key_orders(to), key_orders(tc)],
+        'tensor_layout_equal': [{k: m.get(k) for k in LAYOUT_KEYS} for _, m in lo] == [{k: m.get(k) for k in LAYOUT_KEYS} for _, m in lc],
+        'tensor_layouts': {'.'.join(map(str, path)): [{k: mo.get(k) for k in LAYOUT_KEYS}, {k: mc.get(k) for k in LAYOUT_KEYS}]
+                           for (path, mo), (_, mc) in zip(lo, lc)},
+        'converted_output_ref_kinds': c.get('output_ref_kinds'), 'converted_input_ref_kinds': c.get('input_ref_kinds'),
+        'original_clip_context_identity': fo.get('clip_context_identity'), 'converted_clip_context_handle_forwarded': fc.get('clip_context_handle_forwarded'),
+        'converted_qwen_handle_identity': [fc.get('qwen_pos_handle_identity'), fc.get('qwen_neg_handle_identity')],
+        'mask_output_shares_embedded_mask_storage': [fo.get('mask_output_shares_embedded_mask_storage'), fc.get('mask_output_shares_embedded_mask_storage')],
+        'shapes': {'.'.join(map(str, path)): m.get('shape') for path, m in lo}, 'node_output': c.get('node_output'),
+        'seconds': [o.get('seconds'), c.get('seconds')]}
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    load = lambda name: json.loads((OUT / name).read_text()) if (OUT / name).exists() else {}
+    original, converted = load('ORIGINAL_RESULT.json'), load('CONVERTED_RESULT.json')
+    results_sha = {n: hashlib.sha256((OUT / n).read_bytes()).hexdigest() for n in ('ORIGINAL_RESULT.json', 'CONVERTED_RESULT.json') if (OUT / n).exists()}
+    done = original.get('status') == 'ORIGINAL_BW_DONE' and converted.get('status') == 'CONVERTED_BW_DONE'
+    item = Item('direct', case_file['label'])
+    global_checks(item, case_file, original, converted, done)
+    item.info['cases'] = case_file['cases']
+    if done:
+        for case in case_file['cases']:
+            case_checks(item, case, original['cases'].get(case['name'], {}), converted['cases'].get(case['name'], {}))
+    statuses = {'direct': item.write(results_sha)}
+    failed = any(v.startswith('FAIL') for v in statuses.values())
+    status = ('FAIL_BW_' if failed else 'PASS_BW_') + 'DIRECT'
+    (OUT / 'COMPARISON.json').write_text(json.dumps({'status': status, 'items': statuses, 'results_sha256': results_sha,
+                                                     'label': case_file['label']}, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': status, 'items': statuses}))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
