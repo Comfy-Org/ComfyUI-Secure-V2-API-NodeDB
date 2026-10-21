@@ -1,0 +1,301 @@
+{
+ "schema": "ned-aux-live-selection-status/1",
+ "corpus_base": "f66757d8ac82fa021ca211843a0aa94d71a725c1",
+ "pack": "packs/comfyui-controlnet-aux/x0cd2904/comfyui_controlnet_aux-HEAD/v2",
+ "static_only": true,
+ "runs": 0,
+ "request": "#21 (GERALD + operator, security): who may approve a model selection for production, and with what evidence",
+ "tested_scoped_refusing_on_live": [
+  "DepthAnythingV2Preprocessor",
+  "DWPreprocessor",
+  "AnimalPosePreprocessor",
+  "DensePosePreprocessor",
+  "LeReS-DepthMapPreprocessor",
+  "MiDaS-DepthMapPreprocessor",
+  "MiDaS-NormalMapPreprocessor",
+  "Unimatch_OptFlowPreprocessor"
+ ],
+ "pending_capability_also_blocked": [
+  "UniFormer-SemSegPreprocessor",
+  "SemSegPreprocessor",
+  "Metric3D-DepthMapPreprocessor",
+  "Metric3D-NormalMapPreprocessor"
+ ],
+ "gates": [
+  {
+   "nodes": [
+    "DepthAnythingV2Preprocessor"
+   ],
+   "module": "_depth_v2_selection.py",
+   "module_sha256": "5611f99c54586ec6e34e17c0e66559c4d161c196a9d0bbca5020151b0ef87c89",
+   "approval_checks": [
+    {
+     "line": 27,
+     "text": "if selection.get('approved') is not True or row.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_depth_v2_asset_selection.json",
+   "selection_sha256": "6a9610691a1a8b7367455e8b44a19bb5300162ce2f16355c2d109414b0069622",
+   "selection_flags": {
+    "/approved": false,
+    "/assets/depth_anything_v2_vitb.pth/approved": false,
+    "/assets/depth_anything_v2_vitg.pth/approved": false,
+    "/assets/depth_anything_v2_vitl.pth/approved": false,
+    "/assets/depth_anything_v2_vits.pth/approved": false
+   }
+  },
+  {
+   "nodes": [
+    "DWPreprocessor",
+    "AnimalPosePreprocessor"
+   ],
+   "module": "_dwpose/selection.py",
+   "module_sha256": "fd11b8f460abdd2d6846daee02e64b01be74b297dc235940c704952548640a0e",
+   "approval_checks": [
+    {
+     "line": 37,
+     "text": "if item.get('approved') is not True:"
+    },
+    {
+     "line": 54,
+     "text": "if (item.get('current_generation_binding_approved') is not True or type(contract) is not dict"
+    },
+    {
+     "line": 96,
+     "text": "if r.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_dwpose/asset-selection.json",
+   "selection_sha256": "45a113f9f0dc645299409a5e8daeccada28156fddac91447badd1fee454dd281",
+   "selection_flags": {
+    "/approved": false,
+    "/resources[0]/approved": false,
+    "/resources[1]/approved": false,
+    "/resources[2]/approved": false,
+    "/resources[3]/approved": false,
+    "/resources[4]/approved": false,
+    "/resources[5]/approved": false,
+    "/resources[6]/approved": false,
+    "/resources[7]/approved": false,
+    "/resources[8]/approved": false,
+    "/resources[9]/approved": false
+   }
+  },
+  {
+   "nodes": [
+    "DensePosePreprocessor"
+   ],
+   "module": "_densepose/selection.py",
+   "module_sha256": "0926305dd96c03ba1227a515a521c3133d6f395b35d2162952290869c72d4f77",
+   "approval_checks": [
+    {
+     "line": 23,
+     "text": "if len(rows) != 1 or rows[0].get('approved') is not True or rows[0].get('executable_code_approved') is not True:"
+    },
+    {
+     "line": 42,
+     "text": "if item.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_densepose/asset-selection.json",
+   "selection_sha256": "498d8815b3665d6aef25519f9e0e19ce116c57b24e4f6650f3a5eb5694c34de8",
+   "selection_flags": {
+    "/approved": false,
+    "/resources[0]/approved": false,
+    "/resources[0]/executable_code_approved": false,
+    "/resources[1]/approved": false,
+    "/resources[1]/executable_code_approved": false
+   }
+  },
+  {
+   "nodes": [
+    "LeReS-DepthMapPreprocessor"
+   ],
+   "module": "_leres/selection.py",
+   "module_sha256": "c23d9925a014dcec7345f40b36989508d525f258366c0a827d5174e39cd41c2b",
+   "approval_checks": [
+    {
+     "line": 28,
+     "text": "if item.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_leres/asset-selection.json",
+   "selection_sha256": "e0c3a2bb2ccd842f8c70ae18ade0a01a485817a4426d8dd6f8079b5b4c9a7a48",
+   "selection_flags": {
+    "/approved": false
+   }
+  },
+  {
+   "nodes": [
+    "MiDaS-DepthMapPreprocessor",
+    "MiDaS-NormalMapPreprocessor"
+   ],
+   "module": "_midas/managed_components.py",
+   "module_sha256": "51dcc5348a2ec2c88e4498f2f1753bdf718a454d1098d2c992d904de42ffee2a",
+   "approval_checks": [
+    {
+     "line": 8,
+     "text": "if selection['approved'] is not True:"
+    },
+    {
+     "line": 10,
+     "text": "if selection['runtime_admission'] is not False or selection['test_only'] is not True:"
+    }
+   ],
+   "selection_file": "_midas/SELECTION.json",
+   "selection_sha256": "37ad358cf7f1ba74ba88cc3a501578cf9c446f3b3a9de8d45f46bce3ecafd954",
+   "selection_flags": {
+    "/approved": false,
+    "/runtime_admission": false,
+    "/test_only": true
+   }
+  },
+  {
+   "nodes": [
+    "Unimatch_OptFlowPreprocessor"
+   ],
+   "module": "_unimatch/selection.py",
+   "module_sha256": "55b9ce8c2389ec96fe2e502ec1ec841e1bfc2cfc8016943c0d842d7acb736873",
+   "approval_checks": [
+    {
+     "line": 47,
+     "text": "if item.get('approved') is not True:"
+    },
+    {
+     "line": 58,
+     "text": "if r.get('approved') is not True or r.get('source_repo')!=REPO or r.get('source_filename') not in FILENAMES:"
+    },
+    {
+     "line": 96,
+     "text": "if item.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_unimatch/asset-selection.json",
+   "selection_sha256": "6e5c911d275673c25f7f1096853f1c9f2d578b2fcca9a829cdcffc9614a631d5",
+   "selection_flags": {
+    "/approved": false,
+    "/resources/gmflow-scale1-mixdata.pth/approved": false,
+    "/resources/gmflow-scale2-mixdata.pth/approved": false,
+    "/resources/gmflow-scale2-regrefine6-mixdata.pth/approved": false
+   }
+  },
+  {
+   "nodes": [
+    "UniFormer-SemSegPreprocessor",
+    "SemSegPreprocessor"
+   ],
+   "module": "_uniformer/selection.py",
+   "module_sha256": "59a210c7cb43e4917d0bb5d5f4a007a48c77af9f1d2d67e90cffbb242052e072",
+   "approval_checks": [
+    {
+     "line": 21,
+     "text": "if item.get('approved') is not True:"
+    },
+    {
+     "line": 34,
+     "text": "if r.get('approved') is not True or r.get('raw_container_approved') is not True:"
+    }
+   ],
+   "selection_file": "_uniformer/asset-selection.json",
+   "selection_sha256": "8da11358cdb2145e921c23857944c22f9cb9fb5f596f2a91754856ab063ebc0a",
+   "selection_flags": {
+    "/approved": false,
+    "/resource/approved": false,
+    "/resource/raw_container_approved": false
+   }
+  },
+  {
+   "nodes": [
+    "Metric3D-DepthMapPreprocessor",
+    "Metric3D-NormalMapPreprocessor"
+   ],
+   "module": "_metric3d/selection.py",
+   "module_sha256": "38620b7f57625c9a1c59fef20b8b22fd54655c0205982d4da2c5b3a29f6810a0",
+   "approval_checks": [
+    {
+     "line": 21,
+     "text": "if item.get('approved') is not True:"
+    },
+    {
+     "line": 34,
+     "text": "if r.get('approved') is not True or r.get('raw_container_approved') is not True:"
+    },
+    {
+     "line": 67,
+     "text": "if item.get('approved') is not True:"
+    }
+   ],
+   "selection_file": "_metric3d/asset-selection.json",
+   "selection_sha256": "f66ea6cf455278fa648bb60740bf4a939e9b53602c2656fafd1992958b0b176f",
+   "selection_flags": {
+    "/approved": false,
+    "/resources/vit-giant2/approved": false,
+    "/resources/vit-giant2/raw_container_approved": false,
+    "/resources/vit-large/approved": false,
+    "/resources/vit-large/raw_container_approved": false,
+    "/resources/vit-small/approved": false,
+    "/resources/vit-small/raw_container_approved": false
+   }
+  }
+ ],
+ "approved_on_main": {
+  "_dsine/asset-selection.json": {
+   "sha256": "4f4d0d6d66b4259f3dbe489fecd0f67a8e9064fc2783a0a46e00447774c099a2",
+   "flags": {
+    "/approved": true,
+    "/runtime_admission": false
+   }
+  },
+  "_normalbae/asset-selection.json": {
+   "sha256": "f9314f83680f2db3b1b1a9850bb91dd6aee5b448ca0bc60d5982decedf04e77f",
+   "flags": {
+    "/approved": true,
+    "/runtime_admission": false
+   }
+  },
+  "_openpose/asset-selection.json": {
+   "sha256": "4b8f0049fe2ef9bfc88c833f8b9d57e2b9ef03af2e06c2065c63abf13993618d",
+   "flags": {
+    "/approved": true,
+    "/resources[0]/approved": true,
+    "/resources[1]/approved": true,
+    "/resources[2]/approved": true,
+    "/resources[3]/approved": false,
+    "/resources[4]/approved": false,
+    "/resources[5]/approved": false,
+    "/runtime_admission": false
+   }
+  }
+ },
+ "aio_dispatch": {
+  "module": "nodes.py",
+  "lines": [
+   {
+    "line": 58,
+    "text": "return await aux_class.execute(**params)"
+   }
+  ],
+  "note": "AIO_Preprocessor calls the selected child execute, so it fails the same way"
+ },
+ "execute_all": {
+  "module": "_execute_all.py",
+  "module_sha256": "086b1981aa16f57b39d8e18b05e9f914666607b601d2a7e9f9d1fd1a6b504139",
+  "raise": [
+   {
+    "line": 15,
+    "text": "raise RuntimeError("
+   }
+  ],
+  "sdk_limit": "a2 core d1a9259 comfy_api/latest/_sdk.py:6863-6864: 'graph expansion must contain 1..128 nodes'",
+  "original": "upstream __init__.py:152-188: 47 AIO + 47 AddText + 46 core ImageBatch = 140 nodes",
+  "request": "#20"
+ },
+ "requests": {
+  "#16": "sealed transformers bundle constructor (6 nodes)",
+  "#17": "FaceMesh on Python 3.13",
+  "#18": "MeshGraphormer x2: EGL/GLES libraries in the engine image, then dependencies and weights",
+  "#19": "AnimeFace output typing and UpperBodyTracking plain-data types on the guest route",
+  "#20": "ExecuteAll: 128-node expansion limit and core ImageBatch",
+  "#21": "production approval of model selections"
+ }
+}
