@@ -126,6 +126,27 @@ class LoaderGGUFAdvanced(LoaderGGUF):
         return await catalogue_check('diffusion_models', [('gguf_name', gguf_name)], GGUF_EXTENSIONS)
 
 
+async def tokenizer_pair_absent(assets, name):
+    """True only when mmj.py find_tokenzier_pair would find no pair for this cat GGUF.
+
+    The original lists the GGUF's own directory and takes any entry whose lower-cased name ends with '.safetensors'
+    and contains 'tokenizer'. The host listing merges every text_encoders root for the same relative directory, so a
+    pair the original would not see (the same directory under another root) also counts: fail closed. A listing
+    error counts as a possible pair.
+    """
+    try:
+        siblings = await assets.list('text_encoders', prefix=posixpath.dirname(name), recursive=False)
+    except (ValueError, OSError):
+        return False
+    if type(siblings) is not list:
+        return False
+    for sibling in siblings:
+        base = posixpath.basename(sibling).lower() if type(sibling) is str else ''
+        if not base or (base.endswith('.safetensors') and 'tokenizer' in base):
+            return False
+    return True
+
+
 async def text_encoder_state(name):
     """pig.py load_data: case-sensitive '.gguf' -> load_gguf_clip; any other name -> comfy.utils.load_torch_file(safe_load=True).
 
@@ -135,7 +156,7 @@ async def text_encoder_state(name):
     assets = sdk.ctx().assets
     asset = await assets.resolve('text_encoders', name)
     if name.endswith('.gguf'):
-        return await gguf_text_state(assets, asset)
+        return await gguf_text_state(assets, asset, cat_pair_absent=lambda: tokenizer_pair_absent(assets, name))
     return await sdk.ValueRef.from_value(await assets.load_state_dict(asset))
 
 

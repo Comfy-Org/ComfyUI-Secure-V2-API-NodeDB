@@ -1,30 +1,30 @@
-> **STATUS: IN PROGRESS — UNVERIFIED.** Publication r3 candidate prepared on 2026-10-20; earlier revisions were published for evaluation at the user's request. Whole-pack acceptance remains open.
+> **STATUS: IN PROGRESS — UNVERIFIED.** Publication r4 candidate prepared on 2026-10-21; earlier revisions were published for evaluation at the user's request. Whole-pack acceptance remains open.
 > Nodes: 13 of 13 upstream converted; 7 tested (scoped), 6 converted but untested/partly tested,
 > 0 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
-> (Revision 3. Ten nodes need SDK verbs the deployed host does not have yet. The six GGUF loaders need the GGML verbs; GGUFSave, GGUFRun, VaeGGUF (`.gguf` branch) and AudioEncoderLoaderGGUF need the Phase-1 verbs, as in revision 2. On the current runtime those nodes fail closed. Operators must set COMFY_SECURE_MAX_GGUF_MAPPING_BYTES and COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES; the default 0 refuses. Revision 3 is kept out of the registry until the SDK and the limits ship.)
+> (Revision 4. Ten nodes need SDK verbs the deployed host does not have yet. The six GGUF loaders need the GGML verbs; GGUFSave, GGUFRun, VaeGGUF (`.gguf` branch) and AudioEncoderLoaderGGUF need the Phase-1 verbs, as in revision 2. On the current runtime those nodes fail closed. Operators must set COMFY_SECURE_MAX_GGUF_MAPPING_BYTES and COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES; the default 0 refuses. Revision 4 is kept out of the registry until the SDK and the limits ship.)
 
 <!-- secure-conversion-report-v1 -->
-# Secure Nodes V2 conversion report — calcuis GGUF (`calcuis-gguf`), revision 3
+# Secure Nodes V2 conversion report — calcuis GGUF (`calcuis-gguf`), revision 4
 
-Revision 3 ports the six GGUF model/CLIP loaders onto the GGML SDK verbs and adds queue validators to all 13 nodes. The loaders were compared with the original pig.py on the "a2 base": deployed core 6257422 plus the undeployed GGML SDK (core d1a9259, backend 894ead3). For the loaders this is construction-call evidence, not a real model load.
+Revision 4 widens the GGUF text-encoder path of the four CLIP loaders. qwen2/qwen3 GGUFs with fewer than 65,536 token rows now load as a key rename with the shipped map. cat GGUFs load unchanged when no tokenizer file sits beside them. Revision 3 ported the six GGUF model/CLIP loaders onto the GGML SDK verbs and added queue validators to all 13 nodes. The loaders were compared with the original pig.py on the "a2 base": deployed core 6257422 plus the undeployed GGML SDK (core d1a9259, backend 894ead3). For the loaders this is construction-call evidence, not a real model load.
 
 ## Provenance
 
 Upstream https://github.com/calcuis/gguf at commit `cb433968a4d42c59fc344d659ad94200b6c16689` (key `xcb43396`). The pristine tree beside `v2/` is byte-exact at that commit (89 tracked files; SHA-256 values pinned in `v2/tests/pristine_sha256.json`). This is a different pack from City96 `comfyui-gguf`; City96 code is never substituted for Calcuis behaviour.
 
-Revision 3 = revision 2 plus loader port r5 (listed under *Revision 3 changes*). The production files are byte-identical to the tested tree; only this report changed after testing. Evidence: `validation/20261020-calcuis-gguf-a2base-r4`.
+Revision 4 = revision 3 plus loader port r6 (listed under *Revision 4 changes*); revision 3 = revision 2 plus loader port r5. The production files are byte-identical to the tested tree; only this report changed after testing. Evidence: `validation/20261021-calcuis-gguf-a2base-r5` (revision 4: every tier re-run on the revision-4 bytes) and `validation/20261020-calcuis-gguf-a2base-r4` (revision 3).
 
 ## Runtime requirement (read first)
 
 - **GGML SDK verbs** (`assets.gguf_tensor_state`, `models.ggml_diffusion_from_state_dict`, `models.ggml_text_encoders_from_state_dicts`): the six loaders. They are not in the deployed SDK, so the loaders fail closed until it ships.
 - **Phase-1 SDK verbs** (`output.save_binary`, `models.vae_from_state_dict`, `models.audio_encoder_from_state_dict`): GGUFSave, GGUFRun, VaeGGUF (`.gguf` branch) and AudioEncoderLoaderGGUF, unchanged from revision 2.
-- **Operator limits.** `COMFY_SECURE_MAX_GGUF_MAPPING_BYTES` gates every GGUF load (the six loaders, and VaeGGUF/AudioEncoderLoaderGGUF `.gguf`); `COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES` gates GGUFSave/GGUFRun. The default 0 refuses both. The revision-3 tests set the mapping limit to 42,991,616 bytes (41 MiB, their largest fixture rounded up) and showed the documented refusal one byte below a file's size.
+- **Operator limits.** `COMFY_SECURE_MAX_GGUF_MAPPING_BYTES` gates every GGUF load (the six loaders, and VaeGGUF/AudioEncoderLoaderGGUF `.gguf`); `COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES` gates GGUFSave/GGUFRun. The default 0 refuses both. The revision-3 and revision-4 tests set the mapping limit to 42,991,616 bytes (41 MiB, their largest fixture rounded up) and showed the documented refusal one byte below a file's size.
 - **Store cap.** `COMFY_SECURE_MAX_STORE_BYTES` (default 2 GiB) limits every state that crosses the guest: TENSORBoost, TENSORCut and GGUFUndo results, AudioEncoderLoaderGGUF's non-GGUF branch, and non-`.gguf` text encoders in the GGML text path (a T5-XXL fp16 SafeTensors does not fit).
 - **Host torch >= 2.6.** Torch containers are loaded host-side with `weights_only` (`comfy.utils.load_torch_file(safe_load=True)`), which is a safety boundary only from torch 2.6 (CVE-2025-32434). The tested image had torch 2.8.0.
 
 ## Node dispositions
 
-Node IDs, display names and categories are the original's (mirror mode). Revision-3 evidence: one selected attempt each of Tier A (in process), Tier B (construction calls through the real secure Guest path) and Tier Q (core queue validation through the shipped-manifest proxies) on the a2 base, CPU, network none, with every mount checked against bound pins (`validation/20261020-calcuis-gguf-a2base-r4`). The Guest path ran with the sandbox off, so it is protocol and provider evidence, not sandbox evidence. Revision-2 evidence still applies where a node's code is unchanged (see *Revision 3 changes*).
+Node IDs, display names and categories are the original's (mirror mode). Revision-4 evidence: one selected attempt each of Tier A (in process), Tier B (construction calls through the real secure Guest path) and Tier Q (core queue validation through the shipped-manifest proxies) on the a2 base, CPU, network none, as an unprivileged container user, with every mount checked against bound pins (`validation/20261021-calcuis-gguf-a2base-r5`; revision 3: `validation/20261020-calcuis-gguf-a2base-r4`). The Guest path ran with the sandbox off, so it is protocol and provider evidence, not sandbox evidence. Revision-2 evidence still applies where a node's code is unchanged (see *Revision 3 changes*).
 
 | Node id | Display name | Disposition | Evidence or gap |
 | --- | --- | --- | --- |
@@ -35,12 +35,22 @@ Node IDs, display names and categories are the original's (mirror mode). Revisio
 | `GGUFRun` | GGUF Convertor (Zero) | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | As GGUFSave: complete `.gguf` bytes equal the original for the zero fixture, a mixed bf16/f16/f32/int32-scalar/empty state and a 167,325,504-byte SD1.5 VAE. Queue validator equal to the original list. Needs `COMFY_SECURE_MAX_BINARY_OUTPUT_BYTES` > 0; fails closed without the Phase-1 SDK. |
 | `LoaderGGUF` | GGUF Loader | tested (scoped: a2 base, undeployed GGML SDK) | Construction-call parity through the real Guest path for the 20 provider-supported GGML types, every `load_gguf_sd` rule (prefix, architecture, `orig_shape`, sdxl squeeze, non-2-D BF16, largest weight) and the metadata; bit-exact dequantization against the original for every type, dtype and dequant dtype (800 cells); queue validation equal to the original list. No real model load or forward. Q4_0, Q4_1, Q5_0, Q5_1, Q2_K and Q3_K are refused by the provider (missing). Needs the GGML SDK deployment and the GGUF mapping limit. |
 | `LoaderGGUFAdvanced` | GGUF Loader (Advanced) | converted, partly tested | As LoaderGGUF, plus all 51 dequant/patch/`patch_on_device` combinations compared as values through the provider's own precision table, and `dequant_dtype` at function level. `patch_dtype` and `patch_on_device` only act when patches (LoRA) are applied, which was not exercised. Per-load dtype settings are a final accepted difference (the original shares them across all loads). |
-| `ClipLoaderGGUF` | GGUF CLIP Loader | converted, partly tested | Construction-call parity (a2 base) for identity GGUF text encoders, the t5 T5/B5 maps, the typed `.safetensors` branch, `.sft` and Torch containers; exact named refusals for the 15 transforming architectures (missing). Real construction is not exercised: there a missing Linear weight (for example an SD1.5 CLIP-L without `text_projection`) is refused by the provider where the original zero-fills it (missing). One declared output (final accepted difference). |
-| `DualClipLoaderGGUF` | GGUF DualCLIP Loader | converted, partly tested | As ClipLoaderGGUF for two files, including construction-only SDXL CLIP-G (layers 0 and 30) and CLIP-L fixtures. Two SafeTensors with an explicit device refuse by name (missing two-file typed loader). Full encode blocked: encoder not local. |
-| `TripleClipLoaderGGUF` | GGUF TripleCLIP Loader | converted, partly tested | Construction-call parity on shape-only SafeTensors (real names and shapes). Full-model test blocked: encoder not local (T5-XXL). A T5-XXL fp16 SafeTensors exceeds the 2 GiB store cap (missing). |
+| `ClipLoaderGGUF` | GGUF CLIP Loader | converted, partly tested | Construction-call parity (a2 base) for identity GGUF text encoders, the t5 T5/B5 maps, qwen2/qwen3 GGUFs below 65,536 token rows (key rename with the shipped map; revision 4), cat GGUFs without a tokenizer file beside them (revision 4), the typed `.safetensors` branch, `.sft` and Torch containers. Exact named refusals where the original changes tensor data or merges files (missing): qwen2/qwen3 with 65,536 or more token rows, cat with a `*tokenizer*.safetensors` file beside it (the original merges it), the 256384-row t5 tokenizer, and llama, mistral3, gemma2, gemma3, qwen2vl, qwen3vl, ideogram, ideogram4, cow and dog. A cat GGUF is also refused when such a file sits in the same folder under another text-encoder root, or when the folder cannot be listed (fail closed). Real construction is not exercised: there a missing Linear weight (for example an SD1.5 CLIP-L without `text_projection`) is refused by the provider where the original zero-fills it (missing). One declared output (final accepted difference). |
+| `DualClipLoaderGGUF` | GGUF DualCLIP Loader | converted, partly tested | As ClipLoaderGGUF for two files, including construction-only SDXL CLIP-G (layers 0 and 30) and CLIP-L fixtures. The revision-4 qwen/cat rows ran through ClipLoaderGGUF only; this node uses the same text path. Two SafeTensors with an explicit device refuse by name (missing two-file typed loader). Full encode blocked: encoder not local. |
+| `TripleClipLoaderGGUF` | GGUF TripleCLIP Loader | converted, partly tested | Construction-call parity on shape-only SafeTensors (real names and shapes). Full-model test blocked: encoder not local (T5-XXL). A T5-XXL fp16 SafeTensors exceeds the 2 GiB store cap (missing). The revision-4 qwen/cat rows ran through ClipLoaderGGUF only; this node uses the same text path. |
 | `QuadrupleClipLoaderGGUF` | GGUF QuadrupleCLIP Loader | converted, partly tested | As TripleClipLoaderGGUF. A llama GGUF is refused (transforms missing) and a Llama-class SafeTensors exceeds the store cap. Full-model test blocked: encoder not local. |
 | `VaeGGUF` | GGUF VAE Loader | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | Revision-2 evidence applies: the node code is unchanged, and the `.gguf` table builder was refactored into shared helpers with statement-for-statement identical code (checked); those helpers are exercised on revision-3 bytes. The `.gguf` and `.safetensors` branches: constructed VAE state (248 tensors), a decode and an encode are bit-exact vs the original, in-process and guest (`tests/gguf-phase1-r3-vaegguf-inprocess-and-guest-vs-original-r1`). Queue validator equal to the original list, including TAESD presets. The `.gguf` branch needs the GGUF mapping limit. |
 | `AudioEncoderLoaderGGUF` | GGUF AudioEncoder Loader | tested (Phase-1 SDK branch core 844d7d60 / backend 7f73734e; pending SDK deployment) | Revision-2 evidence applies, as for VaeGGUF: `.gguf` and `.safetensors` branches with chinese-wav2vec2-base (fp16), encoder state (211 tensors) and `encode_audio` bit-exact vs the original, in-process and guest (`tests/gguf-phase1-r4-audioencoderloadergguf-inprocess-and-guest-vs-original-r1`). Queue validator equal to the original list. The `.gguf` branch needs the mapping limit; the non-GGUF branch is limited by the store cap; Torch containers need host torch >= 2.6. |
+
+## Revision 4 changes
+
+| File | Change |
+| --- | --- |
+| `gguf_state.py` | `build_text_table`: qwen2/qwen3 GGUFs whose `token_embd` is absent or has fewer than 65,536 rows are renamed with the shipped L3 map (a copy taken at import, applied with `str.replace` in map order, as pig.py does). At 65,536 rows or more they stay refused, with their own reason. A cat GGUF loads unchanged only when the caller reports that no tokenizer file is beside it; otherwise it is refused, with its own reason. |
+| `nodes.py` | `tokenizer_pair_absent` lists the GGUF's folder with `assets.list('text_encoders', prefix=..., recursive=False)`. Any `*tokenizer*.safetensors` sibling (in any case), an unexpected entry or a listing error counts as a tokenizer file. The GGML text path asks only for cat GGUFs. |
+| `SECURE_CONVERSION.md` | This report (the only change made after testing). |
+
+Unchanged in revision 4: `secure-nodes.json` (byte-identical, so no permission or schema change), every other production file, the diffusion and VAE/audio table builders, and the t5 branch.
 
 ## Revision 3 changes
 
@@ -51,12 +61,13 @@ Node IDs, display names and categories are the original's (mirror mode). Revisio
 | `clip_types.py`, `catalogue_pins.py` (new) | CLIPType names and `supported_pt_extensions` pinned to the run core 6257422. Core 708e6c01 adds `flux3` and `moss_image`; they are recorded, not offered. |
 | `secure-nodes.json` | `validate_inputs` true and `validation_inputs` for all 13 nodes; the six loaders' permissions (`models`, `assets`; CLIP loaders also `raw`). Re-encoding with the backend's own manifest encoders gives the same rows. |
 | `tests/test_clip_types_pinned.py`, `tests/test_core_pins.py`, `tests/test_manifest_rows.py` (new) | Drift tests for the pins and a static check of the manifest validator rows. |
-| `SECURE_CONVERSION.md` | This report (the only change made after testing). |
+| `SECURE_CONVERSION.md` | The revision-3 report (the only change made after testing). |
 
 ## Deliberate differences (final)
 
 - **Per-load dtype settings.** The original sets `dequant_dtype`/`patch_dtype` on a shared class, so the last GGUF load sets them for every loaded GGUF model's Linear layers. The conversion keeps each load's own settings. Outputs differ only when one workflow holds two or more GGUF loads with different dtype options; a single load matches exactly.
 - **One declared output** for the GGUF CLIP branches. The original returns `(clip, device options)`; only the declared first output is linkable (core keeps both elements; a link to the second is rejected at queue time).
+- **The shipped key map on every load.** In the original, loading a gemma3 GGUF writes the G3 names into the shared L3 key map (pig.py:507-509). Later llama, qwen2, qwen3, qwen2vl, qwen3vl, mistral3 and dog loads in the same process then rename `ffn_norm` to `pre_feedforward_layernorm` instead of `post_attention_layernorm`. The conversion always uses the shipped map, which gives the original's result in a fresh process (revision-4 Tier A A10, Tier B B9).
 - The model-detection failure message omits the host path. Non-`.gguf` LoaderGGUF names are also rejected at execute. The host refuses a weights container whose content is not a flat tensor dict.
 - Names the host cannot address are not accepted: a listed name containing a backslash, and files whose real path leaves the folder root (platform policy).
 
@@ -72,7 +83,7 @@ No user-visible node or feature is refused. Only these techniques are:
 ## Missing capabilities (not yet supported)
 
 - GGML provider: Q4_0, Q4_1, Q5_0, Q5_1, Q2_K and Q3_K tensors.
-- Text-encoder transforms: the llama/qwen/mistral/gemma families, the 256384-row t5 tokenizer, ideogram, mmproj pairs, cat tokenizer pairs, cow and dog.
+- Text-encoder transforms: llama, mistral3, gemma2 and gemma3; qwen2/qwen3 with 65,536 or more token rows (float16 token embedding); qwen2vl/qwen3vl (mmproj pairs); the 256384-row t5 tokenizer; ideogram; cat tokenizer files (merge); cow and dog. The concrete asks are in `validation/20261021-calcuis-gguf-a2base-r5/GERALD_REQUEST_SECTION2_R2.md`.
 - A two-file typed text-encoder loader with an explicit device (DualClipLoaderGGUF).
 - Zero-fill of missing Linear weights at construction; dynamic patchers; tensor tables above 4096 tensors or 512 KiB.
 - Host GGUF catalogue listing: the `/models/<folder>` routes list no `.gguf` names, so GGUF files can be chosen only by name through the API or a saved workflow.
@@ -84,7 +95,7 @@ No user-visible node or feature is refused. Only these techniques are:
 - Full Dual/Triple/Quad encodes: encoder not local.
 - Re-run the Phase-1 differentials on the deployed SDK once it ships (they then count as live-tested).
 - TENSORCut's production guest output on a CUDA worker.
-- Normal gVisor admission (the revision-3 Guest tests ran with the sandbox off).
+- Normal gVisor admission (the revision-3 and revision-4 Guest tests ran with the sandbox off).
 - Quantized (Q*) and BF16 VAE/audio GGUFs; big-endian GGUF.
 - Whole-pack acceptance review and registry admission (kept out of every registry slot until the GGML and Phase-1 SDK and the operator limits ship).
 
@@ -100,7 +111,7 @@ No user-visible node or feature is refused. Only these techniques are:
 
 ## Assets and weights
 
-No weights are committed. Users supply GGUF/SafeTensors models through the managed model catalogue (`unet`/`diffusion_models`, `clip`/`text_encoders`, `vae`, `audio_encoders`). Upstream points to example models at https://huggingface.co/calcuis; they are not bundled. The revision-3 tests used only small synthetic fixtures written by the original pack's own GGUF writer and quantizer; no model weights.
+No weights are committed. Users supply GGUF/SafeTensors models through the managed model catalogue (`unet`/`diffusion_models`, `clip`/`text_encoders`, `vae`, `audio_encoders`). Upstream points to example models at https://huggingface.co/calcuis; they are not bundled. The revision-3 and revision-4 tests used only small synthetic fixtures written by the original pack's own GGUF writer and quantizer (revision 4 adds a two-tensor SafeTensors tokenizer file written by the test); no model weights.
 
 ---
 
