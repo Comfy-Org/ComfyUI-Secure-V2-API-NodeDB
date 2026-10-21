@@ -1,3 +1,5 @@
+> **STATUS: IN PROGRESS — UNVERIFIED.** Supported in code, but every node fails on the live service until the host ships native ComfyUI-GGUF and the gguf package (request #12).
+
 # Secure Nodes V2 conversion
 
 - Pack: `comfyui-gguf`
@@ -6,6 +8,8 @@
 - Release: `x6ea2651`
 - Backend: 6 supported, 0 rejected, 0 pending
 - Frontend: 0 supported, 0 rejected, 0 pending
+- Live service (2026-10-20): all 6 nodes fail when run, because the fixed ComfyUI-GGUF vendor module and the `gguf`
+  package are not installed there. See "Live status".
 
 A single aggregate "supported" count would misrepresent this pack, so the
 disposition is stated per node instead. Every node the sealed manifest
@@ -15,14 +19,34 @@ registers appears in the table below exactly once.
 
 | node_id | class | disposition |
 |---|---|---|
-| `UnetLoaderGGUF` | `UnetLoaderGGUF` | supported through `ctx.models.load_gguf_model` |
-| `UnetLoaderGGUFAdvanced` | `UnetLoaderGGUFAdvanced` | supported through `ctx.models.load_gguf_model` with per-load dtype policy |
-| `CLIPLoaderGGUF` | `CLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders` |
-| `DualCLIPLoaderGGUF` | `DualCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders` |
-| `TripleCLIPLoaderGGUF` | `TripleCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders` |
-| `QuadrupleCLIPLoaderGGUF` | `QuadrupleCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders` |
+| `UnetLoaderGGUF` | `UnetLoaderGGUF` | supported through `ctx.models.load_gguf_model`; **fails on the live service** (see "Live status") |
+| `UnetLoaderGGUFAdvanced` | `UnetLoaderGGUFAdvanced` | supported through `ctx.models.load_gguf_model` with per-load dtype policy; **fails on the live service** (see "Live status") |
+| `CLIPLoaderGGUF` | `CLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders`; **fails on the live service** (see "Live status") |
+| `DualCLIPLoaderGGUF` | `DualCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders`; **fails on the live service** (see "Live status") |
+| `TripleCLIPLoaderGGUF` | `TripleCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders`; **fails on the live service** (see "Live status") |
+| `QuadrupleCLIPLoaderGGUF` | `QuadrupleCLIPLoaderGGUF` | supported through `ctx.models.load_gguf_text_encoders`; **fails on the live service** (see "Live status") |
 
 No node is rejected on policy and no node has pending API work.
+
+## Live status (2026-10-20, docs only)
+
+Only this report changes. No code, manifest or test changed, and nothing was run.
+
+Every node in this pack loads through a host GGUF verb: `UnetLoaderGGUF` and `UnetLoaderGGUFAdvanced` through
+`ctx.models.load_gguf_model`, and the four CLIP loaders through `ctx.models.load_gguf_text_encoders`. In the deployed
+engine both verbs first resolve the fixed ComfyUI-GGUF vendor module: this pack's upstream, installed natively under
+`custom_nodes/ComfyUI-GGUF` with `UnetLoaderGGUF` registered (`comfy_api/latest/_sdk.py`,
+`_fixed_gguf_node_module`). `load_gguf_text_encoders` needs it even when every selected file is an ordinary state
+dictionary, because the operations class and the patcher always come from that module. The upstream module imports
+the `gguf` package.
+
+A read-only filesystem check of the live service on 2026-10-20 found no ComfyUI-GGUF custom node and no `gguf`
+package. So on the live service every node of this pack stays registered but fails when run, with the named error
+"GGUF model loading requires the fixed ComfyUI-GGUF extension". The evidence below holds for an engine that has the
+fixed vendor module installed. Installing it, with the `gguf` package, on the live engine has been requested from the
+platform owners.
+
+Evidence: `validation/20261020-comfyui-gguf-live-engine/` (line references with file hashes, and the live check).
 
 ## Behavior ledger
 
