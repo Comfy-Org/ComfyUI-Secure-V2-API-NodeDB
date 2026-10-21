@@ -1,6 +1,11 @@
 import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString } from './constants.js';
 import { LABEL_DEFAULTS, layoutLabel, drawLabel } from './label_drawing.js';
+import { changedNode } from './base_node.js';
+// Imported for their registrations, which every node type must receive before this
+// pack's `define` calls run (extendEveryNodeType in base_node.js).
+import './menu_queue_node.js';
+import './feature_import_individual_nodes.js';
 
 // Label owns its text, typography, sizing and rotation. The host only supplies
 // a bounded drawing surface and declarative node presentation.
@@ -115,6 +120,11 @@ comfy.defs.define({
   onPropertyChanged(node) { if (records.has(keyFor(node))) refresh(node); },
   onRemoved: remove,
 });
-comfy.onNodeChanged(({ node, property }) => {
-  if (node.type === TYPE && property === 'title') refresh(node);
+// `refresh` reads the node through its handle (getProperties, getTitle, getSize, canvas).
+// `changedNode` hands back that handle even where the event carries a plain copy of the
+// node (host stack r3), where revisions 4 and 5 threw `getProperties is not a function`.
+comfy.onNodeChanged((event) => {
+  if (event.property !== 'title' || event.node?.type !== TYPE) return;
+  const node = changedNode(event);
+  if (node) refresh(node);
 }, { scope: 'document' });

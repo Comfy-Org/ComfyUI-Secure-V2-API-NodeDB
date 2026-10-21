@@ -10,6 +10,10 @@ import { NodeTypesString } from "./constants.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 import { setModeDeep } from "./base_any_input_connected_node.js";
 import { getWidgetControl } from './widget_controls.js';
+// Imported for their registrations, which every node type must receive before this
+// pack's `define` calls run (extendEveryNodeType in base_node.js).
+import "./menu_queue_node.js";
+import "./feature_import_individual_nodes.js";
 
 // Power Conductor (unreleased; gated on `unreleased.power_conductor.enabled`) — a code
 // box and a Run button that execute a small python-like script against the live graph,
@@ -140,7 +144,21 @@ __decorate([
 ], ComfyWidgetWrapper.prototype, "toggle", null);
 const CODE_WIDGET = "code";
 const RUN_WIDGET = "Run";
-if (CONFIG_SERVICE.getConfigValue("unreleased.power_conductor.enabled")) {
+// The opt-in is read when its value is known, not only when this module evaluates. In
+// process the stored value is readable at once. Sandbox guest c6b97a15 answers a
+// declared setting with its default until the host returns the stored value, so revision
+// 5's single read at evaluation saw `false` and the type never registered. The stored
+// value arrives as a 'config-change' (config_service.js), and `onReady` — when the
+// published API says settings exist — reads it once more. The type registers once, the
+// first time any of these sees the opt-in on. Turning it off still needs a reload, as the
+// setting's name says.
+const ENABLED_KEY = "unreleased.power_conductor.enabled";
+let registered = false;
+function registerWhenEnabled() {
+    if (registered || !CONFIG_SERVICE.getConfigValue(ENABLED_KEY)) {
+        return;
+    }
+    registered = true;
     comfy.defs.define({
         type: NodeTypesString.POWER_CONDUCTOR,
         title: NodeTypesString.POWER_CONDUCTOR,
@@ -185,3 +203,10 @@ if (CONFIG_SERVICE.getConfigValue("unreleased.power_conductor.enabled")) {
         },
     });
 }
+registerWhenEnabled();
+CONFIG_SERVICE.addEventListener("config-change", (event) => {
+    if (event.detail?.key === ENABLED_KEY) {
+        registerWhenEnabled();
+    }
+});
+comfy.onReady(registerWhenEnabled);

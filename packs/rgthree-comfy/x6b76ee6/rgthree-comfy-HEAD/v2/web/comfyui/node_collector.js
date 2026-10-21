@@ -23,13 +23,30 @@ const NOTICE = 'The Node Combiner has been renamed to Node Collector. You can ri
 // Rebuilds the node as a Collector, keeping position, size, properties and every link.
 // New link ids are allocated, as they were originally: the old routine also rebuilt
 // every link onto a freshly created node.
-function updateCombinerToCollector(node) {
-    const outgoing = [];
-    for (const output of node.outputs.all()) {
-        for (const link of output.links()) {
-            outgoing.push({ from: output.index, toNodeId: link.targetNodeId, toIndex: link.targetIndex });
-        }
+//
+// `comfy.graph.replace` does the rebuild: position, a title the user changed, colours,
+// mode, the properties both types declare and the size carry over, every outgoing link
+// and every incoming link with a slot on the new node is re-made, and it is one undo
+// step. A fresh Collector has a single input, so a link into the Combiner's second or
+// later input would have no slot. The upgrade therefore leaves a claim, which the new
+// Collector's `onCreated` takes (`claimUpgrade`): it grows the inputs and connects what is
+// still unconnected. In process, `onCreated` runs inside `replace`, before the links are
+// re-made, so every link gets its own slot. Under sandbox guest c6b97a15 it runs after
+// the host has answered, when `replace` has already dropped those links, and the claim
+// re-makes them.
+//
+// Revision 5 added the Collector with `graph.add` and wired it at once. The guest answers
+// a just-added node asynchronously and, until then, its input list reads as empty, so
+// the loop that grew it never ended.
+const UPGRADE_CLAIM_MS = 3000;
+const pendingUpgrades = [];
+function dropUpgrade(upgrade) {
+    const index = pendingUpgrades.indexOf(upgrade);
+    if (index >= 0) {
+        pendingUpgrades.splice(index, 1);
     }
+}
+function updateCombinerToCollector(node) {
     const incoming = [];
     for (const input of node.inputs.all()) {
         const link = input.link();
@@ -37,43 +54,73 @@ function updateCombinerToCollector(node) {
             incoming.push({ fromNodeId: link.sourceNodeId, fromIndex: link.sourceIndex, to: input.index });
         }
     }
+    const title = node.getTitle();
+    const upgrade = { graphId: node.graphId ?? "", incoming, expires: Date.now() + UPGRADE_CLAIM_MS };
+    pendingUpgrades.push(upgrade);
     comfy.graph.batch(() => {
-        const title = node.getTitle();
-        const collector = comfy.graph.add(NodeTypesString.NODE_COLLECTOR, {
-            title: title === COMBINER_TITLE ? undefined : title.replace("‼️ ", ""),
-            position: node.getPosition(),
-        });
-        collector.setSize(node.getSize());
-        for (const [key, value] of Object.entries(node.getProperties())) {
-            collector.setProperty(key, value);
+        // `replace` matches a link to the new node's slots by name before index. These
+        // inputs are named after their sources' titles, so an empty one would land on the
+        // Collector's unnamed first input and one named "Output" would be dropped. Each is
+        // named by its index for the rebuild; the Collector renames its inputs as it
+        // stabilizes.
+        for (const input of node.inputs.all()) {
+            input.modify({ name: String(input.index) });
         }
-        // The stabilization pass grows the input list as slots fill, but it runs on a
-        // debounce and these links need somewhere to land now.
-        const needed = incoming.reduce((most, link) => Math.max(most, link.to + 1), 1);
-        while (collector.inputs.length < needed) {
-            collector.inputs.add("", "*");
+        let collector;
+        try {
+            collector = comfy.graph.replace(node.id, NodeTypesString.NODE_COLLECTOR);
         }
-        for (const link of incoming) {
-            const source = comfy.graph.node(link.fromNodeId)?.outputs.at(link.fromIndex);
-            if (!source) {
-                throw new Error(`[rgthree.NodeCollector] lost the link from ${link.fromNodeId}:${link.fromIndex}.`);
+        finally {
+            if (!collector) {
+                dropUpgrade(upgrade);
             }
-            source.connectTo(collector.id, { index: link.to });
         }
-        for (const link of outgoing) {
-            const source = collector.outputs.at(link.from);
-            if (!source) {
-                throw new Error(`[rgthree.NodeCollector] the new collector has no output ${link.from}.`);
-            }
-            source.connectTo(link.toNodeId, { index: link.toIndex });
+        // `replace` keeps only a title the user changed; the original also took the "‼️ "
+        // marker off it.
+        if (collector && title !== COMBINER_TITLE) {
+            collector.setTitle(title.replace("‼️ ", ""));
         }
-        node.remove();
     });
+}
+function claimUpgrade(collector) {
+    const now = Date.now();
+    for (const upgrade of [...pendingUpgrades]) {
+        if (upgrade.expires < now) {
+            dropUpgrade(upgrade);
+        }
+    }
+    const upgrade = pendingUpgrades.find((u) => u.graphId === (collector.graphId ?? ""));
+    if (!upgrade) {
+        return;
+    }
+    dropUpgrade(upgrade);
+    const needed = upgrade.incoming.reduce((most, link) => Math.max(most, link.to + 1), 1);
+    for (let count = collector.inputs.length; count < needed; count++) {
+        collector.inputs.add("", "*");
+    }
+    for (const link of upgrade.incoming) {
+        if (collector.inputs.at(link.to)?.isConnected) {
+            continue;
+        }
+        const source = comfy.graph.node(link.fromNodeId)?.outputs.at(link.fromIndex);
+        if (!source) {
+            console.warn(`[rgthree.NodeCollector] lost the link from ${link.fromNodeId}:${link.fromIndex}.`);
+            continue;
+        }
+        source.connectTo(collector.id, { index: link.to });
+    }
 }
 defineCollectorNode({
     type: NodeTypesString.NODE_COLLECTOR,
     following: PassThroughFollowing.REROUTE_ONLY,
     outputs: [{ name: "Output", type: "*" }],
+    // A Collector restored from saved data (a load, a paste, an undo) is never the
+    // replacement: `replace` builds a fresh node and configures nothing before it joins.
+    onCreated(node, event) {
+        if (!event?.restored) {
+            claimUpgrade(node);
+        }
+    },
 });
 defineCollectorNode({
     type: COMBINER_TYPE,

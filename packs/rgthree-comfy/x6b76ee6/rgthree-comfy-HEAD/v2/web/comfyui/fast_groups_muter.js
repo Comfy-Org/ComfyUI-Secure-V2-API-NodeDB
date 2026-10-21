@@ -3,6 +3,10 @@ import { NodeTypesString } from "./constants.js";
 import { SERVICE as FAST_GROUPS_SERVICE } from "./services/fast_groups_service.js";
 import { exposeActions, helpMenuItem } from "./base_node.js";
 import { registerWidgetControl } from './widget_controls.js';
+// Imported for their registrations, which every node type must receive before this
+// pack's `define` calls run (extendEveryNodeType in base_node.js).
+import "./menu_queue_node.js";
+import "./feature_import_individual_nodes.js";
 
 // Fast Groups Muter — an input-less node that lists every group in the workflow as
 // a toggle row with a jump-to-group arrow, filtered by colour or title regex, sorted

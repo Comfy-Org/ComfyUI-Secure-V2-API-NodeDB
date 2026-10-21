@@ -28,8 +28,11 @@ const CONVERT_TO = {
         label: "Convert To Context Merge Big",
         type: NodeTypesString.CONTEXT_MERGE_BIG,
     },
+    // Upstream labels this item "Convert To Context Switch" (context.ts), but it converts
+    // to Context Merge, as each other entry converts to its own big or small form. The
+    // label is corrected to say what the item does.
     [NodeTypesString.CONTEXT_MERGE_BIG]: {
-        label: "Convert To Context Switch",
+        label: "Convert To Context Merge",
         type: NodeTypesString.CONTEXT_MERGE,
     },
 };

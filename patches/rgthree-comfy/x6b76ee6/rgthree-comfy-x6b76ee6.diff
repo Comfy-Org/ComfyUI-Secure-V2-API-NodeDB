@@ -1,11 +1,13 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,445 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
-+> Revision 5 (2026-10-20) is a source-only candidate. It changes the served frontend layout and has not been browser-tested.
++> Revision 5 (corpus PR #54) changed the served frontend layout. Its browser staging on live host stack r3 passed every
++> row except the required Power Conductor row. Revision 6 (2026-10-21) is a source-only candidate with the pack-side
++> fixes, and has not been browser-tested.
 +> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
 +> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-+> These are revision 4's counts. They stay unchanged until a browser test of revision 5 passes.
++> These are revision 4's counts. They stay unchanged until a browser test of revision 6 passes.
 +> Not accepted: no whole-pack certificate. Open gates are listed below.
 +
 +<!-- secure-conversion-report-v1 -->
@@ -13,10 +15,69 @@
 +
 +## What this revision contains
 +
-+- **Base:** revision 4 (corpus PR #17), as on corpus main (`d6271b5c`). Revision 4 was built on revision 3 (PR #13).
-+  Revision 2 is kept in the corpus but held from the registry, because its `prompt_service.js` raises DataCloneErrors in
-+  the sandbox; revision 3 fixed that.
-+- **Changed in revision 5** (candidate, source only). Three pack-side problems from a live browser smoke test on
++- **Base:** revision 5 (corpus PR #54, merged as `bef02a60`). Revision 5 was built on revision 4 (PR #17),
++  and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
++  `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
++- **Changed in revision 6** (candidate, source only). Revision 5 was browser-staged as an overlay on live host stack r3
++  (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). Every row passed except the required Power Conductor
++  row. A static live-readiness audit added four findings. Each finding was checked against the published API
++  (`comfy-api.d.ts`) and the live guest's source.
++  - **Pack fixes:**
++    - **Power Conductor registers when its opt-in resolves.** Revision 5 read the setting once, when the module evaluated.
++      The live guest answers a declared setting with its default until the host returns the stored value, so the type never
++      registered.
++      - Each setting is now declared with an `onChange`, which hears the value change, and on the guest also hears the
++        stored value arrive. `config_service.js` announces it as a `config-change`, once per value.
++      - Power Conductor registers the first time the opt-in reads as on: when the module evaluates, on that event, or at
++        `onReady`. Turning it off still needs a reload.
++      - The same event now also reaches the progress badge and the action-bar buttons when a stored value differs from
++        the default.
++    - **Every-node menu items and drop hooks are registered before the pack defines its own types.** Revision 5 called
++      `comfy.defs.extend(/./, …)` from `menu_queue_node.js` and `feature_import_individual_nodes.js`. Those modules could
++      evaluate after other modules had already defined their types. The host then logged "will not be applied" 14–19
++      times per load, and a Fast Muter lacked both Queue items.
++      - `extendEveryNodeType` (`base_node.js`) names each of the 13 types this pack defines (`DEFINED_NODE_TYPES`,
++        `constants.js`). A pattern that leaves those 13 out covers every other type.
++      - The five modules that call `comfy.defs.define` import both registering modules, so those evaluate first.
++      - Maintenance: any type this pack starts defining later must be added to `DEFINED_NODE_TYPES`. The pending
++        Reroute definition is one example. The module that defines it must also import both registering modules.
++        Otherwise the live guest silently drops that type's every-node items.
++    - **Context Merge Big's menu item reads "Convert To Context Merge"**, which is what it does. Upstream labels it
++      "Convert To Context Switch" (see *Accepted differences*).
++  - **Mitigations for platform gaps.** The platform requests are filed separately.
++    - **`onNodeChanged` listeners resolve the node again.** The published event carries the node as a handle. Host r3
++      sends a plain copy without methods.
++      - Label's title refresh threw `getProperties is not a function`, 3 times per workflow load.
++      - The Repeater's and Relay's mode handlers would throw the same way.
++      - `changedNode(event)` returns the event's handle, or the same node resolved again in `event.graphId`.
++    - **Node Combiner → Node Collector uses `comfy.graph.replace`.** Revision 5 added a Collector and wired it straight away.
++      On the live guest a just-added node is unconfirmed, and its input list reads as empty, so the loop that grew the
++      inputs never ended.
++      - `replace` keeps position, a changed title, colours, mode, shared properties and size. It re-makes the links that
++        have a slot.
++      - A fresh Collector has one input. So the upgrade leaves a claim that the new Collector's `onCreated` takes: it grows
++        the inputs and connects the incoming links that are still unconnected. A Collector restored from saved data (a
++        load, a paste or an undo) never takes the claim.
++      - `replace` matches slots by name before index, so the Combiner's inputs are first named by their index. An input
++        whose source has an empty title, or a title of "Output", would otherwise be mis-wired.
++    - **Queue Selected / Group Output Nodes fall back to `{ id }`.** `RunOptions.nodes` is a list of handles, and those are
++      sent first. The live guest forwards `queue.run` through a structured clone, which cannot copy a handle
++      (DataCloneError). The same nodes are then sent as `{ id }`, which is all the host's `run` reads.
++  - **Not changed** (platform gaps; see the host r3 table under *Blocked behaviours*):
++    - a mounted widget's value handle;
++    - a canvas widget's `widget`, theme and value;
++    - `PropertyChangeEvent.setValue`;
++    - `comfy.ui.showMenu` with `run` callbacks;
++    - a synchronous `comfy.defs.nodeColor`.
++  - **Evidence:** static and module-level; no browser run yet.
++    - Every served module parses (acorn 8.17.0, and V8 in Node 25.9.0). All 73 entry modules link, and the static import
++      graph has no cycle.
++    - Each of the five modules that defines a type has both registering modules in its import closure.
++    - 49 module-level checks on the real modules, including the Relay and Repeater mode handlers, against two host models:
++      in-process semantics and the live guest's, ported from their sources. Each fix is also run on revision 5, as the
++      negative control. All 14 mutants that each undo one fix are caught.
++    - The ring-safe walk's unit test still passes with the revision 6 module.
++- **Changed in revision 5** (published as corpus PR #54). Three pack-side problems from a live browser smoke test on
 +  host-stack r3:
 +  - **Served layout.** `secure-nodes.json` declares `web_directory: "web"` (was `web/comfyui`). It no longer declares
 +    `static_directories` (was `rgthree -> web`): the live host parses that field but never serves it. The host serves
@@ -79,7 +140,8 @@
 +    - "Convert … Reroutes" (`window.confirm`).
 +
 +    The settings themselves remain editable in the host's settings panel.
-+  - **Evidence:** static, plus the module-level walk unit test; no browser run yet:
++  - **Evidence at publication:** static, plus the module-level walk unit test. The browser staging on host r3 came after
++    (see revision 6). Static evidence:
 +    - every served module parses (acorn 8.17.0, and V8 in Node 25.9.0);
 +    - all 73 entry modules link;
 +    - every static and dynamic import and every asset URL resolves to a served file under `/extensions/rgthree-comfy/`,
@@ -143,8 +205,9 @@
 +  tranche, `display_any.js` (F14), and `media/svgs.js` (worker-safe logo URL).
 +- **Held back** (listed as open):
 +  - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
-+    pass their tests, but the deployed frontend does not yet carry S01–S03. A combined S01–S04 frontend patch against the
-+    deployed sources is in preparation.
++    pass their tests, and their frontend changes are live (served frontend since 2026-10-20 09:06Z). Still missing: S02's
++    guest relay (2 of its 3 `guest.mjs` hunks are absent from live guest `c6b97a15`) and the pack side
++    (`connection_layout.js`, `reroute.js`).
 +  - The optional Dynamic Context backend, which waits on the repeated-output API.
 +- **Resolved since revision 1:** the startup callback error (`comfy.defs.onRefreshed` inside the sandbox). The host fix is
 +  deployed and passed browser acceptance on 2026-10-15: no DataCloneError at login, and a refresh reaches the pack's
@@ -168,7 +231,7 @@
 +| Node id | Disposition | Evidence or gap |
 +| --- | --- | --- |
 +| `KSampler Config (rgthree)` | tested (scoped) | Backend native cases pass; no custom frontend. |
-+| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. Revision 5 moves the load path of its grammar (`common/py_parser.js`); the browser smoke test's required check 9 covers that. |
++| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. Revision 5 moved the load path of its grammar (`common/py_parser.js`). On host r3 the grammar loads from the new path and the parser runs. The type did not register with the opt-in on; revision 6 fixes that (untested). Blocked on host r3: its code box needs the mounted widget's value handle, which the guest does not pass. |
 +| `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
 +| `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 +| `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
@@ -179,7 +242,7 @@
 +| `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 +| `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 +| `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
-+| `Label (rgthree)` | converted, partly tested | Browser: Classic 7/9 edits persist, Vue 8/9. The remaining focus race is a host renderer fix, still pending. |
++| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6 resolves the node again (untested). |
 +| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 +| `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 +| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
@@ -189,7 +252,7 @@
 +| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
++| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) and F01 are open. |
@@ -200,11 +263,11 @@
 +| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
 +| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
 +| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Otherwise untested. F01 is open. |
-+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Otherwise untested. F01 is open. |
++| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
++| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
 +| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
-+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. Legacy node. F01 is open. |
-+| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). They are not yet all in the deployed frontend. F05 and F06 are open. |
++| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. Otherwise untested. Legacy node. F01 is open. |
++| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
 +| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Missing: F17 connection policy — refusing another Dynamic Context's context output on a non-base input. |
 +| `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 +
@@ -274,6 +337,9 @@
 +- **SDXL Power Prompt - Simple / Negative.** With CLIP width and height set, v2 returns the conditioning that the original
 +  computes with its intended (pre-V3) SDXL encode. On current Core the original's call fails and returns no conditioning.
 +  With an SD1 CLIP, v2 falls back to the plain encode described by the original's own log message.
++- **Context Merge Big's menu label** (revision 6). The original labels the item "Convert To Context Switch"
++  (`src_web/comfyui/context.ts:418`), but it converts the node to Context Merge. Every other Context type's item names its
++  own big or small form. v2 labels it "Convert To Context Merge"; the conversion is unchanged.
 +
 +## Blocked behaviours (missing host capability, not refused)
 +
@@ -294,6 +360,21 @@
 +| Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
 +| Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
 +| Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
++
++The published API declares the following, and the live sandbox guest (`c6b97a15`) does not provide it yet. Each was found
++in the browser staging of revision 5 or in the static live-readiness audit. Platform requests are filed; the pack code
++follows the published API and needs no change when the guest catches up.
++
++| Behaviour on host r3 | Needs (published API) | Nodes |
++| --- | --- | --- |
++| A mounted widget's stored value: the code and text boxes render no value | `MountDef.render(container, value)` with `MountedValue`, and `defaultValue` / `serialize` honoured | Power Conductor, Power Puter, Power Primitive (multiline value), Display Any, Display Int, Seed (last-seed box) |
++| A canvas widget's handle, palette and value: setting its height, reading its value, drawing in theme colours | `CanvasHandle.widget`; `CanvasDef.draw(context, size, theme, value)` | Power Lora Loader rows, Power Puter output chips, Image Comparer |
++| Correcting a property as it is edited (clamping, normalising) | `PropertyChangeEvent.setValue` / `reject` | Seed (`randomMax`, `randomMin`), Fast Actions Button (shortcut key) |
++| Menus a pack raises itself (pickers, row menus, the rgthree menu) | `comfy.ui.showMenu` with `run` callbacks kept in the worker | Power Lora Loader, Power Puter, rgthree menu, Bookmarks button |
++| Filtering groups by a colour name (hex codes work) | A synchronous `comfy.defs.nodeColor` | Fast Groups Muter, Fast Groups Bypasser |
++
++Revision 6 works around four more such gaps, as described above: the `onNodeChanged` node, a stored setting read at
++load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 +
 +## Pending items (not yet supported)
 +
@@ -325,21 +406,29 @@
 +
 +## Open test gates
 +
-+- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. They still have
-+  to be deployed together as one frontend patch.
++- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. Their frontend
++  changes are live (since 2026-10-20 09:06Z). Open: S02's guest relay (absent from live guest `c6b97a15`), a re-run of
++  the S01–S04 suites on the live frontend source, and a browser check.
 +- Backend native cases running inside the Guest (sandboxed), and Core prompt validation at runtime for the Lora Loader Stack
 +  validator. Its checks pass structurally and in the Guest.
 +- Image Comparer with an empty image batch.
 +- Original-comparison runs for the eight frontend-only nodes listed as untested.
-+- Label browser acceptance after the host focus-race fix.
-+- A browser smoke test of revision 5's layout. Until it passes, the node counts above stay at revision 4's. It checks:
++- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 6's title refresh on host r3 is untested.
++- Revision 5's layout passed its browser staging on host r3, row 9 apart:
 +  - 0 module-load failures across the 73 entry modules;
 +  - the progress badge;
-+  - asset delivery and CORS under `/extensions/rgthree-comfy/` for the logo SVG;
-+  - the tree-sitter WASM, which is required: Power Conductor stays "tested (scoped)" only if its grammar loads from the
-+    new path;
-+  - no `addMenuItem` or `onBeforeConnect` refusal rows;
-+  - a ring of pass-through nodes that no longer overflows.
++  - asset delivery for the logo SVG;
++  - the tree-sitter WASM loads from the new path;
++  - no refusal rows beyond the 8 expected notices;
++  - a ring of pass-through nodes no longer overflows.
++- A browser smoke test of revision 6's changes. Until it passes, the node counts above stay at revision 4's. It checks:
++  - Power Conductor registering with the opt-in on;
++  - 0 "will not be applied" errors for rgthree's own types, and the Queue items on a Fast Muter;
++  - the Label title refresh;
++  - the Node Combiner upgrade;
++  - the Queue items queueing;
++  - the Context Merge Big label;
++  - the Repeater and Relay mode handlers.
 +- gVisor admission and whole-pack acceptance review.
 +
 +## Authority and permissions
@@ -14153,7 +14242,7 @@
 +//   the instance, so nothing new is serialized.
 --- a/web/comfyui/base_any_input_connected_node.js
 +++ b/v2/web/comfyui/base_any_input_connected_node.js
-@@ -1,208 +1,349 @@
+@@ -1,208 +1,353 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { rgthree } from "./rgthree.js";
@@ -14178,6 +14267,10 @@
 +import { comfy } from '/comfy/api/v2.js';
 +import { debounce } from "../common/shared_utils.js";
 +import { whereSupported } from "./sandbox_limits.js";
++// Imported for their registrations, which every node type must receive before this
++// pack's `define` calls run (extendEveryNodeType in base_node.js).
++import "./menu_queue_node.js";
++import "./feature_import_individual_nodes.js";
 +
 +// The shared body of every rgthree node that grows an input as the last one fills:
 +// Fast Muter, Fast Bypasser, Node Collector, Random Unmuter, Mute/Bypass Repeater and
@@ -14689,7 +14782,7 @@
 -        oldLGraphNodeConnectByType.call(this, slot, targetNode, targetSlotType, optsIn)) ||
 -        null);
 -};
-+            onCreated?.(node);
++            onCreated?.(node, event);
 +        },
 +        onConfigured(node, data) {
 +            onConfigured?.(node, data);
@@ -14711,7 +14804,7 @@
 +}
 --- a/web/comfyui/base_node.js
 +++ b/v2/web/comfyui/base_node.js
-@@ -1,316 +1,154 @@
+@@ -1,316 +1,204 @@
 -import { app } from "../../scripts/app.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
 -import { SERVICE as KEY_EVENT_SERVICE } from "./services/key_events_services.js";
@@ -14735,6 +14828,7 @@
 -        if (title == "__NEED_CLASS_TITLE__") {
 -            throw new Error("RgthreeBaseNode needs overrides.");
 +import { comfy } from '/comfy/api/v2.js';
++import { DEFINED_NODE_TYPES } from "./constants.js";
 +
 +// MOSTLY DISSOLVED — 316 lines in, three exports out.
 +//
@@ -14909,7 +15003,32 @@
 -                }
 -            },
 -        });
--    }
++    },
++});
++
++const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
++// Every node type except the ones this pack defines (constants.js DEFINED_NODE_TYPES).
++const NOT_DEFINED_HERE = new RegExp(`^(?!(?:${DEFINED_NODE_TYPES.map(escapeRegExp).join("|")})$)`);
++
++/**
++ * Registers `apply` for every node type, once per type.
++ *
++ * Revision 5 called `comfy.defs.extend(/./, …)` from modules that could evaluate after
++ * this pack's own `define` calls. An extension is applied when its type is defined, so it
++ * must be registered first — "Register the extension before defining the type." Every
++ * module that defines a type imports the modules that call this (menu_queue_node.js and
++ * feature_import_individual_nodes.js), which makes them evaluate first.
++ *
++ * The pack's own types are registered by name, one call each. Sandbox guest c6b97a15
++ * keeps an extension waiting for a later `define` only when its selector is a name: it
++ * matches a pattern against the definitions that exist when `extend` is called and drops
++ * it for the rest. The pattern for every other type leaves the pack's own types out, so a
++ * host that also applies patterns to later definitions does not apply the extension twice.
++ */
++export function extendEveryNodeType(apply) {
++    for (const type of DEFINED_NODE_TYPES) {
++        comfy.defs.extend(type, apply);
+     }
 -    checkAndRunOnConstructed() {
 -        var _a;
 -        if (!this.__constructed__) {
@@ -14918,12 +15037,32 @@
 -            (_a = console[n]) === null || _a === void 0 ? void 0 : _a.call(console, ...v);
 -        }
 -        return this.__constructed__;
--    }
++    comfy.defs.extend(NOT_DEFINED_HERE, apply);
++}
++
++/**
++ * The node an `onNodeChanged` event is about, as a handle.
++ *
++ * The event declares `node` as a handle resolved in the graph the change happened in
++ * (`event.graphId`). Host stack r3 (host-entry 63d9437e) delivers the worker a plain copy
++ * instead: `id`, `type` and `graphId` survive and its methods do not, so a listener that
++ * calls one throws. Such a copy is resolved again here, in its own graph, because ids
++ * repeat across graphs. `undefined` if the node is gone.
++ */
++export function changedNode(event) {
++    const node = event?.node;
++    if (!node || typeof node.getTitle === "function") {
++        return node;
+     }
 -    onDragOver(e) {
 -        if (!this.isDropEnabled)
 -            return false;
 -        return importIndividualNodesInnerOnDragOver(this, e);
--    }
++    const id = String(node.id);
++    const graphId = event.graphId ?? node.graphId;
++    if (graphId == null || graphId === comfy.graph.id) {
++        return comfy.graph.node(id);
+     }
 -    async onDragDrop(e) {
 -        if (!this.isDropEnabled)
 -            return false;
@@ -15179,8 +15318,9 @@
 -    }
 -    return oldregisterNodeType.call(LiteGraph, nodeId, clazz);
 -};
-+    },
-+});
++    const scope = [comfy.graph.root(), ...comfy.graph.subgraphs()].find((s) => s?.id === graphId);
++    return scope?.node(id);
++}
 --- a/web/comfyui/base_node_collector.js
 +++ b/v2/web/comfyui/base_node_collector.js
 @@ -1,51 +1,47 @@
@@ -16012,7 +16152,7 @@
 +});
 --- a/web/comfyui/bookmark.js
 +++ b/v2/web/comfyui/bookmark.js
-@@ -1,105 +1,95 @@
+@@ -1,105 +1,99 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 +import { comfy } from '/comfy/api/v2.js';
@@ -16072,6 +16212,10 @@
 -        if (getClosestOrSelf(target, 'input,textarea,[contenteditable="true"]')) {
 -            return;
 +import { getClosestOrSelf } from "../common/utils_dom.js";
++// Imported for their registrations, which every node type must receive before this
++// pack's `define` calls run (extendEveryNodeType in base_node.js).
++import "./menu_queue_node.js";
++import "./feature_import_individual_nodes.js";
 +
 +// Bookmark — a collapsed marker node with a shortcut key and a zoom level; press the key
 +// anywhere and the canvas jumps to it.
@@ -16774,9 +16918,36 @@
 +        new RgthreeConfigDialog().show();
      },
  });
+--- a/web/comfyui/constants.js
++++ b/v2/web/comfyui/constants.js
+@@ -43,6 +43,24 @@
+     IMAGE_COMPARER: addRgthree("Image Comparer"),
+     IMAGE_INSET_CROP: addRgthree("Image Inset Crop"),
+ };
++// Every type this pack registers itself with `comfy.defs.define` (the 12 frontend-only
++// nodes and the opt-in Power Conductor). An extension meant for every node type names
++// these one by one, before they are defined; see `extendEveryNodeType` in base_node.js.
++export const DEFINED_NODE_TYPES = Object.freeze([
++    NodeTypesString.FAST_GROUPS_MUTER,
++    NodeTypesString.FAST_GROUPS_BYPASSER,
++    NodeTypesString.FAST_MUTER,
++    NodeTypesString.FAST_BYPASSER,
++    NodeTypesString.FAST_ACTIONS_BUTTON,
++    NodeTypesString.NODE_COLLECTOR,
++    addRgthree("Node Combiner"),
++    NodeTypesString.NODE_MODE_REPEATER,
++    NodeTypesString.NODE_MODE_RELAY,
++    NodeTypesString.RANDOM_UNMUTER,
++    NodeTypesString.BOOKMARK,
++    NodeTypesString.LABEL,
++    NodeTypesString.POWER_CONDUCTOR,
++]);
+ const UNRELEASED_KEYS = {
+     [NodeTypesString.DYNAMIC_CONTEXT]: "dynamic_context",
+     [NodeTypesString.DYNAMIC_CONTEXT_SWITCH]: "dynamic_context",
 --- a/web/comfyui/context.js
 +++ b/v2/web/comfyui/context.js
-@@ -1,322 +1,244 @@
+@@ -1,322 +1,247 @@
 -import { app } from "../../scripts/app.js";
 -import { IoDirection, addConnectionLayoutSupport, addMenuItem, matchLocalSlotsToServer, replaceNode, } from "./utils.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -16850,8 +17021,11 @@
 +        label: "Convert To Context Merge Big",
 +        type: NodeTypesString.CONTEXT_MERGE_BIG,
 +    },
++    // Upstream labels this item "Convert To Context Switch" (context.ts), but it converts
++    // to Context Merge, as each other entry converts to its own big or small form. The
++    // label is corrected to say what the item does.
 +    [NodeTypesString.CONTEXT_MERGE_BIG]: {
-+        label: "Convert To Context Switch",
++        label: "Convert To Context Merge",
 +        type: NodeTypesString.CONTEXT_MERGE,
 +    },
 +};
@@ -19630,7 +19804,7 @@
  });
 --- a/web/comfyui/fast_groups_muter.js
 +++ b/v2/web/comfyui/fast_groups_muter.js
-@@ -1,10 +1,49 @@
+@@ -1,10 +1,53 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 +import { comfy } from '/comfy/api/v2.js';
@@ -19641,6 +19815,10 @@
 -import { changeModeOfNodes, getGroupNodes } from "./utils.js";
 +import { exposeActions, helpMenuItem } from "./base_node.js";
 +import { registerWidgetControl } from './widget_controls.js';
++// Imported for their registrations, which every node type must receive before this
++// pack's `define` calls run (extendEveryNodeType in base_node.js).
++import "./menu_queue_node.js";
++import "./feature_import_individual_nodes.js";
 +
 +// Fast Groups Muter — an input-less node that lists every group in the workflow as
 +// a toggle row with a jump-to-group arrow, filtered by colour or title regex, sorted
@@ -19685,7 +19863,7 @@
  const PROPERTY_SORT = "sort";
  const PROPERTY_SORT_CUSTOM_ALPHA = "customSortAlphabet";
  const PROPERTY_MATCH_COLORS = "matchColors";
-@@ -12,203 +51,138 @@
+@@ -12,203 +55,138 @@
  const PROPERTY_SHOW_NAV = "showNav";
  const PROPERTY_SHOW_ALL_GRAPHS = "showAllGraphs";
  const PROPERTY_RESTRICTION = "toggleRestriction";
@@ -20020,7 +20198,7 @@
        <ul>
          <li>
            <p>
-@@ -274,164 +248,198 @@
+@@ -274,164 +252,198 @@
            </ul>
          </li>
        </ul>`;
@@ -20643,7 +20821,7 @@
 +export {}
 --- a/web/comfyui/feature_import_individual_nodes.js
 +++ b/v2/web/comfyui/feature_import_individual_nodes.js
-@@ -1,66 +1,69 @@
+@@ -1,66 +1,71 @@
 -import { app } from "../../scripts/app.js";
 -import { tryToGetWorkflowDataFromEvent } from "../../rgthree/common/utils_workflow.js";
 -import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
@@ -20675,6 +20853,7 @@
 +import { tryToGetWorkflowDataFromEvent } from '../common/utils_workflow.js';
 +import { configurePowerLoraValues } from './power_lora_loader.js';
 +import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
++import { extendEveryNodeType } from './base_node.js';
 +
 +const POWER_LORA_LOADER = 'Power Lora Loader (rgthree)';
 +const MODES = ['always', 'on-event', 'never', 'on-trigger', 'bypass'];
@@ -20734,7 +20913,8 @@
 +    return true;
 +}
 +
-+comfy.defs.extend(/./, (builder) => {
++// Every node type, registered before this pack defines its own (see base_node.js).
++extendEveryNodeType((builder) => {
 +    // Applies to every node type, so the refusal is reported once for all of them.
 +    whereSupported("all node types", "drop-to-import onto a node (onDragOver)", () => builder.onDragOver((node) => enabled(node)));
 +    whereSupported("all node types", "drop-to-import onto a node (onDrop)", () => builder.onDrop(importNode));
@@ -21433,7 +21613,7 @@
  });
 --- a/web/comfyui/label.js
 +++ b/v2/web/comfyui/label.js
-@@ -1,163 +1,120 @@
+@@ -1,163 +1,130 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { NodeTypesString } from "./constants.js";
@@ -21555,6 +21735,11 @@
 +import { comfy } from '/comfy/api/v2.js';
 +import { NodeTypesString } from './constants.js';
 +import { LABEL_DEFAULTS, layoutLabel, drawLabel } from './label_drawing.js';
++import { changedNode } from './base_node.js';
++// Imported for their registrations, which every node type must receive before this
++// pack's `define` calls run (extendEveryNodeType in base_node.js).
++import './menu_queue_node.js';
++import './feature_import_individual_nodes.js';
 +
 +// Label owns its text, typography, sizing and rotation. The host only supplies
 +// a bounded drawing surface and declarative node presentation.
@@ -21711,8 +21896,13 @@
 +  onPropertyChanged(node) { if (records.has(keyFor(node))) refresh(node); },
 +  onRemoved: remove,
 +});
-+comfy.onNodeChanged(({ node, property }) => {
-+  if (node.type === TYPE && property === 'title') refresh(node);
++// `refresh` reads the node through its handle (getProperties, getTitle, getSize, canvas).
++// `changedNode` hands back that handle even where the event carries a plain copy of the
++// node (host stack r3), where revisions 4 and 5 threw `getProperties is not a function`.
++comfy.onNodeChanged((event) => {
++  if (event.property !== 'title' || event.node?.type !== TYPE) return;
++  const node = changedNode(event);
++  if (node) refresh(node);
 +}, { scope: 'document' });
 --- /dev/null
 +++ b/v2/web/comfyui/label_drawing.js
@@ -22070,7 +22260,7 @@
 -});
 --- a/web/comfyui/menu_queue_node.js
 +++ b/v2/web/comfyui/menu_queue_node.js
-@@ -1,65 +1,98 @@
+@@ -1,65 +1,113 @@
 -import { app } from "../../scripts/app.js";
 -import { rgthree } from "./rgthree.js";
 -import { getGroupNodes, getOutputNodes } from "./utils.js";
@@ -22078,6 +22268,7 @@
  import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 -function showQueueNodesMenuIfOutputNodesAreSelected(existingOptions) {
 -    if (CONFIG_SERVICE.getConfigValue("features.menu_queue_selected_nodes") === false) {
++import { extendEveryNodeType } from "./base_node.js";
 +// Adds "Queue Selected Output Nodes" to a node's context menu — run only the
 +// selected output nodes and whatever feeds them.
 +//
@@ -22133,6 +22324,19 @@
 +    });
 +    return group ? group.nodes().filter(isOutputNode) : [];
 +}
++// `RunOptions.nodes` is a list of handles, and that is what is passed first. Sandbox guest
++// c6b97a15 forwards `queue.run` through its generic call channel, which copies arguments
++// by structured clone and cannot copy a handle's methods: the call rejects with a
++// DataCloneError before the host sees it. The host's `run` resolves each node by its `id`
++// alone, so the same nodes are then sent as `{ id }`.
++function runNodes(nodes) {
++    return comfy.queue.run({ nodes }).catch((error) => {
++        if (error?.name !== "DataCloneError") {
++            throw error;
++        }
++        return comfy.queue.run({ nodes: nodes.map((node) => ({ id: node.id })) });
++    }).catch((error) => console.error("[rgthree-comfy] queueing output nodes failed:", error));
++}
 +function queueSelectedOutputNodes() {
 +    const nodes = getSelectedOutputNodes();
 +    if (!nodes.length) {
@@ -22151,7 +22355,7 @@
 -    idx = idx || existingOptions.findIndex((o) => (o === null || o === void 0 ? void 0 : o.content) === "Align") + 1;
 -    idx = idx || 3;
 -    existingOptions.splice(idx, 0, menuItem);
-+    void comfy.queue.run({ nodes });
++    void runNodes(nodes);
  }
 -function showQueueGroupNodesMenuIfGroupIsSelected(existingOptions) {
 -    if (CONFIG_SERVICE.getConfigValue("features.menu_queue_selected_nodes") === false) {
@@ -22179,7 +22383,7 @@
 -    idx = idx || existingOptions.findIndex((o) => (o === null || o === void 0 ? void 0 : o.content) === "Align") + 1;
 -    idx = idx || 3;
 -    existingOptions.splice(idx, 0, menuItem);
-+    void comfy.queue.run({ nodes });
++    void runNodes(nodes);
  }
 -app.registerExtension({
 -    name: "rgthree.QueueNode",
@@ -22214,7 +22418,8 @@
 +    scope: "canvas",
 +    run: () => queueGroupOutputNodes(undefined),
 +});
-+comfy.defs.extend(/./, (b) => {
++// Every node type, registered before this pack defines its own (see base_node.js).
++extendEveryNodeType((b) => {
 +    b.addMenuItem({
 +        label: "Queue Selected Output Nodes (rgthree)",
 +        when: () => getSelectedOutputNodes().length > 0,
@@ -22295,7 +22500,7 @@
 +defineModeChangerNode({ type: NodeTypesString.FAST_MUTER, modeOn: "always", modeOff: "never", offAction: "Mute all" });
 --- a/web/comfyui/node_collector.js
 +++ b/v2/web/comfyui/node_collector.js
-@@ -1,113 +1,115 @@
+@@ -1,113 +1,162 @@
 -import { app } from "../../scripts/app.js";
 -import { addConnectionLayoutSupport } from "./utils.js";
 -import { wait } from "../../rgthree/common/shared_utils.js";
@@ -22312,8 +22517,52 @@
 -    onConstructed() {
 -        this.addOutput("Output", "*");
 -        return super.onConstructed();
--    }
--}
++import { PassThroughFollowing } from "./base_any_input_connected_node.js";
++import { defineCollectorNode } from "./base_node_collector.js";
++
++// Node Collector — a virtual passthrough that gathers many links into one output — plus
++// the deprecated "Node Combiner" and its in-place upgrade path.
++//
++// Neither node resolves to anything: both were `isVirtualNode` with no `applyToGraph`,
++// so `execution: 'frontend'` with no `resolve` is exactly what they were. Everything
++// downstream of a Collector is itself frontend-only.
++//
++// COSMETIC: (8) the "‼️ Update to Node Collector" entry was spliced into
++//   `getExtraMenuOptions` at `options.length - 1`, i.e. above core's last item. It is
++//   present; `b.addMenuItem` appends after every core entry, so it sits lower.
++//
++// WIRE FORMAT: unchanged for both types. `serialize_widgets` stays off, so the
++// Combiner's deprecation notice occupies no `widgets_values` slot, exactly as the
++// `ComfyWidgets["STRING"]` textarea did on a node that never set the flag.
++const COMBINER_TYPE = "Node Combiner (rgthree)";
++const COMBINER_TITLE = "‼️ Node Combiner [DEPRECATED]";
++const NOTICE = 'The Node Combiner has been renamed to Node Collector. You can right-click and select "Update to Node Collector" to attempt to automatically update.';
++// Rebuilds the node as a Collector, keeping position, size, properties and every link.
++// New link ids are allocated, as they were originally: the old routine also rebuilt
++// every link onto a freshly created node.
++//
++// `comfy.graph.replace` does the rebuild: position, a title the user changed, colours,
++// mode, the properties both types declare and the size carry over, every outgoing link
++// and every incoming link with a slot on the new node is re-made, and it is one undo
++// step. A fresh Collector has a single input, so a link into the Combiner's second or
++// later input would have no slot. The upgrade therefore leaves a claim, which the new
++// Collector's `onCreated` takes (`claimUpgrade`): it grows the inputs and connects what is
++// still unconnected. In process, `onCreated` runs inside `replace`, before the links are
++// re-made, so every link gets its own slot. Under sandbox guest c6b97a15 it runs after
++// the host has answered, when `replace` has already dropped those links, and the claim
++// re-makes them.
++//
++// Revision 5 added the Collector with `graph.add` and wired it at once. The guest answers
++// a just-added node asynchronously and, until then, its input list reads as empty, so
++// the loop that grew it never ended.
++const UPGRADE_CLAIM_MS = 3000;
++const pendingUpgrades = [];
++function dropUpgrade(upgrade) {
++    const index = pendingUpgrades.indexOf(upgrade);
++    if (index >= 0) {
++        pendingUpgrades.splice(index, 1);
+     }
+ }
 -CollectorNode.type = NodeTypesString.NODE_COLLECTOR;
 -CollectorNode.title = NodeTypesString.NODE_COLLECTOR;
 -class CombinerNode extends CollectorNode {
@@ -22341,76 +22590,15 @@
 -        super.configure(info);
 -        if (this.title != CombinerNode.title && !this.title.startsWith("‼️")) {
 -            this.title = "‼️ " + this.title;
-+import { PassThroughFollowing } from "./base_any_input_connected_node.js";
-+import { defineCollectorNode } from "./base_node_collector.js";
-+
-+// Node Collector — a virtual passthrough that gathers many links into one output — plus
-+// the deprecated "Node Combiner" and its in-place upgrade path.
-+//
-+// Neither node resolves to anything: both were `isVirtualNode` with no `applyToGraph`,
-+// so `execution: 'frontend'` with no `resolve` is exactly what they were. Everything
-+// downstream of a Collector is itself frontend-only.
-+//
-+// COSMETIC: (8) the "‼️ Update to Node Collector" entry was spliced into
-+//   `getExtraMenuOptions` at `options.length - 1`, i.e. above core's last item. It is
-+//   present; `b.addMenuItem` appends after every core entry, so it sits lower.
-+//
-+// WIRE FORMAT: unchanged for both types. `serialize_widgets` stays off, so the
-+// Combiner's deprecation notice occupies no `widgets_values` slot, exactly as the
-+// `ComfyWidgets["STRING"]` textarea did on a node that never set the flag.
-+const COMBINER_TYPE = "Node Combiner (rgthree)";
-+const COMBINER_TITLE = "‼️ Node Combiner [DEPRECATED]";
-+const NOTICE = 'The Node Combiner has been renamed to Node Collector. You can right-click and select "Update to Node Collector" to attempt to automatically update.';
-+// Rebuilds the node as a Collector, keeping position, size, properties and every link.
-+// New link ids are allocated, as they were originally: the old routine also rebuilt
-+// every link onto a freshly created node.
 +function updateCombinerToCollector(node) {
-+    const outgoing = [];
-+    for (const output of node.outputs.all()) {
-+        for (const link of output.links()) {
-+            outgoing.push({ from: output.index, toNodeId: link.targetNodeId, toIndex: link.targetIndex });
-         }
-     }
 +    const incoming = [];
 +    for (const input of node.inputs.all()) {
 +        const link = input.link();
 +        if (link) {
 +            incoming.push({ fromNodeId: link.sourceNodeId, fromIndex: link.sourceIndex, to: input.index });
-+        }
-+    }
-+    comfy.graph.batch(() => {
-+        const title = node.getTitle();
-+        const collector = comfy.graph.add(NodeTypesString.NODE_COLLECTOR, {
-+            title: title === COMBINER_TITLE ? undefined : title.replace("‼️ ", ""),
-+            position: node.getPosition(),
-+        });
-+        collector.setSize(node.getSize());
-+        for (const [key, value] of Object.entries(node.getProperties())) {
-+            collector.setProperty(key, value);
-+        }
-+        // The stabilization pass grows the input list as slots fill, but it runs on a
-+        // debounce and these links need somewhere to land now.
-+        const needed = incoming.reduce((most, link) => Math.max(most, link.to + 1), 1);
-+        while (collector.inputs.length < needed) {
-+            collector.inputs.add("", "*");
-+        }
-+        for (const link of incoming) {
-+            const source = comfy.graph.node(link.fromNodeId)?.outputs.at(link.fromIndex);
-+            if (!source) {
-+                throw new Error(`[rgthree.NodeCollector] lost the link from ${link.fromNodeId}:${link.fromIndex}.`);
-+            }
-+            source.connectTo(collector.id, { index: link.to });
-+        }
-+        for (const link of outgoing) {
-+            const source = collector.outputs.at(link.from);
-+            if (!source) {
-+                throw new Error(`[rgthree.NodeCollector] the new collector has no output ${link.from}.`);
-+            }
-+            source.connectTo(link.toNodeId, { index: link.toIndex });
-+        }
-+        node.remove();
-+    });
- }
+         }
+     }
+-}
 -CombinerNode.legacyType = "Node Combiner (rgthree)";
 -CombinerNode.title = "‼️ Node Combiner [DEPRECATED]";
 -async function updateCombinerToCollector(node) {
@@ -22418,11 +22606,122 @@
 -        const newNode = new CollectorNode();
 -        if (node.title != CombinerNode.title) {
 -            newNode.title = node.title.replace("‼️ ", "");
++    const title = node.getTitle();
++    const upgrade = { graphId: node.graphId ?? "", incoming, expires: Date.now() + UPGRADE_CLAIM_MS };
++    pendingUpgrades.push(upgrade);
++    comfy.graph.batch(() => {
++        // `replace` matches a link to the new node's slots by name before index. These
++        // inputs are named after their sources' titles, so an empty one would land on the
++        // Collector's unnamed first input and one named "Output" would be dropped. Each is
++        // named by its index for the rebuild; the Collector renames its inputs as it
++        // stabilizes.
++        for (const input of node.inputs.all()) {
++            input.modify({ name: String(input.index) });
+         }
+-        newNode.pos = [...node.pos];
+-        newNode.size = [...node.size];
+-        newNode.properties = { ...node.properties };
+-        const links = [];
+-        const graph = (node.graph || app.graph);
+-        for (const [index, output] of node.outputs.entries()) {
+-            for (const linkId of output.links || []) {
+-                const link = graph.links[linkId];
+-                if (!link)
+-                    continue;
+-                const targetNode = graph.getNodeById(link.target_id);
+-                links.push({ node: newNode, slot: index, targetNode, targetSlot: link.target_slot });
++        let collector;
++        try {
++            collector = comfy.graph.replace(node.id, NodeTypesString.NODE_COLLECTOR);
++        }
++        finally {
++            if (!collector) {
++                dropUpgrade(upgrade);
+             }
+         }
+-        for (const [index, input] of node.inputs.entries()) {
+-            const linkId = input.link;
+-            if (linkId) {
+-                const link = graph.links[linkId];
+-                const originNode = graph.getNodeById(link.origin_id);
+-                links.push({
+-                    node: originNode,
+-                    slot: link.origin_slot,
+-                    targetNode: newNode,
+-                    targetSlot: index,
+-                });
+-            }
++        // `replace` keeps only a title the user changed; the original also took the "‼️ "
++        // marker off it.
++        if (collector && title !== COMBINER_TITLE) {
++            collector.setTitle(title.replace("‼️ ", ""));
+         }
+-        graph.add(newNode);
+-        await wait();
+-        for (const link of links) {
+-            link.node.connect(link.slot, link.targetNode, link.targetSlot);
++    });
++}
++function claimUpgrade(collector) {
++    const now = Date.now();
++    for (const upgrade of [...pendingUpgrades]) {
++        if (upgrade.expires < now) {
++            dropUpgrade(upgrade);
+         }
+-        await wait();
+-        graph.remove(node);
++    }
++    const upgrade = pendingUpgrades.find((u) => u.graphId === (collector.graphId ?? ""));
++    if (!upgrade) {
++        return;
++    }
++    dropUpgrade(upgrade);
++    const needed = upgrade.incoming.reduce((most, link) => Math.max(most, link.to + 1), 1);
++    for (let count = collector.inputs.length; count < needed; count++) {
++        collector.inputs.add("", "*");
++    }
++    for (const link of upgrade.incoming) {
++        if (collector.inputs.at(link.to)?.isConnected) {
++            continue;
++        }
++        const source = comfy.graph.node(link.fromNodeId)?.outputs.at(link.fromIndex);
++        if (!source) {
++            console.warn(`[rgthree.NodeCollector] lost the link from ${link.fromNodeId}:${link.fromIndex}.`);
++            continue;
++        }
++        source.connectTo(collector.id, { index: link.to });
+     }
+ }
+-app.registerExtension({
+-    name: "rgthree.NodeCollector",
+-    registerCustomNodes() {
+-        addConnectionLayoutSupport(CollectorNode, app, [
+-            ["Left", "Right"],
+-            ["Right", "Left"],
+-        ]);
+-        LiteGraph.registerNodeType(CollectorNode.title, CollectorNode);
+-        CollectorNode.category = CollectorNode._category;
 +defineCollectorNode({
 +    type: NodeTypesString.NODE_COLLECTOR,
 +    following: PassThroughFollowing.REROUTE_ONLY,
 +    outputs: [{ name: "Output", type: "*" }],
-+});
++    // A Collector restored from saved data (a load, a paste, an undo) is never the
++    // replacement: `replace` builds a fresh node and configures nothing before it joins.
++    onCreated(node, event) {
++        if (!event?.restored) {
++            claimUpgrade(node);
++        }
+     },
+ });
+-app.registerExtension({
+-    name: "rgthree.NodeCombiner",
+-    registerCustomNodes() {
+-        addConnectionLayoutSupport(CombinerNode, app, [
+-            ["Left", "Right"],
+-            ["Right", "Left"],
+-        ]);
+-        LiteGraph.registerNodeType(CombinerNode.legacyType, CombinerNode);
+-        CombinerNode.category = CombinerNode._category;
 +defineCollectorNode({
 +    type: COMBINER_TYPE,
 +    title: COMBINER_TITLE,
@@ -22447,58 +22746,13 @@
 +                container.appendChild(inputEl);
 +            },
 +        });
-+    },
+     },
 +    onConfigured(node) {
 +        const title = node.getTitle();
 +        if (title !== COMBINER_TITLE && !title.startsWith("‼️")) {
 +            node.setTitle(`‼️ ${title}`);
-         }
--        newNode.pos = [...node.pos];
--        newNode.size = [...node.size];
--        newNode.properties = { ...node.properties };
--        const links = [];
--        const graph = (node.graph || app.graph);
--        for (const [index, output] of node.outputs.entries()) {
--            for (const linkId of output.links || []) {
--                const link = graph.links[linkId];
--                if (!link)
--                    continue;
--                const targetNode = graph.getNodeById(link.target_id);
--                links.push({ node: newNode, slot: index, targetNode, targetSlot: link.target_slot });
--            }
--        }
--        for (const [index, input] of node.inputs.entries()) {
--            const linkId = input.link;
--            if (linkId) {
--                const link = graph.links[linkId];
--                const originNode = graph.getNodeById(link.origin_id);
--                links.push({
--                    node: originNode,
--                    slot: link.origin_slot,
--                    targetNode: newNode,
--                    targetSlot: index,
--                });
--            }
--        }
--        graph.add(newNode);
--        await wait();
--        for (const link of links) {
--            link.node.connect(link.slot, link.targetNode, link.targetSlot);
--        }
--        await wait();
--        graph.remove(node);
--    }
--}
--app.registerExtension({
--    name: "rgthree.NodeCollector",
--    registerCustomNodes() {
--        addConnectionLayoutSupport(CollectorNode, app, [
--            ["Left", "Right"],
--            ["Right", "Left"],
--        ]);
--        LiteGraph.registerNodeType(CollectorNode.title, CollectorNode);
--        CollectorNode.category = CollectorNode._category;
-     },
++        }
++    },
 +    menuItems: [
 +        {
 +            label: "‼️ Update to Node Collector",
@@ -22506,17 +22760,6 @@
 +        },
 +    ],
  });
--app.registerExtension({
--    name: "rgthree.NodeCombiner",
--    registerCustomNodes() {
--        addConnectionLayoutSupport(CombinerNode, app, [
--            ["Left", "Right"],
--            ["Right", "Left"],
--        ]);
--        LiteGraph.registerNodeType(CombinerNode.legacyType, CombinerNode);
--        CombinerNode.category = CombinerNode._category;
--    },
--});
 --- a/web/comfyui/node_mode_relay.js
 +++ b/v2/web/comfyui/node_mode_relay.js
 @@ -1,21 +1,45 @@
@@ -22533,7 +22776,7 @@
 -const MODE_BYPASS = 4;
 +import { PassThroughFollowing, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 +import { defineCollectorNode } from "./base_node_collector.js";
-+import { helpMenuItem } from "./base_node.js";
++import { changedNode, helpMenuItem } from "./base_node.js";
 +
 +// Mute / Bypass Relay — watches the modes of everything wired into it and pushes a
 +// configurable resulting mode ("all muted" / "all bypassed" / "any active" → mute /
@@ -22712,7 +22955,7 @@
        <p>
          This node will relay its input nodes' modes (Mute, Bypass, or Active) to a connected
          ${stripRgthree(NodeTypesString.NODE_MODE_REPEATER)} (which would then repeat that mode
-@@ -176,30 +88,120 @@
+@@ -176,30 +88,124 @@
          of its inputs are muted (instead of sending a MUTE signal), etc.
        </p>
      `;
@@ -22786,7 +23029,11 @@
 +        if (event.property !== "mode" || !relayNodes.has(nodeKey(event.node))) {
 +            return;
 +        }
-+        const node = event.node;
++        // The handle, not the event's copy of it: see `changedNode` in base_node.js.
++        const node = changedNode(event);
++        if (!node) {
++            return;
++        }
 +        if (node.inputs.length <= 1 && !node.inputs.at(0)?.isConnected && node.outputs.all().some((o) => o.isConnected)) {
 +            dispatchModeToRepeater(node, node.getMode());
 +        }
@@ -22979,7 +23226,7 @@
 -        return `
 +import { PassThroughFollowing, connectedInputNodes, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 +import { defineCollectorNode } from "./base_node_collector.js";
-+import { helpMenuItem } from "./base_node.js";
++import { changedNode, helpMenuItem } from "./base_node.js";
 +
 +// Mute / Bypass Repeater — when this node's own mode changes it repeats that mode onto
 +// every node wired into its inputs, or, if nothing is wired in and the node sits inside a
@@ -23026,7 +23273,7 @@
        <p>
          When this node's mode (Mute, Bypass, Active) changes, it will "repeat" that mode to all
          connected input nodes, or, if there are no connected nodes AND it is overlapping a group,
-@@ -131,18 +64,110 @@
+@@ -131,18 +64,114 @@
          </p></li>
        </ul>
      `;
@@ -23093,7 +23340,11 @@
 +        if (event.property !== "mode" || !stateByNode.has(nodeKey(event.node))) {
 +            return;
 +        }
-+        const node = event.node;
++        // The handle, not the event's copy of it: see `changedNode` in base_node.js.
++        const node = changedNode(event);
++        if (!node) {
++            return;
++        }
 +        const mode = node.getMode();
 +        const linkedNodes = connectedInputNodes(node).filter((n) => n.type !== NodeTypesString.NODE_MODE_RELAY);
 +        if (linkedNodes.length) {
@@ -23150,7 +23401,7 @@
  });
 --- a/web/comfyui/power_conductor.js
 +++ b/v2/web/comfyui/power_conductor.js
-@@ -4,91 +4,94 @@
+@@ -4,91 +4,98 @@
      else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
      return c > 3 && r && Object.defineProperty(target, key, r), r;
  };
@@ -23178,6 +23429,10 @@
 -import { changeModeOfNodes, getNodeById } from "./utils.js";
 +import { setModeDeep } from "./base_any_input_connected_node.js";
 +import { getWidgetControl } from './widget_controls.js';
++// Imported for their registrations, which every node type must receive before this
++// pack's `define` calls run (extendEveryNodeType in base_node.js).
++import "./menu_queue_node.js";
++import "./feature_import_individual_nodes.js";
 +
 +// Power Conductor (unreleased; gated on `unreleased.power_conductor.enabled`) — a code
 +// box and a Run button that execute a small python-like script against the live graph,
@@ -23225,98 +23480,81 @@
 -        })),
 -            this.addCustomWidget(this.buttonWidget);
 -        this.onConstructed();
+-    }
+-    execute() {
+-        execute(this.codeWidget.value, {}, BUILT_INS);
+-    }
+-}
+-RgthreePowerConductor.title = NodeTypesString.POWER_CONDUCTOR;
+-RgthreePowerConductor.type = NodeTypesString.POWER_CONDUCTOR;
+-const NODE_CLASS = RgthreePowerConductor;
 +// `getNodeById` searched the root graph, the graph on screen, then every subgraph. A
 +// node id only resolves inside its own graph, so each is asked in turn.
 +function getNodeById(id) {
 +    return (comfy.graph.node(id) ??
 +        comfy.graph.subgraphs().reduce((found, subgraph) => found ?? subgraph.node(id), undefined));
 +}
-+class ComfyNodeWrapper {
-+    constructor(id) {
+ class ComfyNodeWrapper {
+     constructor(id) {
+-        _ComfyNodeWrapper_id.set(this, void 0);
+-        __classPrivateFieldSet(this, _ComfyNodeWrapper_id, id, "f");
 +        this.nodeId = id;
      }
--    execute() {
--        execute(this.codeWidget.value, {}, BUILT_INS);
-+    getNode() {
+     getNode() {
+-        return getNodeById(__classPrivateFieldGet(this, _ComfyNodeWrapper_id, "f"));
 +        const node = getNodeById(this.nodeId);
 +        if (!node) {
 +            throw new Error(`[rgthree.PowerConductor] no node with id ${this.nodeId}.`);
 +        }
 +        return node;
-+    }
-+    get id() {
+     }
+     get id() {
+-        return this.getNode().id;
 +        const id = this.getNode().id;
 +        return /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : id;
-+    }
-+    get title() {
+     }
+     get title() {
+-        return this.getNode().title;
 +        return this.getNode().getTitle();
-+    }
-+    set title(value) {
+     }
+     set title(value) {
+-        this.getNode().title = value;
 +        this.getNode().setTitle(value);
-+    }
-+    get widgets() {
+     }
+     get widgets() {
+-        var _a;
+-        return new PyTuple((_a = this.getNode().widgets) === null || _a === void 0 ? void 0 : _a.map((w) => new ComfyWidgetWrapper(w)));
 +        const node = this.getNode();
 +        return new PyTuple(node.widgets.all().map((w) => new ComfyWidgetWrapper(w, node)));
-+    }
-+    get mode() {
+     }
+     get mode() {
+-        return this.getNode().mode;
 +        return { always: 0, never: 2, bypass: 4 }[this.getNode().getMode()];
-+    }
-+    mute() {
+     }
+     mute() {
+-        changeModeOfNodes(this.getNode(), 2);
 +        this.setMode("never");
-+    }
-+    bypass() {
+     }
+     bypass() {
+-        changeModeOfNodes(this.getNode(), 4);
 +        this.setMode("bypass");
-+    }
-+    enable() {
+     }
+     enable() {
+-        changeModeOfNodes(this.getNode(), 0);
+-    }
+-}
+-_ComfyNodeWrapper_id = new WeakMap();
 +        this.setMode("always");
 +    }
 +    setMode(mode) {
 +        const node = this.getNode();
 +        comfy.graph.batch(() => setModeDeep([node], mode));
-     }
- }
--RgthreePowerConductor.title = NodeTypesString.POWER_CONDUCTOR;
--RgthreePowerConductor.type = NodeTypesString.POWER_CONDUCTOR;
--const NODE_CLASS = RgthreePowerConductor;
--class ComfyNodeWrapper {
--    constructor(id) {
--        _ComfyNodeWrapper_id.set(this, void 0);
--        __classPrivateFieldSet(this, _ComfyNodeWrapper_id, id, "f");
--    }
--    getNode() {
--        return getNodeById(__classPrivateFieldGet(this, _ComfyNodeWrapper_id, "f"));
--    }
--    get id() {
--        return this.getNode().id;
--    }
--    get title() {
--        return this.getNode().title;
--    }
--    set title(value) {
--        this.getNode().title = value;
--    }
--    get widgets() {
--        var _a;
--        return new PyTuple((_a = this.getNode().widgets) === null || _a === void 0 ? void 0 : _a.map((w) => new ComfyWidgetWrapper(w)));
--    }
--    get mode() {
--        return this.getNode().mode;
--    }
--    mute() {
--        changeModeOfNodes(this.getNode(), 2);
--    }
--    bypass() {
--        changeModeOfNodes(this.getNode(), 4);
--    }
--    enable() {
--        changeModeOfNodes(this.getNode(), 0);
--    }
--}
--_ComfyNodeWrapper_id = new WeakMap();
++    }
++}
  __decorate([
      Exposed
  ], ComfyNodeWrapper.prototype, "id", null);
-@@ -111,25 +114,21 @@
+@@ -111,25 +118,21 @@
      Exposed
  ], ComfyNodeWrapper.prototype, "enable", null);
  class ComfyWidgetWrapper {
@@ -23342,14 +23580,16 @@
 -        }
 -        else {
 -        }
-+        if (this.node) getWidgetControl(this.node, this.widget.name)?.toggle(value);
-     }
- }
+-    }
+-}
 -_ComfyWidgetWrapper_widget = new WeakMap();
++        if (this.node) getWidgetControl(this.node, this.widget.name)?.toggle(value);
++    }
++}
  __decorate([
      Exposed
  ], ComfyWidgetWrapper.prototype, "value", null);
-@@ -139,11 +138,50 @@
+@@ -139,11 +142,71 @@
  __decorate([
      Exposed
  ], ComfyWidgetWrapper.prototype, "toggle", null);
@@ -23360,10 +23600,23 @@
 -            NODE_CLASS.setUp();
 -        }
 -    },
--});
 +const CODE_WIDGET = "code";
 +const RUN_WIDGET = "Run";
-+if (CONFIG_SERVICE.getConfigValue("unreleased.power_conductor.enabled")) {
++// The opt-in is read when its value is known, not only when this module evaluates. In
++// process the stored value is readable at once. Sandbox guest c6b97a15 answers a
++// declared setting with its default until the host returns the stored value, so revision
++// 5's single read at evaluation saw `false` and the type never registered. The stored
++// value arrives as a 'config-change' (config_service.js), and `onReady` — when the
++// published API says settings exist — reads it once more. The type registers once, the
++// first time any of these sees the opt-in on. Turning it off still needs a reload, as the
++// setting's name says.
++const ENABLED_KEY = "unreleased.power_conductor.enabled";
++let registered = false;
++function registerWhenEnabled() {
++    if (registered || !CONFIG_SERVICE.getConfigValue(ENABLED_KEY)) {
++        return;
++    }
++    registered = true;
 +    comfy.defs.define({
 +        type: NodeTypesString.POWER_CONDUCTOR,
 +        title: NodeTypesString.POWER_CONDUCTOR,
@@ -23408,6 +23661,13 @@
 +        },
 +    });
 +}
++registerWhenEnabled();
++CONFIG_SERVICE.addEventListener("config-change", (event) => {
++    if (event.detail?.key === ENABLED_KEY) {
++        registerWhenEnabled();
++    }
+ });
++comfy.onReady(registerWhenEnabled);
 --- a/web/comfyui/power_lora_loader.js
 +++ b/v2/web/comfyui/power_lora_loader.js
 @@ -1,267 +1,287 @@
@@ -28000,7 +28260,7 @@
      getNextShortcut() {
 --- a/web/comfyui/services/config_service.js
 +++ b/v2/web/comfyui/services/config_service.js
-@@ -1,28 +1,110 @@
+@@ -1,28 +1,129 @@
 -import { rgthreeConfig } from "../../../rgthree/config.js";
 -import { getObjectValue, setObjectValue } from "../../../rgthree/common/shared_utils.js";
 -import { rgthreeApi } from "../../../rgthree/common/rgthree_api.js";
@@ -28081,9 +28341,6 @@
 +};
 +
 +const settingId = (key) => `rgthree.${key}`;
-+for (const [key, definition] of Object.entries(SETTINGS)) {
-+    comfy.settings.declare({ id: settingId(key), ...definition });
-+}
 +
  class ConfigService extends EventTarget {
 -    getConfigValue(key, def) {
@@ -28124,12 +28381,34 @@
  }
 +
  export const SERVICE = new ConfigService();
++// The last value announced per key, so a value reported twice is announced once.
++const announced = new Map();
++function announce(key, value) {
++    if (announced.has(key) && Object.is(announced.get(key), value)) {
++        return;
++    }
++    announced.set(key, value);
++    SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
++}
++// A declared setting's own `onChange` hears its value change, and, under a host that
++// answers the stored value after `declare` has returned (sandbox guest c6b97a15), it hears
++// that answer arrive. Until then a read gets the default, so a pack listener that gates on
++// a setting hears the stored value here as a 'config-change'. The service exists before
++// the first `declare`, because a host may call `onChange` from inside it.
++for (const [key, definition] of Object.entries(SETTINGS)) {
++    comfy.settings.declare({
++        id: settingId(key),
++        ...definition,
++        onChange: (value) => announce(key, value),
++    });
++    if (!announced.has(key)) {
++        announced.set(key, comfy.settings.get(settingId(key)));
++    }
++}
 +// Changes from the host settings screen and another tab must reach the same
 +// pack listeners as changes made through rgthree's own settings dialog.
 +for (const key of Object.keys(SETTINGS)) {
-+    comfy.settings.onChange(settingId(key), (value) => {
-+        SERVICE.dispatchEvent(new CustomEvent('config-change', { detail: { key, value } }));
-+    });
++    comfy.settings.onChange(settingId(key), (value) => announce(key, value));
 +}
 --- a/web/comfyui/services/context_service.js
 +++ b/v2/web/comfyui/services/context_service.js

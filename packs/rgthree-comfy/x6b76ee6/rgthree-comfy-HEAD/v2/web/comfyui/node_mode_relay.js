@@ -2,7 +2,7 @@ import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString, stripRgthree } from "./constants.js";
 import { PassThroughFollowing, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 import { defineCollectorNode } from "./base_node_collector.js";
-import { helpMenuItem } from "./base_node.js";
+import { changedNode, helpMenuItem } from "./base_node.js";
 
 // Mute / Bypass Relay — watches the modes of everything wired into it and pushes a
 // configurable resulting mode ("all muted" / "all bypassed" / "any active" → mute /
@@ -133,7 +133,11 @@ comfy.onReady(() => {
         if (event.property !== "mode" || !relayNodes.has(nodeKey(event.node))) {
             return;
         }
-        const node = event.node;
+        // The handle, not the event's copy of it: see `changedNode` in base_node.js.
+        const node = changedNode(event);
+        if (!node) {
+            return;
+        }
         if (node.inputs.length <= 1 && !node.inputs.at(0)?.isConnected && node.outputs.all().some((o) => o.isConnected)) {
             dispatchModeToRepeater(node, node.getMode());
         }

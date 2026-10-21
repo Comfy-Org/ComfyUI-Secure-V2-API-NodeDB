@@ -3,6 +3,7 @@ import { whereSupported } from "./sandbox_limits.js";
 import { tryToGetWorkflowDataFromEvent } from '../common/utils_workflow.js';
 import { configurePowerLoraValues } from './power_lora_loader.js';
 import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
+import { extendEveryNodeType } from './base_node.js';
 
 const POWER_LORA_LOADER = 'Power Lora Loader (rgthree)';
 const MODES = ['always', 'on-event', 'never', 'on-trigger', 'bypass'];
@@ -62,7 +63,8 @@ async function importNode(node, event) {
     return true;
 }
 
-comfy.defs.extend(/./, (builder) => {
+// Every node type, registered before this pack defines its own (see base_node.js).
+extendEveryNodeType((builder) => {
     // Applies to every node type, so the refusal is reported once for all of them.
     whereSupported("all node types", "drop-to-import onto a node (onDragOver)", () => builder.onDragOver((node) => enabled(node)));
     whereSupported("all node types", "drop-to-import onto a node (onDrop)", () => builder.onDrop(importNode));
