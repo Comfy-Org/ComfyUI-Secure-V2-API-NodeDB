@@ -1,0 +1,155 @@
+"""WAN r11 wav2vec exists-first r1 harness helpers shared by both role workers (test harness only, never production).
+
+- seed_all / rng_state / numeric_env / error_outcome: as in the Ovi WSL r1 harness.
+- audio: the authored 16 kHz two-tone input of the r7 family.
+- wav2vec_state: the loader value recorded exactly; the wav2vec-d stated exclusions apply:
+  - `_name_or_path` / `name_or_path` provenance is split out (the original reads models/transformers/<repo>, the converted a
+    private temporary bundle);
+  - `masked_spec_embed`, which the original loader itself leaves undetermined (wav2vec-d control run), is recorded but not
+    compared.
+- embeds_meta: the FantasyTalking embeds dict recorded exactly; the projection tensor gets a raw file for the comparator.
+- WireError: the harness stand-in for the live transport error type (comfy_secure_nodes.transport.wire.WireError); only its name
+  and message are recorded.
+"""
+import hashlib
+import json
+import math
+import os
+import random
+import traceback
+
+import common
+
+THREAD_KEYS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS')
+PATH_KEYS = ('_name_or_path', 'name_or_path')
+EXCLUDED_PARAMETERS = ('masked_spec_embed',)
+
+
+class WireError(Exception):
+    """Harness stand-in for the live host's transport error; raised with the live message text."""
+
+
+def seed_all(value):
+    import numpy as np
+    import torch
+    random.seed(value)
+    np.random.seed(value)
+    torch.manual_seed(value)
+
+
+def rng_state():
+    import numpy as np
+    import torch
+    state = np.random.get_state()
+    numpy_digest = hashlib.sha256(json.dumps([state[0], int(state[2]), int(state[3]), float(state[4])]).encode()
+                                  + state[1].tobytes()).hexdigest()
+    return {'torch_cpu': common.sha_bytes(torch.get_rng_state().numpy().tobytes()), 'numpy': numpy_digest,
+            'python': hashlib.sha256(repr(random.getstate()).encode()).hexdigest()}
+
+
+def numeric_env():
+    import torch
+    parallel = torch.__config__.parallel_info()
+    return {'threads': torch.get_num_threads(), 'interop_threads': torch.get_num_interop_threads(),
+            'mkldnn_available': torch.backends.mkldnn.is_available(), 'mkldnn_enabled': bool(torch.backends.mkldnn.enabled),
+            'mkl_available': torch.backends.mkl.is_available(), 'float32_matmul_precision': torch.get_float32_matmul_precision(),
+            'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(), 'cpu_capability': torch.backends.cpu.get_cpu_capability(),
+            'default_dtype': str(torch.get_default_dtype()), 'parallel_info_sha256': hashlib.sha256(parallel.encode()).hexdigest(),
+            'environment': {key: os.environ.get(key) for key in THREAD_KEYS}}
+
+
+def error_outcome(error):
+    frames = traceback.extract_tb(error.__traceback__)
+    text = str(error)
+    return {'raised': True, 'type': type(error).__name__, 'message': text[:2000],
+            'message_sha256': hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest(), 'message_length': len(text),
+            'message_tail': text[-300:], 'raising_function': frames[-1].name if frames else None,
+            'raising_file': os.path.basename(frames[-1].filename) if frames else None}
+
+
+def audio(name):
+    import torch
+    rate, seconds, tones = {'a16k': (16000, 1.5, (220.0, 550.0))}[name]
+    count = int(rate * seconds)
+    t = torch.arange(count, dtype=torch.float64) / rate
+    wave = (0.10 * torch.sin(2 * math.pi * tones[0] * t) + 0.05 * torch.sin(2 * math.pi * tones[1] * t + 0.3)
+            + 0.02 * torch.linspace(-1.0, 1.0, count, dtype=torch.float64))
+    return {'waveform': wave.to(torch.float32).reshape(1, 1, count), 'sample_rate': rate}
+
+
+def _json_tree(value):
+    """Plain-data digestable view of a config/extractor dict (tensors and arrays by meta)."""
+    import numpy as np
+    import torch
+    if isinstance(value, dict):
+        return {str(k): _json_tree(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_json_tree(v) for v in value]
+    if isinstance(value, torch.Tensor):
+        return {'tensor': common.tensor_meta(value)}
+    if isinstance(value, np.ndarray):
+        return {'ndarray': [str(value.dtype), list(value.shape), common.sha_bytes(np.ascontiguousarray(value).tobytes())]}
+    if isinstance(value, float):
+        return {'float': repr(value)}
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return {'object': type(value).__qualname__}
+
+
+def _without_paths(data, provenance, label):
+    found = {key: data.pop(key) for key in PATH_KEYS if key in data}
+    if found:
+        provenance[label] = found
+    return data
+
+
+def module_rows(module):
+    import torch
+    rows, excluded = {}, {}
+    for name, tensor in list(module.named_parameters()) + list(module.named_buffers()):
+        flat = tensor.detach().contiguous().reshape(-1)
+        row = {'dtype': str(tensor.dtype).removeprefix('torch.'), 'shape': list(tensor.shape), 'device': str(tensor.device),
+               'requires_grad': bool(tensor.requires_grad), 'sha256': common.sha_bytes(flat.view(torch.uint8).numpy().tobytes())}
+        if name.rsplit('.', 1)[-1] in EXCLUDED_PARAMETERS:
+            excluded[name] = row
+            rows[name] = {k: v for k, v in row.items() if k != 'sha256'}
+        else:
+            rows[name] = row
+    return {'class': type(module).__qualname__, 'training': bool(module.training), 'tensors': len(rows),
+            'digest': hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(), 'rows': rows}, excluded
+
+
+def wav2vec_state(value):
+    """(compared state, stated provenance + excluded values)."""
+    before = rng_state()
+    provenance = {}
+    model = value['model']
+    rows, excluded = module_rows(model)
+    config = getattr(model, 'config', None)
+    config_tree = _json_tree(_without_paths(config.to_dict(), provenance, 'model.config')) if config is not None else None
+    processor = value.get('processor')
+    processor_state = None
+    if processor is not None:
+        tokenizer = processor.tokenizer
+        processor_state = {'class': type(processor).__name__, 'feature_extractor_class': type(processor.feature_extractor).__name__,
+                           'feature_extractor': _json_tree(_without_paths(processor.feature_extractor.to_dict(), provenance, 'processor.feature_extractor')),
+                           'tokenizer_class': type(tokenizer).__name__,
+                           'tokenizer_vocab_sha256': hashlib.sha256(json.dumps(sorted(tokenizer.get_vocab().items())).encode()).hexdigest(),
+                           'special_tokens': _json_tree(dict(tokenizer.special_tokens_map))}
+    extractor = value.get('feature_extractor')
+    extractor_state = None
+    if extractor is not None:
+        extractor_state = {'class': type(extractor).__name__,
+                           'config': _json_tree(_without_paths(extractor.to_dict(), provenance, 'feature_extractor'))}
+    state = {'keys': list(value), 'model': rows, 'config': config_tree, 'processor': processor_state, 'feature_extractor': extractor_state,
+             'dtype': str(value['dtype']), 'model_type': value['model_type']}
+    assert before == rng_state(), 'state observation consumed RNG'
+    return state, {'provenance': _json_tree(provenance), 'excluded_values': excluded}
+
+
+def embeds_meta(value, prefix, case_name):
+    assert type(value) is dict, type(value)
+    assert sorted(value) == ['audio_cfg_scale', 'audio_context_lens', 'audio_proj', 'audio_scale'], sorted(value)
+    return {'keys': list(value), 'audio_proj': common.tensor_meta(value['audio_proj'], '%s-%s-audio_proj.bin' % (prefix, case_name)),
+            'audio_context_lens': _json_tree(value['audio_context_lens']), 'audio_scale': repr(value['audio_scale']),
+            'audio_cfg_scale': repr(value['audio_cfg_scale'])}

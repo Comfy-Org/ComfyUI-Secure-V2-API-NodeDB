@@ -1,0 +1,204 @@
+"""Comparator self-test on the SHIPPED capsule/CASE.json (WAN r12 wav2vec exists-first r1). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_w2v_comparator.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch, transformers or SDK.
+1. Build one synthetic ORIGINAL/CONVERTED result pair that satisfies every check the shipped comparator derives from the shipped
+   CASE.json.
+2. Every item must PASS.
+3. Each control mutates recorded fields (or one raw file). The targeted check must then fail and its item must be FAIL.
+SELFTEST.json records the CASE.json and comparator sha256 and the per-item check counts.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+COMPARATOR = 'compare_w2v_r1.py'
+DTYPES = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16'}
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def spec_for(case_file, model):
+    return next(v for v in case_file['models'].values() if v.get('repo_id') == model)
+
+
+def synthetic(case_file, registered):
+    env = {'threads': 1, 'interop_threads': 2, 'mkldnn_enabled': True, 'cpu_capability': 'AVX512', 'environment': {'OMP_NUM_THREADS': '1'}}
+    common_role = {'versions': dict(case_file['versions_expect']), 'cpu': {'threads': 1}, 'numeric_env': dict(env),
+                   'numeric_env_final': dict(env), 'cases': {}}
+    original = dict(json.loads(json.dumps(common_role)), status='ORIGINAL_W2V_DONE', seam='counting snapshot_download',
+                    weights={k: v['sha256'] for k, v in case_file['models'].items()},
+                    original_module_sha256=dict(case_file['original_module_pins']))
+    converted = dict(json.loads(json.dumps(common_role)), status='CONVERTED_W2V_DONE', registered_count=registered, seams='installed',
+                     module_sha256=dict(case_file['converted_module_pins']),
+                     published_module={'sha256': case_file['published_module']['sha256']},
+                     provider_check={'assets': '_InProcessAssets', 'models': '_InProcessModels', 'assets_patched': True,
+                                     'models_patched': True, 'numeric_env': dict(env)})
+    raws = {}
+    live = case_file['live_error']
+    for index, case in enumerate(case_file['cases']):
+        name = case['name']
+        spec = spec_for(case_file, case['model'])
+        recipe = {'format': 'wan-download-wav2vec-model-v1', 'model_type': case['model'], 'bundle_id': spec['bundle_id'],
+                  'base_precision': case['base_precision'], 'load_device': case['load_device']}
+        base = {'rng_after_seed': {'t': 'r0'}, 'rng_after_loader': {'t': 'r1'}, 'rng_after_case': {'t': 'r2'}, 'seconds': 1.0}
+        o, c = json.loads(json.dumps(base)), json.loads(json.dumps(base))
+        exists_true = {'exists': [[spec['required_weight']['folder'], spec['logical'], True]], 'download': []}
+        if case['item'] == 'loader':
+            want = DTYPES[case['base_precision']]
+            rows = {'encoder.layers.0.attention.q_proj.weight': {'dtype': want, 'shape': [768, 768], 'device': 'cpu', 'requires_grad': True,
+                                                                 'sha256': '1' * 64}}
+            state = {'keys': ['model', 'dtype'], 'model': {'class': 'Wav2Vec2Model', 'training': False, 'tensors': 1, 'digest': '2' * 64, 'rows': rows},
+                     'config': {'hidden_size': 768}, 'processor': None, 'feature_extractor': None, 'dtype': 'torch.' + want, 'model_type': case['model']}
+            o.update(outcome={'raised': False}, download_calls_loader=[], state=json.loads(json.dumps(state)), stated={'excluded_values': {}})
+            c.update(outcome={'raised': False}, recipe=recipe, calls_loader=json.loads(json.dumps(exists_true)), state=json.loads(json.dumps(state)),
+                     stated={'excluded_values': {}}, calls_probe={'exists': [], 'download': []}, rng_after_probe={'t': 'r1'})
+        elif case['item'] == 'absent':
+            o.update(outcome={'raised': True, 'type': 'RuntimeError', 'message': 'harness'},
+                     download_calls_loader=[{'args': [], 'kwargs': {'repo_id': case['model']}}])
+            c.update(outcome={'raised': True, 'type': live[0], 'message': live[1]}, recipe=None,
+                     calls_loader={'exists': [[spec['required_weight']['folder'], spec['logical'], False]],
+                                   'download': [dict(spec['required_weight'])]})
+        elif case['item'] == 'control':
+            o = {'not_applicable': 'converted-only control on the published bytes'}
+            c.update(outcome={'raised': True, 'type': live[0], 'message': live[1]}, recipe=None,
+                     calls_loader={'exists': [], 'download': [dict(spec['required_weight'])]})
+        else:
+            raw = bytes([index + 5]) * 128
+            inputs = {'waveform': {'dtype': 'float32', 'shape': [1, 1, 24000], 'sha256': '4' * 64}, 'sample_rate': 16000}
+            outputs = lambda role: {'keys': ['audio_proj', 'audio_context_lens', 'audio_scale', 'audio_cfg_scale'],
+                                    'audio_proj': {'dtype': 'float32', 'shape': [1, 3, 17, 2048], 'bytes': len(raw), 'sha256': sha(raw),
+                                                   'finite': True, 'raw_file': '%s-%s-audio_proj.bin' % (role, name)},
+                                    'audio_context_lens': [17, 17, 17], 'audio_scale': '1.0', 'audio_cfg_scale': '1.0'}
+            o.update(outcome={'raised': False}, download_calls_loader=[], download_calls_embeds=[], inputs=json.loads(json.dumps(inputs)),
+                     outputs=outputs('original'))
+            c.update(outcome={'raised': False}, recipe=recipe, calls_loader=json.loads(json.dumps(exists_true)),
+                     calls_fantasytalking_loader={'exists': [], 'download': []}, calls_embeds={'exists': [], 'download': []},
+                     inputs=json.loads(json.dumps(inputs)), outputs=outputs('converted'))
+            raws['original-%s-audio_proj.bin' % name] = raw
+            raws['converted-%s-audio_proj.bin' % name] = raw
+        original['cases'][name], converted['cases'][name] = o, c
+    return original, converted, raws
+
+
+def run_comparator(packet, root, original, converted, raws):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'ORIGINAL_RESULT.json').write_text(json.dumps(original))
+    (out / 'CONVERTED_RESULT.json').write_text(json.dumps(converted))
+    for name, data in raws.items():
+        (out / name).write_bytes(data)
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule' / COMPARATOR), '--out-dir', str(out),
+                             '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    status = json.loads((out / 'COMPARISON.json').read_text())
+    items = {item: json.loads((out / ('COMPARISON_%s.json' % item)).read_text()) for item in status['items']}
+    return status, items, result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    comparator_bytes = (packet / 'capsule' / COMPARATOR).read_bytes()
+    case_file = json.loads(case_bytes)
+    registered = int(re.search(r'^EXPECTED_REGISTERED = (\d+)$', comparator_bytes.decode(), re.M).group(1))
+    assert [c['name'] for c in case_file['cases']] == ['w1', 'w2', 'w3', 'w4', 'w5'], [c['name'] for c in case_file['cases']]
+    status, items, code = run_comparator(packet, out / 'clean', *synthetic(case_file, registered))
+    clean_ok = status['status'].startswith('PASS_W2V_') and all(d['status'].startswith('PASS_SLICE_') for d in items.values()) and code == 0
+    record = {'format': 'jack-wan-w2v-comparator-selftest/1', 'case_sha256': sha(case_bytes), 'comparator': COMPARATOR,
+              'comparator_sha256': sha(comparator_bytes), 'cases': [c['name'] for c in case_file['cases']],
+              'clean': {'status': status['status'], 'items': status['items'],
+                        'checks_true_per_item': {k: sum(1 for v in d['checks'].values() if v) for k, d in items.items()},
+                        'checks_total_per_item': {k: len(d['checks']) for k, d in items.items()}}, 'controls': {}}
+
+    def conv(fn):
+        return lambda o, c, r: fn(c)
+
+    def orig(fn):
+        return lambda o, c, r: fn(o)
+
+    def both(fn):
+        return lambda o, c, r: (fn(o), fn(c))
+
+    def raw_byte(o, c, r):
+        r['converted-w5-audio_proj.bin'] = b'\x00' * 128
+
+    controls = [
+        ('recipe_bundle', 'loader', 'w1:converted_recipe_exact', conv(lambda c: c['cases']['w1']['recipe'].update(bundle_id='0' * 64))),
+        ('state_tensor', 'loader', 'w2:state_equal', conv(lambda c: c['cases']['w2']['state']['model']['rows']['encoder.layers.0.attention.q_proj.weight'].update(sha256='9' * 64))),
+        ('state_config', 'loader', 'w1:state_equal', conv(lambda c: c['cases']['w1']['state']['config'].update(hidden_size=1024))),
+        ('dtype', 'loader', 'w1:floating_tensors_have_requested_dtype',
+         both(lambda d: d['cases']['w1']['state']['model']['rows']['encoder.layers.0.attention.q_proj.weight'].update(dtype='float32'))),
+        ('loader_rng', 'loader', 'w2:rng_after_loader_equal', conv(lambda c: c['cases']['w2'].update(rng_after_loader={'t': 'rX'}))),
+        ('probe_rng', 'loader', 'w1:converted_rebuild_probe_preserved_rng', conv(lambda c: c['cases']['w1'].update(rng_after_probe={'t': 'rX'}))),
+        ('original_downloaded', 'loader', 'w1:original_took_exists_branch_no_download',
+         orig(lambda o: o['cases']['w1']['download_calls_loader'].append({'kwargs': {'repo_id': 'x'}}))),
+        ('no_exists_call', 'loader', 'w2:converted_exists_once_true', conv(lambda c: c['cases']['w2']['calls_loader'].update(exists=[]))),
+        ('two_exists_calls', 'loader', 'w1:converted_exists_once_true',
+         conv(lambda c: c['cases']['w1']['calls_loader']['exists'].append(list(c['cases']['w1']['calls_loader']['exists'][0])))),
+        ('loader_downloaded', 'loader', 'w1:converted_no_download_request',
+         conv(lambda c: c['cases']['w1']['calls_loader']['download'].append({'repo_id': 'x'}))),
+        ('rebuild_exists', 'loader', 'w2:converted_rebuild_no_exists_no_download',
+         conv(lambda c: c['cases']['w2']['calls_probe']['exists'].append(['audio_encoders', 'x', True]))),
+        ('absent_exists_true', 'absent', 'w3:converted_exists_once_false',
+         conv(lambda c: c['cases']['w3']['calls_loader']['exists'][0].__setitem__(2, True))),
+        ('absent_no_download', 'absent', 'w3:converted_download_requested_once_pinned', conv(lambda c: c['cases']['w3']['calls_loader'].update(download=[]))),
+        ('absent_wrong_weight', 'absent', 'w3:converted_download_requested_once_pinned',
+         conv(lambda c: c['cases']['w3']['calls_loader']['download'][0].update(revision='main'))),
+        ('absent_message', 'absent', 'w3:converted_raised_live_text', conv(lambda c: c['cases']['w3']['outcome'].update(message='other'))),
+        ('absent_original_no_attempt', 'absent', 'w3:original_download_attempted_once', orig(lambda o: o['cases']['w3'].update(download_calls_loader=[]))),
+        ('control_exists', 'control', 'w4:published_bytes_no_exists_call',
+         conv(lambda c: c['cases']['w4']['calls_loader']['exists'].append(['audio_encoders', 'x', True]))),
+        ('control_no_download', 'control', 'w4:published_bytes_download_requested_once_pinned',
+         conv(lambda c: c['cases']['w4']['calls_loader'].update(download=[]))),
+        ('control_type', 'control', 'w4:published_bytes_raised_live_text', conv(lambda c: c['cases']['w4']['outcome'].update(type='RuntimeError'))),
+        ('embeds_bytes', 'embeds', 'w5:embeds_raw_bytes_equal', raw_byte),
+        ('embeds_meta', 'embeds', 'w5:embeds_meta_equal', conv(lambda c: c['cases']['w5']['outputs'].update(audio_context_lens=[16, 17, 17]))),
+        ('embeds_finite', 'embeds', 'w5:outputs_finite', both(lambda d: d['cases']['w5']['outputs']['audio_proj'].update(finite=False))),
+        ('embeds_rebuild_exists', 'embeds', 'w5:converted_embeds_rebuild_no_exists_no_download',
+         conv(lambda c: c['cases']['w5']['calls_embeds']['exists'].append(['audio_encoders', 'x', True]))),
+        ('embeds_ft_download', 'embeds', 'w5:converted_fantasytalking_loader_no_calls',
+         conv(lambda c: c['cases']['w5']['calls_fantasytalking_loader']['download'].append({'repo_id': 'x'}))),
+        ('embeds_original_download', 'embeds', 'w5:original_no_download',
+         orig(lambda o: o['cases']['w5']['download_calls_embeds'].append({'kwargs': {}}))),
+        ('numeric_env', 'loader', 'same_numeric_environment_one_thread', conv(lambda c: c['provider_check']['numeric_env'].update(threads=2))),
+        ('seam_inert', 'absent', 'seams_installed_and_effective', conv(lambda c: c['provider_check'].update(models_patched=False))),
+        ('published_pin', 'control', 'published_module_pinned', conv(lambda c: c['published_module'].update(sha256='e' * 64))),
+        ('module_pin', 'loader', 'converted_module_digests_as_bound',
+         conv(lambda c: c['module_sha256'].update({sorted(c['module_sha256'])[0]: 'c' * 64}))),
+        ('weight_pin', 'embeds', 'weights_pinned_original_side', orig(lambda o: o['weights'].update(facebook='a' * 64))),
+        ('registry', 'absent', 'registry_146', conv(lambda c: c.update(registered_count=registered - 1))),
+        ('worker_failed', 'control', 'workers_completed', conv(lambda c: c.update(status='FAIL')))]
+    all_ok = clean_ok
+    for name, item, check, mutate in controls:
+        original, converted, raws = synthetic(case_file, registered)
+        mutate(original, converted, raws)
+        status, items, code = run_comparator(packet, out / ('control-' + name), original, converted, raws)
+        doc = items[item]
+        failed = sorted(k for k, v in doc['checks'].items() if not v)
+        ok = doc['status'].startswith('FAIL_SLICE_') and check in failed
+        record['controls'][name] = {'item': item, 'targeted_check': check, 'item_status': doc['status'], 'failed_checks': failed,
+                                    'result': 'REFUSED' if ok else 'NOT DETECTED'}
+        all_ok = all_ok and ok
+    record['status'] = 'PASS_COMPARATOR_SELFTEST' if all_ok else 'FAILED_COMPARATOR_SELFTEST'
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'clean': record['clean']['status'], 'controls': len(controls),
+                      'not_refused': sorted(k for k, v in record['controls'].items() if v['result'] != 'REFUSED'),
+                      'checks_total_per_item': record['clean']['checks_total_per_item']}))
+    return 0 if all_ok else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

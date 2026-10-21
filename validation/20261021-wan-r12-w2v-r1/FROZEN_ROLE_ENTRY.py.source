@@ -1,0 +1,59 @@
+"""Role entry for WAN r12 wav2vec exists-first r1. Runs inside a role container as uid/gid 1000 with no capabilities.
+
+usage (container entrypoint): /usr/local/bin/python3.13 -I -B -X faulthandler /prepared/role_entry.py --role original|converted
+It checks the hardened environment and the role's mounts, then runs slice_<role>_w2v.py with runpy:
+- the original role must see no converted bytes (/candidate and /converted-site absent) and must see /models/transformers with
+  both weights bound over their placeholders (non-empty);
+- the converted role must see no original bytes (/original and /models/transformers absent).
+The script's own exit status is the container's exit status.
+"""
+import json
+import os
+import runpy
+import sys
+
+SCRIPTS = {'original': 'slice_original_w2v.py', 'converted': 'slice_converted_w2v.py'}
+
+
+def require(condition, message):
+    if not condition:
+        print(json.dumps({'role_entry': 'REFUSED', 'reason': message}))
+        raise SystemExit(2)
+
+
+def main():
+    require('--role' in sys.argv, '--role required')
+    role = sys.argv[sys.argv.index('--role') + 1]
+    require(role in SCRIPTS, 'unknown role')
+    require(os.getuid() == 1000 and os.getgid() == 1000, 'uid/gid 1000 required')
+    require(list(sys.version_info[:3]) == [3, 13, 7] and os.path.realpath(sys.executable) == '/usr/local/bin/python3.13',
+            'image python 3.13.7 required')
+    require(sys.flags.isolated == 1 and sys.flags.dont_write_bytecode == 1 and sys.flags.no_site == 0, '-I -B with site required')
+    for key, value in (('HOME', '/tmp'), ('HF_HUB_OFFLINE', '1'), ('TRANSFORMERS_OFFLINE', '1'), ('CUDA_VISIBLE_DEVICES', '-1'),
+                       ('OMP_NUM_THREADS', '1'), ('MKL_NUM_THREADS', '1'), ('OPENBLAS_NUM_THREADS', '1')):
+        require(os.environ.get(key) == value, key + ' must be ' + value)
+    with open('/prepared/CASE.json', 'rb') as stream:
+        case = json.loads(stream.read())
+    paths = ['/prepared/common.py', '/prepared/w2v_common.py', '/prepared/' + SCRIPTS[role], '/native-core', '/native-site']
+    weights = [spec['container_paths'][role] for spec in case['models'].values()]
+    paths += weights
+    if role == 'original':
+        paths += ['/original/wan_original', '/original/PRISTINE_GIT_BINDINGS.json', '/models/transformers']
+        absent = ['/candidate', '/converted-site', '/opencv-site']
+    else:
+        paths += ['/candidate/' + case['package'], '/converted-site', '/prepared/' + case['published_module']['capsule_file']]
+        absent = ['/opencv-site', '/original', '/models/transformers']
+    for path in paths:
+        require(os.path.exists(path), 'missing mount: ' + path)
+    for path in weights:
+        require(os.path.getsize(path) > 0, 'weight not bound over its placeholder: ' + path)
+    for path in absent:
+        require(not os.path.exists(path), 'unexpected mount for the %s role: %s' % (role, path))
+    require(os.access('/out', os.W_OK) and os.listdir('/out') == [], '/out must be fresh and writable')
+    require(os.access('/tmp', os.W_OK), '/tmp must be writable')
+    print(json.dumps({'role_entry': 'OK', 'role': role, 'uid_gid': [os.getuid(), os.getgid()], 'sys_path_head': sys.path[:4]}), flush=True)
+    sys.argv = ['/prepared/' + SCRIPTS[role]]
+    runpy.run_path('/prepared/' + SCRIPTS[role], run_name='__main__')
+
+
+main()
