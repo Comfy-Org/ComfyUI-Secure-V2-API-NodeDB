@@ -1,0 +1,167 @@
+"""Stdlib-only analysis of the Ovi bf16 CROSS diagnostic. Writes DIAGNOSIS.json. Findings only; no parity claim.
+
+For every stage (S0 minimal, S1 + original pack, S2 + converted-site and converted pack):
+- each decoder measurement is classified against the wan-ovi-wsl-r1 references: run-original (8616d26a...), run-converted
+  (01f0d913...) or neither;
+- orig_model vs conv_model (outside and in scope), outside vs in scope, and repeat 1 vs 2 are compared; for any differing pair
+  the first differing submodule of the forward trace is located (with whether its input was still equal: an op-level split), and
+  the oneDNN verbose summaries are diffed; max_abs and differing counts come from the raw decoder outputs;
+- changes between stages are reported for the same model and scope, with the newly mapped shared libraries and the environment
+  fields that changed.
+The model dumps (strides, offsets, alignment, inference flags, plain attributes) of the two models are diffed. At S2 the full
+node outputs are compared with each other and with the run waveforms.
+The verdict names the decisive pattern:
+- CODE_OR_OBJECT if the two models differ inside one stage;
+- PROCESS_STATE if they agree at every stage while the run differed;
+- IMPORT_EFFECT_<stage> if a stage transition changes both models' output (the import named by that stage changes bf16 numerics).
+"""
+import array
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+OUT = Path(sys.argv[sys.argv.index('--out-dir') + 1]) if '--out-dir' in sys.argv else Path('/out')
+PREPARED = Path(sys.argv[sys.argv.index('--prepared-dir') + 1]) if '--prepared-dir' in sys.argv else Path('/prepared')
+STAGES = ('S0', 'S1', 'S2')
+MODELS = ('orig_model', 'conv_model')
+SCOPES = ('outside', 'in_scope')
+
+
+def floats(raw, dtype):
+    if dtype == 'float32':
+        values = array.array('f')
+        values.frombytes(raw)
+        return list(values)
+    if dtype == 'bfloat16':
+        halves = array.array('H')
+        halves.frombytes(raw)
+        values = array.array('f')
+        values.frombytes(array.array('I', (h << 16 for h in halves)).tobytes())
+        return list(values)
+    return None
+
+
+def difference(a, b):
+    if a['sha256'] == b['sha256'] and a['shape'] == b['shape']:
+        return {'equal': True}
+    result = {'equal': False}
+    if a.get('raw_file') and b.get('raw_file') and a['dtype'] == b['dtype']:
+        x = floats((OUT / a['raw_file']).read_bytes(), a['dtype'])
+        y = floats((OUT / b['raw_file']).read_bytes(), b['dtype'])
+        if x is not None and y is not None and len(x) == len(y):
+            deltas = [abs(p - q) for p, q in zip(x, y)]
+            result.update(max_abs=max(deltas), differing=sum(1 for d in deltas if d), count=len(deltas), peak=max(abs(p) for p in x))
+    return result
+
+
+def first_split(trace_a, trace_b):
+    """First trace record whose output differs; whether its input was still equal (an op-level split)."""
+    for index, (a, b) in enumerate(zip(trace_a, trace_b)):
+        if a['module'] != b['module']:
+            return {'index': index, 'module_order_differs': [a['module'], b['module']]}
+        if a['out'].get('sha256') != b['out'].get('sha256') or a['out'].get('stride') != b['out'].get('stride'):
+            return {'index': index, 'module': a['module'], 'input_equal': (a['in'] or {}).get('sha256') == (b['in'] or {}).get('sha256'),
+                    'input_layout': [(a['in'] or {}).get('stride'), (b['in'] or {}).get('stride')],
+                    'output_layout': [a['out'].get('stride'), b['out'].get('stride')],
+                    'output_dtype': [a['out'].get('dtype'), b['out'].get('dtype')]}
+    if len(trace_a) != len(trace_b):
+        return {'index': min(len(trace_a), len(trace_b)), 'length_differs': [len(trace_a), len(trace_b)]}
+    return None
+
+
+def onednn_diff(a, b):
+    keys = sorted(set(a) | set(b))
+    return {k: [a.get(k, 0), b.get(k, 0)] for k in keys if a.get(k, 0) != b.get(k, 0)}
+
+
+def compare(m1, m2):
+    result = {'decoder_out': difference(m1['decoder_out'], m2['decoder_out'])}
+    if not result['decoder_out']['equal']:
+        result['first_split'] = first_split(m1['trace'], m2['trace'])
+        result['onednn_diff'] = onednn_diff(m1['onednn'], m2['onednn'])
+    return result
+
+
+def dump_diff(a, b):
+    tensors = {}
+    for name in sorted(set(a['tensors']) | set(b['tensors'])):
+        x, y = a['tensors'].get(name), b['tensors'].get(name)
+        if x != y:
+            tensors[name] = {k: [(x or {}).get(k), (y or {}).get(k)] for k in sorted(set(x or {}) | set(y or {})) if (x or {}).get(k) != (y or {}).get(k)}
+    attributes = {}
+    for name in sorted(set(a['attributes']) | set(b['attributes'])):
+        x, y = a['attributes'].get(name), b['attributes'].get(name)
+        if x != y:
+            attributes[name] = [x, y]
+    return {'tensors_differing': len(tensors), 'tensors': dict(list(tensors.items())[:40]),
+            'attributes_differing': len(attributes), 'attributes': dict(list(attributes.items())[:40])}
+
+
+def main():
+    case_file = json.loads((PREPARED / 'CASE.json').read_text())
+    path = OUT / 'CROSS_RESULT.json'
+    result = json.loads(path.read_text()) if path.exists() else {}
+    refs = case_file['references']
+    diagnosis = {'format': 'jack-wan-ovi-cross-diagnosis/1', 'label': case_file['label'], 'status': 'NO_RESULT',
+                 'cross_result_sha256': hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None}
+    if result.get('status') != 'CROSS_DONE':
+        diagnosis.update(status='CROSS_FAILED', traceback=result.get('traceback', '')[-3000:])
+        (OUT / 'DIAGNOSIS.json').write_text(json.dumps(diagnosis, indent=2, sort_keys=True) + '\n')
+        print(json.dumps({'status': diagnosis['status']}))
+        return 1
+    by = {}
+    for m in result['measurements']:
+        by.setdefault((m['stage'], m['model'], m['scope']), []).append(m)
+    classify = lambda sha: ('run-original' if sha == refs['decoder_bf16_original'] else
+                            'run-converted' if sha == refs['decoder_bf16_converted'] else 'neither')
+    stages = {}
+    for stage in STAGES:
+        row = {'classification': {}, 'repeat_stable': {}, 'pairs': {}}
+        for model in MODELS:
+            for scope in SCOPES:
+                ms = by[(stage, model, scope)]
+                row['classification']['%s/%s' % (model, scope)] = classify(ms[0]['decoder_out']['sha256'])
+                row['repeat_stable']['%s/%s' % (model, scope)] = all(m['decoder_out']['sha256'] == ms[0]['decoder_out']['sha256'] for m in ms)
+        for scope in SCOPES:
+            row['pairs']['orig_vs_conv/%s' % scope] = compare(by[(stage, 'orig_model', scope)][0], by[(stage, 'conv_model', scope)][0])
+        for model in MODELS:
+            row['pairs']['%s/outside_vs_in_scope' % model] = compare(by[(stage, model, 'outside')][0], by[(stage, model, 'in_scope')][0])
+        info = result['stages'].get(stage, {})
+        row['libs_new'] = info.get('libs_new')
+        stages[stage] = row
+    transitions = {}
+    for before, after in (('S0', 'S1'), ('S1', 'S2')):
+        changes = {}
+        for model in MODELS:
+            for scope in SCOPES:
+                changes['%s/%s' % (model, scope)] = compare(by[(before, model, scope)][0], by[(after, model, scope)][0])
+        env_a, env_b = result['stages'][before].get('env') or {}, result['stages'][after].get('env') or {}
+        transitions['%s->%s' % (before, after)] = {'changes': changes, 'libs_new_in_after': result['stages'][after].get('libs_new'),
+                                                    'env_changed': {k: [env_a.get(k), env_b.get(k)] for k in sorted(set(env_a) | set(env_b))
+                                                                    if env_a.get(k) != env_b.get(k)}}
+    nodes = {'original_waveform_class': ('run-original' if result['node_original']['waveform']['sha256'] == refs['waveform_bf16_original'] else
+                                         'run-converted' if result['node_original']['waveform']['sha256'] == refs['waveform_bf16_converted'] else 'neither'),
+             'converted_waveform_class': ('run-original' if result['node_converted']['waveform']['sha256'] == refs['waveform_bf16_original'] else
+                                          'run-converted' if result['node_converted']['waveform']['sha256'] == refs['waveform_bf16_converted'] else 'neither'),
+             'original_vs_converted': difference(result['node_original']['waveform'], result['node_converted']['waveform'])}
+    within = [not stages[s]['pairs']['orig_vs_conv/%s' % scope]['decoder_out']['equal'] for s in STAGES for scope in SCOPES]
+    stage_effects = [name for name, t in transitions.items()
+                     if any(not c['decoder_out']['equal'] for c in t['changes'].values())]
+    if any(within):
+        verdict = 'CODE_OR_OBJECT'
+    elif stage_effects:
+        verdict = 'IMPORT_EFFECT_' + '_'.join(s.replace('->', '_TO_') for s in stage_effects)
+    else:
+        verdict = 'PROCESS_STATE'
+    diagnosis.update(status='DIAGNOSIS_COMPLETE', verdict=verdict, stages=stages, transitions=transitions, nodes=nodes,
+                     model_dump_diff=dump_diff(result['model_dumps']['orig_model'], result['model_dumps']['conv_model']),
+                     env_final=result.get('env_final'), registered_count=result.get('registered_count'), versions=result.get('versions'))
+    (OUT / 'DIAGNOSIS.json').write_text(json.dumps(diagnosis, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'status': diagnosis['status'], 'verdict': verdict,
+                      'classification': {s: stages[s]['classification'] for s in STAGES}, 'nodes': nodes}))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,130 @@
+"""Analyzer self-test on the SHIPPED capsule/CASE.json (Ovi bf16 CROSS r1). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_diagnose.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch or SDK. Four synthetic CROSS_RESULT.json scenarios must reach their verdicts:
+- PROCESS_STATE: both models agree at every stage, with no stage change;
+- CODE_OR_OBJECT: the models differ inside S0; the first split names the injected module, with its input still equal;
+- IMPORT_EFFECT_S1_TO_S2: both models change at S2 (the converted-site / converted pack stage) and agree within each stage;
+- CROSS_FAILED: the worker failed.
+Classification against the run references is checked too.
+"""
+import argparse
+import array
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+STAGES = ('S0', 'S1', 'S2')
+MODELS = ('orig_model', 'conv_model')
+SCOPES = ('outside', 'in_scope')
+MODULES = ('conv_in', 'mid.block_1.conv1', 'mid.block_1', 'mid.attn_1', 'conv_out')
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def bf16(values):
+    words = array.array('f', values)
+    halves = array.array('H', (int.from_bytes(words[i:i + 1].tobytes(), 'little') >> 16 for i in range(len(words))))
+    return halves.tobytes()
+
+
+def tmeta(raw, raw_file=None):
+    meta = {'dtype': 'bfloat16', 'shape': [1, 80, len(raw) // 160], 'bytes': len(raw), 'sha256': sha(raw), 'finite': True}
+    if raw_file:
+        meta['raw_file'] = raw_file
+    return meta
+
+
+def trace(variant, split_at=None):
+    rows = []
+    for index, module in enumerate(MODULES):
+        tag = variant if split_at is not None and index >= split_at else 'base'
+        in_tag = variant if split_at is not None and index > split_at else 'base'
+        rows.append({'module': module, 'in': {'sha256': sha((in_tag + module + 'in').encode()), 'stride': [1]},
+                     'out': {'sha256': sha((tag + module).encode()), 'stride': [1], 'dtype': 'bfloat16'}})
+    return rows
+
+
+def scenario(kind, refs):
+    raws = {}
+    measurements = []
+    for stage in STAGES:
+        for model in MODELS:
+            for scope in SCOPES:
+                for repeat in (1, 2):
+                    name = '%s-%s-%s-%d.bin' % (stage, model, scope, repeat)
+                    if kind == 'IMPORT' and stage == 'S2':
+                        values, variant = [1.0, 2.0, 3.0, 4.0] * 40, 'late'
+                    elif kind == 'OBJECT' and model == 'conv_model':
+                        values, variant = [1.0, 2.0, 3.0, 4.5] * 40, 'conv'
+                    else:
+                        values, variant = [1.0, 2.0, 3.0, 4.25] * 40, 'base'
+                    raw = bf16(values)
+                    raws[name] = raw
+                    split = 1 if variant != 'base' else None
+                    measurements.append({'stage': stage, 'model': model, 'scope': scope, 'decoder_out': tmeta(raw, name),
+                                         'trace': trace(variant, split), 'onednn': {'cpu,convolution,jit:avx512_core_bf16': 10 + (variant != 'base')},
+                                         'onednn_lines': 10})
+    env = {'threads': 1}
+    stages = {s: {'env': dict(env), 'libs_new': ['/x/lib%s.so' % s]} for s in STAGES}
+    result = {'status': 'FAIL' if kind == 'FAILED' else 'CROSS_DONE', 'measurements': measurements, 'stages': stages,
+              'model_dumps': {m: {'tensors': {'w': {'stride': [1]}}, 'attributes': {}} for m in MODELS},
+              'node_original': {'waveform': {'dtype': 'float32', 'shape': [1, 1, 4], 'sha256': refs['waveform_bf16_original']}},
+              'node_converted': {'waveform': {'dtype': 'float32', 'shape': [1, 1, 4], 'sha256': refs['waveform_bf16_converted']}},
+              'traceback': 'synthetic failure' if kind == 'FAILED' else ''}
+    return result, raws
+
+
+def run(packet, root, result, raws):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'CROSS_RESULT.json').write_text(json.dumps(result))
+    for name, data in raws.items():
+        (out / name).write_bytes(data)
+    proc = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule/diagnose_cross.py'), '--out-dir', str(out),
+                           '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    return json.loads((out / 'DIAGNOSIS.json').read_text()), proc.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    analyzer_bytes = (packet / 'capsule/diagnose_cross.py').read_bytes()
+    refs = json.loads(case_bytes)['references']
+    checks = {}
+    doc, code = run(packet, out / 'process', *scenario('PROCESS', refs))
+    checks['process_state_verdict'] = doc.get('verdict') == 'PROCESS_STATE' and code == 0
+    checks['node_classification'] = (doc.get('nodes', {}).get('original_waveform_class') == 'run-original'
+                                     and doc.get('nodes', {}).get('converted_waveform_class') == 'run-converted')
+    checks['measurement_classification_neither'] = all(v == 'neither' for v in doc['stages']['S0']['classification'].values())
+    doc, code = run(packet, out / 'object', *scenario('OBJECT', refs))
+    split = doc.get('stages', {}).get('S0', {}).get('pairs', {}).get('orig_vs_conv/outside', {}).get('first_split') or {}
+    checks['object_verdict'] = doc.get('verdict') == 'CODE_OR_OBJECT'
+    checks['object_first_split'] = split.get('module') == MODULES[1] and split.get('input_equal') is True
+    diff = doc['stages']['S0']['pairs']['orig_vs_conv/outside']['decoder_out']
+    checks['object_max_abs'] = diff.get('equal') is False and diff.get('max_abs') == 0.25 and diff.get('differing') == 40
+    doc, code = run(packet, out / 'import', *scenario('IMPORT', refs))
+    checks['import_verdict'] = doc.get('verdict') == 'IMPORT_EFFECT_S1_TO_S2'
+    checks['import_libs_reported'] = doc['transitions']['S1->S2']['libs_new_in_after'] == ['/x/libS2.so']
+    doc, code = run(packet, out / 'failed', *scenario('FAILED', refs))
+    checks['failed_status'] = doc.get('status') == 'CROSS_FAILED' and code == 1
+    record = {'format': 'jack-wan-ovi-cross-analyzer-selftest/1', 'case_sha256': sha(case_bytes), 'analyzer_sha256': sha(analyzer_bytes),
+              'checks': checks, 'status': 'PASS_ANALYZER_SELFTEST' if all(checks.values()) else 'FAILED_ANALYZER_SELFTEST'}
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'failed': sorted(k for k, v in checks.items() if not v)}))
+    return 0 if record['status'] == 'PASS_ANALYZER_SELFTEST' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
