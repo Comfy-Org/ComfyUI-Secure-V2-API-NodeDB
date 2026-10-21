@@ -1,5 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
-import { LORA_INFO_SERVICE, CHECKPOINT_INFO_SERVICE } from '../../rgthree/common/model_info_service.js';
+import { LORA_INFO_SERVICE, CHECKPOINT_INFO_SERVICE } from '../common/model_info_service.js';
 
 let nextDialog = 0;
 const EDITABLE = [

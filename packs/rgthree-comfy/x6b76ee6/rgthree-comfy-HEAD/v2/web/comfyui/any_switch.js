@@ -1,6 +1,6 @@
 import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString } from "./constants.js";
-import { debounce } from "../../rgthree/common/shared_utils.js";
+import { debounce } from "../common/shared_utils.js";
 import { followConnectionUntilType } from "./utils.js";
 import { onConnectionsChainChange } from "./base_any_input_connected_node.js";
 import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";

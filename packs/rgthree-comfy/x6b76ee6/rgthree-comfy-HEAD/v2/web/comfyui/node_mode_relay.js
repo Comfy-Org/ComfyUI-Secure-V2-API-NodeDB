@@ -20,11 +20,13 @@ import { helpMenuItem } from "./base_node.js";
 // the title bar under both renderers — so the hand-painted `onDrawForeground` line and
 // the `computeSize` +17 px that reserved room for it are both gone.
 //
-// Two markers here named destinations that already existed, and both are converted:
-// `onConnectOutput` — refusing any output link whose far end, through pass-throughs, is
-// not a Mute/Bypass Repeater — is `b.onBeforeConnect` with `event.side === 'output'`,
-// which is installed; and the output's `LiteGraph.ARROW_SHAPE` is `shape: 'directional'`
-// on the definition's output, so the arrow and the bytes it writes are both kept.
+// Two markers here named destinations that already existed. `onConnectOutput` — refusing
+// any output link whose far end, through pass-throughs, is not a Mute/Bypass Repeater —
+// is the `beforeConnect` rule below, for `event.side === 'output'`. MISSING (F17
+// connection policy): the rule is not registered in the sandbox; see
+// base_any_input_connected_node.js. The output's `LiteGraph.ARROW_SHAPE` is
+// `shape: 'directional'` on the definition's output, so the arrow and the bytes it
+// writes are both kept.
 //
 // COSMETIC: no property metadata. The three `@on_*_inputs` declarations gave the
 //   properties panel a dropdown of MUTE / ACTIVE / BYPASS / NOTHING. The properties

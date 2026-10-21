@@ -21,9 +21,13 @@ import { helpMenuItem } from "./base_node.js";
 //
 // `onConnectOutput` refused any output link unless the far end — through pass-throughs —
 // was a Fast Muter, Fast Bypasser, Node Collector, Fast Actions Button, Reroute or
-// Random Unmuter, and refused everything once a Relay was wired in. Both rules are back:
-// `b.onBeforeConnect` installs the output side too, and `event.side` distinguishes it,
-// which the marker here said it could not.
+// Random Unmuter, and refused everything once a Relay was wired in. Both rules are the
+// `beforeConnect` rule below; `event.side` distinguishes the output side. MISSING (F17
+// connection policy): the rule is not registered in the sandbox, so the output links to
+// anything; see base_any_input_connected_node.js. `recompute` below still applies the
+// Relay rules after the fact, as the original's onConnectionsChange did:
+// - a Relay input is disconnected while a toggler is on the output;
+// - the output slot is removed while a Relay drives the node.
 //
 // `getGroupNodes(group)` reading `group._children` is `group.nodes()`, and a subgraph's
 // own groups are `subgraph.groups()`, so the group fallback is whole. Which groups a node

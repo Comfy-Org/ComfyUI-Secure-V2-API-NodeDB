@@ -1,9 +1,11 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,356 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
++> Revision 5 (2026-10-20) is a source-only candidate. It changes the served frontend layout and has not been browser-tested.
 +> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
 +> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
++> These are revision 4's counts. They stay unchanged until a browser test of revision 5 passes.
 +> Not accepted: no whole-pack certificate. Open gates are listed below.
 +
 +<!-- secure-conversion-report-v1 -->
@@ -11,8 +13,79 @@
 +
 +## What this revision contains
 +
-+- **Base:** in-progress revision 3, as merged on corpus main (PR #13). Revision 2 is kept in the corpus but held from the
-+  registry, because its `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
++- **Base:** revision 4 (corpus PR #17), as on corpus main (`d6271b5c`). Revision 4 was built on revision 3 (PR #13).
++  Revision 2 is kept in the corpus but held from the registry, because its `prompt_service.js` raises DataCloneErrors in
++  the sandbox; revision 3 fixed that.
++- **Changed in revision 5** (candidate, source only). Three pack-side problems from a live browser smoke test on
++  host-stack r3:
++  - **Served layout.** `secure-nodes.json` declares `web_directory: "web"` (was `web/comfyui`). It no longer declares
++    `static_directories` (was `rgthree -> web`): the live host parses that field but never serves it. The host serves
++    everything under `web/` at `/extensions/rgthree-comfy/`, and every `.js` under it is an entry module. The pack chooses
++    no URL prefix; the host assigns `/extensions/rgthree-comfy/`.
++    - On revision 4, 27 of the 56 `web/comfyui` entry modules could not link. The live release is older, and 26 of its 54
++      cannot, which is the smoke test's count. They import `../../rgthree/common/…`, which resolves to the unserved
++      `/rgthree/common/…`. Those 16 imports, in 13 files, now read `../common/…`.
++    - `common/py_parser.js` loads `tree-sitter-python.wasm` from `new URL("../lib/…", import.meta.url)`. Before, it used
++      `rgthree/lib/…`, which a worker resolves against its own location.
++    - `common/shared_utils.js` builds its page URL (`openWindowAndWaitForMessage`) from `import.meta.url` instead of
++      `/rgthree/…`. Nothing calls it, here or upstream.
++    - `comfyui/rgthree.css` takes its logo from `../common/media/rgthree.svg` instead of the old `/rgthree/logo.svg` route.
++      Nothing in v2 loads this stylesheet. If something did, the static logo would draw in black, where the route drew it in
++      `#93c5fd`.
++    - `__init__.py`'s `WEB_DIRECTORY` follows (`./web`). The secure loader reads only `secure-nodes.json`.
++    - In `secure-nodes.json` only those two top-level keys change, edited by hand; every node schema is unchanged. The
++      backend's generator (`backend/scripts/generate_rgthree_manifest.py`) still writes the old two values, so it needs
++      the same change before the next regeneration.
++    - The link-fixer and model-browser pages leave the served tree: `web/link_fixer/` and `web/models/`, and the pages'
++      custom-element base class `web/common/components/base_custom_element.js` (10 files). The pages are not delivered
++      (F16). Served from `web/`, their HTML would run pack code as a top-level page on the host's origin, outside the
++      sandbox. `base_custom_element.js` extends `HTMLElement`, which throws at evaluation in the worker, so it and both
++      `models/` modules would fail as entries. Their sources remain in the pristine tree and in `v2/src_web/`.
++    - The extra entries are harmless. The worker imports each entry by its real URL ("url" mode, which this multi-file pack
++      already needs), and a module is evaluated once per URL in the worker's realm. 13 of the 17 new `common/` and `lib/`
++      entries are already imported by `comfyui/` entries, so each is still evaluated once. The other four
++      (`common/link_fixer.js`, `common/menu.js`, `common/utils_templates.js`, `lib/tree-sitter.js`) only define classes,
++      functions and constants when evaluated. None registers anything, adds a listener, fetches, or reads a global the worker
++      lacks.
++    - How the JavaScript was produced: the `.js` files in `v2/web/` are edited by hand, as in every revision. They are not
++      built from `v2/src_web/`, which stays an unchanged upstream copy. Upstream's `__build__.py` rewrites imports to the old
++      `../../rgthree/common` route and is not used.
++  - **Menu labels.** No change was needed. Revision 4 already replaced Power Primitive's label function with two fixed labels
++    and a `when` predicate. The live refusal matches an older release, which still has the label function. A static scan
++    of every served module finds no `addMenuItem` with a label that is not a string.
++  - **Connection filtering.** No module registers `onBeforeConnect` any more (`base_power_prompt.js`,
++    `base_any_input_connected_node.js`, `dynamic_context.js`). The host refuses it, so registering it only produced a refusal
++    and a console notice. Now there is neither. Each lost behaviour is listed below as *missing: F17 connection policy*. The
++    rules are kept, unregistered, as `powerPromptConnectionRule`, `anyInputConnectionRule` and
++    `dynamicContextConnectionRule`, for the host's declarative connection policy (F17: `setConnectionPolicy` /
++    `SlotPatch.linkable`).
++    - The kept loop rule reports through the host's notice (`comfy.commands.notify`) instead of the original's `alert`,
++      which a worker does not have. Its answer is unchanged.
++  - **Ring-safe link walk.** Without the loop guard, a link that closes a ring is now accepted. The walk that finds a node's
++    connected nodes (`walk` in `base_any_input_connected_node.js`) has the original's shape, and only that guard ever
++    kept it finite.
++    - Unchanged, a ring of pass-through nodes (a Reroute and a Node Collector or Combiner wired into each other) would make
++      it recurse until the worker's stack overflowed. That would happen on the next connection change, and again on every
++      mode or title change for a Fast Muter or Bypasser fed from the ring.
++    - The walk now enters each pass-through node once, and never lists the node it began from. On graphs without rings it
++      returns exactly what it did before.
++    - A unit test of the module on synthetic graphs, evaluated alone with its three imports stubbed, checks both: rings
++      terminate, and 0 differences from revision 4's walk across thousands of graphs without rings.
++    - The one loss left is the up-front refusal: rings are allowed, and no longer crash.
++  - **Known defects that this layout makes reachable.** They are not caused by revision 5, but `config.js`, `rgthree.js`
++    and `comfy_ui_bar.js` now load on the live host. They throw only when clicked:
++    - the Settings (rgthree-comfy) dialog (`common/utils_dom.js` uses `Node`, which a worker lacks);
++    - "Star on Github" (`window.open`);
++    - "Convert … Reroutes" (`window.confirm`).
++
++    The settings themselves remain editable in the host's settings panel.
++  - **Evidence:** static, plus the module-level walk unit test; no browser run yet:
++    - every served module parses (acorn 8.17.0, and V8 in Node 25.9.0);
++    - all 73 entry modules link;
++    - every static and dynamic import and every asset URL resolves to a served file under `/extensions/rgthree-comfy/`,
++      with two exceptions: the host's own API module `/comfy/api/v2.js`, and two Node-only branches in the vendored
++      tree-sitter that a browser never reaches;
++    - no `/rgthree/` root reference remains.
 +- **Changed in revision 4** (host-supported replacements for blocked behaviours):
 +  - `web/comfyui/context.js`: the "Convert To …" menu item. The original's label was a function of the node's type, and
 +    a sandboxed menu label must be a string. The item is registered per node type, so its label is the original's text
@@ -81,7 +154,8 @@
 +
 +Upstream https://github.com/rgthree/rgthree-comfy at commit `6b76ee6f2c5a007710b5a16f97c94330d6ecc871`
 +(key `x6b76ee6`). The pristine tree beside `v2/` is byte-exact at that commit (258 files). `v2/src_web/` is an unchanged
-+copy of upstream's TypeScript sources, kept for reference. The converted, served frontend is `v2/web/`. Upstream has
++copy of upstream's TypeScript sources, kept for reference. The converted, served frontend is `v2/web/`; it is edited by hand
++and is not built from `v2/src_web/`. Upstream has
 +40 node IDs: 37 enabled by default and 3 opt-in (Dynamic Context, Dynamic Context Switch, Power Conductor).
 +Of the defaults, 24 have Python classes and 13 are frontend-only.
 +
@@ -94,7 +168,7 @@
 +| Node id | Disposition | Evidence or gap |
 +| --- | --- | --- |
 +| `KSampler Config (rgthree)` | tested (scoped) | Backend native cases pass; no custom frontend. |
-+| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. |
++| `Power Conductor (rgthree)` | tested (scoped) | Opt-in. The tested repair ships here: numeric modes/IDs, explicit labels via `getLabel`, pack-owned group toggles. Revision 5 moves the load path of its grammar (`common/py_parser.js`); the browser smoke test's required check 9 covers that. |
 +| `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
 +| `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 +| `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
@@ -118,20 +192,20 @@
 +| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
 +| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node rules. F07 (independent choice per batch item) and F01 are open. |
-+| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
-+| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). The rest of the frontend is untested; F01 is open. |
-+| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). F01 is open. |
-+| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Blocked: refusing links from disabled outputs, connection filtering (`onBeforeConnect`; F17). F01 is open. |
-+| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 and F11 are open. |
-+| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
-+| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
-+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
-+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
-+| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. F01 is open. |
-+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Blocked: connection filtering (`onBeforeConnect`; F17), i.e. the cycle guard and per-node connection rules. Otherwise untested. Legacy node. F01 is open. |
++| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) and F01 are open. |
++| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
++| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
++| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
++| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
++| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
++| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
++| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
++| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Otherwise untested. F01 is open. |
++| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Otherwise untested. F01 is open. |
++| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
++| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. Legacy node. F01 is open. |
 +| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). They are not yet all in the deployed frontend. F05 and F06 are open. |
-+| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Its connection filtering is guarded like the others (F17). |
++| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Missing: F17 connection policy — refusing another Dynamic Context's context output on a non-base input. |
 +| `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 +
 +## Refused techniques (never-do) and their public replacements
@@ -203,13 +277,20 @@
 +
 +## Blocked behaviours (missing host capability, not refused)
 +
-+The host refuses these registrations because it would need their result synchronously. Since revision 3 a refusal costs
-+only the behaviour below, never the module. Each one is reported once in the console, by node type.
++Each of these needs a host capability that does not exist yet; none is a refused technique.
++
++- The two F17 rows are *missing: F17 connection policy*. The host would need their answer synchronously, so it refuses
++  `onBeforeConnect`. Since revision 5 no module registers it, so there is no refusal and no console notice. The rules are
++  kept, unregistered, for the host's declarative connection policy.
++- The F18 and F19 rows are still registered, and the host refuses them for the same reason. Since revision 3 a refusal
++  costs only that behaviour, never the module, and each is reported once in the console, by node type.
++- F20: when the host refuses the queue subscriptions, `prompt_service.js` treats them as unavailable and reports it once
++  (revision 3).
 +
 +| Behaviour | Needs | Nodes |
 +| --- | --- | --- |
-+| Connection filtering: the cycle guard ("time paradox") and per-node connection rules | A connection policy the host can evaluate without a synchronous worker call (F17) | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
-+| Refusing links from disabled outputs | Same as above (F17) | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
++| Connection filtering: the cycle guard's up-front refusal ("time paradox"; a ring is now accepted, and the link walk is ring-safe) and per-node connection rules (the Repeater's two Relay rules still apply after the fact) | Missing: F17 connection policy (`setConnectionPolicy` / `SlotPatch.linkable`), a policy the host can evaluate without a synchronous worker call. Not registered. | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
++| Refusing links from disabled outputs | Missing: F17 connection policy, as above. Not registered. | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
 +| Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
 +| Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
 +| Progress bar: queue size and interruption updates | Sandbox subscriptions for the published `queue.onPendingChanged` and `queue.onInterrupted` (F20) | rgthree progress bar |
@@ -228,8 +309,14 @@
 +- F11 — widget-configured keyboard shortcuts in the sandboxed realm.
 +- F12 — the original configurable two-track progress bar.
 +- F13 — Power LoRA Loader rows from API-format workflows; A1111 parameter import.
-+- F16 — delivery of the pack's model-browser and link-fixer pages.
-+- F17 — connection policy for sandboxed packs (replaces the synchronous `onBeforeConnect`).
++- F16 — delivery of the pack's model-browser and link-fixer pages. Since revision 5 they are not in the served tree; their
++  sources are in the pristine tree and in `v2/src_web/`.
++- F17 — connection policy for sandboxed packs (`setConnectionPolicy` / `SlotPatch.linkable`), replacing the synchronous
++  `onBeforeConnect`. The pack's rules are kept, unregistered, until it exists. Two notes for the port:
++  - `anyInputConnectionRule` already reports through the host's notice rather than `alert`.
++  - The per-node rules no longer reach it: the Node Collector, Node Combiner, Relay and Repeater rules sit in each
++    definition's `beforeConnect`, which `defineAnyInputConnectedNode` no longer reads. They must be threaded through
++    again.
 +- F18 — host-owned contribution for links dropped on empty canvas (replaces `onUnplacedLink`).
 +- F19 — host node-drop contribution (replaces `onDragOver`/`onDrop`).
 +- F20 — sandbox subscriptions for `queue.onPendingChanged` and `queue.onInterrupted`.
@@ -245,7 +332,14 @@
 +- Image Comparer with an empty image batch.
 +- Original-comparison runs for the eight frontend-only nodes listed as untested.
 +- Label browser acceptance after the host focus-race fix.
-+- Live asset delivery and CORS for `/rgthree/*` static files, including the logo.
++- A browser smoke test of revision 5's layout. Until it passes, the node counts above stay at revision 4's. It checks:
++  - 0 module-load failures across the 73 entry modules;
++  - the progress badge;
++  - asset delivery and CORS under `/extensions/rgthree-comfy/` for the logo SVG;
++  - the tree-sitter WASM, which is required: Power Conductor stays "tested (scoped)" only if its grammar loads from the
++    new path;
++  - no `addMenuItem` or `onBeforeConnect` refusal rows;
++  - a ring of pass-through nodes that no longer overflows.
 +- gVisor admission and whole-pack acceptance review.
 +
 +## Authority and permissions
@@ -255,7 +349,8 @@
 +- `assets` (4): Lora Loader Stack, Power Lora Loader, Power Prompt, SDXL Power Prompt - Positive.
 +- `raw` (7): Display Any, Image Inset Crop, Image Resize, Image or Latent Size, Power Primitive, Power Puter, SDXL Empty Latent Image.
 +- `ui` (1): Image Comparer.
-+- Frontend: `web/comfyui` loads into the sandboxed pack worker; static directory `rgthree` -> `web`. No pack HTTP routes.
++- Frontend: `web_directory` is `web`, served at `/extensions/rgthree-comfy/`. Each of its 73 `.js` files is an entry
++  module of the sandboxed pack worker. No static directories and no pack HTTP routes.
 +  Runtime: Python >=3.13,<3.14.
 +
 +## Assets and weights
@@ -401,7 +496,7 @@
 +from .py.secure_nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 +
 +
-+WEB_DIRECTORY = "./web/comfyui"
++WEB_DIRECTORY = "./web"
 +
 +__all__ = [
 +    "NODE_CLASS_MAPPINGS",
@@ -8930,7 +9025,7 @@
  
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,4979 @@
+@@ -0,0 +1,4976 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -13905,10 +14000,7 @@
 +      "resolved": "3.13"
 +    }
 +  },
-+  "static_directories": {
-+    "rgthree": "web"
-+  },
-+  "web_directory": "web/comfyui"
++  "web_directory": "web"
 +}
 --- a/web/comfyui/any_switch.js
 +++ b/v2/web/comfyui/any_switch.js
@@ -13918,7 +14010,7 @@
 -import { RgthreeBaseServerNode } from "./base_node.js";
 +import { comfy } from '/comfy/api/v2.js';
  import { NodeTypesString } from "./constants.js";
-+import { debounce } from "../../rgthree/common/shared_utils.js";
++import { debounce } from "../common/shared_utils.js";
 +import { followConnectionUntilType } from "./utils.js";
 +import { onConnectionsChainChange } from "./base_any_input_connected_node.js";
  import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
@@ -14061,7 +14153,7 @@
 +//   the instance, so nothing new is serialized.
 --- a/web/comfyui/base_any_input_connected_node.js
 +++ b/v2/web/comfyui/base_any_input_connected_node.js
-@@ -1,208 +1,322 @@
+@@ -1,208 +1,349 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { rgthree } from "./rgthree.js";
@@ -14084,7 +14176,7 @@
 -            while (cloned.inputs.length > 1) {
 -                cloned.removeInput(cloned.inputs.length - 1);
 +import { comfy } from '/comfy/api/v2.js';
-+import { debounce } from "../../rgthree/common/shared_utils.js";
++import { debounce } from "../common/shared_utils.js";
 +import { whereSupported } from "./sandbox_limits.js";
 +
 +// The shared body of every rgthree node that grows an input as the last one fills:
@@ -14108,11 +14200,15 @@
 +// exactly that, which is what `pinWidth` below does — and it makes the
 +// `loadedGraphNode` hook that seeded `_tempWidth` unnecessary rather than lost.
 +//
-+// The output-side veto is not a gap after all: `b.onBeforeConnect` installs
-+// `onConnectOutput` as well as `onConnectInput`, and `event.side` distinguishes them.
-+// The loop guard below ("a situation that could create a time paradox") refuses in both
-+// directions again, and the Relay and Repeater state their output restrictions the same
-+// way.
++// MISSING (F17 connection policy): connection filtering. The original refused links in
++// onConnectInput and onConnectOutput: the loop guard below ("a situation that could
++// create a time paradox"), from either end, and each node's own `beforeConnect` rule
++// (Node Collector, Node Combiner, Mute / Bypass Repeater and Relay). The canvas reads
++// that answer synchronously, so `b.onBeforeConnect` is not available to a sandboxed
++// pack. The rules are not registered (no refusal and no notice). They are kept,
++// unregistered, as `anyInputConnectionRule` for the host's declarative connection policy.
++// So a link that closes a ring is now accepted. `walk` below stops at the nodes it has
++// already entered, so a ring of pass-through nodes no longer overflows the stack.
 +//
 +// REFUSED, not a gap: replacing core's connection routing for the whole document.
 +//   `LGraphNode.prototype.connectByType` was patched at module load so that dropping
@@ -14172,7 +14268,16 @@
 +    const link = slot.link();
 +    return link ? [link] : [];
 +}
-+function walk(scope, startId, isOutput, current, slotIndex, following) {
++// `visited` holds every pass-through node this walk has entered, starting with the node it
++// began from. The original kept no such set: its "time paradox" guard refused any link
++// that would close a ring, so a walk never came back to a node it had entered. That guard
++// needs a host connection policy (F17), so a ring can now be built (a Reroute and a Node
++// Collector wired into each other), and without the set the walk recursed until the
++// worker's stack overflowed. With it, each pass-through node is entered once and the node
++// the walk began from is never one of its own results. On a graph without rings the result
++// and its order are the original's: a node reached a second time there has already
++// contributed everything behind it.
++function walk(scope, startId, isOutput, current, slotIndex, following, visited = new Set([startId])) {
 +    const found = [];
 +    if (current.id !== startId && !shouldPassThrough(current, following)) {
 +        return found;
@@ -14192,17 +14297,18 @@
 +    }
 +    for (const link of links) {
 +        const peer = scope.node(isOutput ? link.targetNodeId : link.sourceNodeId);
-+        if (!peer || found.some((node) => node.id === peer.id)) {
++        if (!peer || peer.id === startId || found.some((node) => node.id === peer.id)) {
 +            continue;
 +        }
 +        found.push(peer);
-+        if (!shouldPassThrough(peer, following)) {
++        if (!shouldPassThrough(peer, following) || visited.has(peer.id)) {
 +            continue;
 +        }
++        visited.add(peer.id);
 +        // The original widened the follow mode to ALL past the first hop, by passing
 +        // `undefined` on the recursive call. Kept: a REROUTE_ONLY walk resolves
 +        // differently otherwise.
-+        for (const deeper of walk(scope, startId, isOutput, peer, undefined, PassThroughFollowing.ALL)) {
++        for (const deeper of walk(scope, startId, isOutput, peer, undefined, PassThroughFollowing.ALL, visited)) {
 +            if (!found.some((node) => node.id === deeper.id)) {
 +                found.push(deeper);
              }
@@ -14327,12 +14433,36 @@
 +    }
 +}
 +/**
++ * The family's connection filtering, as the original's onConnectInput/onConnectOutput
++ * applied it: the loop guard, then the node's own `beforeConnect` rule. MISSING (F17
++ * connection policy): nothing registers it in the sandbox (see the top of this file).
++ * Nothing passes it a node's own rule either: `defineAnyInputConnectedNode` no longer reads
++ * `config.beforeConnect`, so adopting F17 means threading each node's rule through again.
++ * The original's `alert` is the host's notice here, because a worker has no `alert`; the
++ * answer is unchanged.
++ */
++export function anyInputConnectionRule(node, event, beforeConnect) {
++    // `onConnectInput` refused a link from something already downstream;
++    // `onConnectOutput` refused one into something already upstream. Same loop
++    // from either end, and `event.side` says which end this is.
++    const wouldLoop = event.side === "input"
++        ? connectedOutputNodes(node, { filtered: false })
++        : connectedInputNodes(node, { filtered: false });
++    if (event.peerNodeId && wouldLoop.some((n) => n.id === event.peerNodeId)) {
++        comfy.commands.notify({ severity: "warn", summary: TIME_PARADOX });
++        return false;
++    }
++    return beforeConnect ? beforeConnect(node, event) : true;
++}
++/**
 + * Assembles a node definition with the base class's behaviour: one trailing `*` input
-+ * that grows as it fills, names taken from the connected nodes, the cycle guard, and a
-+ * stabilization pass driven by connection and mode/title changes instead of a poll.
++ * that grows as it fills, names taken from the connected nodes, and a stabilization pass
++ * driven by connection and mode/title changes instead of a poll. The cycle guard and a
++ * `beforeConnect` rule are not registered (MISSING, F17; see `anyInputConnectionRule`),
++ * and `config.beforeConnect` is not read.
 + */
 +export function defineAnyInputConnectedNode(config) {
-+    const { type, title = type, outputs = [], following = PassThroughFollowing.NONE, handleLinkedNodes, beforeConnect, onCreated, onConfigured, onConnectionsChanged, onPropertyChanged, onRemoved, menuItems = [], } = config;
++    const { type, title = type, outputs = [], following = PassThroughFollowing.NONE, handleLinkedNodes, onCreated, onConfigured, onConnectionsChanged, onPropertyChanged, onRemoved, menuItems = [], } = config;
 +    function stabilize(node) {
 +        if (node.isDeleted) {
 +            return;
@@ -14347,16 +14477,34 @@
 +        for (const item of menuItems) {
 +            whereSupported(type, `menu item "${typeof item.label === "string" ? item.label : "(dynamic label)"}"`, () => b.addMenuItem(item));
 +        }
-+        whereSupported(type, "connection filtering (onBeforeConnect: loop guard and per-node rules)", () => b.onBeforeConnect((node, event) => {
-+            // `onConnectInput` refused a link from something already downstream;
-+            // `onConnectOutput` refused one into something already upstream. Same loop
-+            // from either end, and `event.side` says which end this is.
-+            const wouldLoop = event.side === "input"
-+                ? connectedOutputNodes(node, { filtered: false })
-+                : connectedInputNodes(node, { filtered: false });
-+            if (event.peerNodeId && wouldLoop.some((n) => n.id === event.peerNodeId)) {
-+                alert(TIME_PARADOX);
-+                return false;
++        // MISSING (F17 connection policy): no `b.onBeforeConnect` here; see
++        // `anyInputConnectionRule`.
++    });
++    return comfy.defs.define({
++        type,
++        title,
++        category: "rgthree",
++        // Drives other nodes and must never reach graphToPrompt. No `resolve`: the
++        // original was `isVirtualNode` with no `applyToGraph`, so its outputs resolved
++        // to nothing and the node was simply left out of the prompt.
++        execution: 'frontend',
++        inputs: [{ name: "", type: "*" }],
++        outputs,
++        onCreated(node, event) {
++            // `defs.define` turns widget serialization on, matching the host's own node
++            // class; these nodes never had it, so no toggle reaches `widgets_values`
++            // and the saved bytes are unchanged.
++            node.setSerializeWidgets(false);
++            const stabilizer = () => stabilize(node);
++            stabilizersByNode.set(nodeKey(node), stabilizer);
++            onConnectionsChainChange(node, stabilizer);
++            // `clone()` trimmed a copy's inputs back to one unless the nodes feeding
++            // them were copied too. A node that arrives restored but not loading is a
++            // paste or a duplicate; links are not copied with it, so `stabilize` drops
++            // the now-unfed inputs and leaves the single empty one — which is what the
++            // clipboard flag was standing in for.
++            if (event.restored && !event.loading) {
++                stabilize(node);
              }
 -        }
 -        return cloned;
@@ -14386,35 +14534,7 @@
 -            if (!input.link) {
 -                this.removeInput(index);
 -                changed = true;
-+            return beforeConnect ? beforeConnect(node, event) : true;
-+        }));
-+    });
-+    return comfy.defs.define({
-+        type,
-+        title,
-+        category: "rgthree",
-+        // Drives other nodes and must never reach graphToPrompt. No `resolve`: the
-+        // original was `isVirtualNode` with no `applyToGraph`, so its outputs resolved
-+        // to nothing and the node was simply left out of the prompt.
-+        execution: 'frontend',
-+        inputs: [{ name: "", type: "*" }],
-+        outputs,
-+        onCreated(node, event) {
-+            // `defs.define` turns widget serialization on, matching the host's own node
-+            // class; these nodes never had it, so no toggle reaches `widgets_values`
-+            // and the saved bytes are unchanged.
-+            node.setSerializeWidgets(false);
-+            const stabilizer = () => stabilize(node);
-+            stabilizersByNode.set(nodeKey(node), stabilizer);
-+            onConnectionsChainChange(node, stabilizer);
-+            // `clone()` trimmed a copy's inputs back to one unless the nodes feeding
-+            // them were copied too. A node that arrives restored but not loading is a
-+            // paste or a duplicate; links are not copied with it, so `stabilize` drops
-+            // the now-unfed inputs and leaves the single empty one — which is what the
-+            // clipboard flag was standing in for.
-+            if (event.restored && !event.loading) {
-+                stabilize(node);
-             }
+-            }
 -            else {
 -                const node = getConnectedInputNodesAndFilterPassThroughs(this, this, index, this.inputsPassThroughFollowing)[0];
 -                const newName = (node === null || node === void 0 ? void 0 : node.title) || "";
@@ -15063,7 +15183,7 @@
 +});
 --- a/web/comfyui/base_node_collector.js
 +++ b/v2/web/comfyui/base_node_collector.js
-@@ -1,51 +1,43 @@
+@@ -1,51 +1,47 @@
 -import { rgthree } from "./rgthree.js";
 -import { BaseAnyInputConnectedNode } from "./base_any_input_connected_node.js";
 -import { PassThroughFollowing, getConnectedInputNodes, getConnectedInputNodesAndFilterPassThroughs, shouldPassThrough, } from "./utils.js";
@@ -15081,10 +15201,14 @@
 +// The same node reaching a second slot is refused, and so is a reroute whose own source
 +// is already connected — the case that made a node fed through a reroute count twice.
 +// Reconnecting a node to the slot it already occupies is allowed, as before.
++// MISSING (F17 connection policy): the veto is not registered in the sandbox; see
++// base_any_input_connected_node.js. `defineAnyInputConnectedNode` no longer reads
++// `beforeConnect`, so this rule, and the Relay's and Repeater's rules it wraps, do not
++// reach `anyInputConnectionRule` either.
 +//
 +// DROPPED: the two `logger.debugParts(...)` lines that explained a refusal in the
-+//   console. They went through `rgthree.newLogSession`, punted with rgthree.js; the
-+//   refusal itself is unchanged. Cosmetic.
++//   console. They went through `rgthree.newLogSession`, punted with rgthree.js. The
++//   refusal logic below is still the original's; it is just not registered. Cosmetic.
 +export function defineCollectorNode(config) {
 +    const { beforeConnect } = config;
 +    return defineAnyInputConnectedNode({
@@ -15373,7 +15497,7 @@
 -};
 --- a/web/comfyui/base_power_prompt.js
 +++ b/v2/web/comfyui/base_power_prompt.js
-@@ -1,252 +1,255 @@
+@@ -1,252 +1,261 @@
 -import { api } from "../../scripts/api.js";
 -import { wait } from "../../rgthree/common/shared_utils.js";
 -import { rgthree } from "./rgthree.js";
@@ -15396,7 +15520,6 @@
 -            oldConfigure === null || oldConfigure === void 0 ? void 0 : oldConfigure.apply(this.node, [info]);
 -            this.configuring = false;
 +import { comfy } from '/comfy/api/v2.js';
-+import { whereSupported } from "./sandbox_limits.js";
 +
 +const SERVER_WIDGET_PREFIXES = ['insert_', 'target_', 'crop_', 'values_'];
 +const states = new Map();
@@ -15866,12 +15989,19 @@
 +        const state = states.get(stateKey(node));
 +        if (state) refreshCombos(state, comfy.defs.get(type) ?? state.def);
 +    });
-+    whereSupported(type, "output connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
-+        if (event.side !== 'output') return;
-+        const output = node.outputs.at(event.index);
-+        return !output || outputEnabled(node, output.type.toLowerCase());
-+    }));
++    // MISSING (F17 connection policy): refusing a link from a disabled output. The
++    // original vetoed it in onConnectOutput, whose answer the canvas reads
++    // synchronously, so `onBeforeConnect` is not available to a sandboxed pack. It is
++    // not registered: no refusal and no notice. A disabled output is still drawn grey
++    // (stabilizeOutputs). The rule is kept, unregistered, as
++    // `powerPromptConnectionRule` for the host's declarative connection policy.
 +    builder.onRemoved(detach);
++}
++
++export function powerPromptConnectionRule(node, event) {
++    if (event.side !== 'output') return;
++    const output = node.outputs.at(event.index);
++    return !output || outputEnabled(node, output.type.toLowerCase());
 +}
 +
 +comfy.defs.onRefreshed(() => {
@@ -15941,7 +16071,7 @@
 -        const target = originalEvent.target;
 -        if (getClosestOrSelf(target, 'input,textarea,[contenteditable="true"]')) {
 -            return;
-+import { getClosestOrSelf } from "../../rgthree/common/utils_dom.js";
++import { getClosestOrSelf } from "../common/utils_dom.js";
 +
 +// Bookmark — a collapsed marker node with a shortcut key and a zoom level; press the key
 +// anywhere and the canvas jumps to it.
@@ -16422,17 +16552,23 @@
 +});
 --- a/web/comfyui/config.js
 +++ b/v2/web/comfyui/config.js
-@@ -1,4 +1,9 @@
+@@ -1,7 +1,12 @@
 -import { app } from "../../scripts/app.js";
+-import { RgthreeDialog } from "../../rgthree/common/dialog.js";
+-import { createElement as $el, queryAll as $$ } from "../../rgthree/common/utils_dom.js";
+-import { checkmark, logoRgthree } from "../../rgthree/common/media/svgs.js";
 +import { comfy } from '/comfy/api/v2.js';
 +
 +// The secure loader does not execute rgthree's writable Python config route.
 +// services/config_service.js maps the surviving options to host-owned V2 settings;
 +// this dialog edits that same data and omits switches for features the prior frontend
 +// conversion explicitly retired.
- import { RgthreeDialog } from "../../rgthree/common/dialog.js";
- import { createElement as $el, queryAll as $$ } from "../../rgthree/common/utils_dom.js";
- import { checkmark, logoRgthree } from "../../rgthree/common/media/svgs.js";
++import { RgthreeDialog } from "../common/dialog.js";
++import { createElement as $el, queryAll as $$ } from "../common/utils_dom.js";
++import { checkmark, logoRgthree } from "../common/media/svgs.js";
+ import { rgthree } from "./rgthree.js";
+ import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
+ var ConfigType;
 @@ -27,25 +32,6 @@
  const CONFIGURABLE = {
      features: [
@@ -16647,7 +16783,7 @@
 -import { SERVICE as KEY_EVENT_SERVICE } from "./services/key_events_services.js";
 -import { debounce, wait } from "../../rgthree/common/shared_utils.js";
 +import { comfy } from '/comfy/api/v2.js';
-+import { debounce } from "../../rgthree/common/shared_utils.js";
++import { debounce } from "../common/shared_utils.js";
 +import { whereSupported } from "./sandbox_limits.js";
 +import { NodeTypesString } from "./constants.js";
  import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
@@ -17220,7 +17356,7 @@
 -            onBeforeClose: () => {
 -                return true;
 +import { comfy } from '/comfy/api/v2.js';
-+import { LORA_INFO_SERVICE, CHECKPOINT_INFO_SERVICE } from '../../rgthree/common/model_info_service.js';
++import { LORA_INFO_SERVICE, CHECKPOINT_INFO_SERVICE } from '../common/model_info_service.js';
 +
 +let nextDialog = 0;
 +const EDITABLE = [
@@ -17677,13 +17813,12 @@
  });
 --- a/web/comfyui/dynamic_context.js
 +++ b/v2/web/comfyui/dynamic_context.js
-@@ -1,253 +1,290 @@
+@@ -1,253 +1,294 @@
 -import { app } from "../../scripts/app.js";
 -import { IoDirection, followConnectionUntilType, getConnectedInputInfosAndFilterPassThroughs, } from "./utils.js";
 -import { rgthree } from "./rgthree.js";
 -import { SERVICE as CONTEXT_SERVICE, InputMutationOperation, } from "./services/context_service.js";
 +import { comfy } from '/comfy/api/v2.js';
-+import { whereSupported } from "./sandbox_limits.js";
 +import { connectedInputNodes, graphOf, nodeKey } from "./base_any_input_connected_node.js";
 +import { applyUpstreamMutation, contextInputs, dynamicInputMenuItems, ensureContextOutput, ensureTrailingContextInput, isOwnedContextInput, nextUniqueContextName, ownedInputName, prepareDynamicContextNode, releaseDynamicContextNode, removeContextPair, renameContextPair, stripOwnedPrefix, } from "./dynamic_context_base.js";
  import { NodeTypesString } from "./constants.js";
@@ -17712,44 +17847,6 @@
 -        if (type === LiteGraph.INPUT) {
 -            if (isConnected) {
 -                this.handleInputConnected(slotIndex);
--            }
--            else {
--                this.handleInputDisconnected(slotIndex);
--            }
--        }
--    }
--    onConnectInput(inputIndex, outputType, outputSlot, outputNode, outputIndex) {
--        var _a;
--        let canConnect = true;
--        if (super.onConnectInput) {
--            canConnect = super.onConnectInput.apply(this, [...arguments]);
--        }
--        if (canConnect &&
--            outputNode instanceof DynamicContextNode &&
--            outputIndex === 0 &&
--            inputIndex !== 0) {
--            const [n, v] = rgthree.logger.warnParts("Currently, you can only connect a context node in the first slot.");
--            (_a = console[n]) === null || _a === void 0 ? void 0 : _a.call(console, ...v);
--            canConnect = false;
--        }
--        return canConnect;
--    }
--    handleInputConnected(slotIndex) {
--        const ioSlot = this.inputs[slotIndex];
--        const connectedIndexes = [];
--        if (slotIndex === 0) {
--            let baseNodeInfos = getConnectedInputInfosAndFilterPassThroughs(this, this, 0);
--            const baseNodes = baseNodeInfos.map((n) => n.node);
--            const baseNodesDynamicCtx = baseNodes[0];
--            if (baseNodesDynamicCtx === null || baseNodesDynamicCtx === void 0 ? void 0 : baseNodesDynamicCtx.provideInputsData) {
--                const inputsData = CONTEXT_SERVICE.getDynamicContextInputsData(baseNodesDynamicCtx);
--                console.log("inputsData", inputsData);
--                for (const input of baseNodesDynamicCtx.provideInputsData()) {
--                    if (input.name === "base_ctx" || input.name === "+") {
--                        continue;
--                    }
--                    this.addContextInput(input.name, input.type, input.index);
--                    this.stabilizeNames();
 +import { getContextOutputName, getDynamicContextInputsData, notifyContextInputsChanged, registerDynamicContext, } from "./services/context_service.js";
 +
 +const TYPE = NodeTypesString.DYNAMIC_CONTEXT;
@@ -17776,7 +17873,9 @@
 +            const output = node.outputs.at(index);
 +            if (output && output.name !== getContextOutputName(input.name)) {
 +                output.modify({ name: getContextOutputName(input.name), label: undefined });
-+            }
+             }
+-            else {
+-                this.handleInputDisconnected(slotIndex);
 +            continue;
 +        }
 +        const root = stripOwnedPrefix(input.name).replace(/\.\d+$/, "");
@@ -17927,6 +18026,13 @@
 +    ensureTrailingContextInput(node);
 +}
 +
++export function dynamicContextConnectionRule(node, event) {
++    if (event.side !== "input" || event.index === 0 || event.peerIndex !== 0 || !event.peerNodeId) {
++        return;
++    }
++    return graphOf(node).node(event.peerNodeId)?.type === TYPE ? false : undefined;
++}
++
 +function cleanupNode(node) {
 +    const key = nodeKey(node);
 +    cleanupByNode.get(key)?.();
@@ -17965,7 +18071,41 @@
 +                        comfy.graph.batch(() => trimUnfedClone(node));
 +                    }
 +                }, 0);
-+            }
+             }
+-        }
+-    }
+-    onConnectInput(inputIndex, outputType, outputSlot, outputNode, outputIndex) {
+-        var _a;
+-        let canConnect = true;
+-        if (super.onConnectInput) {
+-            canConnect = super.onConnectInput.apply(this, [...arguments]);
+-        }
+-        if (canConnect &&
+-            outputNode instanceof DynamicContextNode &&
+-            outputIndex === 0 &&
+-            inputIndex !== 0) {
+-            const [n, v] = rgthree.logger.warnParts("Currently, you can only connect a context node in the first slot.");
+-            (_a = console[n]) === null || _a === void 0 ? void 0 : _a.call(console, ...v);
+-            canConnect = false;
+-        }
+-        return canConnect;
+-    }
+-    handleInputConnected(slotIndex) {
+-        const ioSlot = this.inputs[slotIndex];
+-        const connectedIndexes = [];
+-        if (slotIndex === 0) {
+-            let baseNodeInfos = getConnectedInputInfosAndFilterPassThroughs(this, this, 0);
+-            const baseNodes = baseNodeInfos.map((n) => n.node);
+-            const baseNodesDynamicCtx = baseNodes[0];
+-            if (baseNodesDynamicCtx === null || baseNodesDynamicCtx === void 0 ? void 0 : baseNodesDynamicCtx.provideInputsData) {
+-                const inputsData = CONTEXT_SERVICE.getDynamicContextInputsData(baseNodesDynamicCtx);
+-                console.log("inputsData", inputsData);
+-                for (const input of baseNodesDynamicCtx.provideInputsData()) {
+-                    if (input.name === "base_ctx" || input.name === "+") {
+-                        continue;
+-                    }
+-                    this.addContextInput(input.name, input.type, input.index);
+-                    this.stabilizeNames();
 +            scheduleBaseSync(node);
 +        });
 +        builder.onConfigured((node) => {
@@ -17974,12 +18114,10 @@
 +            stabilizeOwnedNames(node);
 +            scheduleBaseSync(node);
 +        });
-+        whereSupported(TYPE, "connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
-+            if (event.side !== "input" || event.index === 0 || event.peerIndex !== 0 || !event.peerNodeId) {
-+                return;
-+            }
-+            return graphOf(node).node(event.peerNodeId)?.type === TYPE ? false : undefined;
-+        }));
++        // MISSING (F17 connection policy): refusing another Dynamic Context's context
++        // output on a non-base input. The canvas reads that answer synchronously, so
++        // `onBeforeConnect` is not available to a sandboxed pack. It is not registered
++        // (no refusal and no notice); the rule is kept as `dynamicContextConnectionRule`.
 +        builder.onConnectionsChanged((node, event) => {
 +            if (event.side !== "input") {
 +                return;
@@ -18584,7 +18722,7 @@
 -import { app } from "../../scripts/app.js";
 -import { DynamicContextNodeBase } from "./dynamic_context_base.js";
 +import { comfy } from '/comfy/api/v2.js';
-+import { debounce } from "../../rgthree/common/shared_utils.js";
++import { debounce } from "../common/shared_utils.js";
 +import { connectedInputNodes, nodeKey } from "./base_any_input_connected_node.js";
  import { NodeTypesString } from "./constants.js";
 -import { SERVICE as CONTEXT_SERVICE, getContextOutputName, } from "./services/context_service.js";
@@ -20534,7 +20672,7 @@
 -    },
 +import { comfy } from '/comfy/api/v2.js';
 +import { whereSupported } from "./sandbox_limits.js";
-+import { tryToGetWorkflowDataFromEvent } from '../../rgthree/common/utils_workflow.js';
++import { tryToGetWorkflowDataFromEvent } from '../common/utils_workflow.js';
 +import { configurePowerLoraValues } from './power_lora_loader.js';
 +import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
 +
@@ -22381,7 +22519,7 @@
 -});
 --- a/web/comfyui/node_mode_relay.js
 +++ b/v2/web/comfyui/node_mode_relay.js
-@@ -1,21 +1,43 @@
+@@ -1,21 +1,45 @@
 -import { app } from "../../scripts/app.js";
 -import { PassThroughFollowing, addConnectionLayoutSupport, changeModeOfNodes, getConnectedInputNodesAndFilterPassThroughs, getConnectedOutputNodesAndFilterPassThroughs, } from "./utils.js";
 -import { wait } from "../../rgthree/common/shared_utils.js";
@@ -22413,11 +22551,13 @@
 +// the title bar under both renderers — so the hand-painted `onDrawForeground` line and
 +// the `computeSize` +17 px that reserved room for it are both gone.
 +//
-+// Two markers here named destinations that already existed, and both are converted:
-+// `onConnectOutput` — refusing any output link whose far end, through pass-throughs, is
-+// not a Mute/Bypass Repeater — is `b.onBeforeConnect` with `event.side === 'output'`,
-+// which is installed; and the output's `LiteGraph.ARROW_SHAPE` is `shape: 'directional'`
-+// on the definition's output, so the arrow and the bytes it writes are both kept.
++// Two markers here named destinations that already existed. `onConnectOutput` — refusing
++// any output link whose far end, through pass-throughs, is not a Mute/Bypass Repeater —
++// is the `beforeConnect` rule below, for `event.side === 'output'`. MISSING (F17
++// connection policy): the rule is not registered in the sandbox; see
++// base_any_input_connected_node.js. The output's `LiteGraph.ARROW_SHAPE` is
++// `shape: 'directional'` on the definition's output, so the arrow and the bytes it
++// writes are both kept.
 +//
 +// COSMETIC: no property metadata. The three `@on_*_inputs` declarations gave the
 +//   properties panel a dropdown of MUTE / ACTIVE / BYPASS / NOTHING. The properties
@@ -22441,7 +22581,7 @@
  const OPTION_TO_MODE = new Map([
      ["ACTIVE", MODE_ALWAYS],
      ["MUTE", MODE_MUTE],
-@@ -27,124 +49,12 @@
+@@ -27,124 +51,12 @@
      [MODE_BYPASS, "on_bypassed_inputs"],
      [MODE_ALWAYS, "on_any_active_inputs"],
  ]);
@@ -22572,7 +22712,7 @@
        <p>
          This node will relay its input nodes' modes (Mute, Bypass, or Active) to a connected
          ${stripRgthree(NodeTypesString.NODE_MODE_REPEATER)} (which would then repeat that mode
-@@ -176,30 +86,120 @@
+@@ -176,30 +88,120 @@
          of its inputs are muted (instead of sending a MUTE signal), etc.
        </p>
      `;
@@ -22720,7 +22860,7 @@
 +});
 --- a/web/comfyui/node_mode_repeater.js
 +++ b/v2/web/comfyui/node_mode_repeater.js
-@@ -1,118 +1,47 @@
+@@ -1,118 +1,51 @@
 -import { app } from "../../scripts/app.js";
 -import { BaseCollectorNode } from "./base_node_collector.js";
 +import { comfy } from '/comfy/api/v2.js';
@@ -22858,9 +22998,13 @@
 +//
 +// `onConnectOutput` refused any output link unless the far end — through pass-throughs —
 +// was a Fast Muter, Fast Bypasser, Node Collector, Fast Actions Button, Reroute or
-+// Random Unmuter, and refused everything once a Relay was wired in. Both rules are back:
-+// `b.onBeforeConnect` installs the output side too, and `event.side` distinguishes it,
-+// which the marker here said it could not.
++// Random Unmuter, and refused everything once a Relay was wired in. Both rules are the
++// `beforeConnect` rule below; `event.side` distinguishes the output side. MISSING (F17
++// connection policy): the rule is not registered in the sandbox, so the output links to
++// anything; see base_any_input_connected_node.js. `recompute` below still applies the
++// Relay rules after the fact, as the original's onConnectionsChange did:
++// - a Relay input is disconnected while a toggler is on the output;
++// - the output slot is removed while a Relay drives the node.
 +//
 +// `getGroupNodes(group)` reading `group._children` is `group.nodes()`, and a subgraph's
 +// own groups are `subgraph.groups()`, so the group fallback is whole. Which groups a node
@@ -22882,7 +23026,7 @@
        <p>
          When this node's mode (Mute, Bypass, Active) changes, it will "repeat" that mode to all
          connected input nodes, or, if there are no connected nodes AND it is overlapping a group,
-@@ -131,18 +60,110 @@
+@@ -131,18 +64,110 @@
          </p></li>
        </ul>
      `;
@@ -23023,10 +23167,11 @@
 -};
 -var _ComfyNodeWrapper_id, _ComfyWidgetWrapper_widget;
 -import { app } from "../../scripts/app.js";
-+import { comfy } from '/comfy/api/v2.js';
- import { Exposed, execute, PyTuple } from "../../rgthree/common/py_parser.js";
+-import { Exposed, execute, PyTuple } from "../../rgthree/common/py_parser.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { RgthreeBetterButtonWidget } from "./utils_widgets.js";
++import { comfy } from '/comfy/api/v2.js';
++import { Exposed, execute, PyTuple } from "../common/py_parser.js";
  import { NodeTypesString } from "./constants.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
  import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
@@ -23275,15 +23420,17 @@
  import { NodeTypesString } from "./constants.js";
 -import { drawInfoIcon, drawNumberWidgetPart, drawRoundedRectangle, drawTogglePart, fitString, isLowQuality, } from "./utils_canvas.js";
 -import { RgthreeBaseWidget, RgthreeBetterButtonWidget, RgthreeDividerWidget, } from "./utils_widgets.js";
+-import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
 +import { helpMenuItem } from "./base_node.js";
 +import { RgthreeBaseWidget, mountRgthreeWidget } from "./utils_widgets.js";
 +import { drawInfoIcon, drawNumberWidgetPart, drawRoundedRectangle, drawTogglePart, drawWidgetButton, fitString, } from "./utils_canvas.js";
- import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
++import { rgthreeApi } from "../common/rgthree_api.js";
  import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 -import { showLoraChooser } from "./utils_menu.js";
 -import { moveArrayItem, removeArrayItem } from "../../rgthree/common/shared_utils.js";
 -import { RgthreeLoraInfoDialog } from "./dialog_info.js";
- import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
+-import { LORA_INFO_SERVICE } from "../../rgthree/common/model_info_service.js";
++import { LORA_INFO_SERVICE } from "../common/model_info_service.js";
 +import { RgthreeLoraInfoDialog } from './dialog_info.js';
 +
 +// CONVERTED — all three of the blockers that decided the last refusal are closed.
@@ -24729,8 +24876,9 @@
  import { NodeTypesString } from "./constants.js";
 +import { helpMenuItem } from "./base_node.js";
  import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
- import { debounce } from "../../rgthree/common/shared_utils.js";
+-import { debounce } from "../../rgthree/common/shared_utils.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
++import { debounce } from "../common/shared_utils.js";
  import { RgthreeBaseWidget } from "./utils_widgets.js";
 -import { drawPlusIcon, drawRoundedRectangle, drawWidgetButton, isLowQuality, measureText, } from "./utils_canvas.js";
 -import { rgthree } from "./rgthree.js";
@@ -26487,6 +26635,16 @@
 -    },
 -});
 +export {}
+--- a/web/comfyui/rgthree.css
++++ b/v2/web/comfyui/rgthree.css
+@@ -691,6 +691,6 @@
+ .rgthree-comfy-about-badge-logo {
+   width: 20px;
+   height: 20px;
+-  background: url(/rgthree/logo.svg?bg=transparent&fg=%2393c5fd);
++  background: url(../common/media/rgthree.svg);
+   background-size: 100% 100%;
+ }
 --- a/web/comfyui/rgthree.js
 +++ b/v2/web/comfyui/rgthree.js
 @@ -1,751 +1,108 @@
@@ -26542,7 +26700,7 @@
 -    if (route.includes("rgthree/")) {
 -        return (this.api_base + "/" + route).replace(/\/\//g, "/");
 +import { comfy } from '/comfy/api/v2.js';
-+import { installProgress } from '../../rgthree/common/progress_bar.js';
++import { installProgress } from '../common/progress_bar.js';
 +import { canvasToBookmark } from './bookmark.js';
 +import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
 +import { SERVICE as BOOKMARKS_SERVICE, shortcutKeyOf } from './services/bookmarks_services.js';
@@ -29727,8 +29885,9 @@
 +++ b/v2/web/comfyui/utils_menu.js
 @@ -1,55 +1,58 @@
 -import { app } from "../../scripts/app.js";
+-import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
 +import { comfy } from '/comfy/api/v2.js';
- import { rgthreeApi } from "../../rgthree/common/rgthree_api.js";
++import { rgthreeApi } from "../common/rgthree_api.js";
 +
 +// `comfy.ui.showMenu` is the published free-floating menu, so all three pickers
 +// convert. Three ContextMenu options go and none is a capability:
@@ -31316,6 +31475,17 @@
 -export const SERVICE = new PromptService(api);
 +
 +export const SERVICE = new PromptService();
+--- a/web/common/py_parser.js
++++ b/v2/web/common/py_parser.js
+@@ -87,7 +87,7 @@
+     if (!MEMOIZED.parser) {
+         const TreeSitter = (await import("../lib/tree-sitter.js"));
+         await TreeSitter.Parser.init();
+-        const lang = await TreeSitter.Language.load("rgthree/lib/tree-sitter-python.wasm");
++        const lang = await TreeSitter.Language.load(new URL("../lib/tree-sitter-python.wasm", import.meta.url).href);
+         MEMOIZED.parser = new TreeSitter.Parser();
+         MEMOIZED.parser.setLanguage(lang);
+     }
 --- a/web/common/rgthree_api.js
 +++ b/v2/web/common/rgthree_api.js
 @@ -1,131 +1,76 @@
@@ -31491,6 +31661,17 @@
  }
 +
  export const rgthreeApi = new RgthreeApi();
+--- a/web/common/shared_utils.js
++++ b/v2/web/common/shared_utils.js
+@@ -367,7 +367,7 @@
+     openWindowAndWaitForMessage(rgthreePath, windowName) {
+         const id = this.getId();
+         this.queue[id] = getResolver();
+-        const win = window.open(`/rgthree/${rgthreePath}#broadcastLoadMsgId=${id}`, windowName);
++        const win = window.open(new URL(`../${rgthreePath}#broadcastLoadMsgId=${id}`, import.meta.url).href, windowName);
+         return { window: win, promise: this.queue[id].promise };
+     }
+     onMessage(e) {
 --- a/web/common/utils_workflow.js
 +++ b/v2/web/common/utils_workflow.js
 @@ -1,4 +1,3 @@

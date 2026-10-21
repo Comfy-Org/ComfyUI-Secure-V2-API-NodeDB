@@ -1,5 +1,4 @@
 import { comfy } from '/comfy/api/v2.js';
-import { whereSupported } from "./sandbox_limits.js";
 import { connectedInputNodes, graphOf, nodeKey } from "./base_any_input_connected_node.js";
 import { applyUpstreamMutation, contextInputs, dynamicInputMenuItems, ensureContextOutput, ensureTrailingContextInput, isOwnedContextInput, nextUniqueContextName, ownedInputName, prepareDynamicContextNode, releaseDynamicContextNode, removeContextPair, renameContextPair, stripOwnedPrefix, } from "./dynamic_context_base.js";
 import { NodeTypesString } from "./constants.js";
@@ -182,6 +181,13 @@ function trimUnfedClone(node) {
     ensureTrailingContextInput(node);
 }
 
+export function dynamicContextConnectionRule(node, event) {
+    if (event.side !== "input" || event.index === 0 || event.peerIndex !== 0 || !event.peerNodeId) {
+        return;
+    }
+    return graphOf(node).node(event.peerNodeId)?.type === TYPE ? false : undefined;
+}
+
 function cleanupNode(node) {
     const key = nodeKey(node);
     cleanupByNode.get(key)?.();
@@ -229,12 +235,10 @@ if (CONFIG_SERVICE.getConfigValue("unreleased.dynamic_context.enabled")) {
             stabilizeOwnedNames(node);
             scheduleBaseSync(node);
         });
-        whereSupported(TYPE, "connection filtering (onBeforeConnect)", () => builder.onBeforeConnect((node, event) => {
-            if (event.side !== "input" || event.index === 0 || event.peerIndex !== 0 || !event.peerNodeId) {
-                return;
-            }
-            return graphOf(node).node(event.peerNodeId)?.type === TYPE ? false : undefined;
-        }));
+        // MISSING (F17 connection policy): refusing another Dynamic Context's context
+        // output on a non-base input. The canvas reads that answer synchronously, so
+        // `onBeforeConnect` is not available to a sandboxed pack. It is not registered
+        // (no refusal and no notice); the rule is kept as `dynamicContextConnectionRule`.
         builder.onConnectionsChanged((node, event) => {
             if (event.side !== "input") {
                 return;

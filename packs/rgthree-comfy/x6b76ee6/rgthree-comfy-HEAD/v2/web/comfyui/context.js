@@ -1,5 +1,5 @@
 import { comfy } from '/comfy/api/v2.js';
-import { debounce } from "../../rgthree/common/shared_utils.js";
+import { debounce } from "../common/shared_utils.js";
 import { whereSupported } from "./sandbox_limits.js";
 import { NodeTypesString } from "./constants.js";
 import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";

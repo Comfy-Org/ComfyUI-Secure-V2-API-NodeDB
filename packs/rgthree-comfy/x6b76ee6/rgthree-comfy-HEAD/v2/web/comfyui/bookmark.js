@@ -2,7 +2,7 @@ import { comfy } from '/comfy/api/v2.js';
 import { SERVICE as KEY_EVENT_SERVICE } from "./services/key_events_services.js";
 import { SERVICE as BOOKMARKS_SERVICE } from "./services/bookmarks_services.js";
 import { NodeTypesString } from "./constants.js";
-import { getClosestOrSelf } from "../../rgthree/common/utils_dom.js";
+import { getClosestOrSelf } from "../common/utils_dom.js";
 
 // Bookmark — a collapsed marker node with a shortcut key and a zoom level; press the key
 // anywhere and the canvas jumps to it.

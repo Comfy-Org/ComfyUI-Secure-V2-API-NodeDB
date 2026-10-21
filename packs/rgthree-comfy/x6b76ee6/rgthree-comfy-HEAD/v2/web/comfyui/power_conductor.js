@@ -5,7 +5,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 import { comfy } from '/comfy/api/v2.js';
-import { Exposed, execute, PyTuple } from "../../rgthree/common/py_parser.js";
+import { Exposed, execute, PyTuple } from "../common/py_parser.js";
 import { NodeTypesString } from "./constants.js";
 import { SERVICE as CONFIG_SERVICE } from "./services/config_service.js";
 import { setModeDeep } from "./base_any_input_connected_node.js";

@@ -2,7 +2,7 @@ import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString } from "./constants.js";
 import { helpMenuItem } from "./base_node.js";
 import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
-import { debounce } from "../../rgthree/common/shared_utils.js";
+import { debounce } from "../common/shared_utils.js";
 import { RgthreeBaseWidget } from "./utils_widgets.js";
 import { drawPlusIcon, drawRoundedRectangle, drawWidgetButton, measureText } from "./utils_canvas.js";
 
