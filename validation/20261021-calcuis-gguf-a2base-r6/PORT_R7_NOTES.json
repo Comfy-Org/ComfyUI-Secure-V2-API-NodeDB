@@ -1,0 +1,17 @@
+{
+ "schema": "ned-port-notes/1",
+ "pack": "calcuis-gguf (xcb43396)",
+ "port": "r7 (rev 5)",
+ "status": "SOURCE_ONLY_UNRUN",
+ "authority": "MERVYN m_d8caf14335 (live-readiness audit finding, verified read-only)",
+ "change": "encoding_math.py: `from tqdm import tqdm as loading` replaced by a local no-op `loading` (identity: returns the iterable, ignores tqdm options) whose `write` prints like tqdm.write (message + end to stdout)",
+ "why": "the live guest has no tqdm (not in the common layer, LIVE_FACTS python_environment.common_layer; calcuis declares no profile), so nodes -> conversion_artifact -> encoding_math failed to import on live: every node and validator",
+ "import_closure": {
+  "main": "tqdm missing at import time (encoding_math.py:3)",
+  "r7": "17 modules, nothing missing"
+ },
+ "behaviour": "iteration identical; the per-tensor lines tqdm.write printed are printed identically; no progress bar is drawn (stderr) - recorded difference",
+ "not_changed": "pig.py also imports tqdm but is outside the node closure",
+ "leaf": "leaf-r6 + encoding_math.py",
+ "label_for_pre_rev5_evidence": "evidence produced in a test env that supplied tqdm"
+}

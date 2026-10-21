@@ -1,0 +1,72 @@
+{
+ "label": "a2 base (deployed core plus GGML SDK additions)",
+ "run_base": {
+  "core": "a2 d1a9259 = deployed ComfyUI 6257422 + comfy_api GGML SDK files (undeployed)",
+  "backend": "a1 894ead3 = deployed 745b88f + guest/host broker additions (undeployed)",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "python_env": "readable copy of the always-on engine venv (it has tqdm; the converted role was denied it, see tqdm_block)"
+ },
+ "not": "SDK207 (core 708e6c01 / overlay bea6cb50) runtime evidence; not deployed-host evidence",
+ "tqdm_block": {
+  "tier_a": "sys.modules['tqdm'] = None while the converted package (and each mutant) is imported; T0 control: the published rev 4 encoding_math raises ModuleNotFoundError under the same block",
+  "tiers_b_q": "every guest PYTHONPATH starts with /driver/no_tqdm, a tqdm package that raises ImportError; a guest started without it fails the run (T:guest_tqdm_block)",
+  "original": "the pristine original and the host keep tqdm, as the live host engine does"
+ },
+ "port": {
+  "file": "consumers/ned-calcuis-gguf-loader-port-20261021-r7.zip",
+  "sha256": "480a056826230e9970de472739b0c813f8c68229ab7d3888e1b122b34bb6d392",
+  "bytes": 33810
+ },
+ "test": {
+  "file": "consumers/ned-calcuis-gguf-differential-20261021-r6.zip",
+  "sha256": "00e21a1db67b64a1f4adb771a2483eae0057b56fcea5d8abdca0c922b5a91734",
+  "bytes": 56205
+ },
+ "binding_r6_sha256": "bfc7d095e6f8a20df40f3b53748084bcd754cc9e0dcb741d1eea61a5f43df39a",
+ "pins_r6_sha256": "c508ee75ca0d4859303e1ccf2ab85bab3b8db0cfc6371582e6da6565795adfac",
+ "pins_entries": {
+  "/runtime/engine": 1308,
+  "/overlay/backend": 458,
+  "/python-env": 870,
+  "/native/gguf-HEAD": 89,
+  "/pack-v2": 117,
+  "/leaf": 9,
+  "/driver": 5
+ },
+ "unchanged_from_PINS_R5": [
+  "/runtime/engine",
+  "/overlay/backend",
+  "/python-env",
+  "/native/gguf-HEAD",
+  "/pack-v2"
+ ],
+ "launcher_r3": {
+  "file": "consumers/ned-calcuis-gguf-runs-20261020/launcher-r3/run_bounded_container_self_launch.py",
+  "sha256": "3834b2c09ae357490827f7b5e159604aedb2c630e559bf4725cb7174d836775c"
+ },
+ "specs": {
+  "SPEC_TIER_A_R6.json": "41a4b00e042f4508c6367628485a03a83669fc77f1ac8dc7a478c62f2934ca38",
+  "SPEC_TIER_B_R6.json": "5c896db961c76976856f8ed03fbb117544ecd56a99e896922852000116b74f05",
+  "SPEC_TIER_Q_R6.json": "9dd41e6fa786420e711be9ac686be4d4a8d4eb91ee4af9851ebac6fd98b520ba"
+ },
+ "container": "launcher r3: 3 GiB = swap, 2 CPUs, network none, read-only root and mounts, uid 1000:1000, CapDrop ALL, no-new-privileges, memory gate MemAvailable >= cap + 4 GiB",
+ "sandbox": "off (COMFY_SECURE_SANDBOX_MODE=off): protocol and host-provider evidence, not sandbox evidence",
+ "selection": "MERVYN m_efc6892dd4 (one attempt each, sequential, run by MERVYN under the shared lock; no retries)",
+ "review": "MERVYN reviewed the port r7 and test r6 packets before selection (m_efc6892dd4)",
+ "tier_h": {
+  "test_r7": {
+   "file": "consumers/ned-calcuis-gguf-differential-20261021-r7.zip",
+   "sha256": "244ed76d7e45387f19a767cdd7a4d81d5cc3b2c369ee00210e217b259c577139",
+   "bytes": 18025
+  },
+  "binding_r7_sha256": "353ee62706aaeabf85e22e0a864af2b6de1817dfd83b6ba59a5090fb1578e377",
+  "pins_r7_sha256": "6d2226e2e27ce581421caf875c6c7fa1bf05a770462303bafda604394dd3e446",
+  "specs": {
+   "SPEC_TIER_H_R7.json": "9957c3e16164547eaa3731a1aeb950ba0e8072388b846df14f1841a01908c777"
+  },
+  "pins_r7_vs_r6": "equal for every mount except /driver (Tier H driver only)",
+  "selection": "MERVYN m_9748951bda (one attempt, no retry)",
+  "request": "MERVYN m_e5429491e6",
+  "injection": "H2/H4 inject one QuantError (the package's own class) on one BF16 tensor in both revisions: the F16 fallback is unreachable naturally (handle_tensors asks only for F32/F16/BF16; BF16 has block size 1)"
+ }
+}
