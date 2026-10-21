@@ -1,0 +1,195 @@
+"""CONVERTED side for the Bindweave direct-half r2 (WSL x86 CPU, SDK207 Core 708e6c01, comfy-kitchen 0.2.39 test-only root first on
+sys.path): the registered converted
+WanVideoAddBindweaveEmbeds (v2/secure_bindweave_nodes.py) on the default-SDK in-process route (InProcessExecutionBackend,
+InProcessOps, InProcessRefResolver; no overlay, no backend package).
+
+Each case follows the reviewed new207 contract's direct route (wan_public_api_purpose_checks.py:216-250), dispatched through the
+in-process execution backend like every registered node in these packets:
+- the inputs are created as handles in a fresh in-process resolver: TENSOR refs for image_embeds, mask, clip_context and both
+  Qwen-VL embeds (nested in the embeds mapping as the contract does), a LATENT ref holding samples plus an ignored engine value,
+  and a MASK ref for the reference masks when selected;
+- execute runs inside bind_runtime(refs, ctx, InProcessOps) with an ExecutionPlan (input_mode refs, permissions raw + inspect);
+- recorded: the output handle kinds; the outputs resolved through the same resolver (typed tree, raw bytes per tensor); the
+  contract's facts: the Qwen-VL handles come back unchanged, the long-context clip_context handle is forwarded, and the resolved
+  image_embeds output shares storage with the resolved preview samples (in-process view identity); plus whether the MASK output
+  shares storage with the embedded mask (recorded only);
+- RNG after the seed and after the case. The resolver is cleared after each case.
+The numeric environment is recorded at top level and inside a dispatch scope.
+"""
+import asyncio
+import gc
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import bw_common  # noqa: E402
+
+CASE_FILE = common.load_json('/prepared/CASE.json')
+PACKAGE = CASE_FILE['package']
+PACKAGE_ROOT = '/candidate/%s/' % PACKAGE
+LABEL = 'CONVERTED'
+REPORT = {'status': 'RUNNING', 'route': 'registered_inprocess_sdk', 'package': PACKAGE, 'cases': {}}
+phase = common.Phases(REPORT, LABEL)
+
+
+async def run(case_file):
+    import importlib
+    from comfy_api.latest import _sdk, io
+    package = importlib.import_module(PACKAGE)
+    registry = package.NODE_CLASS_MAPPINGS
+    REPORT['registered_count'] = len(registry)
+    REPORT['module_sha256'] = {rel: common.sha_file(PACKAGE_ROOT + rel) for rel in case_file['converted_module_pins']}
+    cls = registry['WanVideoAddBindweaveEmbeds']
+    module = sys.modules[cls.__module__]
+    assert module.__file__ == PACKAGE_ROOT + 'secure_bindweave_nodes.py', module.__file__
+    REPORT['class'] = {'module': cls.__module__, 'sdk_refs': cls.SDK_REFS, 'permissions': list(cls.SDK_PERMISSIONS)}
+    assert cls.SDK_REFS is True and tuple(cls.SDK_PERMISSIONS) == ('raw', 'inspect')
+    providers = _sdk.providers
+    assert not providers.overlay_active and not providers.engaged
+    REPORT['providers'] = {'execution_backend': type(providers.execution_backend).__name__,
+                           'ops_provider': type(providers.ops_provider).__name__,
+                           'ref_resolver_factory': getattr(providers.ref_resolver_factory, '__name__', repr(providers.ref_resolver_factory))}
+    counter = iter(range(1, 1000))
+
+    def plan_for(inputs):
+        return _sdk.ExecutionPlan(prompt_id='jack-wan-bindweave-direct-r1', node_id=str(next(counter)), node_type=cls.__name__,
+                                  node_module=cls.__module__, tier='default', inputs=inputs, input_mode='refs',
+                                  permissions=tuple(cls.SDK_PERMISSIONS))
+
+    async def resolve_tree(refs, value):
+        if isinstance(value, _sdk.Ref):
+            return await refs.resolve(value)
+        if type(value) is dict:
+            return {k: await resolve_tree(refs, v) for k, v in value.items()}
+        if type(value) in (list, tuple):
+            items = [await resolve_tree(refs, v) for v in value]
+            return tuple(items) if type(value) is tuple else items
+        return value
+
+    def ref_kinds(value):
+        if isinstance(value, _sdk.Ref):
+            return {'ref': type(value).__name__}
+        if type(value) is dict:
+            return {str(k): ref_kinds(v) for k, v in value.items()}
+        if type(value) in (list, tuple):
+            return [ref_kinds(v) for v in value]
+        return {'value': type(value).__name__}
+
+    refs = providers.ref_resolver_factory()
+    plan = plan_for({})
+    scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+    try:
+        async def env_call():
+            with scope:
+                return io.NodeOutput(bw_common.numeric_env())
+        REPORT['numeric_env_in_scope'] = (await providers.execution_backend.dispatch(plan, env_call, scope.runtime)).result[0]
+    finally:
+        refs.clear()
+    for case in case_file['cases']:
+        name = case['name']
+        phase('converted-' + name)
+        bw_common.seed_all(case['seed'])
+        record = {'rng_after_seed': bw_common.rng_state()}
+        started = time.monotonic()
+        inputs = bw_common.inputs_for(case)
+        record['inputs'] = bw_common.inputs_meta(inputs)
+        refs = providers.ref_resolver_factory()
+        try:
+            async def tensor(value):
+                return _sdk.TensorRef._wrap(await refs.create('TENSOR', value))
+            context_ref = await tensor(inputs['context'])
+            pos_ref, neg_ref = await tensor(inputs['positive']), await tensor(inputs['negative'])
+            node_inputs = {
+                'embeds': {'image_embeds': await tensor(inputs['image']), 'mask': await tensor(inputs['mask']),
+                           'clip_context': context_ref, 'label': 'retained'},
+                'reference_latents': _sdk.LatentRef._wrap(await refs.create('LATENT', {'samples': inputs['samples'],
+                                                                                       'ignored_engine_value': object()})),
+                'ref_masks': None if inputs['masks'] is None else _sdk.MaskRef._wrap(await refs.create('MASK', inputs['masks'])),
+                'qwenvl_embeds_pos': pos_ref, 'qwenvl_embeds_neg': neg_ref}
+            record['input_ref_kinds'] = ref_kinds(node_inputs)
+            plan = plan_for(node_inputs)
+            scope = _sdk.bind_runtime(refs, providers.ctx_provider.build(plan), providers.ops_provider)
+
+            async def local_call():
+                with scope:
+                    return await cls.execute(**node_inputs)
+            try:
+                result = await providers.execution_backend.dispatch(plan, local_call, scope.runtime)
+                record['outcome'] = {'raised': False}
+            except Exception as error:
+                result = None
+                record['outcome'] = bw_common.error_outcome(error)
+                del error
+            if result is not None:
+                actual = tuple(result.result)
+                record['node_output'] = {'type': type(result).__name__, 'arity': len(actual), 'ui_none': result.ui is None,
+                                         'expand_none': result.expand is None, 'block_execution_none': result.block_execution is None}
+                record['output_ref_kinds'] = ref_kinds(actual)
+                resolved = tuple([await resolve_tree(refs, x) for x in actual])
+                record['outputs'] = bw_common.typed_tree(resolved, 'converted', name)
+                image_out = await refs.resolve(actual[0]['image_embeds'])
+                preview_out = await refs.resolve(actual[1]['samples'])
+                mask_out = await refs.resolve(actual[2])
+                embedded_mask = await refs.resolve(actual[0]['mask'])
+                record['facts'] = {
+                    'qwen_pos_handle_forwarded': actual[0]['qwenvl_embeds_pos'] == pos_ref,
+                    'qwen_neg_handle_forwarded': actual[0]['qwenvl_embeds_neg'] == neg_ref,
+                    'qwen_pos_handle_identity': actual[0]['qwenvl_embeds_pos'] is pos_ref,
+                    'qwen_neg_handle_identity': actual[0]['qwenvl_embeds_neg'] is neg_ref,
+                    'clip_context_handle_forwarded': actual[0]['clip_context'] == context_ref,
+                    'image_preview_share_storage': bw_common.same_storage(image_out, preview_out),
+                    'mask_output_shares_embedded_mask_storage': bw_common.same_storage(mask_out, embedded_mask)}
+                del actual, resolved, image_out, preview_out, mask_out, embedded_mask
+            del result
+        finally:
+            refs.clear()
+        del inputs
+        record['rng_after_case'] = bw_common.rng_state()
+        record['seconds'] = round(time.monotonic() - started, 3)
+        REPORT['cases'][name] = record
+        gc.collect()
+    REPORT['numeric_env_final'] = bw_common.numeric_env()
+    REPORT['test_site'] = bw_common.test_site_facts()
+    REPORT['status'] = LABEL + '_BW_DONE'
+
+
+def main():
+    phase('setup')
+    sys.path[:0] = ['/test-site', '/native-site', '/converted-site', '/native-core', '/candidate']
+    from comfy.cli_args import args
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/converted-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    REPORT['core'] = bw_common.core_check()
+    assert REPORT['core']['sha256'] == CASE_FILE['core']['sdk_py_sha256'], 'not the SDK207 Core'
+    REPORT['versions'] = common.versions(CASE_FILE['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    REPORT['numeric_env'] = bw_common.numeric_env()
+    asyncio.run(run(CASE_FILE))
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save(LABEL + '_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != LABEL + '_BW_DONE':
+    raise SystemExit(1)

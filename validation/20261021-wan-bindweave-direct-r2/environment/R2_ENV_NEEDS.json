@@ -1,0 +1,64 @@
+{
+ "format": "jack-bindweave-r2-env-needs/1",
+ "authority": "MERVYN m_e6dd0ad1dc (r2 items 1-2)",
+ "failure_r1": {
+  "run": "coordination/wan-bindweave-direct-r1-run-r1 (FAILED_BW_R1_NO_RETRY; original role exit 1 after 9.4 s; converted not started)",
+  "cause": "server -> nodes -> comfy.sd -> ... -> comfy/text_encoders/llama.py:9 from comfy_kitchen.int8_decode import Int8DecodeCache: ModuleNotFoundError (image comfy-kitchen 0.2.36)",
+  "my_gap": "the r1 static check compared top-level module names only"
+ },
+ "evidence": {
+  "image_index": {
+   "file": "IMAGE_PY_INDEX.json",
+   "sha256": "fcf7dbb7b28bb8a6996066e9147aacbd1e72f156c5e27aaa098a056a0d51e2e2",
+   "source": "containerd content store, image index e48accf7 -> manifest 9d02b875; layers 2,3,8,9,13 read statically (65,687 entries, 16,401 .py parsed, 122 distributions)"
+  },
+  "closure_new207": {
+   "file": "CLOSURE_NEW207.json",
+   "sha256": "17bb482d91acd8d23e8bc18b3af673eca6eafe62b66a29a373f0b13fd2f6dff8"
+  },
+  "closure_deployed_baseline": {
+   "file": "CLOSURE_DEPLOYED.json",
+   "sha256": "aa9422da540ef51c3e3d7cf831f18c00353a824b7d54fca670449880092c31c6",
+   "note": "the deployed core ran in every earlier WSL packet; its residual flags are the checker's false positives (collections.abc, if-guarded xformers/directml/comfyui_manager, numpy.dtypes dynamic names, diffusers lazy modules)"
+  },
+  "image_corpus_requirements": "layer 11 /opt/corpus-http/requirements.txt = the deployed core requirements (comfy-kitchen==0.2.36, comfy-aimdo==0.5.5, frontend 1.53.6, templates 0.11.70, docs 0.5.12)"
+ },
+ "closure_difference_new207_vs_deployed": {
+  "original_role_module_level": [
+   "comfy_kitchen.int8_decode (comfy/text_encoders/llama.py:9, comfy/text_encoders/qwen35.py:13)"
+  ],
+  "converted_role": "none",
+  "guarded_and_nested_lists": "identical"
+ },
+ "attribute_use_not_in_image": {
+  "comfy_kitchen 0.2.36 lacks": [
+   "int8_decode (module)",
+   "flash_attention_decode_gqa",
+   "flash_attention_decode_step_merge",
+   "deltanet_conv_step_deferred",
+   "gated_delta_ctl_ints",
+   "gated_delta_decode_deferred",
+   "gated_delta_deferred_buffers"
+  ],
+  "where": "comfy/text_encoders/llama.py and qwen35.py; the six functions are called inside decode functions, not on the Bindweave path",
+  "comfy_aimdo 0.5.5": "covers every use on these paths (control.set_log_detail is used only in main.py, as in the deployed core)"
+ },
+ "needed": [
+  {
+   "distribution": "comfy-kitchen",
+   "version": "0.2.39",
+   "source_pin": "new207 requirements.txt (Core 708e6c01); new207 paired profile dependency readback content_record_version 0.2.39",
+   "image_has": "0.2.36 (cp312-abi3-manylinux_2_27/2_28_x86_64, Root-Is-Purelib false, no mandatory Requires-Dist)",
+   "expected_wheel": "comfy_kitchen-0.2.39-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (by analogy with 0.2.36; exact name and sha256 not recorded locally)",
+   "native_build": false,
+   "roles": "original needs it (module level); converted does not, but the test-only root would be on both roles"
+  }
+ ],
+ "not_needed_on_these_paths": {
+  "comfy-aimdo": "0.5.6 (image 0.5.5)",
+  "comfyui-frontend-package": "1.55.18 (image 1.53.6)",
+  "comfyui-workflow-templates": "0.11.89 (image 0.11.70 + split packages)",
+  "comfyui-embedded-docs": "0.5.14 (image 0.5.12)"
+ },
+ "open": "PyPI file name + sha256 for comfy-kitchen 0.2.39 are not in any local record; they need one metadata-only PyPI read or Root input"
+}

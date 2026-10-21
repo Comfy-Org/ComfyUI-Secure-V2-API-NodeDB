@@ -1,0 +1,117 @@
+"""Bindweave direct-half r2 harness helpers shared by both role workers (test harness only, never production).
+r2 adds test_site_facts(): the comfy-kitchen 0.2.39 test-only root (MERVYN m_5b027c0e08) is first on sys.path in both roles.
+
+- seed_all / rng_state / numeric_env / error_outcome: as in the Ovi WSL r1 and W2V r12 harnesses.
+- inputs_for(case): the reviewed new207 contract's direct-case inputs (wan_public_api_purpose_checks.py,
+  test_bindweave_actual_nodes_refs_forwarding_and_nested_consumer, lines 202-208): image (2,1,2,2) arange, mask ones (4,1,2,2),
+  clip context (1,L,2) arange, reference samples zeros (R,2,1,2,2), reference masks ones (R,2,2) when selected, and the Qwen-VL
+  embeds [[[1,2]]] / [[[3,4]]].
+- typed_tree(value, role, case): the node output recorded exactly. Containers by type and key set (the key order is kept apart,
+  as the contract compares keys as sets); tensors by dtype, shape, stride and sha256, each with a raw file for the comparator;
+  plain values by type and repr.
+- core_check(): the mounted Core's comfy_api/latest/_sdk.py digest (both roles run on the same SDK207 Core).
+"""
+import hashlib
+import json
+import os
+import random
+import traceback
+
+import common
+
+THREAD_KEYS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS')
+SDK_FILE = '/native-core/comfy_api/latest/_sdk.py'
+
+
+def seed_all(value):
+    import numpy as np
+    import torch
+    random.seed(value)
+    np.random.seed(value)
+    torch.manual_seed(value)
+
+
+def rng_state():
+    import numpy as np
+    import torch
+    state = np.random.get_state()
+    numpy_digest = hashlib.sha256(json.dumps([state[0], int(state[2]), int(state[3]), float(state[4])]).encode()
+                                  + state[1].tobytes()).hexdigest()
+    return {'torch_cpu': common.sha_bytes(torch.get_rng_state().numpy().tobytes()), 'numpy': numpy_digest,
+            'python': hashlib.sha256(repr(random.getstate()).encode()).hexdigest()}
+
+
+def numeric_env():
+    import torch
+    parallel = torch.__config__.parallel_info()
+    return {'threads': torch.get_num_threads(), 'interop_threads': torch.get_num_interop_threads(),
+            'mkldnn_available': torch.backends.mkldnn.is_available(), 'mkldnn_enabled': bool(torch.backends.mkldnn.enabled),
+            'mkl_available': torch.backends.mkl.is_available(), 'float32_matmul_precision': torch.get_float32_matmul_precision(),
+            'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(), 'cpu_capability': torch.backends.cpu.get_cpu_capability(),
+            'default_dtype': str(torch.get_default_dtype()), 'parallel_info_sha256': hashlib.sha256(parallel.encode()).hexdigest(),
+            'environment': {key: os.environ.get(key) for key in THREAD_KEYS}}
+
+
+def error_outcome(error):
+    frames = traceback.extract_tb(error.__traceback__)
+    text = str(error)
+    return {'raised': True, 'type': type(error).__name__, 'message': text[:2000],
+            'message_sha256': hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest(), 'message_length': len(text),
+            'raising_function': frames[-1].name if frames else None,
+            'raising_file': os.path.basename(frames[-1].filename) if frames else None,
+            'traceback_tail': ''.join(traceback.format_exception(error))[-3000:]}
+
+
+def core_check():
+    return {'sdk_py': SDK_FILE, 'sha256': common.sha_file(SDK_FILE)}
+
+
+def test_site_facts():
+    """The test-only root (comfy-kitchen 0.2.39): the distribution version the role resolves and where comfy_kitchen was loaded from
+    (None when the role never imported it). importlib.metadata reads dist-info only; nothing is imported here."""
+    import importlib.metadata
+    import sys
+    module = sys.modules.get('comfy_kitchen')
+    return {'comfy_kitchen_version': importlib.metadata.version('comfy-kitchen'),
+            'comfy_kitchen_file': getattr(module, '__file__', None) if module is not None else None,
+            'sys_path_first': sys.path[:2]}
+
+
+def inputs_for(case):
+    import torch
+    references, length = case['references'], case['context_length']
+    return {'image': torch.arange(2 * 1 * 2 * 2, dtype=torch.float32).reshape(2, 1, 2, 2),
+            'mask': torch.ones(4, 1, 2, 2),
+            'context': torch.arange(length * 2, dtype=torch.float32).reshape(1, length, 2),
+            'samples': torch.zeros(references, 2, 1, 2, 2),
+            'masks': torch.ones(references, 2, 2) if case['with_ref_masks'] else None,
+            'positive': torch.tensor([[[1.0, 2.0]]]), 'negative': torch.tensor([[[3.0, 4.0]]])}
+
+
+def inputs_meta(inputs):
+    return {key: (None if value is None else common.tensor_meta(value)) for key, value in sorted(inputs.items())}
+
+
+def _path_name(path):
+    return '.'.join(str(part) for part in path) if path else 'root'
+
+
+def typed_tree(value, role, case, path=()):
+    import torch
+    if isinstance(value, torch.Tensor):
+        name = '%s-%s-%s.bin' % (role, case, _path_name(path))
+        meta = common.tensor_meta(value, name)
+        meta.update(kind='tensor', stride=list(value.stride()), contiguous=bool(value.is_contiguous()), requires_grad=bool(value.requires_grad))
+        return meta
+    if type(value) is dict:
+        return {'kind': 'dict', 'keys': sorted(str(k) for k in value), 'key_order': [str(k) for k in value],
+                'items': {str(k): typed_tree(v, role, case, path + (k,)) for k, v in value.items()}}
+    if type(value) in (list, tuple):
+        return {'kind': type(value).__name__, 'items': [typed_tree(v, role, case, path + (i,)) for i, v in enumerate(value)]}
+    if value is None or type(value) in (str, int, float, bool):
+        return {'kind': 'value', 'type': type(value).__name__, 'repr': repr(value)}
+    return {'kind': 'object', 'type': type(value).__qualname__}
+
+
+def same_storage(a, b):
+    return a.untyped_storage().data_ptr() == b.untyped_storage().data_ptr()

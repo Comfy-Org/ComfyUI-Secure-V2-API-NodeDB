@@ -1,0 +1,127 @@
+{
+  "approval": "MERVYN m_36d4c28c6e (fetch condition), m_bd7d196e43 (one pinned fetch approved; then build the Bindweave direct-half packet for review)",
+  "label": "WanVideoAddBindweaveEmbeds direct half, WSL x86 CPU: native CPU, one thread, original vs converted on the default-SDK in-process route of SDK207 (Comfy-Org/ComfyUI 708e6c01) for both roles, with comfy-kitchen 0.2.39 test-only root; other new207 pins not installed; the reviewed new207 contract's three direct cases; not Guest, not the deployed 0d6ec97e engine, not GPU",
+  "package": "wan_v2_bw",
+  "bytes_under_test": {
+    "candidate": "corpus main 7b2d12d3 v2 (code equal to e9fa69a5; r13 changed only the report)",
+    "materials_sha256": "e68d252ee451259d0432ca74ee6d066db5a243c1700039ff810f1a04f4b23dde"
+  },
+  "core": {
+    "repo": "https://github.com/Comfy-Org/ComfyUI",
+    "commit": "708e6c013927b130c3a6c8b071e3034cefe7293e",
+    "sdk_py_sha256": "cdf37afc7f7b3befb277499baa219628f4f4de03ad8836dd69b99b3b88c68c21",
+    "manifest_sha256": "d5ca60c3d3c5a0a480f72c20c5054ebdfbfaac2e8dd8289542df6e680f9cfb8b",
+    "provenance_sha256": "f53237b552c4409f8c613ed26a0d995c379a69a056ab861dd7963aa5a87cd582",
+    "profile_note": "new207 Core runs on the frozen image and site trees (no new207 venv); its requirements pin newer comfy-kitchen/comfy-aimdo/frontend, and a static import diff found no new module-level external import"
+  },
+  "contract": {
+    "source": "consumers/wan-new207-bindweave-contract-r1/tests/backend/tests/wan_public_api_purpose_checks.py",
+    "sha256": "68f2036bbc29abaee91a3c566ac91dc382eee9272ad8440f23859b4e0e5fb4f8",
+    "test": "test_bindweave_actual_nodes_refs_forwarding_and_nested_consumer",
+    "route": "direct",
+    "params": [
+      [
+        0,
+        7,
+        false
+      ],
+      [
+        2,
+        1028,
+        true
+      ],
+      [
+        4,
+        1030,
+        false
+      ]
+    ],
+    "review": "CLEAR (MERVYN m_8c74f89828); r2 added a births-sum check for the Guest half",
+    "difference": "the contract drives execute under bind_runtime with the backend CloudOps; here the registered node runs through the core in-process execution backend with InProcessOps (no backend package), which implements latent.samples and the TENSOR/MASK publication the node uses"
+  },
+  "versions_expect": {
+    "torch": "2.8.0+cu128",
+    "numpy": "2.2.6",
+    "safetensors": "0.6.2",
+    "transformers": "5.12.1",
+    "accelerate": "1.10.1"
+  },
+  "versions_source": "Portrait r1 intake 20c7726e (same image and site trees)",
+  "vendor_versions": [
+    "accelerate",
+    "numpy",
+    "safetensors",
+    "torch",
+    "transformers",
+    "comfy-kitchen",
+    "comfy-aimdo",
+    "comfyui-frontend-package"
+  ],
+  "converted_module_pins": {
+    "secure_bindweave_nodes.py": "1208a3b84536dbe7c873a407f9301d03a29f1375238b513790ff906492bf4803",
+    "secure_tensor_nodes.py": "94d6a1d561c15ca80977969453b85699287c5c990959aa72177a1b4131ca6b77",
+    "__init__.py": "7cfc6210c9b21edbd61028eb19b2d54d6b0bb819d9fa5a622a152213352930fa"
+  },
+  "original_module_pins": {
+    "nodes.py": "6b3bb6a619e5a928259e6e8400c73ffe7140f17439c5007dd8596b90055f0666"
+  },
+  "test_site": {
+    "distribution": "comfy-kitchen",
+    "version": "0.2.39",
+    "wheel": "comfy_kitchen-0.2.39-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "36a97072e27d30df04563548dc7344abc364777f2262aab44a250c1fd1594d58",
+    "bytes": 65836259,
+    "url": "https://files.pythonhosted.org/packages/1e/17/26fd6ff4bf81c89f9c8aa944ed8b0570df72134b71f0c9e94a4110bc20be/comfy_kitchen-0.2.39-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "manifest_sha256": "599a6fb4565c141aaa55518531f38e84dd2bbea058eb6d42812766eb31076ccf",
+    "receipt_sha256": "849480b280a9ae870e2f82f2783a9ac92495316c4636f62869a48335ba868290",
+    "approval": "MERVYN m_5b027c0e08 (pin), m_fc0f86b80b (url)",
+    "mount": "/test-site, first on sys.path in both roles",
+    "reason": "new207 Core imports comfy_kitchen.int8_decode at module level on the original role's server chain (comfy/text_encoders/llama.py:9, qwen35.py:13); the image has 0.2.36 (r1 stopped there)",
+    "not_installed": [
+      "comfy-aimdo 0.5.6",
+      "comfyui-frontend-package 1.55.18",
+      "comfyui-workflow-templates 0.11.89",
+      "comfyui-embedded-docs 0.5.14"
+    ]
+  },
+  "r1": {
+    "selection": "m_e89b106958",
+    "result": "FAILED_BW_R1_NO_RETRY (original role: ModuleNotFoundError comfy_kitchen.int8_decode)",
+    "preserved": "coordination/wan-bindweave-direct-r1-run-r1"
+  },
+  "raw_leaves": [
+    "0.clip_context",
+    "0.image_embeds",
+    "0.mask",
+    "0.qwenvl_embeds_neg",
+    "0.qwenvl_embeds_pos",
+    "1.samples",
+    "2"
+  ],
+  "cases": [
+    {
+      "name": "b1",
+      "references": 0,
+      "context_length": 7,
+      "with_ref_masks": false,
+      "seed": 30711,
+      "exercises": "no references: four zero pads before the image; short clip context padded to 1028 (a new handle)"
+    },
+    {
+      "name": "b2",
+      "references": 2,
+      "context_length": 1028,
+      "with_ref_masks": true,
+      "seed": 30712,
+      "exercises": "two references with reference masks (nearest resize, three zero planes); a 1028 context forwarded as the same handle"
+    },
+    {
+      "name": "b3",
+      "references": 4,
+      "context_length": 1030,
+      "with_ref_masks": false,
+      "seed": 30713,
+      "exercises": "four references, no pad; ones masks for the references; a 1030 context forwarded as the same handle"
+    }
+  ]
+}

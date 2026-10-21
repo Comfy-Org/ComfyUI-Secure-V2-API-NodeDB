@@ -1,0 +1,115 @@
+"""ORIGINAL side for the Bindweave direct-half r2 (WSL x86 CPU, SDK207 Core 708e6c01, comfy-kitchen 0.2.39 test-only root first on
+sys.path; r1 stopped at `import server` on the image's comfy-kitchen 0.2.36): the untouched 088128b node
+WanVideoAddBindweaveEmbeds.add (nodes.py:779-838), with the reviewed new207 contract's three direct-case inputs.
+
+nodes.py is checked against PRISTINE_GIT_BINDINGS. Each case seeds afresh, calls add() exactly as the contract does
+(wan_public_api_purpose_checks.py:209-214) and records:
+- the full returned tuple, exactly (typed tree; raw bytes per tensor);
+- the facts the contract asserts on the original: the Qwen-VL inputs are returned as the same objects, and the image_embeds
+  output shares storage with the preview LATENT samples; plus (recorded, not asserted by the contract) whether clip_context is
+  returned as the same object and whether the MASK output shares storage with the embedded mask;
+- RNG after the seed and after the case.
+Torch runs with one thread on the same SDK207 Core as the converted role; the numeric environment is recorded.
+"""
+import gc
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import traceback
+
+sys.path.insert(0, '/prepared')
+import common  # noqa: E402
+import bw_common  # noqa: E402
+
+REPORT = {'status': 'RUNNING', 'route': 'original_native', 'cases': {}}
+phase = common.Phases(REPORT, 'ORIGINAL')
+
+
+def main():
+    case_file = common.load_json('/prepared/CASE.json')
+    phase('setup')
+    sys.path[:0] = ['/test-site', '/native-site', '/native-core', '/original']
+    from comfy.cli_args import args, LatentPreviewMethod
+    args.cpu = True
+    args.disable_dynamic_vram = True
+    args.preview_method = LatentPreviewMethod.NoPreviews
+    import torch
+    torch.set_num_threads(1)
+    import folder_paths
+    for setter, name in [('set_user_directory', 'user'), ('set_input_directory', 'input'),
+                         ('set_output_directory', 'output'), ('set_temp_directory', 'temp')]:
+        path = Path('/tmp/original-' + name)
+        path.mkdir(parents=True, exist_ok=True)
+        getattr(folder_paths, setter)(str(path))
+    import asyncio
+    import server
+    from app.assets.manager import default_asset_manager
+    args.front_end_root = '/tmp/original-headless-web'
+    Path(args.front_end_root).mkdir(exist_ok=True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server.PromptServer(loop, default_asset_manager())
+    REPORT['test_site_after_server'] = bw_common.test_site_facts()
+    REPORT['core'] = bw_common.core_check()
+    assert REPORT['core']['sha256'] == case_file['core']['sdk_py_sha256'], 'not the SDK207 Core'
+    REPORT['versions'] = common.versions(case_file['vendor_versions'])
+    REPORT['cpu'] = {'torch': torch.__version__, 'threads': torch.get_num_threads(), 'capability': torch.backends.cpu.get_cpu_capability()}
+    REPORT['numeric_env'] = bw_common.numeric_env()
+    import importlib
+    bound = {row['path']: row['sha256'] for row in common.load_json('/original/PRISTINE_GIT_BINDINGS.json')['files']}
+    nodes = importlib.import_module('wan_original.nodes')
+    rel = os.path.relpath(nodes.__file__, '/original/wan_original')
+    REPORT['original_module_sha256'] = {rel: common.sha_file(nodes.__file__)}
+    assert REPORT['original_module_sha256'][rel] == bound[rel], rel
+    cls = nodes.WanVideoAddBindweaveEmbeds
+    assert nodes.NODE_CLASS_MAPPINGS['WanVideoAddBindweaveEmbeds'] is cls
+    REPORT['class'] = {'module': cls.__module__, 'function': cls.FUNCTION, 'return_types': list(cls.RETURN_TYPES)}
+    for case in case_file['cases']:
+        name = case['name']
+        phase('original-' + name)
+        bw_common.seed_all(case['seed'])
+        record = {'rng_after_seed': bw_common.rng_state()}
+        started = time.monotonic()
+        inputs = bw_common.inputs_for(case)
+        record['inputs'] = bw_common.inputs_meta(inputs)
+        embeds = {'image_embeds': inputs['image'], 'mask': inputs['mask'], 'clip_context': inputs['context'], 'label': 'retained'}
+        try:
+            out = cls().add(embeds, {'samples': inputs['samples']}, inputs['masks'], inputs['positive'], inputs['negative'])
+            record['outcome'] = {'raised': False}
+        except Exception as error:
+            out = None
+            record['outcome'] = bw_common.error_outcome(error)
+            del error
+        if out is not None:
+            record['outputs'] = bw_common.typed_tree(out, 'original', name)
+            record['facts'] = {
+                'qwen_pos_identity': out[0]['qwenvl_embeds_pos'] is inputs['positive'],
+                'qwen_neg_identity': out[0]['qwenvl_embeds_neg'] is inputs['negative'],
+                'clip_context_identity': out[0]['clip_context'] is inputs['context'],
+                'image_preview_share_storage': bw_common.same_storage(out[0]['image_embeds'], out[1]['samples']),
+                'mask_output_shares_embedded_mask_storage': bw_common.same_storage(out[2], out[0]['mask'])}
+        del out, inputs, embeds
+        record['rng_after_case'] = bw_common.rng_state()
+        record['seconds'] = round(time.monotonic() - started, 3)
+        REPORT['cases'][name] = record
+        gc.collect()
+    REPORT['numeric_env_final'] = bw_common.numeric_env()
+    REPORT['test_site'] = bw_common.test_site_facts()
+    REPORT['status'] = 'ORIGINAL_BW_DONE'
+
+
+try:
+    main()
+except BaseException:
+    REPORT['status'] = 'FAIL'
+    REPORT['traceback'] = traceback.format_exc()
+    print(REPORT['traceback'], file=sys.stderr)
+finally:
+    REPORT['pid'] = os.getpid()
+    REPORT['proc_memory_final'] = common.proc_memory()
+    common.save('ORIGINAL_RESULT.json', REPORT)
+    print(json.dumps({'status': REPORT['status']}))
+if REPORT['status'] != 'ORIGINAL_BW_DONE':
+    raise SystemExit(1)

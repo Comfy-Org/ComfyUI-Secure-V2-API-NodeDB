@@ -1,0 +1,190 @@
+"""Comparator self-test on the SHIPPED capsule/CASE.json (Bindweave direct-half r2; adds the test-only root check). Stdlib only; synthetic results only.
+
+usage: python3 -I -S -B tools/selftest_bw_comparator.py --packet <packet root> --out <fresh absent dir>
+Runs no pack code, torch or SDK. A clean synthetic pair (shaped like the workers' records for the three CASE cases) must PASS with
+every check true; a layout-only difference (strides) must still PASS, as the contract compares bits, dtype and shape; and each
+control must FAIL on its named check.
+"""
+import argparse
+import copy
+import hashlib
+import json
+import math
+from pathlib import Path
+import subprocess
+import sys
+
+PROVIDERS = {'execution_backend': 'InProcessExecutionBackend', 'ops_provider': 'InProcessOps', 'ref_resolver_factory': 'InProcessRefResolver'}
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def leaf(role, case, path, shape, raws, dtype='float32'):
+    count = math.prod(shape)
+    seed = hashlib.sha256(('%s|%s' % (case, path)).encode()).digest()
+    raw = (seed * (count * 4 // len(seed) + 1))[:count * 4]
+    name = '%s-%s-%s.bin' % (role, case, path)
+    raws[name] = raw
+    strides, step = [], 1
+    for size in reversed(shape):
+        strides.insert(0, step)
+        step *= size
+    return {'kind': 'tensor', 'dtype': dtype, 'shape': list(shape), 'bytes': len(raw), 'sha256': sha(raw), 'finite': True,
+            'raw_file': name, 'stride': strides, 'contiguous': True, 'requires_grad': False}
+
+
+def outputs(role, case, raws):
+    name, length = case['name'], case['context_length']
+    items = {'image_embeds': leaf(role, name, '0.image_embeds', [2, 5, 2, 2], raws),
+             'mask': leaf(role, name, '0.mask', [4, 5, 2, 2], raws),
+             'clip_context': leaf(role, name, '0.clip_context', [1, max(length, 1028), 2], raws),
+             'label': {'kind': 'value', 'type': 'str', 'repr': "'retained'"},
+             'qwenvl_embeds_pos': leaf(role, name, '0.qwenvl_embeds_pos', [1, 1, 2], raws),
+             'qwenvl_embeds_neg': leaf(role, name, '0.qwenvl_embeds_neg', [1, 1, 2], raws)}
+    order = ['image_embeds', 'mask', 'clip_context', 'label', 'qwenvl_embeds_pos', 'qwenvl_embeds_neg']
+    first = {'kind': 'dict', 'keys': sorted(items), 'key_order': order, 'items': items}
+    preview = {'kind': 'dict', 'keys': ['samples'], 'key_order': ['samples'],
+               'items': {'samples': leaf(role, name, '1.samples', [1, 2, 5, 2, 2], raws)}}
+    return {'kind': 'tuple', 'items': [first, preview, leaf(role, name, '2', [5, 2, 2], raws)]}
+
+
+def results(case_file):
+    raws = {}
+    env = {'threads': 1, 'interop_threads': 2, 'cpu_capability': 'AVX512'}
+    versions = dict(case_file['versions_expect'])
+    core = {'sdk_py': '/native-core/comfy_api/latest/_sdk.py', 'sha256': case_file['core']['sdk_py_sha256']}
+    rng = {'torch_cpu': 'a' * 64, 'numpy': 'b' * 64, 'python': 'c' * 64}
+    site = {'comfy_kitchen_version': case_file['test_site']['version'], 'comfy_kitchen_file': '/test-site/comfy_kitchen/__init__.py',
+            'sys_path_first': ['/test-site', '/native-site']}
+    inputs = {'image': {'dtype': 'float32', 'shape': [2, 1, 2, 2]}}
+    original = {'status': 'ORIGINAL_BW_DONE', 'core': core, 'versions': versions, 'cpu': {'threads': 1}, 'numeric_env': env,
+                'numeric_env_final': env, 'original_module_sha256': case_file['original_module_pins'],
+                'class': {'module': 'wan_original.nodes', 'function': 'add', 'return_types': ['WANVIDIMAGE_EMBEDS', 'LATENT', 'MASK']},
+                'test_site': dict(site), 'test_site_after_server': dict(site), 'cases': {}}
+    converted = {'status': 'CONVERTED_BW_DONE', 'registered_count': 146, 'core': core, 'versions': versions, 'cpu': {'threads': 1},
+                 'numeric_env': env, 'numeric_env_in_scope': env, 'numeric_env_final': env, 'module_sha256': case_file['converted_module_pins'],
+                 'class': {'module': case_file['package'] + '.secure_bindweave_nodes', 'sdk_refs': True, 'permissions': ['raw', 'inspect']},
+                 'providers': dict(PROVIDERS), 'test_site': dict(site, comfy_kitchen_file=None, sys_path_first=['/test-site', '/native-site']),
+                 'cases': {}}
+    for case in case_file['cases']:
+        long_context = case['context_length'] >= 1028
+        original['cases'][case['name']] = {
+            'rng_after_seed': rng, 'rng_after_case': rng, 'inputs': inputs, 'outcome': {'raised': False},
+            'outputs': outputs('original', case, raws),
+            'facts': {'qwen_pos_identity': True, 'qwen_neg_identity': True, 'clip_context_identity': long_context,
+                      'image_preview_share_storage': True, 'mask_output_shares_embedded_mask_storage': True}}
+        converted['cases'][case['name']] = {
+            'rng_after_seed': rng, 'rng_after_case': rng, 'inputs': inputs, 'outcome': {'raised': False},
+            'outputs': outputs('converted', case, raws),
+            'facts': {'qwen_pos_handle_forwarded': True, 'qwen_neg_handle_forwarded': True, 'qwen_pos_handle_identity': True,
+                      'qwen_neg_handle_identity': True, 'clip_context_handle_forwarded': long_context,
+                      'image_preview_share_storage': True, 'mask_output_shares_embedded_mask_storage': True}}
+    return original, converted, raws
+
+
+def run(packet, root, original, converted, raws):
+    out = root / 'out'
+    out.mkdir(parents=True)
+    (out / 'ORIGINAL_RESULT.json').write_text(json.dumps(original))
+    (out / 'CONVERTED_RESULT.json').write_text(json.dumps(converted))
+    for name, data in raws.items():
+        if data is not None:
+            (out / name).write_bytes(data)
+    proc = subprocess.run([sys.executable, '-I', '-S', '-B', str(packet / 'capsule/compare_bw_r2.py'), '--out-dir', str(out),
+                           '--prepared-dir', str(packet / 'capsule')], capture_output=True, text=True, timeout=300)
+    doc = json.loads((out / 'COMPARISON_direct.json').read_text()) if (out / 'COMPARISON_direct.json').exists() else {}
+    top = json.loads((out / 'COMPARISON.json').read_text()) if (out / 'COMPARISON.json').exists() else {}
+    return top, doc, proc
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packet', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+    packet, out = Path(args.packet), Path(args.out)
+    if out.exists():
+        raise SystemExit('fresh --out required')
+    out.mkdir(parents=True)
+    case_bytes = (packet / 'capsule/CASE.json').read_bytes()
+    comparator_bytes = (packet / 'capsule/compare_bw_r2.py').read_bytes()
+    case_file = json.loads(case_bytes)
+    names = [c['name'] for c in case_file['cases']]
+    base = results(case_file)
+    top, doc, proc = run(packet, out / 'clean', *copy.deepcopy(base))
+    clean = {'status': top.get('status'), 'exit_code': proc.returncode, 'failed': doc.get('failed_checks'), 'checks_total': len(doc.get('checks', {}))}
+    expected_checks = 12 + sum(13 if c['context_length'] >= 1028 else 12 for c in case_file['cases'])
+    checks = {'clean_pass': top.get('status') == 'PASS_BW_DIRECT' and proc.returncode == 0 and doc.get('failed_checks') == [],
+              'clean_check_count': clean['checks_total'] == expected_checks}
+
+    def mutate(edit):
+        original, converted, raws = copy.deepcopy(base)
+        edit(original, converted, raws)
+        return original, converted, raws
+
+    def conv(name):
+        return lambda o, c, r: c['cases'][name]
+
+    def flip(o, c, r):
+        key = 'converted-%s-0.image_embeds.bin' % names[1]
+        r[key] = bytes([r[key][0] ^ 1]) + r[key][1:]
+
+    def layout(o, c, r):
+        c['cases'][names[0]]['outputs']['items'][2]['stride'] = [1, 5, 10]
+        c['cases'][names[0]]['outputs']['items'][2]['contiguous'] = False
+
+    layout_top, layout_doc, _ = run(packet, out / 'layout-only', *mutate(layout))
+    checks['layout_only_difference_still_passes'] = (layout_top.get('status') == 'PASS_BW_DIRECT'
+                                                     and layout_doc['info'][names[0] + ':recorded']['tensor_layout_equal'] is False)
+    controls = {
+        'raw_byte_flip': (flip, names[1] + ':output_raw_bytes_equal'),
+        'qwen_handle_not_forwarded': (lambda o, c, r: c['cases'][names[0]]['facts'].update(qwen_pos_handle_forwarded=False),
+                                      names[0] + ':converted_qwen_handles_unchanged'),
+        'view_identity_lost': (lambda o, c, r: c['cases'][names[2]]['facts'].update(image_preview_share_storage=False),
+                               names[2] + ':converted_in_process_view_identity'),
+        'key_set_differs': (lambda o, c, r: c['cases'][names[0]]['outputs']['items'][0].update(
+            keys=sorted(c['cases'][names[0]]['outputs']['items'][0]['keys'] + ['extra'])), names[0] + ':output_tree_equal'),
+        'long_clip_handle_not_forwarded': (lambda o, c, r: c['cases'][names[1]]['facts'].update(clip_context_handle_forwarded=False),
+                                           names[1] + ':converted_long_clip_context_handle_forwarded'),
+        'original_identity_broken': (lambda o, c, r: o['cases'][names[0]]['facts'].update(qwen_pos_identity=False),
+                                     names[0] + ':original_qwen_inputs_returned_as_same_objects'),
+        'original_alias_absent': (lambda o, c, r: o['cases'][names[2]]['facts'].update(image_preview_share_storage=False),
+                                  names[2] + ':original_image_embeds_share_storage_with_preview'),
+        'worker_failed': (lambda o, c, r: c.update(status='FAIL', traceback='synthetic'), 'workers_completed'),
+        'registry_145': (lambda o, c, r: c.update(registered_count=145), 'registry_146'),
+        'core_differs': (lambda o, c, r: c.update(core={'sdk_py': 'x', 'sha256': '0' * 64}), 'same_sdk207_core_both_roles'),
+        'dtype_differs': (lambda o, c, r: c['cases'][names[2]]['outputs']['items'][2].update(dtype='float64'), names[2] + ':output_tree_equal'),
+        'rng_consumed': (lambda o, c, r: c['cases'][names[0]].update(rng_after_case={'torch_cpu': 'd' * 64, 'numpy': 'b' * 64, 'python': 'c' * 64}),
+                         names[0] + ':rng_after_case_equal'),
+        'missing_raw_file': (lambda o, c, r: r.update({'converted-%s-2.bin' % names[0]: None}), names[0] + ':output_raw_bytes_equal'),
+        'threads_in_scope': (lambda o, c, r: c.update(numeric_env_in_scope=dict(c['numeric_env_in_scope'], threads=2)),
+                             'same_numeric_environment_one_thread'),
+        'converted_raised': (lambda o, c, r: c['cases'][names[1]].update(outcome={'raised': True, 'type': 'AttributeError'}),
+                             names[1] + ':both_returned'),
+        'providers_overlay': (lambda o, c, r: c.update(providers=dict(PROVIDERS, ops_provider='CloudOps')), 'inprocess_providers'),
+        'image_kitchen_loaded': (lambda o, c, r: o['test_site'].update(comfy_kitchen_version='0.2.36',
+                                 comfy_kitchen_file='/usr/local/lib/python3.13/site-packages/comfy_kitchen/__init__.py'),
+                                 'test_site_comfy_kitchen_both_roles'),
+        'converted_site_not_first': (lambda o, c, r: c['test_site'].update(sys_path_first=['/native-site', '/test-site']),
+                                     'test_site_comfy_kitchen_both_roles')}
+    results_by_control = {}
+    for name, (edit, target) in controls.items():
+        top, doc, proc = run(packet, out / ('control-' + name), *mutate(edit))
+        failed = doc.get('failed_checks') or []
+        results_by_control[name] = {'status': top.get('status'), 'exit_code': proc.returncode, 'target': target,
+                                    'target_failed': target in failed, 'failed': failed[:8]}
+    checks['controls_fail_on_target'] = all(v['status'] == 'FAIL_BW_DIRECT' and v['exit_code'] == 1 and v['target_failed']
+                                            for v in results_by_control.values())
+    record = {'format': 'jack-wan-bindweave-direct-r2-comparator-selftest/1', 'case_sha256': sha(case_bytes), 'comparator_sha256': sha(comparator_bytes),
+              'clean': clean, 'expected_clean_checks': expected_checks, 'controls': results_by_control, 'checks': checks,
+              'status': 'PASS_COMPARATOR_SELFTEST' if all(checks.values()) else 'FAILED_COMPARATOR_SELFTEST'}
+    (out / 'SELFTEST.json').write_text(json.dumps(record, indent=1) + '\n')
+    print(json.dumps({'status': record['status'], 'failed': sorted(k for k, v in checks.items() if not v),
+                      'controls_not_on_target': sorted(k for k, v in results_by_control.items() if not v['target_failed'])}))
+    return 0 if record['status'] == 'PASS_COMPARATOR_SELFTEST' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
