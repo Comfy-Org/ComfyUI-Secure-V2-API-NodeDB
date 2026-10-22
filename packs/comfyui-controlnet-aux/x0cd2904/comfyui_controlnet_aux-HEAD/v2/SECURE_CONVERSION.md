@@ -17,8 +17,10 @@
 > revision 6 bytes. No count or live gate changes. See "Revision 7".
 > **Revision 8 (2026-10-21):** Metric3D's vit-large backbone runs (a 2 GiB per-checkpoint budget) and is tested for
 > both nodes. vit-giant2 still refuses, and that refusal is now tested. No count or live gate changes. See "Revision 8".
+> **Revision 9 (2026-10-22):** the shared restricted zip proof now scans a checkpoint's `data.pkl` only when it is
+> byte-identical to the record torch itself decodes (review A-L1). No count or live gate changes. See "Revision 9".
 
-# ControlNet Aux — secure conversion report (in progress, revision 8)
+# ControlNet Aux — secure conversion report (in progress, revision 9)
 
 ## Provenance
 
@@ -26,6 +28,41 @@
 - Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 - Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 - Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
+
+## Revision 9 (2026-10-22): the restricted zip proof scans only torch's own record (review A-L1)
+
+Revision 9 closes the A-L1 residual carried since revision 6. The shared zip proof now scans a checkpoint's `data.pkl`
+only when the bytes it selected are byte-identical to the record torch itself decodes, so Python's `zipfile` and torch's
+miniz can never disagree about what is scanned.
+
+Change (production code; independently reviewed):
+- `_restricted_globals.py`: `checkpoint_pickle_globals` still selects the single, bounded, STORED `data.pkl` with
+  `zipfile` (L1-L3 unchanged), then reads those bytes and requires them to equal `torch_record(payload)` - a new
+  module-level helper returning `torch._C.PyTorchFileReader(payload).get_record('data.pkl')`, the record `torch.load`
+  unpickles. It scans (`get_globals_in_pkl`) only on a match; a difference is one new refusal, and a read or scan error
+  stays the existing clean refusal. `require_default_allowlisted` is unchanged. The four parser differences the residual
+  named (the case-insensitive lookup, the central-directory discovery, NUL-truncated names, the Info-ZIP Unicode path
+  field) now reduce to one behaviour: torch's bytes differ, so the proof refuses, whichever difference it was.
+
+Evidence (`validation/20261022-controlnet-aux-al1-a2base-r1/`):
+one selected bounded attempt on the a2 base (the revision 6-8 bytes plus this change), no node run: CPU, one thread,
+8 GiB; torch 2.8.0+cu128; peak 2.89 GB; about 8 s of helper checks after the runtime import.
+- Anchors: a `torch.serialization` spy showed `torch_record` returns exactly the bytes `torch.load` reads for `data.pkl`,
+  on a fresh `torch.save` archive and on one real checkpoint (equal sha256 on both sides). An injected differing record
+  was refused with the new text; the "no decode" guarantee is that each family's selection refuses before its own
+  `torch.load` line (the review confirmed this), which the injected row illustrates with a zero scan and decode count. An
+  injected read failure gave the existing clean refusal. A fresh archive is still accepted and scanned (positive control).
+- The three families on the patched helper: the genuine UniFormer, Metric3D vit-small and DiffusionEdge main and swin_b
+  checkpoints were each accepted with their published pinned globals and decoded under `weights_only`; main's pre-fix
+  helper accepted them identically. Each file was pinned by sha256, and the pinned globals equalled the `data.pkl` scan.
+
+A known gap and a test follow-up (before #21) are in the residuals list: the second read is torch's own and is not
+separately bounded, and the spy check plus a mismatched-name archive should be added next round (revision 9 review N1, N2).
+
+Live: unchanged (requests #21, #23, #24 and #25, and operator staging of the undeclarable weights). The families stay
+gated on an approved selection (#21); this change only tightens which record the proof will scan.
+
+Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 
 ## Revision 8 (2026-10-21): Metric3D vit-large (2 GiB per-checkpoint budget)
 
@@ -174,10 +211,19 @@ Review follow-ups:
     entry's prefix, a case-insensitive lookup, the declared central directory) can still differ from the record
     zipfile selects (review A-L1). This is mitigated by sha256 pinning and by the inspection's decode without host
     globals.
+    (Revision 9: closed - the proof now scans only the record torch's own reader returns; see "Revision 9".)
   - Fix before any #21 approval (review A-L1): the zip proof must scan the record torch decodes. Python's zipfile
     and torch's miniz differ in at least four ways: the case-insensitive lookup under the first entry's directory,
     the central-directory discovery, NUL-truncated names, and the Info-ZIP Unicode path extra field. The planned
     fix compares the scanned bytes with torch's own `PyTorchFileReader.get_record('data.pkl')`, with unit rows.
+    (Closed in revision 9: the fix is in and tested; see "Revision 9".)
+  - Known gap (revision 9 review N2): the second read is torch's own `PyTorchFileReader.get_record`, which is not
+    separately bounded. If the two readers disagree, torch allocates its record's author-declared size before the
+    comparison refuses (a zip-bomb shape): a clean refusal or an OOM kill, never a mis-scan. Not a regression (torch.load
+    reads the same record and main's helper would accept the file), and sha256-pinned files cannot reach it.
+  - Before #21 (revision 9 review N1): assert in the spy that the reader is exactly `torch._C.PyTorchFileReader`, and add
+    one mismatched archive built with ordinary `zipfile.writestr` (`archive/version`, then `archive/Data.pkl` and
+    `x/data.pkl`) that main accepts and the candidate refuses. Deferred to the next code round (ordinary zipfile usage).
   - Low-4 covers the buffers dict. Two other cases stay referenced until the exception is dropped (bounded by the 2 GiB
     budget): the bytes of a refused archive, and resources already read when a later read fails.
   - Any torch upgrade turns the three families off until they are re-inspected (by design: the pins name the build).
@@ -465,7 +511,7 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | `_dwpose/__init__.py` | per-invocation construction: the native module caches are emptied before and after each call (warm == cold proven exact), so no model outlives its invocation |
 | `_dwpose/selection.py` | per-invocation sealed-content binding (no realm identity, no cross-invocation cache) replaces the unconditional hold; ONNX via OpenCV DNN byte constructor only while upstream's own routing selects cv2 (pinned OpenCV); sealed read |
 | `_leres/detector.py` | nested `res101.pth` read via `assets.load_state_dict(ref, member="depth_model")` (the DSINE precedent); the guest weight bridge refuses the whole nested container |
-| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge); revision 6: L1-L3 (leading bytes, a STORED and bounded data.pkl, one clean refusal) |
+| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge); revision 6: L1-L3 (leading bytes, a STORED and bounded data.pkl, one clean refusal); revision 9: scans only when the bounded record equals torch's own `PyTorchFileReader.get_record('data.pkl')`, so the two zip readers cannot disagree (review A-L1) |
 | `_restricted_legacy_globals.py` | shared (revision 5): the same proof for legacy (non-zip) archives — the five pickles a BytesIO legacy load reads (DiffusionEdge); revision 6: the 64 MiB bound holds inside each pickle (Low-2) |
 | `_sealed_asset_read.py` | shared: whole-archive reads through the bounded `assets.read_range` (<= 16 MiB per call), size + sha256 verified — the guest caps `assets.read_bytes` at 64 MiB |
 | `_unimatch/metadata-equivalence-proof.json` | the recorded proof (with/without `_metadata`: identical state and outputs on the original model, this checkpoint only) |

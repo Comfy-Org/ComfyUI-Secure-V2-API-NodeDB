@@ -1,0 +1,97 @@
+{
+ "run_base": {
+  "core": "a2 d1a9259",
+  "backend": "a1 894ead3",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "aux_v2": "Aux v2 at corpus main e1ee6f7b (no Aux path changed vs the stage base 74264998); the pre-fix helper, evidence only",
+  "port": "the A-L1 candidate _restricted_globals.py (this revision)"
+ },
+ "binding": {
+  "spec": {
+   "file": "consumers/ned-controlnet-aux-al1-runs-20261022/SPEC_TIER_L_R1.json",
+   "sha256": "6ae873d49f00a38d37206a34cc3a8fd893ce22a4c10ae85e1f336f4fa68a015b",
+   "name": "aux-al1-retest-l1-v1"
+  },
+  "pins": {
+   "file": "consumers/ned-controlnet-aux-al1-runs-20261022/PINS_L1.json",
+   "sha256": "9a74dfd5fcd08119f2b5037c584a83498a9c320202f7f41d77455f7424471ce7"
+  },
+  "packet_zip": {
+   "file": "consumers/ned-controlnet-aux-al1-20261022-r1.zip",
+   "sha256": "a724a75c62d209e7bd56bb3c7d04169b6dd33ab319bb31b4ea10d8e869110bb8",
+   "bytes": 34502
+  },
+  "launcher_r4": {
+   "file": "consumers/ned-controlnet-aux-al1-runs-20261022/launcher-r4/run_bounded_container_self_launch.py",
+   "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+  },
+  "limits": {
+   "memory_gib": 8,
+   "gate": "MemAvailable >= 12 GiB",
+   "deadline_seconds": 600,
+   "tmpfs_mb": 256,
+   "cpus": 2,
+   "expected_peak": "about 3.3 GB (torch + comfy, then torch.load weights_only of the 1.11 GB diffusionedge main, released)"
+  },
+  "pins_equal_to_earlier": {
+   "/runtime/engine": [
+    "PINS_C1 /runtime/engine"
+   ],
+   "/overlay/backend": [
+    "PINS_C1 /overlay/backend"
+   ],
+   "/python-env": [
+    "PINS_C1 /python-env"
+   ],
+   "/weights-a": [
+    "PINS_C1 /weights-a"
+   ],
+   "/weights-p": [
+    "PINS_C1 /weights-p"
+   ]
+  }
+ },
+ "mounts": {
+  "/runtime/engine": {
+   "source": "core a2 d1a9259 (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 1308
+  },
+  "/overlay/backend": {
+   "source": "backend a1 894ead3 backend/ (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 458
+  },
+  "/python-env": {
+   "source": "readable copy of the always-on venv (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 870
+  },
+  "/weights-a": {
+   "source": "UniFormer and Metric3D vit-small weights (equal to PINS_A1 /weights) (equal to PINS_C1)",
+   "entries": 2
+  },
+  "/weights-p": {
+   "source": "DiffusionEdge main, swin_b, vgg16 and lpips (equal to PINS_P1 /weights) (equal to PINS_C1)",
+   "entries": 4
+  },
+  "/aux-v2": {
+   "source": "corpus main e1ee6f7b Aux v2 (NED own clone, git archive), read-only; the main helper for evidence",
+   "entries": 1594
+  },
+  "/port": {
+   "source": "A-L1 candidate: v2/_restricted_globals.py only (from the sealed packet zip)",
+   "entries": 1
+  },
+  "/selections": {
+   "source": "test-only approved selections a/ and p/ for the pinned globals (from the sealed packet zip)",
+   "entries": 3
+  },
+  "/driver": {
+   "source": "al1_driver.py and RESOURCE_PINS.json (from the sealed packet zip)",
+   "entries": 2
+  }
+ },
+ "weights": "the three families' kept run inputs, mounted read-only (/weights-a, /weights-p equal PINS_C1); nothing fetched",
+ "harness_substitutions": [
+  "the published test-only approved selections (base 51f16bd3 uniformer/metric3d, dd2c68e4 diffusionedge), for the pinned globals"
+ ],
+ "note": "no node execution, no guest, no model forward: the driver exercises the shared helper and torch.load directly"
+}
