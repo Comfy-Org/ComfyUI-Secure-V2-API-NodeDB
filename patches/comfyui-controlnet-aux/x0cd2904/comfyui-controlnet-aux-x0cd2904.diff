@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,935 @@
+@@ -0,0 +1,963 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 64 of 64 converted; 52 tested (scoped), 3 converted but untested/partly tested,
 +> 9 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -22,8 +22,10 @@
 +> both nodes. vit-giant2 still refuses, and that refusal is now tested. No count or live gate changes. See "Revision 8".
 +> **Revision 9 (2026-10-22):** the shared restricted zip proof now scans a checkpoint's `data.pkl` only when it is
 +> byte-identical to the record torch itself decodes (review A-L1). No count or live gate changes. See "Revision 9".
++> **Revision 10 (2026-10-22):** the review-N1 follow-up is tested — an ordinary mismatched-name archive is accepted
++> by the revisions 1-8 helper and refused by revision 9. Docs only; no count or live gate changes. See "Revision 10".
 +
-+# ControlNet Aux — secure conversion report (in progress, revision 9)
++# ControlNet Aux — secure conversion report (in progress, revision 10)
 +
 +## Provenance
 +
@@ -31,6 +33,31 @@
 +- Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 +- Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 +- Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
++
++## Revision 10 (2026-10-22): the A-L1 differential is tested (review N1)
++
++Revision 10 is docs only. It records that the review's N1 follow-up now has evidence: the record difference revision 9
++refuses is demonstrated with an ordinary archive, not just argued from source.
++
++Evidence (`validation/20261022-controlnet-aux-al1-n1-a2base-r1/`):
++one bounded attempt on the a2 base (no weights, no selection; CPU, one thread, 3 GiB; torch 2.8.0+cu128; peak 1.32 GB; a
++few seconds). It mounts two helpers straight from git — the pre-A-L1 helper (`af7b3018`, revision 8) and the published
++revision 9 helper (`2cecd6a4`) — and compares them:
++- a `torch.serialization` spy shows the reader `torch.load` uses is exactly `torch.PyTorchFileReader`, read once, and
++  `torch_record` equals its `data.pkl` bytes;
++- a mismatched-name archive built with ordinary `zipfile.writestr` (stored records `archive/version`, `archive/Data.pkl`
++  and `x/data.pkl`): Python's `zipfile` selects `x/data.pkl` (sha256 `a16197da…`), while torch resolves
++  `get_record('data.pkl')` case-insensitively under the first entry's directory to `archive/Data.pkl` (sha256 `ccf5c07c…`).
++  **Revisions 1-8's helper would have accepted this archive** (it scans whatever `zipfile` selects); **revision 9 refuses
++  it**, because the bytes torch decodes are not the bytes it scanned. The refusal text is
++  "restricted torch archive data.pkl differs from the record torch decodes";
++- a plain `torch.save` archive is accepted by both helpers (control).
++
++This closes the N1 follow-up from the A-L1 review. **The pinned checkpoints were never affected:** every converted
++family's weights are sha256-pinned, so a mismatched-name archive cannot be substituted for a real checkpoint. This is a
++defence-in-depth tightening of which record the proof scans, not a fix to any observed acceptance of a real checkpoint.
++
++Live: unchanged. Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 +
 +## Revision 9 (2026-10-22): the restricted zip proof scans only torch's own record (review A-L1)
 +
@@ -227,6 +254,7 @@
 +  - Before #21 (revision 9 review N1): assert in the spy that the reader is exactly `torch._C.PyTorchFileReader`, and add
 +    one mismatched archive built with ordinary `zipfile.writestr` (`archive/version`, then `archive/Data.pkl` and
 +    `x/data.pkl`) that main accepts and the candidate refuses. Deferred to the next code round (ordinary zipfile usage).
++    (Closed in revision 10: tested — the pre-fix helper accepts it and revision 9 refuses it; see "Revision 10".)
 +  - Low-4 covers the buffers dict. Two other cases stay referenced until the exception is dropped (bounded by the 2 GiB
 +    budget): the bytes of a refused archive, and resources already read when a later read fails.
 +  - Any torch upgrade turns the three families off until they are re-inspected (by design: the pins name the build).
