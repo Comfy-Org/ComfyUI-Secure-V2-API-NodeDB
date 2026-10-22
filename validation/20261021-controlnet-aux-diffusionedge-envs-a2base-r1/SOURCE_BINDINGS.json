@@ -1,0 +1,105 @@
+{
+ "run_base": {
+  "core": "a2 d1a9259",
+  "backend": "a1 894ead3",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "aux_v2": "corpus main a45522ff v2 with the Aux rev 6 stage d9a586aa applied = the published rev 6 v2"
+ },
+ "spec": {
+  "file": "consumers/ned-controlnet-aux-diffusionedge-envs-runs-20261021/SPEC_TIER_E_R1.json",
+  "sha256": "276da080b6b2b97f654a704f79640c964473c7b23b856849c98da82bc326b795",
+  "name": "aux-diffusionedge-envs-e1-v1"
+ },
+ "pins": {
+  "file": "consumers/ned-controlnet-aux-diffusionedge-envs-runs-20261021/PINS_E1.json",
+  "sha256": "f7fd1efcf4544b3812d976ee392f6b6d573d9ccaaf66f4b32422928996113e76"
+ },
+ "packet_zip": {
+  "file": "consumers/ned-controlnet-aux-diffusionedge-envs-20261021-r1.zip",
+  "sha256": "c59369c0d662210b9c7e908fe03d6fbff1af2dd783424a1674a53d5c08683196",
+  "bytes": 48621
+ },
+ "launcher_r4": {
+  "file": "consumers/ned-controlnet-aux-diffusionedge-envs-runs-20261021/launcher-r4/run_bounded_container_self_launch.py",
+  "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+ },
+ "limits": {
+  "memory_gib": 8,
+  "gate": "MemAvailable >= 12 GiB",
+  "deadline_seconds": 900,
+  "tmpfs_mb": 1024,
+  "cpus": 2,
+  "phase_timeouts_s": {
+   "EI": 200,
+   "EP": 320
+  },
+  "expected_peak": "about 6 GB (as the indoor parity: 6.03 / 6.07 GB)"
+ },
+ "pins_equal_to_earlier": {
+  "/runtime/engine": "PINS_C1 /runtime/engine",
+  "/overlay/backend": "PINS_C1 /overlay/backend",
+  "/python-env": "PINS_C1 /python-env",
+  "/aux-orig": "PINS_C1 /aux-orig",
+  "/aux-site": "PINS_C1 /aux-site",
+  "/yacs": "PINS_C1 /yacs",
+  "/weights-p": "PINS_C1 /weights-p",
+  "/weights-env": "MERVYN COPIED_SHA256.txt"
+ },
+ "mounts": {
+  "/runtime/engine": {
+   "source": "core a2 d1a9259 (equal to PINS_C1)",
+   "entries": 1308
+  },
+  "/overlay/backend": {
+   "source": "backend a1 894ead3 backend/ (equal to PINS_C1)",
+   "entries": 458
+  },
+  "/python-env": {
+   "source": "readable copy of the always-on venv (equal to PINS_C1)",
+   "entries": 870
+  },
+  "/aux-v2": {
+   "source": "corpus main a45522ff Aux v2 with the Aux rev 6 stage d9a586aa applied (8 files), read-only",
+   "entries": 1594
+  },
+  "/aux-orig": {
+   "source": "pristine upstream 0cd2904 src/, node_wrappers/, utils.py (equal to PINS_C1)",
+   "entries": 704
+  },
+  "/aux-site": {
+   "source": "profile f65ac4fe / lock b6074c82 unpacked read-only (equal to PINS_C1)",
+   "entries": 6941
+  },
+  "/yacs": {
+   "source": "yacs 0.1.8 test-only root (equal to PINS_C1; request #25)",
+   "entries": 9
+  },
+  "/weights-p": {
+   "source": "DiffusionEdge indoor main, swin_b, vgg16 and lpips (equal to PINS_C1)",
+   "entries": 4
+  },
+  "/weights-env": {
+   "source": "MERVYN's pinned fetch: diffusion_edge_urban.pt and diffusion_edge_natrual.pt (COPIED_SHA256.txt 94e1d1b9...)",
+   "entries": 2
+  },
+  "/selections": {
+   "source": "the rev 5 test-only approved selection (indoor) and its evidence: the base EI extends (from the sealed packet zip)",
+   "entries": 21
+  },
+  "/driver": {
+   "source": "environments driver, phases EI and EP, original side, fixture, stand-in and blocker, resource pins (from the sealed packet zip)",
+   "entries": 8
+  }
+ },
+ "weights": {
+  "receipt": "# MERVYN pinned fetch (hr16/Diffusion-Edge @ 401c6cd441c2e7d75208f12881f6abef8f6da3b2; HF tree metadata sha256+size; one attempt per file), 2026-10-21T22:39:50Z. Files 0644.\nad544682b61db079b386aae282c55728e6a044e8c0a0d2ecc996c234c08b6702  1192112522  weights-env/controlnet/huggingface/hr16/Diffusion-Edge/401c6cd441c2e7d75208f12881f6abef8f6da3b2/diffusion_edge_natrual.pt\n9b0dc9df7840c3724f29e4e7ab83817e5811aaea36ff187d8b0e7a09f9f5d67f  1192128970  weights-env/controlnet/huggingface/hr16/Diffusion-Edge/401c6cd441c2e7d75208f12881f6abef8f6da3b2/diffusion_edge_urban.pt\n",
+  "fetch": "MERVYN pinned fetch from hr16/Diffusion-Edge at 401c6cd441c2e7d75208f12881f6abef8f6da3b2 (one attempt each; HF tree metadata)"
+ },
+ "sandbox": "off (COMFY_SECURE_SANDBOX_MODE=off): protocol and host-provider evidence, not sandbox evidence",
+ "harness_substitutions": [
+  "test-only approved selection derived in the run (base dd2c68e4 + each environment main; rebuilt byte-exact here)",
+  "yacs 0.1.8 test-only dependency root",
+  "original side: the empty albumentations stand-in and the install_deps no-op",
+  "converted side: albumentations blocked"
+ ]
+}

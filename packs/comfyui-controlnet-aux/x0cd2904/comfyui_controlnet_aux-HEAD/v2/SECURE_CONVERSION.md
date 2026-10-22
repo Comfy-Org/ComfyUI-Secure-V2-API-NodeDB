@@ -13,8 +13,10 @@
 > and operator staging of all four weight files (about 2.1 GB). See "Revision 5".
 > **Revision 6 (2026-10-21):** the review follow-ups are fixed in code (restricted-decode hardening for UniFormer,
 > Metric3D and DiffusionEdge) and re-tested exactly on the a2 base. No count or live gate changes. See "Revision 6".
+> **Revision 7 (2026-10-21):** DiffusionEdge's urban and natrual environments are inspected and tested (scoped) on the
+> revision 6 bytes. No count or live gate changes. See "Revision 7".
 
-# ControlNet Aux — secure conversion report (in progress, revision 6)
+# ControlNet Aux — secure conversion report (in progress, revision 7)
 
 ## Provenance
 
@@ -22,6 +24,44 @@
 - Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 - Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 - Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
+
+## Revision 7 (2026-10-21): DiffusionEdge urban and natrual
+
+Revision 7 tests DiffusionEdge's other two environments. Until now only indoor was inspected and tested, so urban and
+natrual refused even after approval (a revision 6 residual). There are no code changes: the run used the revision 6 bytes.
+
+| Environment | Main checkpoint (hr16/Diffusion-Edge @ 401c6cd4) | Bytes | sha256 | Format and globals | Total with the auxiliaries (budget 2 GiB) |
+| --- | --- | --- | --- | --- | --- |
+| indoor (revision 5) | `diffusion_edge_indoor.pt` | 1,192,128,970 | 3e6e5a0d… | zip, 4 default-allowlisted | 2,097,224,347 B |
+| urban | `diffusion_edge_urban.pt` | 1,192,128,970 | 9b0dc9df… | zip, the same 4 | 2,097,224,347 B |
+| natrual | `diffusion_edge_natrual.pt` | 1,192,112,522 | ad544682… | zip, the same 4 | 2,097,207,899 B |
+
+Evidence (`validation/20261021-controlnet-aux-diffusionedge-envs-a2base-r1/`):
+one selected bounded attempt on the a2 base (core a2 `d1a9259`, backend a1 `894ead3`) and the revision 6 bytes, sandbox
+off, CPU, one thread, 8 GiB; peak 5.33 GB, 176 s.
+- Inspection, for each main checkpoint:
+  - the pins, the archive format and the globals, read through the pack's own helper;
+  - three identical decodes: restricted BytesIO, the same after ComfyUI's safe globals, and the original's torch.load.
+  A test-only approved selection was derived from these facts: the indoor one, plus each environment's main. The pack's
+  own validator accepted it, and the evidence holds it byte-exact, with its hash.
+- Parity, for each environment:
+  - the pack as published refuses with its own text;
+  - the genuine original, an ordinary guest and the registered node in process are exactly equal. The input is the one
+    revision 5 used: the 64x64 fixture at resolution 320, patch_batch_size 4;
+  - exactly 4 sealed reads, and the buffers are released;
+  - the guest without `assets` is refused.
+MERVYN fetched the two checkpoints from the pinned revision, one attempt each, with size and sha256 from Hugging Face's
+tree metadata. They are test inputs and are never committed.
+
+The independent review of the revision 6 code was CLEAR_WITH_NOTES, with no high or medium findings. This revision folds in
+its two Lows on report text: the revision 6 residuals now state which record each zip parser reads, and list that fix as
+due before any #21 approval.
+
+Live: unchanged. Each environment used on live needs its own main checkpoint (about 1.19 GB) staged by the operator,
+byte-exact, with the three shared auxiliaries. It also needs a production selection that carries that environment's
+facts (request #21).
+
+Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 
 ## Revision 6 (2026-10-21): review follow-ups (restricted-decode hardening)
 
@@ -77,13 +117,19 @@ one selected bounded attempt on the a2 base (core a2 `d1a9259`, backend a1 `894e
 Review follow-ups:
 - Done: M1 and L1–L5 (the revision 4 review), and Low-1 to Low-5 (the revision 5 review).
 - Residuals:
-  - The zip proof parses with Python's zipfile and torch with its own reader. L1 and L2 tie the route and the
-    `data.pkl` record to what torch.save writes, but other zip-parser differences are not covered. Only approved,
-    sha256-pinned bytes reach the proof.
+  - L1 ties the route to torch's own test. L2 bounds the scanned record. Which record torch reads (miniz: the first
+    entry's prefix, a case-insensitive lookup, the declared central directory) can still differ from the record
+    zipfile selects (review A-L1). This is mitigated by sha256 pinning and by the inspection's decode without host
+    globals.
+  - Fix before any #21 approval (review A-L1): the zip proof must scan the record torch decodes. Python's zipfile
+    and torch's miniz differ in at least four ways: the case-insensitive lookup under the first entry's directory,
+    the central-directory discovery, NUL-truncated names, and the Info-ZIP Unicode path extra field. The planned
+    fix compares the scanned bytes with torch's own `PyTorchFileReader.get_record('data.pkl')`, with unit rows.
   - Low-4 covers the buffers dict. Two other cases stay referenced until the exception is dropped (bounded by the 2 GiB
     budget): the bytes of a refused archive, and resources already read when a later read fails.
   - Any torch upgrade turns the three families off until they are re-inspected (by design: the pins name the build).
   - DiffusionEdge's urban and natrual main checkpoints are not inspected. Whether they fit the 2 GiB budget is unknown.
+    (Closed in revision 7: both are inspected and tested, and both fit.)
   - The Metric3D NOT_RUN gate still plans vit-large and vit-giant2 (out of scope, see above).
 
 Live: unchanged (requests #21, #23, #24 and #25, and operator staging of the undeclarable weights).
@@ -304,7 +350,7 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs its undeclarable TorchScript archive in the live store. |
 | DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
 | DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
-| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
+| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). Revision 7: urban and natrual also tested exactly (`validation/20261021-controlnet-aux-diffusionedge-envs-a2base-r1/`). |
 | DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** It also needs undeclarable TorchScript weights in the live store. |
 | ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. Correction (revision 3): its execute raises today, because the original 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch (request #20). |
@@ -412,7 +458,7 @@ Not declarable today (SDK): executable TorchScript archives (`densepose_r50_fpn_
 - AnimeFace_SemSegPreprocessor (guest route): needs SDK output typing by the declared output type (request #19).
 - UpperBodyTrackingFromPoseKps (guest route): needs a type-preserving plain-data guest wire (request #19).
 - ExecuteAllControlNetPreprocessors: its execute raises today. The original's 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch, which converted packs cannot target (request #20). A full positive run also needs every child preprocessor to be runnable.
-- Live model selections (request #21): DepthAnythingV2, DWPose, AnimalPose, DensePose, LeReS, MiDaS ×2 and Unimatch (tested, scoped), UniFormer, SemSeg and Metric3D ×2, and DiffusionEdge (revision 5), refuse on live until their selections are approved for production. MiDaS also needs a code change, and DensePose, DWPose and AnimalPose need undeclarable weights in the live store. The nodes among these that declare required weights are refused at dispatch first (request #23).
+- Live model selections (request #21): DepthAnythingV2, DWPose, AnimalPose, DensePose, LeReS, MiDaS ×2 and Unimatch (tested, scoped), UniFormer, SemSeg and Metric3D ×2, and DiffusionEdge (revision 5), refuse on live until their selections are approved for production. MiDaS also needs a code change, and DensePose, DWPose and AnimalPose need undeclarable weights in the live store. The nodes among these that declare required weights are refused at dispatch first (request #23). Before any approval, every pinned archive's inspection must include a decode with no host safe globals registered (review A-L2).
 - Live dispatch of nodes that declare required weights (request #23): live never grants `models.download`, and the required-weights check runs before any installed file is reused. So 24 tested nodes (20 since revision 2 and the 4 of revision 4) are refused at dispatch.
 
 ## Open test gates
