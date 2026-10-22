@@ -16,7 +16,7 @@ the host registers (ComfyUI registers several at import).
 
 Fail closed:
 - zip payloads are refused here (use _restricted_globals);
-- the scanned pickle bytes are bounded;
+- the scan reads at most the first 64 MiB, even inside a single pickle (review Low-2);
 - any read or scan error is one clean refusal.
 """
 import io
@@ -29,12 +29,12 @@ def legacy_checkpoint_pickle_globals(payload):
     from torch import _weights_only_unpickler as unpickler
     if type(payload) is not bytes or payload[:4] == b'PK\x03\x04':
         raise RuntimeError('restricted legacy decode requires a non-zip torch archive')
-    stream, found = io.BytesIO(payload), set()
+    # Review Low-2: only the first 64 MiB is scanned, so the bound also holds inside a single pickle; a pickle that runs
+    # past it cannot be scanned, which is a refusal.
+    stream, found = io.BytesIO(payload[:MAX_PICKLE_BYTES]), set()
     try:
         for _part in LEGACY_PICKLES:
             found.update(unpickler.get_globals_in_pkl(stream))
-            if stream.tell() > MAX_PICKLE_BYTES:
-                raise ValueError('legacy pickles exceed the scan bound')
     except Exception:
         raise RuntimeError('restricted legacy decode could not scan the legacy pickles') from None
     return sorted(found)

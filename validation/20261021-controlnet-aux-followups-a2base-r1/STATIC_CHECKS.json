@@ -1,0 +1,156 @@
+{
+ "schema": "ned-candidate/1",
+ "base": "corpus main 3583e7bdf58e88a059eb3d0d0fda39c0cf4c83ee (Aux rev 5 published, PR #68)",
+ "files": {
+  "_restricted_globals.py": {
+   "main_sha256": "55e55d89209ae825c2c2ea75ad0d666ae0da983f844d1f0e029cb6c549b7f65c",
+   "candidate_sha256": "af7b3018de7ecaaafabe0063ab29cc7225445a076c220715dab4fed5d4980502",
+   "edits": 2,
+   "changed_top_level": [
+    "checkpoint_pickle_globals"
+   ]
+  },
+  "_restricted_legacy_globals.py": {
+   "main_sha256": "235a3d798c66ef529eb94bd012b1dfb2c73c2c52386229444dfb511922a82866",
+   "candidate_sha256": "05ecf12d62398640bf95ea8cff27417d40b3fe3daed929b6b1ab7b0b32752a31",
+   "edits": 2,
+   "changed_top_level": [
+    "legacy_checkpoint_pickle_globals"
+   ]
+  },
+  "_uniformer/selection.py": {
+   "main_sha256": "700639fc2bcf92b7e9ff3ea179b206316081a0899c731753547a6db873e07bf4",
+   "candidate_sha256": "cf37b6dc2e6a4348960271acd3da401305b41281ea875db52150067e7dcabd07",
+   "edits": 4,
+   "changed_top_level": [
+    "load_raw_checkpoint",
+    "require_selected_torch",
+    "selected_archive",
+    "validate_selection"
+   ]
+  },
+  "_metric3d/selection.py": {
+   "main_sha256": "606394317e839c02d3900ae459bc6af60fb4a1b1b1e85788ab75d07f5e50d2ed",
+   "candidate_sha256": "130c4bd7addac1f4e78b5ad46a5060e2a15277bfbf246f516d78e7a4b323eba4",
+   "edits": 4,
+   "changed_top_level": [
+    "load_raw_checkpoint",
+    "require_selected_torch",
+    "selected_archive",
+    "validate_selection"
+   ]
+  },
+  "_diffusionedge/selection.py": {
+   "main_sha256": "bb612b568cce11ae14ae171a070895e3dcda5589c74a1faa25ea3d97222d695e",
+   "candidate_sha256": "c7e58caa43d0146f7f2a25d18ab9ac89f5982e9062bc49b99ba9e73a0e28612c",
+   "edits": 6,
+   "changed_top_level": [
+    "construction",
+    "require_selected_torch",
+    "restricted_checkpoint",
+    "sealed_buffers"
+   ]
+  },
+  "tests/test_uniformer_native_registered.py": {
+   "main_sha256": "fba0d88118ed02f3315b5a956b140a3f5025e16d8f2f50e1343d3fdb9a41ac82",
+   "candidate_sha256": "15b98694644993ecd4e447b76c155358334e645f6fd756d935f4d13f29c49b4a",
+   "edits": 2
+  },
+  "tests/test_metric3d_native_registered.py": {
+   "main_sha256": "2d0b470ea87aa97e2cdce5c7c1d8ec56eb76c9f6c5b3754837c7209ef307d1c1",
+   "candidate_sha256": "d975f1cfe9716097a09ed4c0c0bfe75874c7413eecdeb2fda67baf1e5efca955",
+   "edits": 2
+  }
+ },
+ "checks": {
+  "_uniformer/selection.py": {
+   "validate_selection_import_free": true,
+   "torch_pin_presence_right_after_device": true,
+   "globals_guard_last_before_return": true,
+   "selected_archive_torch_check_before_sdk_import_and_first_await": [
+    2,
+    3,
+    5
+   ],
+   "load_order_import_torchcheck_helperimport_proof_load": [
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "new_refusals": [
+    "UniFormer restricted decode torch runtime version is unselected",
+    "UniFormer restricted decode pinned pickle globals are unselected",
+    "UniFormer restricted decode torch runtime differs from the selected version"
+   ]
+  },
+  "_metric3d/selection.py": {
+   "validate_selection_import_free": true,
+   "torch_pin_presence_right_after_device": true,
+   "globals_guard_last_before_return": true,
+   "selected_archive_torch_check_before_sdk_import_and_first_await": [
+    2,
+    3,
+    5
+   ],
+   "load_order_import_torchcheck_helperimport_proof_load": [
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "new_refusals": [
+    "Metric3D restricted decode torch runtime version is unselected",
+    "Metric3D restricted decode pinned pickle globals are unselected",
+    "Metric3D restricted decode torch runtime differs from the selected version"
+   ]
+  },
+  "_diffusionedge/selection.py": {
+   "sealed_buffers_torch_check_before_sdk_import": true,
+   "construction_clears_buffers_in_outer_finally": true,
+   "restricted_checkpoint_order_import_torchcheck_formatcheck_dispatch_load": [
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "nits_one_import_torch_and_one_record_assignment": true,
+   "new_refusals": [
+    "DiffusionEdge restricted decode archive format differs from the selected format"
+   ]
+  },
+  "_restricted_globals.py": {
+   "old_refusal_texts_kept": [
+    "checkpoint pickle globals differ from inspection or leave the default restricted allowlist",
+    "restricted decode pinned pickle globals are unselected",
+    "restricted decode requires a zip torch archive",
+    "restricted torch archive must hold exactly one data.pkl record"
+   ],
+   "new_refusal_texts": [
+    "restricted decode could not scan data.pkl",
+    "restricted torch archive data.pkl record is not stored or exceeds the scan bound"
+   ]
+  },
+  "_restricted_legacy_globals.py": {
+   "refusal_texts_unchanged": true,
+   "scan_slice_first_64_MiB": true
+  },
+  "tests_stale_assertions_removed": true,
+  "real_archives": {
+   "upernet_global_small.pth": true,
+   "metric_depth_vit_small_800k.pth": true,
+   "diffusion_edge_indoor.pt": true,
+   "swin_b-68c6b09e.pth": true,
+   "vgg16-397923af.pth": true,
+   "vgg.pth": true
+  }
+ },
+ "not_changed": [
+  "published asset-selection.json files (approved:false)",
+  "secure-nodes.json",
+  "source-closure.json files (no record pins these files)"
+ ]
+}

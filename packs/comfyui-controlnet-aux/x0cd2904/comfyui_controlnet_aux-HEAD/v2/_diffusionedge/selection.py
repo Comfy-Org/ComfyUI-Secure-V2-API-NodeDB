@@ -64,6 +64,13 @@ def validate_selection(item):
         if resources[k]['filename']!=name:raise RuntimeError('DiffusionEdge native auxiliary filename differs')
     return item
 
+def require_selected_torch(item):
+    # The restricted-globals proofs rely on private torch APIs, so the running torch build must be the selected one. It is
+    # compared before the sealed reads and the model build (review Low-3), and again at each decode.
+    import torch
+    if torch.__version__!=item['torch_runtime_version']:
+        raise RuntimeError('DiffusionEdge restricted decode torch runtime differs from the selected version')
+
 def selected_construction(environment):
     item=json.loads(Path(__file__).with_name('asset-selection.json').read_text())
     if item.get('approved') is not True:
@@ -79,6 +86,7 @@ def selected_construction(environment):
 
 async def sealed_buffers(item):
     validate_selection(item)
+    require_selected_torch(item)
     from comfy_api.latest import sdk
     from .._sealed_asset_read import read_sealed_asset
     assets=sdk.ctx().assets;out={}
@@ -94,11 +102,16 @@ async def sealed_buffers(item):
 
 @contextmanager
 def construction(item,buffers):
-    validate_selection(item)
-    if CURRENT.get() is not None:raise RuntimeError('DiffusionEdge nested construction lifetime unsupported')
-    token=CURRENT.set((item,buffers))
-    try:yield
-    finally:CURRENT.reset(token)
+    try:
+        validate_selection(item)
+        if CURRENT.get() is not None:raise RuntimeError('DiffusionEdge nested construction lifetime unsupported')
+        token=CURRENT.set((item,buffers))
+        try:yield
+        finally:CURRENT.reset(token)
+    finally:
+        # Review Low-4: release every sealed buffer still held (after a refusal, or a resource never decoded) when the
+        # construction ends.
+        buffers.clear()
 
 def restricted_checkpoint(key):
     current=CURRENT.get()
@@ -113,8 +126,10 @@ def restricted_checkpoint(key):
     # default-allowlisted globals: zip archives through _restricted_globals, legacy archives through _restricted_legacy_globals.
     record=item['resources'][key]
     import torch
-    if torch.__version__!=item['torch_runtime_version']:
-        raise RuntimeError('DiffusionEdge restricted decode torch runtime differs from the selected version')
+    require_selected_torch(item)
+    # Review Low-1: torch.load picks the zip route from the first four bytes alone, so the pinned format must match them.
+    if (blob[:4]==b'PK\x03\x04')!=(record['archive_format']=='zip'):
+        raise RuntimeError('DiffusionEdge restricted decode archive format differs from the selected format')
     if record['archive_format']=='zip':
         from .._restricted_globals import require_default_allowlisted
         require_default_allowlisted(blob,record['pickle_globals'])
@@ -123,10 +138,9 @@ def restricted_checkpoint(key):
         require_default_allowlisted_legacy(blob,record['pickle_globals'])
     # Exact physically bound Torch reader source; no safe-global additions,
     # raw host path, default pickle, flattening, synthesized model or EMA map.
-    import torch
     value=torch.load(io.BytesIO(blob),map_location='cpu',weights_only=True)
     del blob
-    structure,total=raw_structure(value,torch);record=item['resources'][key]
+    structure,total=raw_structure(value,torch)
     if sha(json.dumps(structure,sort_keys=True,separators=(',',':')).encode())!=record['raw_structure_sha256'] or total!=record['tensor_bytes'] or total>MAX_TOTAL_BYTES:
         raise RuntimeError('DiffusionEdge actual raw nested metadata/storage structure differs')
     return value

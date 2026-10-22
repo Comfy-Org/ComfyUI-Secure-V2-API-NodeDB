@@ -11,8 +11,10 @@
 > **Revision 5 (2026-10-21):** DiffusionEdge is tested (scoped) under a test-only approved selection and a test-env
 > `yacs` (52 tested, 9 open). Live: it refuses 'selection pending' until request #21, then needs `yacs` (request #25)
 > and operator staging of all four weight files (about 2.1 GB). See "Revision 5".
+> **Revision 6 (2026-10-21):** the review follow-ups are fixed in code (restricted-decode hardening for UniFormer,
+> Metric3D and DiffusionEdge) and re-tested exactly on the a2 base. No count or live gate changes. See "Revision 6".
 
-# ControlNet Aux — secure conversion report (in progress, revision 5)
+# ControlNet Aux — secure conversion report (in progress, revision 6)
 
 ## Provenance
 
@@ -20,6 +22,73 @@
 - Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 - Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 - Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
+
+## Revision 6 (2026-10-21): review follow-ups (restricted-decode hardening)
+
+Revision 6 fixes, in code, the follow-ups of the revision 4 and 5 reviews, and re-tests the three affected families
+exactly on the new bytes. It changes no count and no live gate.
+
+Changes (production code; independent production review before publication):
+- `_restricted_globals.py` (the shared zip proof; UniFormer, Metric3D, and DiffusionEdge main and swin_b):
+  - L1: the payload must start with the zip local-file header, the only bytes for which torch takes the zip route. A
+    legacy pickle stream with a zip appended would pass the old zip proof, while torch decodes the unscanned legacy pickles
+    (review Low-1).
+  - L2: `data.pkl` must be STORED, as torch.save writes it, and at most 64 MiB.
+  - L3: any open, read or scan error is one clean refusal.
+- `_restricted_legacy_globals.py`: only the first 64 MiB is scanned, so the bound also holds inside one pickle (Low-2).
+- `_uniformer/selection.py`, `_metric3d/selection.py`:
+  - M1: the per-checkpoint `pickle_globals` pin is checked when the selection is validated, before any vendor import,
+    config evaluation or read.
+  - L4: the selection pins `torch_runtime_version`. The running build is compared before the sealed read (Low-3) and
+    again at decode.
+- `_diffusionedge/selection.py`:
+  - Low-1: before the dispatch, the pinned `archive_format` must match the archive's first four bytes.
+  - Low-3: the torch build is compared before the 2.1 GB read and the model build, and again at each decode.
+  - Low-4: the sealed buffers are cleared when the construction ends, including after a refusal.
+  - The duplicate `import torch` and `record=` lines are gone.
+- `tests/test_uniformer_native_registered.py`, `tests/test_metric3d_native_registered.py` (NOT_RUN gates; L5): they now
+  assert the pinned torch build, the pinned default-allowlisted globals and the shipped `{raw, assets, models.download}`.
+  Out of scope: the Metric3D gate still plans vit-large and vit-giant2, which exceed the 512 MiB read limit.
+- The selection files stay `approved: false` (request #21). An approved UniFormer or Metric3D selection now also needs
+  `torch_runtime_version`.
+
+Evidence (`validation/20261021-controlnet-aux-followups-a2base-r1/`):
+one selected bounded attempt on the a2 base (core a2 `d1a9259`, backend a1 `894ead3`), sandbox off, CPU, one thread,
+8 GiB. Three phases ran in separate interpreters; peak 6.07 GB, 268 s.
+- A (UniFormer, SemSeg, Metric3D Depth and Normal):
+  - The pack as published refuses with its own text.
+  - The genuine original, an ordinary guest and the registered node in process are exactly equal (revision 4 inputs).
+  - Fail-closed rows refused exactly, with no sealed read: a missing `pickle_globals` and a missing torch pin (both
+    before the vendor import), and a wrong torch pin.
+- P (DiffusionEdge):
+  - The revision 5 parity rows again: original, guest and in process exactly equal. Exactly 4 sealed reads, and the
+    buffers are empty after the construction.
+  - Nine fail-closed rows refused exactly, with the expected read counts and the buffers emptied after each decode
+    refusal. They cover both format directions, a wrong or missing torch pin, an unknown format, wrong and extra globals,
+    and a host-registered global (`numpy.dtype`) pinned exactly.
+- U: 14 helper rows:
+  - the six real archives are accepted;
+  - a polyglot (accepted by the old zip proof) is refused;
+  - DEFLATED, oversized and truncated `data.pkl` records are refused;
+  - a legacy pickle over the 64 MiB cap is refused;
+  - host-registered globals are refused in both formats;
+  - a zip given to the legacy proof is refused.
+
+Review follow-ups:
+- Done: M1 and L1–L5 (the revision 4 review), and Low-1 to Low-5 (the revision 5 review).
+- Residuals:
+  - The zip proof parses with Python's zipfile and torch with its own reader. L1 and L2 tie the route and the
+    `data.pkl` record to what torch.save writes, but other zip-parser differences are not covered. Only approved,
+    sha256-pinned bytes reach the proof.
+  - Low-4 covers the buffers dict. Two other cases stay referenced until the exception is dropped (bounded by the 2 GiB
+    budget): the bytes of a refused archive, and resources already read when a later read fails.
+  - Any torch upgrade turns the three families off until they are re-inspected (by design: the pins name the build).
+  - DiffusionEdge's urban and natrual main checkpoints are not inspected. Whether they fit the 2 GiB budget is unknown.
+  - The Metric3D NOT_RUN gate still plans vit-large and vit-giant2 (out of scope, see above).
+
+Live: unchanged (requests #21, #23, #24 and #25, and operator staging of the undeclarable weights).
+
+Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 
 ## Revision 5 (2026-10-21): DiffusionEdge (yacs)
 
@@ -235,7 +304,7 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs its undeclarable TorchScript archive in the live store. |
 | DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
 | DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
-| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). |
+| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 | DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** It also needs undeclarable TorchScript weights in the live store. |
 | ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. Correction (revision 3): its execute raises today, because the original 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch (request #20). |
@@ -257,8 +326,8 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. Request #17. |
 | MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). Request #18. |
 | MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. Request #18. |
-| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
-| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
+| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
+| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 | MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 | MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 | OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -274,13 +343,13 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | Scribble_XDoG_Preprocessor | Scribble XDoG Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | ScribblePreprocessor | Scribble Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
+| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 | ShufflePreprocessor | Content Shuffle | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 | TilePreprocessor | Tile | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | TTPlanet_TileGF_Preprocessor | TTPlanet Tile GuidedFilter | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 | TTPlanet_TileSimple_Preprocessor | TTPlanet Tile Simple | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-| UniFormer-SemSegPreprocessor | UniFormer Segmentor | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
+| UniFormer-SemSegPreprocessor | UniFormer Segmentor | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 | Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
 | UpperBodyTrackingFromPoseKps | Upper Body Tracking From PoseKps (InstanceDiffusion) | partial | Populated multi-person / multi-frame cases: in-process exact vs the genuine original. Guest wire changes plain-data types (int dict keys -> str, numpy float64 -> Tensor); prompt string exact. Evidence: `tests/upperbody-tracking-inprocess-exact-guest-wire-typing-r1`. Guest route: request #19. |
 | Zoe-DepthMapPreprocessor | Zoe Depth Map | pending-capability | Intel/zoedepth-nyu-kitti bundle; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -296,8 +365,8 @@ Dispositions: **tested** = scoped behavior evidence on the registered node (revi
 | `_dwpose/__init__.py` | per-invocation construction: the native module caches are emptied before and after each call (warm == cold proven exact), so no model outlives its invocation |
 | `_dwpose/selection.py` | per-invocation sealed-content binding (no realm identity, no cross-invocation cache) replaces the unconditional hold; ONNX via OpenCV DNN byte constructor only while upstream's own routing selects cv2 (pinned OpenCV); sealed read |
 | `_leres/detector.py` | nested `res101.pth` read via `assets.load_state_dict(ref, member="depth_model")` (the DSINE precedent); the guest weight bridge refuses the whole nested container |
-| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge) |
-| `_restricted_legacy_globals.py` | shared (revision 5): the same proof for legacy (non-zip) archives — the five pickles a BytesIO legacy load reads (DiffusionEdge) |
+| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge); revision 6: L1-L3 (leading bytes, a STORED and bounded data.pkl, one clean refusal) |
+| `_restricted_legacy_globals.py` | shared (revision 5): the same proof for legacy (non-zip) archives — the five pickles a BytesIO legacy load reads (DiffusionEdge); revision 6: the 64 MiB bound holds inside each pickle (Low-2) |
 | `_sealed_asset_read.py` | shared: whole-archive reads through the bounded `assets.read_range` (<= 16 MiB per call), size + sha256 verified — the guest caps `assets.read_bytes` at 64 MiB |
 | `_unimatch/metadata-equivalence-proof.json` | the recorded proof (with/without `_metadata`: identical state and outputs on the original model, this checkpoint only) |
 | `_unimatch/selection.py` | checkpoint `_metadata` accepted only with the recorded per-checkpoint equivalence proof (proof sha256 + checkpoint sha256/bytes/revision + torch build); both routes load the metadata-free state |
