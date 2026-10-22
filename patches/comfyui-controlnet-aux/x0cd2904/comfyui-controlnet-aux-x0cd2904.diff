@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,835 @@
+@@ -0,0 +1,889 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 64 of 64 converted; 52 tested (scoped), 3 converted but untested/partly tested,
 +> 9 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -18,8 +18,10 @@
 +> Metric3D and DiffusionEdge) and re-tested exactly on the a2 base. No count or live gate changes. See "Revision 6".
 +> **Revision 7 (2026-10-21):** DiffusionEdge's urban and natrual environments are inspected and tested (scoped) on the
 +> revision 6 bytes. No count or live gate changes. See "Revision 7".
++> **Revision 8 (2026-10-21):** Metric3D's vit-large backbone runs (a 2 GiB per-checkpoint budget) and is tested for
++> both nodes. vit-giant2 still refuses, and that refusal is now tested. No count or live gate changes. See "Revision 8".
 +
-+# ControlNet Aux — secure conversion report (in progress, revision 7)
++# ControlNet Aux — secure conversion report (in progress, revision 8)
 +
 +## Provenance
 +
@@ -27,6 +29,57 @@
 +- Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 +- Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 +- Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
++
++## Revision 8 (2026-10-21): Metric3D vit-large (2 GiB per-checkpoint budget)
++
++Revision 8 lets Metric3D's vit-large backbone run, and tests it for both nodes. The dropdown of both nodes offers
++vit-small, vit-large and vit-giant2, as upstream does (vit-only). Before this revision, only vit-small fitted the
++selection code's 512 MiB limit.
++
++Change (production code; independently reviewed with revision 6: CLEAR_WITH_NOTES, no high or medium findings):
++- `_metric3d/selection.py`: the archive bytes, the declared tensor bytes and the decoded total share a 2 GiB
++  per-checkpoint budget, as for DiffusionEdge. The archive was already read in bounded read_range chunks, so the guest's
++  whole-read cap does not apply. The primitive metadata proof keeps its own 512 MiB bound. Only `validate_raw` and the
++  constants change, and every refusal text is the same.
++
++| Backbone | Checkpoint (JUGGHM/Metric3D @ 80d2d141) | Bytes | Outcome |
++| --- | --- | --- | --- |
++| vit-small | `metric_depth_vit_small_800k.pth` | 150,120,967 | tested (revision 4) |
++| vit-large | `metric_depth_vit_large_800k.pth` | 1,647,972,663 | tested (this revision): fits the budget |
++| vit-giant2 | `metric_depth_vit_giant2_800k.pth` | 5,510,989,187 | refused at selection time, before any read (tested in this revision) |
++
++Evidence (`validation/20261021-controlnet-aux-metric3d-large-a2base-r1/`):
++two selected bounded attempts, one per node, on the a2 base, with the revision 6 bytes plus this change. Sandbox off, CPU,
++one thread, 8 GiB; peak 6.44 GB; 281 s (Depth) and 275 s (Normal).
++- Inspection, in each attempt:
++  - the pins, the zip format and 3 default-allowlisted globals;
++  - three identical decodes;
++  - Metric3D's raw facts, computed as `validate_raw` checks them: one `model_state_dict`, 529 tensors,
++    1,647,769,708 B.
++  The test-only approved selection derived from these facts (the revision 4 vit-small selection plus vit-large) was
++  accepted by the validator in both attempts, with the same hash. The evidence holds it byte-exact.
++- Parity, per node:
++  - the pack as published refuses with its own text;
++  - the genuine original, an ordinary guest and the registered node in process are exactly equal on the revision 4
++    input (checker 64x64, resolution 64, fx = fy = 1000);
++  - the sealed read is reached, and the original's checkpoint path is the selection's discriminator;
++  - the guest without `assets` is refused.
++  Each vit-large call took about 85-90 s on one CPU thread.
++- vit-giant2, in the Depth attempt: an approved giant2 entry carries the real file facts, taken from the Hugging Face tree
++  metadata (the file was never fetched). The node refuses with "Metric3D bounded archive count is unselected" at
++  selection time, with no sealed read and no vendor import.
++MERVYN fetched vit-large from the pinned revision, in one attempt, with size and sha256 from the tree metadata.
++
++Live: unchanged (requests #21, #23 and #24). Each backbone used on live needs its facts in the production selection (#21).
++vit-large is not a declared weight. On live, the operator must stage `metric_depth_vit_large_800k.pth` (1,647,972,663 B,
++sha256 15328ffc…) byte-exact in `controlnet`, as
++`huggingface/JUGGHM/Metric3D/80d2d1410afb4b23cd9d18c6be9144483d4b70b6/metric_depth_vit_large_800k.pth`. Declaring it as an
++`on_demand` weight would need its own code and manifest change (review B-L1).
++vit-large needs a guest memory budget of about 6.5 GB. The sealed payload, the decoded state and the model coexist (this
++run's cgroup peak was 6.44 GB at 8 GiB, sandbox off). A checkpoint at the 2 GiB ceiling would need about 7 GB (review
++B-L2).
++
++Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 +
 +## Revision 7 (2026-10-21): DiffusionEdge urban and natrual
 +
@@ -134,6 +187,7 @@
 +  - DiffusionEdge's urban and natrual main checkpoints are not inspected. Whether they fit the 2 GiB budget is unknown.
 +    (Closed in revision 7: both are inspected and tested, and both fit.)
 +  - The Metric3D NOT_RUN gate still plans vit-large and vit-giant2 (out of scope, see above).
++    (Revision 8: vit-large now fits the budget and is tested; vit-giant2 still refuses.)
 +
 +Live: unchanged (requests #21, #23, #24 and #25, and operator staging of the undeclarable weights).
 +
@@ -375,8 +429,8 @@
 +| MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. Request #17. |
 +| MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). Request #18. |
 +| MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. Request #18. |
-+| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
-+| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
++| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small (revision 4) and vit-large (revision 8: `validation/20261021-controlnet-aux-metric3d-large-a2base-r1/`). vit-giant2 (5.51 GB) exceeds the 2 GiB per-checkpoint budget and refuses at selection time, before any read, although the dropdown offers it (tested in revision 8). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
++| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small (revision 4) and vit-large (revision 8: `validation/20261021-controlnet-aux-metric3d-large-a2base-r1/`). vit-giant2 (5.51 GB) exceeds the 2 GiB per-checkpoint budget and refuses at selection time, before any read, although the dropdown offers it (tested in revision 8). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 +| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 +| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 +| OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -50717,7 +50771,7 @@
 +}
 --- /dev/null
 +++ b/v2/_metric3d/selection.py
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,211 @@
 +"""Metric3D raw checkpoint contract; stdlib selection before new imports."""
 +from collections import OrderedDict
 +from dataclasses import dataclass
@@ -50730,7 +50784,11 @@
 +PIN = '0cd290477128d42cdc3e76a826a402d866e8c684'
 +REPO = 'JUGGHM/Metric3D'
 +BACKBONES = ('vit-small', 'vit-large', 'vit-giant2')
-+MAX_BYTES = 512 * 1024 * 1024
++# The sealed archive is read in bounded read_range chunks (_sealed_asset_read), so the guest's whole-read cap does not
++# apply. Archive bytes, declared tensor bytes and the decoded total share a 2 GiB per-checkpoint budget (as
++# DiffusionEdge): vit-small 150 MB and vit-large 1.65 GB fit, and vit-giant2 (5.51 GB) refuses at selection time.
++MAX_BYTES = 2 * 1024 * 1024 * 1024
++MAX_PROOF_BYTES = 512 * 1024 * 1024  # the primitive metadata proof (metadata only, never the state)
 +
 +
 +def digest(value):
@@ -50894,7 +50952,7 @@
 +    if hasattr(raw, '_metadata'):
 +        proof.append(['raw_metadata', primitive(raw._metadata)])
 +    encoded = json.dumps(proof, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
-+    if len(encoded) > MAX_BYTES or hashlib.sha256(encoded).hexdigest() != r['primitive_contract_sha256']:
++    if len(encoded) > MAX_PROOF_BYTES or hashlib.sha256(encoded).hexdigest() != r['primitive_contract_sha256']:
 +        raise RuntimeError('Metric3D actual complete primitive metadata/container proof differs')
 +    return raw
 +
