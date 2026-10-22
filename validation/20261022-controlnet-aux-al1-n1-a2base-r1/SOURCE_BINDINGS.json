@@ -1,0 +1,75 @@
+{
+ "run_base": {
+  "core": "a2 d1a9259",
+  "backend": "a1 894ead3",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "helper_fix": "_restricted_globals.py 2cecd6a4 (corpus main b0e56d8d, Aux rev 9)",
+  "helper_prefix": "_restricted_globals.py af7b3018 (corpus e1ee6f7b, Aux rev 8)"
+ },
+ "binding": {
+  "spec": {
+   "file": "consumers/ned-controlnet-aux-al1-n1-runs-20261022/SPEC_TIER_N1_R1.json",
+   "sha256": "6d264ed059e6f214dcb48f1307d0b90bc111c25b4323dc2bceb426eb380f1e83",
+   "name": "aux-al1-n1-retest-v1"
+  },
+  "pins": {
+   "file": "consumers/ned-controlnet-aux-al1-n1-runs-20261022/PINS_N1.json",
+   "sha256": "5cc59cb145983c2a1dee0a242d2f19d8069c1ba72ededa812587e96c0c213ce9"
+  },
+  "packet_zip": {
+   "file": "consumers/ned-controlnet-aux-al1-n1-20261022-r1.zip",
+   "sha256": "91261f2d7271c730d125a3b5c257ea5d80d97dd2e2c6505c80656ee5cb3ad570",
+   "bytes": 18225
+  },
+  "launcher_r4": {
+   "file": "consumers/ned-controlnet-aux-al1-n1-runs-20261022/launcher-r4/run_bounded_container_self_launch.py",
+   "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+  },
+  "limits": {
+   "memory_gib": 3,
+   "gate": "MemAvailable >= 7 GiB",
+   "deadline_seconds": 300,
+   "tmpfs_mb": 64,
+   "cpus": 2,
+   "expected_peak": "under 1.5 GB (torch import + small in-memory archives)"
+  },
+  "pins_equal_to_earlier": {
+   "/runtime/engine": [
+    "PINS_C1 /runtime/engine"
+   ],
+   "/overlay/backend": [
+    "PINS_C1 /overlay/backend"
+   ],
+   "/python-env": [
+    "PINS_C1 /python-env"
+   ]
+  }
+ },
+ "mounts": {
+  "/runtime/engine": {
+   "source": "core a2 d1a9259 (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 1308
+  },
+  "/overlay/backend": {
+   "source": "backend a1 894ead3 backend/ (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 458
+  },
+  "/python-env": {
+   "source": "readable copy of the always-on venv (equal to PINS_A1 and PINS_P1) (equal to PINS_C1)",
+   "entries": 870
+  },
+  "/helper-fix": {
+   "source": "published A-L1 helper 2cecd6a4 (corpus main b0e56d8d), from the sealed zip",
+   "entries": 1
+  },
+  "/helper-prefix": {
+   "source": "pre-A-L1 helper af7b3018 (corpus e1ee6f7b), from the sealed zip",
+   "entries": 1
+  },
+  "/driver": {
+   "source": "n1_driver.py (from the sealed zip)",
+   "entries": 1
+  }
+ },
+ "note": "no node execution, no guest, no model forward, no weights, no selection: two helpers compared on in-memory archives"
+}
