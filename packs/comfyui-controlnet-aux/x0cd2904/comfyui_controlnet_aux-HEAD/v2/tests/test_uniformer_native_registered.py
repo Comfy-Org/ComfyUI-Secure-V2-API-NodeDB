@@ -68,11 +68,17 @@ def owning_inputs(positive):
         for module, sha in [('torch.serialization', 'b50f806f9aee71df8c412db95332218deca1ebcb74e694d3e5241da8eefc056c'),
                             ('torch._weights_only_unpickler', 'bc2f0fdcb5657109d066951d58864ec4227c8f65ce4d1f144015062ef097e4b2')]:
             assert file_digest(Path(importlib.import_module(module).__file__)) == sha
-        assert not torch.serialization.get_safe_globals()
+        # ComfyUI registers torch safe globals at import (comfy/utils.py), so "none registered" cannot hold.
+        # The decode instead proves the checkpoint uses only its pinned, default-allowlisted globals (_restricted_globals.py)
+        # on the pinned torch build (review follow-ups M1, L4, L5).
+        from torch import _weights_only_unpickler as unpickler
+        assert str(torch.__version__) == selected['torch_runtime_version']
+        pinned = selected['resource']['pickle_globals']
+        assert pinned == sorted(set(pinned)) and all(g in unpickler._get_allowed_globals() for g in pinned)
     pack = packdb.load_pack(Path(r['stable_snapshot_path']),
                            mount_name='custom_nodes.amy_aux_uniformer', pack_id=r['pack_id'])
     for node_id in IDS:
-        assert set(pack.node_mappings[node_id].SDK_PERMISSIONS) == {'raw', 'assets'}
+        assert set(pack.node_mappings[node_id].SDK_PERMISSIONS) == {'raw', 'assets', 'models.download'}
     return r, selected, sources, pack
 
 

@@ -1,0 +1,134 @@
+{
+ "run_base": {
+  "core": "a2 d1a9259",
+  "backend": "a1 894ead3",
+  "python_env": "readable copy of the always-on venv",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6"
+ },
+ "spec": {
+  "file": "consumers/ned-controlnet-aux-followups-runs-20261021/SPEC_TIER_C_R1.json",
+  "sha256": "2d6de6e1e84ef73fffad181da95d86db57455e22ed06829259fe57a4016025ca",
+  "name": "aux-followups-combined-c1-v1"
+ },
+ "pins": {
+  "file": "consumers/ned-controlnet-aux-followups-runs-20261021/PINS_C1.json",
+  "sha256": "2fed0dd43104cda2ae59b5f055aee2b9c97b12ee77c42150f809fa5eec1d0c09"
+ },
+ "packet_zip": {
+  "file": "consumers/ned-controlnet-aux-followups-20261021-r3.zip",
+  "sha256": "a3cd7e2712876290c9e70014b52946f573a1d481ff2bf187aa708580a55c7ebc",
+  "bytes": 171660
+ },
+ "launcher_r4": {
+  "file": "consumers/ned-controlnet-aux-followups-runs-20261021/launcher-r4/run_bounded_container_self_launch.py",
+  "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+ },
+ "limits": {
+  "memory_gib": 8,
+  "gate": "MemAvailable >= 12 GiB",
+  "deadline_seconds": 900,
+  "tmpfs_mb": 1024,
+  "cpus": 2,
+  "phase_timeouts_s": {
+   "A": 380,
+   "P": 330,
+   "U": 150
+  },
+  "expected_peak": "about 6.2 GB (phase P as in rev 5: 2.1 GB sealed bytes, then the 1.19 GB main decode)"
+ },
+ "pins_equal_to_earlier": {
+  "/runtime/engine": [
+   "PINS_A1 /runtime/engine",
+   "PINS_P1 /runtime/engine"
+  ],
+  "/overlay/backend": [
+   "PINS_A1 /overlay/backend",
+   "PINS_P1 /overlay/backend"
+  ],
+  "/python-env": [
+   "PINS_A1 /python-env",
+   "PINS_P1 /python-env"
+  ],
+  "/aux-orig": [
+   "PINS_P1 /aux-orig"
+  ],
+  "/aux-site": [
+   "PINS_A1 /aux-site"
+  ],
+  "/addict": [
+   "PINS_A1 /addict"
+  ],
+  "/yacs": [
+   "PINS_P1 /yacs"
+  ],
+  "/weights-a": [
+   "PINS_A1 /weights"
+  ],
+  "/weights-p": [
+   "PINS_P1 /weights"
+  ]
+ },
+ "mounts": {
+  "/runtime/engine": {
+   "source": "core a2 d1a9259 (equal to PINS_A1 and PINS_P1)",
+   "entries": 1308
+  },
+  "/overlay/backend": {
+   "source": "backend a1 894ead3 backend/ (equal to PINS_A1 and PINS_P1)",
+   "entries": 458
+  },
+  "/python-env": {
+   "source": "readable copy of the always-on venv (equal to PINS_A1 and PINS_P1)",
+   "entries": 870
+  },
+  "/aux-v2": {
+   "source": "corpus main 3583e7bd Aux v2 (NED own clone), read-only",
+   "entries": 1594
+  },
+  "/aux-orig": {
+   "source": "pristine upstream 0cd2904 src/, node_wrappers/, utils.py at corpus main 3583e7bd; equal to the rev 5 PINS_P1 /aux-orig",
+   "entries": 704
+  },
+  "/aux-site": {
+   "source": "profile f65ac4fe / lock b6074c82 unpacked read-only (equal to PINS_A1)",
+   "entries": 6941
+  },
+  "/addict": {
+   "source": "addict 2.4.0 test-only root (equal to PINS_A1 /addict; request #24)",
+   "entries": 7
+  },
+  "/yacs": {
+   "source": "yacs 0.1.8 test-only root (equal to PINS_P1 /yacs; request #25)",
+   "entries": 9
+  },
+  "/weights-a": {
+   "source": "UniFormer and Metric3D vit-small weights (equal to PINS_A1 /weights)",
+   "entries": 2
+  },
+  "/weights-p": {
+   "source": "DiffusionEdge main, swin_b, vgg16 and lpips (equal to PINS_P1 /weights)",
+   "entries": 4
+  },
+  "/port": {
+   "source": "candidate r3, 7 files (from the sealed packet zip)",
+   "entries": 7
+  },
+  "/selections": {
+   "source": "test-only selections a/ (rev 4 + torch pin, FA1-FA3) and p/ (rev 5, F1-F3, F5-F8) (from the sealed packet zip)",
+   "entries": 57
+  },
+  "/driver": {
+   "source": "combined driver, phase drivers A/P/U, original sides, fixture, stand-in and blocker (from the sealed packet zip)",
+   "entries": 9
+  }
+ },
+ "container": "launcher r4: 8 GiB = swap, gate MemAvailable >= 12 GiB, 2 CPUs, no network, read-only, uid 1000:1000, CapDrop ALL",
+ "sandbox": "off (COMFY_SECURE_SANDBOX_MODE=off): protocol and host-provider evidence, not sandbox evidence",
+ "harness_substitutions": [
+  "test-only approved selections (rev 4 + torch_runtime_version; rev 5 unchanged; hashes in TEST_ONLY_SELECTIONS.json)",
+  "addict 2.4.0 and yacs 0.1.8 test-only dependency roots",
+  "DiffusionEdge original side: the empty albumentations stand-in and the install_deps no-op (as in rev 5)",
+  "converted side: albumentations blocked (as in rev 5)",
+  "harness-built bytes: F4/F9 (legacy lpips copies) and the unit-row files, in memory or tmpfs"
+ ]
+}

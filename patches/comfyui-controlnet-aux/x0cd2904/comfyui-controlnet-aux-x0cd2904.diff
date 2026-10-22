@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,720 @@
+@@ -0,0 +1,789 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 64 of 64 converted; 52 tested (scoped), 3 converted but untested/partly tested,
 +> 9 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -14,8 +14,10 @@
 +> **Revision 5 (2026-10-21):** DiffusionEdge is tested (scoped) under a test-only approved selection and a test-env
 +> `yacs` (52 tested, 9 open). Live: it refuses 'selection pending' until request #21, then needs `yacs` (request #25)
 +> and operator staging of all four weight files (about 2.1 GB). See "Revision 5".
++> **Revision 6 (2026-10-21):** the review follow-ups are fixed in code (restricted-decode hardening for UniFormer,
++> Metric3D and DiffusionEdge) and re-tested exactly on the a2 base. No count or live gate changes. See "Revision 6".
 +
-+# ControlNet Aux — secure conversion report (in progress, revision 5)
++# ControlNet Aux — secure conversion report (in progress, revision 6)
 +
 +## Provenance
 +
@@ -23,6 +25,73 @@
 +- Pinned commit: `0cd290477128d42cdc3e76a826a402d866e8c684` (key `x0cd2904`)
 +- Revision 2 = the committed revision-1 tree plus the published-v2 fixes of the families that passed since (listed below). Test-only selection approvals are NOT included: production admission stays closed.
 +- Mirror mode: original node ids, display names and categories; no `-Secure` suffixes.
++
++## Revision 6 (2026-10-21): review follow-ups (restricted-decode hardening)
++
++Revision 6 fixes, in code, the follow-ups of the revision 4 and 5 reviews, and re-tests the three affected families
++exactly on the new bytes. It changes no count and no live gate.
++
++Changes (production code; independent production review before publication):
++- `_restricted_globals.py` (the shared zip proof; UniFormer, Metric3D, and DiffusionEdge main and swin_b):
++  - L1: the payload must start with the zip local-file header, the only bytes for which torch takes the zip route. A
++    legacy pickle stream with a zip appended would pass the old zip proof, while torch decodes the unscanned legacy pickles
++    (review Low-1).
++  - L2: `data.pkl` must be STORED, as torch.save writes it, and at most 64 MiB.
++  - L3: any open, read or scan error is one clean refusal.
++- `_restricted_legacy_globals.py`: only the first 64 MiB is scanned, so the bound also holds inside one pickle (Low-2).
++- `_uniformer/selection.py`, `_metric3d/selection.py`:
++  - M1: the per-checkpoint `pickle_globals` pin is checked when the selection is validated, before any vendor import,
++    config evaluation or read.
++  - L4: the selection pins `torch_runtime_version`. The running build is compared before the sealed read (Low-3) and
++    again at decode.
++- `_diffusionedge/selection.py`:
++  - Low-1: before the dispatch, the pinned `archive_format` must match the archive's first four bytes.
++  - Low-3: the torch build is compared before the 2.1 GB read and the model build, and again at each decode.
++  - Low-4: the sealed buffers are cleared when the construction ends, including after a refusal.
++  - The duplicate `import torch` and `record=` lines are gone.
++- `tests/test_uniformer_native_registered.py`, `tests/test_metric3d_native_registered.py` (NOT_RUN gates; L5): they now
++  assert the pinned torch build, the pinned default-allowlisted globals and the shipped `{raw, assets, models.download}`.
++  Out of scope: the Metric3D gate still plans vit-large and vit-giant2, which exceed the 512 MiB read limit.
++- The selection files stay `approved: false` (request #21). An approved UniFormer or Metric3D selection now also needs
++  `torch_runtime_version`.
++
++Evidence (`validation/20261021-controlnet-aux-followups-a2base-r1/`):
++one selected bounded attempt on the a2 base (core a2 `d1a9259`, backend a1 `894ead3`), sandbox off, CPU, one thread,
++8 GiB. Three phases ran in separate interpreters; peak 6.07 GB, 268 s.
++- A (UniFormer, SemSeg, Metric3D Depth and Normal):
++  - The pack as published refuses with its own text.
++  - The genuine original, an ordinary guest and the registered node in process are exactly equal (revision 4 inputs).
++  - Fail-closed rows refused exactly, with no sealed read: a missing `pickle_globals` and a missing torch pin (both
++    before the vendor import), and a wrong torch pin.
++- P (DiffusionEdge):
++  - The revision 5 parity rows again: original, guest and in process exactly equal. Exactly 4 sealed reads, and the
++    buffers are empty after the construction.
++  - Nine fail-closed rows refused exactly, with the expected read counts and the buffers emptied after each decode
++    refusal. They cover both format directions, a wrong or missing torch pin, an unknown format, wrong and extra globals,
++    and a host-registered global (`numpy.dtype`) pinned exactly.
++- U: 14 helper rows:
++  - the six real archives are accepted;
++  - a polyglot (accepted by the old zip proof) is refused;
++  - DEFLATED, oversized and truncated `data.pkl` records are refused;
++  - a legacy pickle over the 64 MiB cap is refused;
++  - host-registered globals are refused in both formats;
++  - a zip given to the legacy proof is refused.
++
++Review follow-ups:
++- Done: M1 and L1–L5 (the revision 4 review), and Low-1 to Low-5 (the revision 5 review).
++- Residuals:
++  - The zip proof parses with Python's zipfile and torch with its own reader. L1 and L2 tie the route and the
++    `data.pkl` record to what torch.save writes, but other zip-parser differences are not covered. Only approved,
++    sha256-pinned bytes reach the proof.
++  - Low-4 covers the buffers dict. Two other cases stay referenced until the exception is dropped (bounded by the 2 GiB
++    budget): the bytes of a refused archive, and resources already read when a later read fails.
++  - Any torch upgrade turns the three families off until they are re-inspected (by design: the pins name the build).
++  - DiffusionEdge's urban and natrual main checkpoints are not inspected. Whether they fit the 2 GiB budget is unknown.
++  - The Metric3D NOT_RUN gate still plans vit-large and vit-giant2 (out of scope, see above).
++
++Live: unchanged (requests #21, #23, #24 and #25, and operator staging of the undeclarable weights).
++
++Counts: unchanged (52 tested (scoped), 3 converted but untested/partly tested, 9 partial or missing).
 +
 +## Revision 5 (2026-10-21): DiffusionEdge (yacs)
 +
@@ -238,7 +307,7 @@
 +| DensePosePreprocessor | DensePose Estimator | tested | r50, both cmaps, person image; in-process and guest exact vs the genuine original. Declared assets-only: a `.torchscript` archive cannot be a required weight (SDK). Evidence: `tests/densepose-r50-inprocess-and-guest-vs-original-r1`. **Refuses on live today: its published model selection is unapproved, so it raises a selection error before loading anything (request #21; revision 3).** It also needs its undeclarable TorchScript archive in the live store. |
 +| DepthAnythingPreprocessor | Depth Anything | pending-capability | Upstream maps the `.pth` labels to LiheYoung/depth-anything-*-hf bundles; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
 +| DepthAnythingV2Preprocessor | Depth Anything V2 - Relative | tested | vits checkpoint; in-process and ordinary guest exact vs the genuine original — evidence: `tests/depthv2-vits-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
-+| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). |
++| DiffusionEdge_Preprocessor | Diffusion Edge (batch size ↑ => speed ↑, VRAM ↑) | tested | tested (scoped): test-only approved selection and a test-env yacs 0.1.8 (harness; hashes recorded). Live: refuses 'selection pending' until the selection is approved (#21); then needs yacs in the Aux profile (#25) and operator staging of all four weight files (about 2.1 GB, byte-exact): the torchvision and LPIPS files have no declarable source, and the main checkpoint is deliberately not declared (declaring it would add models.download and a 1.19 GB download before the selection refusal). Evidence: `validation/20261021-controlnet-aux-diffusionedge-a2base-r1/` (revision 5: in process and ordinary guest exactly equal to the genuine original; the 64x64 fixture at resolution 320, one 320x320 window, patch_batch_size 4, indoor; fail-closed rows for the per-archive globals proof and the torch pin). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 +| DSINE-NormalMapPreprocessor | DSINE Normal Map | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `dsine-shared-full-cli-original-member-model-pass-r4`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 +| DWPreprocessor | DWPose Estimator | tested | yolox_l.onnx (OpenCV DNN, as upstream routes it here) + dw-ll TorchScript; in-process and guest exact vs the genuine original, cold and warm — evidence: `tests/dwpose-animalpose-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** It also needs undeclarable TorchScript weights in the live store. |
 +| ExecuteAllControlNetPreprocessors | Execute All ControlNet Preprocessors | partial | Schema discovery passes (canonical successor). A full positive run needs a graph executor with every child preprocessor runnable; blocked children are listed in this table. Correction (revision 3): its execute raises today, because the original 140-node expansion exceeds the SDK's 128-node limit and uses core ImageBatch (request #20). |
@@ -260,8 +329,8 @@
 +| MediaPipe-FaceMeshPreprocessor | MediaPipe Face Mesh | blocked (platform) | blocked: needs the legacy mediapipe `mp.solutions` API, absent from every mediapipe wheel for Python 3.13 (checked 1.1.1, 0.10.35, 0.10.31). Evidence: `tests/facemesh-mediapipe-legacy-solutions-absent-py313-r1`. Reopens if a <=3.12 side runtime exists. Request #17. |
 +| MeshGraphormer+ImpactDetector-DepthMapPreprocessor | MeshGraphormer Hand Refiner With External Detector | blocked (platform) | As MeshGraphormer-DepthMapPreprocessor, plus an Impact-Pack detector (external pack). Request #18. |
 +| MeshGraphormer-DepthMapPreprocessor | MeshGraphormer Hand Refiner | blocked (platform) | blocked: mediapipe's native `libmediapipe.so` needs `libEGL.so.1` + `libGLESv2.so.2`, absent from the engine image, so the Tasks HandLandmarker cannot load. Evidence: `tests/meshgraphormer-mediapipe-profile-proof-r1`. Then: mediapipe==0.10.35 profile request (queued), trimesh, yacs, weights, MANO/SMPL data. Request #18. |
-+| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
-+| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. |
++| Metric3D-DepthMapPreprocessor | Metric3D Depth Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
++| Metric3D-NormalMapPreprocessor | Metric3D Normal Map | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64, vit-small, fx = fy = 1000). Tested with vit-small only: vit-large (1.65 GB) and vit-giant2 (5.51 GB) exceed the selection code's 512 MiB read limit, so they refuse even after approval, although the backbone dropdown offers them. Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 +| MiDaS-DepthMapPreprocessor | MiDaS Depth Map | tested | In-process and ordinary guest exact vs the native golden (scoped, isolated) — evidence: `tests/midas-learned-inprocess-and-guest-isolated-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 +| MiDaS-NormalMapPreprocessor | MiDaS Normal Map | tested | In-process and ordinary guest exact vs the genuine original — evidence: `tests/midas-normal-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** Its code also accepts only a test-only selection. |
 +| OneFormer-ADE20K-SemSegPreprocessor | OneFormer ADE20K Segmentor | pending-capability | shi-labs/oneformer_ade20k_swin_large bundle + the class-info JSON transformers fetches from the shi-labs/oneformer_demo dataset repo; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -277,13 +346,13 @@
 +| Scribble_PiDiNet_Preprocessor | Scribble PiDiNet Lines | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `pidinet-full-cli-original-model-pass-r1`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 +| Scribble_XDoG_Preprocessor | Scribble XDoG Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 +| ScribblePreprocessor | Scribble Lines | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-+| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
++| SemSegPreprocessor | Semantic Segmentor (legacy, alias for UniFormer) | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 +| ShufflePreprocessor | Content Shuffle | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 +| TEEDPreprocessor | TEEDPreprocessor | tested | Scoped original-model pass on shared HTTP and full-source CLI (original checkpoint exercised) — evidence: `teed-shared-and-full-cli-same-runtime-original-model-pass-r2`. Live: refused at dispatch (request #23: it declares required weights, and live never grants `models.download`). |
 +| TilePreprocessor | Tile | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 +| TTPlanet_TileGF_Preprocessor | TTPlanet Tile GuidedFilter | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
 +| TTPlanet_TileSimple_Preprocessor | TTPlanet Tile Simple | tested | Scoped typed native pass (non-model controls) — evidence: `nineteen-nodes-r1` |
-+| UniFormer-SemSegPreprocessor | UniFormer Segmentor | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). |
++| UniFormer-SemSegPreprocessor | UniFormer Segmentor | tested | tested (scoped): test-only approved selection and a test-env addict 2.4.0 (harness; hashes recorded). Live: dispatch refuses first (#23, required_weights); with #23 fixed it refuses 'selection pending' until #21; addict is not in the live Aux profile (#24). Evidence: `validation/20261021-controlnet-aux-addict4-a2base-r1/` (revision 4: in process and ordinary guest exactly equal to the genuine original; checker 64x64, resolution 64). Revision 6: re-tested exactly on the hardened restricted decode (`validation/20261021-controlnet-aux-followups-a2base-r1/`). |
 +| Unimatch_OptFlowPreprocessor | Unimatch Optical Flow | tested | scale2-regrefine6; in-process and guest exact vs the genuine original; checkpoint `_metadata` accepted only via the recorded per-checkpoint equivalence proof — evidence: `tests/unimatch-scale2-regrefine6-inprocess-and-guest-vs-original-r1`. **Live: refused at dispatch first (request #23: it declares required weights); with #23 fixed it raises a selection error until request #21 (revisions 3 and 4).** |
 +| UpperBodyTrackingFromPoseKps | Upper Body Tracking From PoseKps (InstanceDiffusion) | partial | Populated multi-person / multi-frame cases: in-process exact vs the genuine original. Guest wire changes plain-data types (int dict keys -> str, numpy float64 -> Tensor); prompt string exact. Evidence: `tests/upperbody-tracking-inprocess-exact-guest-wire-typing-r1`. Guest route: request #19. |
 +| Zoe-DepthMapPreprocessor | Zoe Depth Map | pending-capability | Intel/zoedepth-nyu-kitti bundle; needs a sealed transformers bundle constructor (GERALD; exact needs in the Aux group-2 constructor-needs document) plus the bundle files. Request #16. |
@@ -299,8 +368,8 @@
 +| `_dwpose/__init__.py` | per-invocation construction: the native module caches are emptied before and after each call (warm == cold proven exact), so no model outlives its invocation |
 +| `_dwpose/selection.py` | per-invocation sealed-content binding (no realm identity, no cross-invocation cache) replaces the unconditional hold; ONNX via OpenCV DNN byte constructor only while upstream's own routing selects cv2 (pinned OpenCV); sealed read |
 +| `_leres/detector.py` | nested `res101.pth` read via `assets.load_state_dict(ref, member="depth_model")` (the DSINE precedent); the guest weight bridge refuses the whole nested container |
-+| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge) |
-+| `_restricted_legacy_globals.py` | shared (revision 5): the same proof for legacy (non-zip) archives — the five pickles a BytesIO legacy load reads (DiffusionEdge) |
++| `_restricted_globals.py` | shared (revision 4): the restricted torch decode proof for zip archives — the checkpoint's single `data.pkl` may reference only its pinned, default-allowlisted globals (UniFormer, Metric3D, DiffusionEdge); revision 6: L1-L3 (leading bytes, a STORED and bounded data.pkl, one clean refusal) |
++| `_restricted_legacy_globals.py` | shared (revision 5): the same proof for legacy (non-zip) archives — the five pickles a BytesIO legacy load reads (DiffusionEdge); revision 6: the 64 MiB bound holds inside each pickle (Low-2) |
 +| `_sealed_asset_read.py` | shared: whole-archive reads through the bounded `assets.read_range` (<= 16 MiB per call), size + sha256 verified — the guest caps `assets.read_bytes` at 64 MiB |
 +| `_unimatch/metadata-equivalence-proof.json` | the recorded proof (with/without `_metadata`: identical state and outputs on the original model, this checkpoint only) |
 +| `_unimatch/selection.py` | checkpoint `_metadata` accepted only with the recorded per-checkpoint equivalence proof (proof sha256 + checkpoint sha256/bytes/revision + torch build); both routes load the metadata-free state |
@@ -15483,7 +15552,7 @@
 +    )
 --- /dev/null
 +++ b/v2/_diffusionedge/selection.py
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,180 @@
 +"""Real sealed bytes and restricted CPU container decoding; selection unissued."""
 +from collections import OrderedDict
 +from contextlib import contextmanager
@@ -15550,6 +15619,13 @@
 +        if resources[k]['filename']!=name:raise RuntimeError('DiffusionEdge native auxiliary filename differs')
 +    return item
 +
++def require_selected_torch(item):
++    # The restricted-globals proofs rely on private torch APIs, so the running torch build must be the selected one. It is
++    # compared before the sealed reads and the model build (review Low-3), and again at each decode.
++    import torch
++    if torch.__version__!=item['torch_runtime_version']:
++        raise RuntimeError('DiffusionEdge restricted decode torch runtime differs from the selected version')
++
 +def selected_construction(environment):
 +    item=json.loads(Path(__file__).with_name('asset-selection.json').read_text())
 +    if item.get('approved') is not True:
@@ -15565,6 +15641,7 @@
 +
 +async def sealed_buffers(item):
 +    validate_selection(item)
++    require_selected_torch(item)
 +    from comfy_api.latest import sdk
 +    from .._sealed_asset_read import read_sealed_asset
 +    assets=sdk.ctx().assets;out={}
@@ -15580,11 +15657,16 @@
 +
 +@contextmanager
 +def construction(item,buffers):
-+    validate_selection(item)
-+    if CURRENT.get() is not None:raise RuntimeError('DiffusionEdge nested construction lifetime unsupported')
-+    token=CURRENT.set((item,buffers))
-+    try:yield
-+    finally:CURRENT.reset(token)
++    try:
++        validate_selection(item)
++        if CURRENT.get() is not None:raise RuntimeError('DiffusionEdge nested construction lifetime unsupported')
++        token=CURRENT.set((item,buffers))
++        try:yield
++        finally:CURRENT.reset(token)
++    finally:
++        # Review Low-4: release every sealed buffer still held (after a refusal, or a resource never decoded) when the
++        # construction ends.
++        buffers.clear()
 +
 +def restricted_checkpoint(key):
 +    current=CURRENT.get()
@@ -15599,8 +15681,10 @@
 +    # default-allowlisted globals: zip archives through _restricted_globals, legacy archives through _restricted_legacy_globals.
 +    record=item['resources'][key]
 +    import torch
-+    if torch.__version__!=item['torch_runtime_version']:
-+        raise RuntimeError('DiffusionEdge restricted decode torch runtime differs from the selected version')
++    require_selected_torch(item)
++    # Review Low-1: torch.load picks the zip route from the first four bytes alone, so the pinned format must match them.
++    if (blob[:4]==b'PK\x03\x04')!=(record['archive_format']=='zip'):
++        raise RuntimeError('DiffusionEdge restricted decode archive format differs from the selected format')
 +    if record['archive_format']=='zip':
 +        from .._restricted_globals import require_default_allowlisted
 +        require_default_allowlisted(blob,record['pickle_globals'])
@@ -15609,10 +15693,9 @@
 +        require_default_allowlisted_legacy(blob,record['pickle_globals'])
 +    # Exact physically bound Torch reader source; no safe-global additions,
 +    # raw host path, default pickle, flattening, synthesized model or EMA map.
-+    import torch
 +    value=torch.load(io.BytesIO(blob),map_location='cpu',weights_only=True)
 +    del blob
-+    structure,total=raw_structure(value,torch);record=item['resources'][key]
++    structure,total=raw_structure(value,torch)
 +    if sha(json.dumps(structure,sort_keys=True,separators=(',',':')).encode())!=record['raw_structure_sha256'] or total!=record['tensor_bytes'] or total>MAX_TOTAL_BYTES:
 +        raise RuntimeError('DiffusionEdge actual raw nested metadata/storage structure differs')
 +    return value
@@ -50588,7 +50671,7 @@
 +}
 --- /dev/null
 +++ b/v2/_metric3d/selection.py
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,207 @@
 +"""Metric3D raw checkpoint contract; stdlib selection before new imports."""
 +from collections import OrderedDict
 +from dataclasses import dataclass
@@ -50621,6 +50704,10 @@
 +            raise RuntimeError('Metric3D actual vendor/config/environment/device/exclusive lifetime evidence missing')
 +    if type(item.get('device')) is not str or re.fullmatch(r'cpu|mps|cuda(?::[0-9]+)?', item['device']) is None:
 +        raise RuntimeError('Metric3D actual native to-device is unselected')
++    # L4: the restricted-globals proof uses private torch APIs (get_globals_in_pkl and the default allowlist), so the
++    # selection pins the torch build it was inspected on (compared in require_selected_torch).
++    if type(item.get('torch_runtime_version')) is not str or not item['torch_runtime_version']:
++        raise RuntimeError('Metric3D restricted decode torch runtime version is unselected')
 +    r = item.get('resource', {})
 +    if r.get('approved') is not True or r.get('raw_container_approved') is not True:
 +        raise RuntimeError('Metric3D complete raw metadata/state/storage contract remains held')
@@ -50650,7 +50737,20 @@
 +        raise RuntimeError('Metric3D actual ordered state keys are unselected')
 +    if type(r.get('tensor_bytes')) is not int or not 0 < r['tensor_bytes'] <= MAX_BYTES:
 +        raise RuntimeError('Metric3D actual bounded state materialization is unselected')
++    # M1: the per-checkpoint restricted-globals pin is checked here, before any vendor import, config evaluation or
++    # archive read: the exact sorted global list from the restricted inspection.
++    pinned = r.get('pickle_globals')
++    if type(pinned) is not list or not pinned or any(type(g) is not str or not g for g in pinned) or pinned != sorted(set(pinned)):
++        raise RuntimeError('Metric3D restricted decode pinned pickle globals are unselected')
 +    return r
++
++
++def require_selected_torch(item):
++    # L4: the restricted-globals proof relies on private torch APIs, so the running torch build must be the selected one.
++    # It is compared before the sealed read (the port r2 review's Low-3) and again at decode.
++    import torch
++    if torch.__version__ != item['torch_runtime_version']:
++        raise RuntimeError('Metric3D restricted decode torch runtime differs from the selected version')
 +
 +
 +def selected_checkpoint(backbone):
@@ -50691,6 +50791,7 @@
 +    r = validate_selection(item)
 +    if (repo, filename) != (r['source_repo'], r['source_filename']):
 +        raise RuntimeError('Metric3D constructor exact repo/filename differs')
++    require_selected_torch(item)
 +    from comfy_api.latest import sdk
 +    assets = sdk.ctx().assets
 +    ref = await assets.resolve(r['folder'], r['catalogue_name'])
@@ -50763,6 +50864,7 @@
 +    # fallback. torch and the ComfyUI host register their own safe globals, so
 +    # "none registered" never holds; instead the pinned per-checkpoint proof shows
 +    # this decode resolves only torch DEFAULT-allowlisted globals (consulted first).
++    require_selected_torch(archive.selection)
 +    from .._restricted_globals import require_default_allowlisted
 +    require_default_allowlisted(archive.payload, archive.selection['resource'].get('pickle_globals'))
 +    raw = torch.load(BytesIO(archive.payload), map_location="cpu", weights_only=True)
@@ -68354,7 +68456,7 @@
 +    face: Optional[FaceResult]
 --- /dev/null
 +++ b/v2/_restricted_globals.py
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,54 @@
 +"""Restricted torch decode that provably cannot resolve a host-registered safe global.
 +
 +The ComfyUI host registers extra torch safe globals at import (comfy/utils.py), so the
@@ -68363,23 +68465,41 @@
 +unpickler resolves every referenced GLOBAL from its DEFAULT allowlist before consulting
 +user additions. So every global the checkpoint's single data.pkl references must be in
 +the default allowlist, and the referenced set must equal the one pinned by inspection.
-+Nothing generic: the pinned list is per checkpoint; legacy (non-zip) archives are refused.
++Nothing generic: the pinned list is per checkpoint; legacy (non-zip) archives are refused
++(_restricted_legacy_globals.py is their companion proof).
++
++Fail closed (review follow-ups L1-L3):
++- L1: torch.load takes the zip route only for a payload that starts with a zip local-file header.
++  Any other payload is refused: torch would decode it as a legacy archive, which this proof never
++  scanned, even when a zip is appended to it.
++- L2: data.pkl must be STORED, as torch.save writes it, and at most 64 MiB.
++- L3: any open, read or scan error is one clean refusal.
 +"""
 +import io
 +import zipfile
 +
++MAX_PICKLE_BYTES = 64 * 1024 * 1024
++
 +
 +def checkpoint_pickle_globals(payload):
 +    from torch import _weights_only_unpickler as unpickler
++    if type(payload) is not bytes or payload[:4] != b'PK\x03\x04':
++        raise RuntimeError('restricted decode requires a zip torch archive')
 +    try:
 +        archive = zipfile.ZipFile(io.BytesIO(payload))
-+    except zipfile.BadZipFile:
++    except Exception:
 +        raise RuntimeError('restricted decode requires a zip torch archive') from None
 +    with archive:
-+        records = [n for n in archive.namelist() if n.rsplit('/', 1)[-1] == 'data.pkl']
++        records = [info for info in archive.infolist() if info.filename.rsplit('/', 1)[-1] == 'data.pkl']
 +        if len(records) != 1:
 +            raise RuntimeError('restricted torch archive must hold exactly one data.pkl record')
-+        return sorted(unpickler.get_globals_in_pkl(io.BytesIO(archive.read(records[0]))))
++        record = records[0]
++        if record.compress_type != zipfile.ZIP_STORED or record.compress_size != record.file_size or record.file_size > MAX_PICKLE_BYTES:
++            raise RuntimeError('restricted torch archive data.pkl record is not stored or exceeds the scan bound')
++        try:
++            return sorted(unpickler.get_globals_in_pkl(io.BytesIO(archive.read(record))))
++        except Exception:
++            raise RuntimeError('restricted decode could not scan data.pkl') from None
 +
 +
 +def require_default_allowlisted(payload, pinned):
@@ -68412,7 +68532,7 @@
 +
 +Fail closed:
 +- zip payloads are refused here (use _restricted_globals);
-+- the scanned pickle bytes are bounded;
++- the scan reads at most the first 64 MiB, even inside a single pickle (review Low-2);
 +- any read or scan error is one clean refusal.
 +"""
 +import io
@@ -68425,12 +68545,12 @@
 +    from torch import _weights_only_unpickler as unpickler
 +    if type(payload) is not bytes or payload[:4] == b'PK\x03\x04':
 +        raise RuntimeError('restricted legacy decode requires a non-zip torch archive')
-+    stream, found = io.BytesIO(payload), set()
++    # Review Low-2: only the first 64 MiB is scanned, so the bound also holds inside a single pickle; a pickle that runs
++    # past it cannot be scanned, which is a refusal.
++    stream, found = io.BytesIO(payload[:MAX_PICKLE_BYTES]), set()
 +    try:
 +        for _part in LEGACY_PICKLES:
 +            found.update(unpickler.get_globals_in_pkl(stream))
-+            if stream.tell() > MAX_PICKLE_BYTES:
-+                raise ValueError('legacy pickles exceed the scan bound')
 +    except Exception:
 +        raise RuntimeError('restricted legacy decode could not scan the legacy pickles') from None
 +    return sorted(found)
@@ -131095,7 +131215,7 @@
 +        return ("BOOLEAN", dict(default=default))
 --- /dev/null
 +++ b/v2/_uniformer/selection.py
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,184 @@
 +"""UniFormer raw checkpoint contract; stdlib selection before new imports."""
 +from collections import OrderedDict
 +from dataclasses import dataclass
@@ -131128,6 +131248,10 @@
 +            raise RuntimeError('UniFormer actual vendor/config/environment/device/exclusive lifetime evidence missing')
 +    if type(item.get('device')) is not str or re.fullmatch(r'cpu|mps|cuda(?::[0-9]+)?', item['device']) is None:
 +        raise RuntimeError('UniFormer actual native to-device is unselected')
++    # L4: the restricted-globals proof uses private torch APIs (get_globals_in_pkl and the default allowlist), so the
++    # selection pins the torch build it was inspected on (compared in require_selected_torch).
++    if type(item.get('torch_runtime_version')) is not str or not item['torch_runtime_version']:
++        raise RuntimeError('UniFormer restricted decode torch runtime version is unselected')
 +    r = item.get('resource', {})
 +    if r.get('approved') is not True or r.get('raw_container_approved') is not True:
 +        raise RuntimeError('UniFormer complete raw metadata/state/storage contract remains held')
@@ -131154,7 +131278,20 @@
 +        raise RuntimeError('UniFormer actual ordered state keys are unselected')
 +    if type(r.get('tensor_bytes')) is not int or not 0 < r['tensor_bytes'] <= MAX_BYTES:
 +        raise RuntimeError('UniFormer actual bounded state materialization is unselected')
++    # M1: the per-checkpoint restricted-globals pin is checked here, before any vendor import, config evaluation or
++    # archive read: the exact sorted global list from the restricted inspection.
++    pinned = r.get('pickle_globals')
++    if type(pinned) is not list or not pinned or any(type(g) is not str or not g for g in pinned) or pinned != sorted(set(pinned)):
++        raise RuntimeError('UniFormer restricted decode pinned pickle globals are unselected')
 +    return r
++
++
++def require_selected_torch(item):
++    # L4: the restricted-globals proof relies on private torch APIs, so the running torch build must be the selected one.
++    # It is compared before the sealed read (the port r2 review's Low-3) and again at decode.
++    import torch
++    if torch.__version__ != item['torch_runtime_version']:
++        raise RuntimeError('UniFormer restricted decode torch runtime differs from the selected version')
 +
 +
 +def selected_checkpoint():
@@ -131183,6 +131320,7 @@
 +    r = validate_selection(item)
 +    if (repo, filename) != (r['source_repo'], r['source_filename']):
 +        raise RuntimeError('UniFormer constructor exact repo/filename differs')
++    require_selected_torch(item)
 +    from comfy_api.latest import sdk
 +    assets = sdk.ctx().assets
 +    ref = await assets.resolve(r['folder'], r['catalogue_name'])
@@ -131257,6 +131395,7 @@
 +    # fallback. torch and the ComfyUI host register their own safe globals, so
 +    # "none registered" never holds; instead the pinned per-checkpoint proof shows
 +    # this decode resolves only torch DEFAULT-allowlisted globals (consulted first).
++    require_selected_torch(archive.selection)
 +    from .._restricted_globals import require_default_allowlisted
 +    require_default_allowlisted(archive.payload, archive.selection['resource'].get('pickle_globals'))
 +    raw = torch.load(BytesIO(archive.payload), map_location=map_location, weights_only=True)
@@ -157624,7 +157763,7 @@
 +    # PRIVATE actual model override, never a registered callable model bridge.
 --- /dev/null
 +++ b/v2/tests/test_metric3d_native_registered.py
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,231 @@
 +"""Future genuine trained Metric3D/native/registered cases. Authored NOT_RUN."""
 +import ast
 +import asyncio
@@ -157693,9 +157832,16 @@
 +        for module,digest in [('torch.serialization','b50f806f9aee71df8c412db95332218deca1ebcb74e694d3e5241da8eefc056c'),
 +                              ('torch._weights_only_unpickler','bc2f0fdcb5657109d066951d58864ec4227c8f65ce4d1f144015062ef097e4b2')]:
 +            assert file_digest(Path(importlib.import_module(module).__file__))==digest
-+        assert not torch.serialization.get_safe_globals()
++        # ComfyUI registers torch safe globals at import (comfy/utils.py), so "none registered" cannot hold.
++        # The decode instead proves each checkpoint uses only its pinned, default-allowlisted globals (_restricted_globals.py)
++        # on the pinned torch build (review follow-ups M1, L4, L5).
++        from torch import _weights_only_unpickler as unpickler
++        assert str(torch.__version__)==selected['torch_runtime_version']
++        for row in selected['resources'].values():
++            pinned=row['pickle_globals']
++            assert pinned==sorted(set(pinned)) and all(g in unpickler._get_allowed_globals() for g in pinned)
 +    pack=packdb.load_pack(Path(r['stable_snapshot_path']),mount_name='custom_nodes.amy_aux_metric3d',pack_id=r['pack_id'])
-+    for node_id in IDS:assert set(pack.node_mappings[node_id].SDK_PERMISSIONS)=={'raw','assets'}
++    for node_id in IDS:assert set(pack.node_mappings[node_id].SDK_PERMISSIONS)=={'raw','assets','models.download'}
 +    return r,selected,sources,pack
 +
 +
@@ -159338,7 +159484,7 @@
 +        cold_warm_cache_or_device_portability=None, whole_pack_acceptance=False), indent=2) + '\n')
 --- /dev/null
 +++ b/v2/tests/test_uniformer_native_registered.py
-@@ -0,0 +1,263 @@
+@@ -0,0 +1,269 @@
 +"""Future actual trained UniFormer two-alias native/registered gate. NOT_RUN."""
 +import ast
 +import asyncio
@@ -159409,11 +159555,17 @@
 +        for module, sha in [('torch.serialization', 'b50f806f9aee71df8c412db95332218deca1ebcb74e694d3e5241da8eefc056c'),
 +                            ('torch._weights_only_unpickler', 'bc2f0fdcb5657109d066951d58864ec4227c8f65ce4d1f144015062ef097e4b2')]:
 +            assert file_digest(Path(importlib.import_module(module).__file__)) == sha
-+        assert not torch.serialization.get_safe_globals()
++        # ComfyUI registers torch safe globals at import (comfy/utils.py), so "none registered" cannot hold.
++        # The decode instead proves the checkpoint uses only its pinned, default-allowlisted globals (_restricted_globals.py)
++        # on the pinned torch build (review follow-ups M1, L4, L5).
++        from torch import _weights_only_unpickler as unpickler
++        assert str(torch.__version__) == selected['torch_runtime_version']
++        pinned = selected['resource']['pickle_globals']
++        assert pinned == sorted(set(pinned)) and all(g in unpickler._get_allowed_globals() for g in pinned)
 +    pack = packdb.load_pack(Path(r['stable_snapshot_path']),
 +                           mount_name='custom_nodes.amy_aux_uniformer', pack_id=r['pack_id'])
 +    for node_id in IDS:
-+        assert set(pack.node_mappings[node_id].SDK_PERMISSIONS) == {'raw', 'assets'}
++        assert set(pack.node_mappings[node_id].SDK_PERMISSIONS) == {'raw', 'assets', 'models.download'}
 +    return r, selected, sources, pack
 +
 +

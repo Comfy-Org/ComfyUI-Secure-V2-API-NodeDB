@@ -30,6 +30,10 @@ def validate_selection(item):
             raise RuntimeError('Metric3D actual vendor/config/environment/device/exclusive lifetime evidence missing')
     if type(item.get('device')) is not str or re.fullmatch(r'cpu|mps|cuda(?::[0-9]+)?', item['device']) is None:
         raise RuntimeError('Metric3D actual native to-device is unselected')
+    # L4: the restricted-globals proof uses private torch APIs (get_globals_in_pkl and the default allowlist), so the
+    # selection pins the torch build it was inspected on (compared in require_selected_torch).
+    if type(item.get('torch_runtime_version')) is not str or not item['torch_runtime_version']:
+        raise RuntimeError('Metric3D restricted decode torch runtime version is unselected')
     r = item.get('resource', {})
     if r.get('approved') is not True or r.get('raw_container_approved') is not True:
         raise RuntimeError('Metric3D complete raw metadata/state/storage contract remains held')
@@ -59,7 +63,20 @@ def validate_selection(item):
         raise RuntimeError('Metric3D actual ordered state keys are unselected')
     if type(r.get('tensor_bytes')) is not int or not 0 < r['tensor_bytes'] <= MAX_BYTES:
         raise RuntimeError('Metric3D actual bounded state materialization is unselected')
+    # M1: the per-checkpoint restricted-globals pin is checked here, before any vendor import, config evaluation or
+    # archive read: the exact sorted global list from the restricted inspection.
+    pinned = r.get('pickle_globals')
+    if type(pinned) is not list or not pinned or any(type(g) is not str or not g for g in pinned) or pinned != sorted(set(pinned)):
+        raise RuntimeError('Metric3D restricted decode pinned pickle globals are unselected')
     return r
+
+
+def require_selected_torch(item):
+    # L4: the restricted-globals proof relies on private torch APIs, so the running torch build must be the selected one.
+    # It is compared before the sealed read (the port r2 review's Low-3) and again at decode.
+    import torch
+    if torch.__version__ != item['torch_runtime_version']:
+        raise RuntimeError('Metric3D restricted decode torch runtime differs from the selected version')
 
 
 def selected_checkpoint(backbone):
@@ -100,6 +117,7 @@ async def selected_archive(item, repo, filename):
     r = validate_selection(item)
     if (repo, filename) != (r['source_repo'], r['source_filename']):
         raise RuntimeError('Metric3D constructor exact repo/filename differs')
+    require_selected_torch(item)
     from comfy_api.latest import sdk
     assets = sdk.ctx().assets
     ref = await assets.resolve(r['folder'], r['catalogue_name'])
@@ -172,6 +190,7 @@ def load_raw_checkpoint(archive):
     # fallback. torch and the ComfyUI host register their own safe globals, so
     # "none registered" never holds; instead the pinned per-checkpoint proof shows
     # this decode resolves only torch DEFAULT-allowlisted globals (consulted first).
+    require_selected_torch(archive.selection)
     from .._restricted_globals import require_default_allowlisted
     require_default_allowlisted(archive.payload, archive.selection['resource'].get('pickle_globals'))
     raw = torch.load(BytesIO(archive.payload), map_location="cpu", weights_only=True)
