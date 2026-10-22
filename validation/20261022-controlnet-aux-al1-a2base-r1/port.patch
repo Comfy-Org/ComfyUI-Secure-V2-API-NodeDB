@@ -1,0 +1,38 @@
+--- main/_restricted_globals.py
++++ candidate/_restricted_globals.py
+@@ -15,11 +15,19 @@
+   scanned, even when a zip is appended to it.
+ - L2: data.pkl must be STORED, as torch.save writes it, and at most 64 MiB.
+ - L3: any open, read or scan error is one clean refusal.
++- A-L1: the scanned bytes must be byte-identical to the record torch.load itself unpickles (torch's own zip
++  reader), so a difference between the two zip parsers can never choose what is scanned.
+ """
+ import io
+ import zipfile
+ 
+ MAX_PICKLE_BYTES = 64 * 1024 * 1024
++
++
++def torch_record(payload):
++    """The data.pkl bytes torch.load unpickles: torch's own reader, PyTorchFileReader.get_record('data.pkl')."""
++    import torch
++    return torch._C.PyTorchFileReader(io.BytesIO(payload)).get_record('data.pkl')
+ 
+ 
+ def checkpoint_pickle_globals(payload):
+@@ -38,9 +46,14 @@
+         if record.compress_type != zipfile.ZIP_STORED or record.compress_size != record.file_size or record.file_size > MAX_PICKLE_BYTES:
+             raise RuntimeError('restricted torch archive data.pkl record is not stored or exceeds the scan bound')
+         try:
+-            return sorted(unpickler.get_globals_in_pkl(io.BytesIO(archive.read(record))))
++            data = archive.read(record)
++            same = torch_record(payload) == data
++            found = unpickler.get_globals_in_pkl(io.BytesIO(data)) if same else None
+         except Exception:
+             raise RuntimeError('restricted decode could not scan data.pkl') from None
++        if found is None:
++            raise RuntimeError('restricted torch archive data.pkl differs from the record torch decodes')
++        return sorted(found)
+ 
+ 
+ def require_default_allowlisted(payload, pinned):
