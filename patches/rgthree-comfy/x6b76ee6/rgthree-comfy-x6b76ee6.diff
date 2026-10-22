@@ -1,13 +1,13 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,445 @@
+@@ -0,0 +1,480 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
-+> Revision 5 (corpus PR #54) changed the served frontend layout. Its browser staging on live host stack r3 passed every
-+> row except the required Power Conductor row. Revision 6 (2026-10-21) is a source-only candidate with the pack-side
-+> fixes, and has not been browser-tested.
++> Revision 6 (corpus PR #69) passed its browser staging on live host stack r3 except the three `onNodeChanged` rows
++> (Label title refresh, Repeater, Relay). Revision 7 (2026-10-21) is a source-only candidate that addresses them
++> (untested).
 +> Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
 +> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-+> These are revision 4's counts. They stay unchanged until a browser test of revision 6 passes.
++> These are revision 4's counts. They stay unchanged until a browser test of revision 7 passes.
 +> Not accepted: no whole-pack certificate. Open gates are listed below.
 +
 +<!-- secure-conversion-report-v1 -->
@@ -15,10 +15,45 @@
 +
 +## What this revision contains
 +
-+- **Base:** revision 5 (corpus PR #54, merged as `bef02a60`). Revision 5 was built on revision 4 (PR #17),
-+  and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
++- **Base:** revision 6 (corpus PR #69, merged as `7a5cbe81`). Revision 6 was built on revision 5 (PR #54), revision 5
++  on revision 4 (PR #17), and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
 +  `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
-+- **Changed in revision 6** (candidate, source only). Revision 5 was browser-staged as an overlay on live host stack r3
++- **Changed in revision 7** (candidate, source only). BART's staging of revision 6 on host r3 passed every row except
++  three. They share one symptom with two causes: the `onNodeChanged` handlers did nothing on host r3. The Label title refresh, the
++  Repeater and the Relay were affected; there were 0 packerrors.
++  - **`changedNode` no longer depends on `comfy.graph.id`.** It still needs the node's snapshot filed under the graph
++    on screen. After `app.graph.clear()` the graph id changes and no epoch is sent. The guest then files the new
++    graph's nodes under a scope its replica does not list, so the event is still dropped, as in revision 6. This is a
++    known platform limitation (request R6-12). Revision 6 compared `event.graphId` with
++    `comfy.graph.id`. On guest `c6b97a15` that getter answers `graphState.graphId ?? ''` from a replica the host sends
++    only with a workflow-load epoch, a gesture to a pack that has read structure, or a requested refresh. It is never sent
++    at worker start, so the getter usually read `''`. `root()` and `subgraphs()` answer from the same replica.
++    - The node is now looked up by id on the graph on screen, and kept only if its own `graphId` is the event's. The
++      guest serves that from node snapshots it already holds.
++    - The scopes are only a fallback, for a node in a graph not on screen.
++  - **The new value comes from the event.** The guest does not update its copy of a node when the host reports a
++    change, so `getTitle()` and `getMode()` still read the old value.
++    - The Label lays out `event.to` as its title.
++    - The Repeater and the Relay use `changedMode(event)`, which maps the event's mode (litegraph's numbers on host r3)
++      to the published names. They fall back to `getMode()`.
++  - **Recorded, not changed:** with no pre-selection, "Queue Group Output Nodes" no longer shows for nodes in a group,
++    and "Queue Selected" was still listed after a right-click moved the selection. Both items' visibility is computed in
++    the worker and read by the host at menu-open.
++    - In revision 5 the host never received an answer for these items: its log says "visibility not yet computed …
++      showing it", so it showed both.
++    - In revision 6 the answer is computed. "Queue Group" reads `comfy.graph.groups()` from the same structure
++      replica, which is empty or stale.
++    - The host still shows an item whose answer has not arrived, as in BART's R2 run.
++    - The items' visibility checks are unchanged since revision 5.
++  - **Also affected, not changed (needs request R6-13).** The same stale node copies on host r3 make these lag behind
++    a mode or title change:
++    - the Relay's mode, when it is driven by its inputs;
++    - the Fast Muter / Bypasser toggle state;
++    - Node Collector input names.
++
++    Their rows are PARTIAL on host r3 for that reason too.
++  - **Evidence:** static and module-level; no browser run yet. See the triage folder.
++- **Changed in revision 6** (corpus PR #69). Revision 5 was browser-staged as an overlay on live host stack r3
 +  (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). Every row passed except the required Power Conductor
 +  row. A static live-readiness audit added four findings. Each finding was checked against the published API
 +  (`comfy-api.d.ts`) and the live guest's source.
@@ -242,7 +277,7 @@
 +| `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 +| `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 +| `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
-+| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6 resolves the node again (untested). |
++| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6's re-resolve then did nothing on host r3 (BART's staging, R4); revision 7 fixes that (untested). |
 +| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 +| `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 +| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
@@ -263,8 +298,8 @@
 +| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
 +| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
 +| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
-+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
++| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b), and revision 7 fixes it and takes the new mode from the event (untested). Otherwise untested. F01 is open. |
++| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b), and revision 7 fixes it and takes the new mode from the event (untested). Otherwise untested. F01 is open. |
 +| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
 +| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. Otherwise untested. Legacy node. F01 is open. |
 +| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
@@ -413,7 +448,7 @@
 +  validator. Its checks pass structurally and in the Guest.
 +- Image Comparer with an empty image batch.
 +- Original-comparison runs for the eight frontend-only nodes listed as untested.
-+- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 6's title refresh on host r3 is untested.
++- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 7's title refresh on host r3 is untested.
 +- Revision 5's layout passed its browser staging on host r3, row 9 apart:
 +  - 0 module-load failures across the 73 entry modules;
 +  - the progress badge;
@@ -421,14 +456,14 @@
 +  - the tree-sitter WASM loads from the new path;
 +  - no refusal rows beyond the 8 expected notices;
 +  - a ring of pass-through nodes no longer overflows.
-+- A browser smoke test of revision 6's changes. Until it passes, the node counts above stay at revision 4's. It checks:
-+  - Power Conductor registering with the opt-in on;
-+  - 0 "will not be applied" errors for rgthree's own types, and the Queue items on a Fast Muter;
++- Revision 6's staging on host r3 passed every row except the three `onNodeChanged` rows: Power Conductor
++  registration and reload, the every-node items, queueing, the Node Combiner upgrade, the Context Merge Big label, and
++  the revision 5 regression rows.
++- A browser smoke test of revision 7's changes. Until it passes, the node counts above stay at revision 4's. It checks:
 +  - the Label title refresh;
-+  - the Node Combiner upgrade;
-+  - the Queue items queueing;
-+  - the Context Merge Big label;
-+  - the Repeater and Relay mode handlers.
++  - the Repeater and Relay mode handlers;
++  - the two Queue items' visibility (recorded host behaviour);
++  - a short regression of Power Conductor, the every-node items, queueing and the Node Combiner upgrade.
 +- gVisor admission and whole-pack acceptance review.
 +
 +## Authority and permissions
@@ -14804,7 +14839,7 @@
 +}
 --- a/web/comfyui/base_node.js
 +++ b/v2/web/comfyui/base_node.js
-@@ -1,316 +1,204 @@
+@@ -1,316 +1,232 @@
 -import { app } from "../../scripts/app.js";
 -import { ComfyWidgets } from "../../scripts/widgets.js";
 -import { SERVICE as KEY_EVENT_SERVICE } from "./services/key_events_services.js";
@@ -15048,6 +15083,16 @@
 + * instead: `id`, `type` and `graphId` survive and its methods do not, so a listener that
 + * calls one throws. Such a copy is resolved again here, in its own graph, because ids
 + * repeat across graphs. `undefined` if the node is gone.
++ *
++ * The node is looked up first by id on the graph on screen, and kept only if its own
++ * `graphId` is the event's. That answers from node snapshots, which sandbox guest c6b97a15
++ * holds for every node it has seen. Revision 6 first compared `event.graphId` with
++ * `comfy.graph.id`, but on that guest the getter returns the structure replica's graph
++ * id (`graphState.graphId ?? ''`). The host sends that replica only with a workflow-load
++ * epoch, a gesture to a pack that has read structure, or a requested refresh, never at
++ * worker start, so it was usually '' and every event was dropped. `root()` and
++ * `subgraphs()` answer from the same replica, so they are only the fallback, for a node
++ * on a graph that is not on screen.
 + */
 +export function changedNode(event) {
 +    const node = event?.node;
@@ -15060,8 +15105,27 @@
 -        return importIndividualNodesInnerOnDragOver(this, e);
 +    const id = String(node.id);
 +    const graphId = event.graphId ?? node.graphId;
-+    if (graphId == null || graphId === comfy.graph.id) {
-+        return comfy.graph.node(id);
++    const inGraph = (handle) =>
++        handle && (graphId == null || String(handle.graphId) === String(graphId)) ? handle : undefined;
++    return inGraph(comfy.graph.node(id)) ??
++        inGraph([comfy.graph.root(), ...comfy.graph.subgraphs()]
++            .find((scope) => scope && String(scope.id) === String(graphId))?.node(id));
++}
++
++// litegraph's mode numbers, which host r3 reports in a mode change's `from` / `to`.
++const MODE_NAMES = ["always", "on-event", "never", "on-trigger", "bypass"];
++/**
++ * The mode an `onNodeChanged` mode event changed to, as a published `NodeMode` name, or
++ * `undefined` if the event does not say.
++ *
++ * Read from the event because sandbox guest c6b97a15 does not update its copy of the node
++ * when the host reports a change: `node.getMode()` there still answers the mode from
++ * before the change.
++ */
++export function changedMode(event) {
++    const value = event?.to;
++    if (typeof value === "string") {
++        return MODE_NAMES.includes(value) ? value : undefined;
      }
 -    async onDragDrop(e) {
 -        if (!this.isDropEnabled)
@@ -15318,8 +15382,7 @@
 -    }
 -    return oldregisterNodeType.call(LiteGraph, nodeId, clazz);
 -};
-+    const scope = [comfy.graph.root(), ...comfy.graph.subgraphs()].find((s) => s?.id === graphId);
-+    return scope?.node(id);
++    return Number.isInteger(value) ? MODE_NAMES[value] : undefined;
 +}
 --- a/web/comfyui/base_node_collector.js
 +++ b/v2/web/comfyui/base_node_collector.js
@@ -21613,7 +21676,7 @@
  });
 --- a/web/comfyui/label.js
 +++ b/v2/web/comfyui/label.js
-@@ -1,163 +1,130 @@
+@@ -1,163 +1,133 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { NodeTypesString } from "./constants.js";
@@ -21748,7 +21811,8 @@
 +const keyFor = (node) => JSON.stringify([node.graphId, node.id]);
 +const measurement = new OffscreenCanvas(1, 1).getContext('2d');
 +
-+function refresh(node) {
++// `title`: the new title when a change event carries it; otherwise the node's own.
++function refresh(node, title = node.getTitle()) {
 +  const key = keyFor(node);
 +  let record = records.get(key);
 +  if (!record) {
@@ -21756,7 +21820,7 @@
 +    records.set(key, record);
 +  }
 +  const properties = { ...LABEL_DEFAULTS, ...node.getProperties() };
-+  const layout = layoutLabel(node.getTitle(), properties, measurement);
++  const layout = layoutLabel(title, properties, measurement);
 +  record.properties = properties;
 +  record.layout = layout;
 +  if (!record.surface) {
@@ -21896,13 +21960,15 @@
 +  onPropertyChanged(node) { if (records.has(keyFor(node))) refresh(node); },
 +  onRemoved: remove,
 +});
-+// `refresh` reads the node through its handle (getProperties, getTitle, getSize, canvas).
++// `refresh` reads the node through its handle (getProperties, getSize, canvas).
 +// `changedNode` hands back that handle even where the event carries a plain copy of the
 +// node (host stack r3), where revisions 4 and 5 threw `getProperties is not a function`.
++// The new title comes from the event: sandbox guest c6b97a15 does not update its copy of
++// the node for a change made in the host, so `getTitle()` there still reads the old one.
 +comfy.onNodeChanged((event) => {
 +  if (event.property !== 'title' || event.node?.type !== TYPE) return;
 +  const node = changedNode(event);
-+  if (node) refresh(node);
++  if (node) refresh(node, typeof event.to === 'string' ? event.to : node.getTitle());
 +}, { scope: 'document' });
 --- /dev/null
 +++ b/v2/web/comfyui/label_drawing.js
@@ -22776,7 +22842,7 @@
 -const MODE_BYPASS = 4;
 +import { PassThroughFollowing, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 +import { defineCollectorNode } from "./base_node_collector.js";
-+import { changedNode, helpMenuItem } from "./base_node.js";
++import { changedMode, changedNode, helpMenuItem } from "./base_node.js";
 +
 +// Mute / Bypass Relay — watches the modes of everything wired into it and pushes a
 +// configurable resulting mode ("all muted" / "all bypassed" / "any active" → mute /
@@ -22955,7 +23021,7 @@
        <p>
          This node will relay its input nodes' modes (Mute, Bypass, or Active) to a connected
          ${stripRgthree(NodeTypesString.NODE_MODE_REPEATER)} (which would then repeat that mode
-@@ -176,30 +88,124 @@
+@@ -176,30 +88,125 @@
          of its inputs are muted (instead of sending a MUTE signal), etc.
        </p>
      `;
@@ -23035,7 +23101,8 @@
 +            return;
 +        }
 +        if (node.inputs.length <= 1 && !node.inputs.at(0)?.isConnected && node.outputs.all().some((o) => o.isConnected)) {
-+            dispatchModeToRepeater(node, node.getMode());
++            // The new mode from the event; see `changedMode` in base_node.js.
++            dispatchModeToRepeater(node, changedMode(event) ?? node.getMode());
 +        }
 +    }, { scope: "document" });
  });
@@ -23226,7 +23293,7 @@
 -        return `
 +import { PassThroughFollowing, connectedInputNodes, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 +import { defineCollectorNode } from "./base_node_collector.js";
-+import { changedNode, helpMenuItem } from "./base_node.js";
++import { changedMode, changedNode, helpMenuItem } from "./base_node.js";
 +
 +// Mute / Bypass Repeater — when this node's own mode changes it repeats that mode onto
 +// every node wired into its inputs, or, if nothing is wired in and the node sits inside a
@@ -23273,7 +23340,7 @@
        <p>
          When this node's mode (Mute, Bypass, Active) changes, it will "repeat" that mode to all
          connected input nodes, or, if there are no connected nodes AND it is overlapping a group,
-@@ -131,18 +64,114 @@
+@@ -131,18 +64,115 @@
          </p></li>
        </ul>
      `;
@@ -23345,7 +23412,8 @@
 +        if (!node) {
 +            return;
 +        }
-+        const mode = node.getMode();
++        // The new mode from the event; see `changedMode` in base_node.js.
++        const mode = changedMode(event) ?? node.getMode();
 +        const linkedNodes = connectedInputNodes(node).filter((n) => n.type !== NodeTypesString.NODE_MODE_RELAY);
 +        if (linkedNodes.length) {
 +            comfy.graph.batch(() => setModeDeep(linkedNodes, mode));

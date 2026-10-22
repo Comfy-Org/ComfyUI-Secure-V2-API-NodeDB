@@ -188,6 +188,16 @@ export function extendEveryNodeType(apply) {
  * instead: `id`, `type` and `graphId` survive and its methods do not, so a listener that
  * calls one throws. Such a copy is resolved again here, in its own graph, because ids
  * repeat across graphs. `undefined` if the node is gone.
+ *
+ * The node is looked up first by id on the graph on screen, and kept only if its own
+ * `graphId` is the event's. That answers from node snapshots, which sandbox guest c6b97a15
+ * holds for every node it has seen. Revision 6 first compared `event.graphId` with
+ * `comfy.graph.id`, but on that guest the getter returns the structure replica's graph
+ * id (`graphState.graphId ?? ''`). The host sends that replica only with a workflow-load
+ * epoch, a gesture to a pack that has read structure, or a requested refresh, never at
+ * worker start, so it was usually '' and every event was dropped. `root()` and
+ * `subgraphs()` answer from the same replica, so they are only the fallback, for a node
+ * on a graph that is not on screen.
  */
 export function changedNode(event) {
     const node = event?.node;
@@ -196,9 +206,27 @@ export function changedNode(event) {
     }
     const id = String(node.id);
     const graphId = event.graphId ?? node.graphId;
-    if (graphId == null || graphId === comfy.graph.id) {
-        return comfy.graph.node(id);
+    const inGraph = (handle) =>
+        handle && (graphId == null || String(handle.graphId) === String(graphId)) ? handle : undefined;
+    return inGraph(comfy.graph.node(id)) ??
+        inGraph([comfy.graph.root(), ...comfy.graph.subgraphs()]
+            .find((scope) => scope && String(scope.id) === String(graphId))?.node(id));
+}
+
+// litegraph's mode numbers, which host r3 reports in a mode change's `from` / `to`.
+const MODE_NAMES = ["always", "on-event", "never", "on-trigger", "bypass"];
+/**
+ * The mode an `onNodeChanged` mode event changed to, as a published `NodeMode` name, or
+ * `undefined` if the event does not say.
+ *
+ * Read from the event because sandbox guest c6b97a15 does not update its copy of the node
+ * when the host reports a change: `node.getMode()` there still answers the mode from
+ * before the change.
+ */
+export function changedMode(event) {
+    const value = event?.to;
+    if (typeof value === "string") {
+        return MODE_NAMES.includes(value) ? value : undefined;
     }
-    const scope = [comfy.graph.root(), ...comfy.graph.subgraphs()].find((s) => s?.id === graphId);
-    return scope?.node(id);
+    return Number.isInteger(value) ? MODE_NAMES[value] : undefined;
 }

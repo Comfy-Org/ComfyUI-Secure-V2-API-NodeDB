@@ -1,10 +1,10 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
-> Revision 5 (corpus PR #54) changed the served frontend layout. Its browser staging on live host stack r3 passed every
-> row except the required Power Conductor row. Revision 6 (2026-10-21) is a source-only candidate with the pack-side
-> fixes, and has not been browser-tested.
+> Revision 6 (corpus PR #69) passed its browser staging on live host stack r3 except the three `onNodeChanged` rows
+> (Label title refresh, Repeater, Relay). Revision 7 (2026-10-21) is a source-only candidate that addresses them
+> (untested).
 > Nodes: 37 of 40 upstream converted; 5 tested (scoped), 14 converted but untested/partly tested,
 > 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-> These are revision 4's counts. They stay unchanged until a browser test of revision 6 passes.
+> These are revision 4's counts. They stay unchanged until a browser test of revision 7 passes.
 > Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
@@ -12,10 +12,45 @@
 
 ## What this revision contains
 
-- **Base:** revision 5 (corpus PR #54, merged as `bef02a60`). Revision 5 was built on revision 4 (PR #17),
-  and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
+- **Base:** revision 6 (corpus PR #69, merged as `7a5cbe81`). Revision 6 was built on revision 5 (PR #54), revision 5
+  on revision 4 (PR #17), and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
   `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
-- **Changed in revision 6** (candidate, source only). Revision 5 was browser-staged as an overlay on live host stack r3
+- **Changed in revision 7** (candidate, source only). BART's staging of revision 6 on host r3 passed every row except
+  three. They share one symptom with two causes: the `onNodeChanged` handlers did nothing on host r3. The Label title refresh, the
+  Repeater and the Relay were affected; there were 0 packerrors.
+  - **`changedNode` no longer depends on `comfy.graph.id`.** It still needs the node's snapshot filed under the graph
+    on screen. After `app.graph.clear()` the graph id changes and no epoch is sent. The guest then files the new
+    graph's nodes under a scope its replica does not list, so the event is still dropped, as in revision 6. This is a
+    known platform limitation (request R6-12). Revision 6 compared `event.graphId` with
+    `comfy.graph.id`. On guest `c6b97a15` that getter answers `graphState.graphId ?? ''` from a replica the host sends
+    only with a workflow-load epoch, a gesture to a pack that has read structure, or a requested refresh. It is never sent
+    at worker start, so the getter usually read `''`. `root()` and `subgraphs()` answer from the same replica.
+    - The node is now looked up by id on the graph on screen, and kept only if its own `graphId` is the event's. The
+      guest serves that from node snapshots it already holds.
+    - The scopes are only a fallback, for a node in a graph not on screen.
+  - **The new value comes from the event.** The guest does not update its copy of a node when the host reports a
+    change, so `getTitle()` and `getMode()` still read the old value.
+    - The Label lays out `event.to` as its title.
+    - The Repeater and the Relay use `changedMode(event)`, which maps the event's mode (litegraph's numbers on host r3)
+      to the published names. They fall back to `getMode()`.
+  - **Recorded, not changed:** with no pre-selection, "Queue Group Output Nodes" no longer shows for nodes in a group,
+    and "Queue Selected" was still listed after a right-click moved the selection. Both items' visibility is computed in
+    the worker and read by the host at menu-open.
+    - In revision 5 the host never received an answer for these items: its log says "visibility not yet computed …
+      showing it", so it showed both.
+    - In revision 6 the answer is computed. "Queue Group" reads `comfy.graph.groups()` from the same structure
+      replica, which is empty or stale.
+    - The host still shows an item whose answer has not arrived, as in BART's R2 run.
+    - The items' visibility checks are unchanged since revision 5.
+  - **Also affected, not changed (needs request R6-13).** The same stale node copies on host r3 make these lag behind
+    a mode or title change:
+    - the Relay's mode, when it is driven by its inputs;
+    - the Fast Muter / Bypasser toggle state;
+    - Node Collector input names.
+
+    Their rows are PARTIAL on host r3 for that reason too.
+  - **Evidence:** static and module-level; no browser run yet. See the triage folder.
+- **Changed in revision 6** (corpus PR #69). Revision 5 was browser-staged as an overlay on live host stack r3
   (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). Every row passed except the required Power Conductor
   row. A static live-readiness audit added four findings. Each finding was checked against the published API
   (`comfy-api.d.ts`) and the live guest's source.
@@ -239,7 +274,7 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 | `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
-| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6 resolves the node again (untested). |
+| `Label (rgthree)` | converted, partly tested | Browser on live: 9/9 edits persist on Classic and on Vue since the host renderer focus fix (ui-renderer `fca402c9`, live 2026-10-21 03:26Z), measured with revision 4's `label.js`. Each value shows in the dialog, persists to the node, and survives reopen and save/reload. On host r3 the title refresh threw `getProperties is not a function` (3 per workflow load); revision 6's re-resolve then did nothing on host r3 (BART's staging, R4); revision 7 fixes that (untested). |
 | `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
 | `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
@@ -260,8 +295,8 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
 | `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
 | `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
-| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Since revision 6 its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods. Otherwise untested. F01 is open. |
+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b), and revision 7 fixes it and takes the new mode from the event (untested). Otherwise untested. F01 is open. |
+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b), and revision 7 fixes it and takes the new mode from the event (untested). Otherwise untested. F01 is open. |
 | `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
 | `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. Otherwise untested. Legacy node. F01 is open. |
 | `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
@@ -410,7 +445,7 @@ load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
   validator. Its checks pass structurally and in the Guest.
 - Image Comparer with an empty image batch.
 - Original-comparison runs for the eight frontend-only nodes listed as untested.
-- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 6's title refresh on host r3 is untested.
+- Label: the dialog edits pass on live (9/9, Classic and Vue). Revision 7's title refresh on host r3 is untested.
 - Revision 5's layout passed its browser staging on host r3, row 9 apart:
   - 0 module-load failures across the 73 entry modules;
   - the progress badge;
@@ -418,14 +453,14 @@ load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
   - the tree-sitter WASM loads from the new path;
   - no refusal rows beyond the 8 expected notices;
   - a ring of pass-through nodes no longer overflows.
-- A browser smoke test of revision 6's changes. Until it passes, the node counts above stay at revision 4's. It checks:
-  - Power Conductor registering with the opt-in on;
-  - 0 "will not be applied" errors for rgthree's own types, and the Queue items on a Fast Muter;
+- Revision 6's staging on host r3 passed every row except the three `onNodeChanged` rows: Power Conductor
+  registration and reload, the every-node items, queueing, the Node Combiner upgrade, the Context Merge Big label, and
+  the revision 5 regression rows.
+- A browser smoke test of revision 7's changes. Until it passes, the node counts above stay at revision 4's. It checks:
   - the Label title refresh;
-  - the Node Combiner upgrade;
-  - the Queue items queueing;
-  - the Context Merge Big label;
-  - the Repeater and Relay mode handlers.
+  - the Repeater and Relay mode handlers;
+  - the two Queue items' visibility (recorded host behaviour);
+  - a short regression of Power Conductor, the every-node items, queueing and the Node Combiner upgrade.
 - gVisor admission and whole-pack acceptance review.
 
 ## Authority and permissions

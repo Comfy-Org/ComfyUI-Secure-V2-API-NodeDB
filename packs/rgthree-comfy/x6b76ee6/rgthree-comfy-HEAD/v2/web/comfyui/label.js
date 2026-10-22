@@ -14,7 +14,8 @@ const records = new Map();
 const keyFor = (node) => JSON.stringify([node.graphId, node.id]);
 const measurement = new OffscreenCanvas(1, 1).getContext('2d');
 
-function refresh(node) {
+// `title`: the new title when a change event carries it; otherwise the node's own.
+function refresh(node, title = node.getTitle()) {
   const key = keyFor(node);
   let record = records.get(key);
   if (!record) {
@@ -22,7 +23,7 @@ function refresh(node) {
     records.set(key, record);
   }
   const properties = { ...LABEL_DEFAULTS, ...node.getProperties() };
-  const layout = layoutLabel(node.getTitle(), properties, measurement);
+  const layout = layoutLabel(title, properties, measurement);
   record.properties = properties;
   record.layout = layout;
   if (!record.surface) {
@@ -120,11 +121,13 @@ comfy.defs.define({
   onPropertyChanged(node) { if (records.has(keyFor(node))) refresh(node); },
   onRemoved: remove,
 });
-// `refresh` reads the node through its handle (getProperties, getTitle, getSize, canvas).
+// `refresh` reads the node through its handle (getProperties, getSize, canvas).
 // `changedNode` hands back that handle even where the event carries a plain copy of the
 // node (host stack r3), where revisions 4 and 5 threw `getProperties is not a function`.
+// The new title comes from the event: sandbox guest c6b97a15 does not update its copy of
+// the node for a change made in the host, so `getTitle()` there still reads the old one.
 comfy.onNodeChanged((event) => {
   if (event.property !== 'title' || event.node?.type !== TYPE) return;
   const node = changedNode(event);
-  if (node) refresh(node);
+  if (node) refresh(node, typeof event.to === 'string' ? event.to : node.getTitle());
 }, { scope: 'document' });
