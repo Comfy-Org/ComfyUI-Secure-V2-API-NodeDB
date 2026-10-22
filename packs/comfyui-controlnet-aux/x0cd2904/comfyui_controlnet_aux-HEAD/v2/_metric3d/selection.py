@@ -10,7 +10,11 @@ import re
 PIN = '0cd290477128d42cdc3e76a826a402d866e8c684'
 REPO = 'JUGGHM/Metric3D'
 BACKBONES = ('vit-small', 'vit-large', 'vit-giant2')
-MAX_BYTES = 512 * 1024 * 1024
+# The sealed archive is read in bounded read_range chunks (_sealed_asset_read), so the guest's whole-read cap does not
+# apply. Archive bytes, declared tensor bytes and the decoded total share a 2 GiB per-checkpoint budget (as
+# DiffusionEdge): vit-small 150 MB and vit-large 1.65 GB fit, and vit-giant2 (5.51 GB) refuses at selection time.
+MAX_BYTES = 2 * 1024 * 1024 * 1024
+MAX_PROOF_BYTES = 512 * 1024 * 1024  # the primitive metadata proof (metadata only, never the state)
 
 
 def digest(value):
@@ -174,7 +178,7 @@ def validate_raw(raw, item):
     if hasattr(raw, '_metadata'):
         proof.append(['raw_metadata', primitive(raw._metadata)])
     encoded = json.dumps(proof, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
-    if len(encoded) > MAX_BYTES or hashlib.sha256(encoded).hexdigest() != r['primitive_contract_sha256']:
+    if len(encoded) > MAX_PROOF_BYTES or hashlib.sha256(encoded).hexdigest() != r['primitive_contract_sha256']:
         raise RuntimeError('Metric3D actual complete primitive metadata/container proof differs')
     return raw
 

@@ -1,0 +1,152 @@
+{
+ "run_base": {
+  "core": "a2 d1a9259",
+  "backend": "a1 894ead3",
+  "image": "sha256:e48accf76d58011cc86b1d88a6ff96d1c48597d13a2148bf931a6a9ce9e578e6",
+  "aux_v2": "a45522ff v2 + the Aux rev 6 stage (the published rev 6 v2) + /port: this candidate _metric3d/selection.py"
+ },
+ "bindings": {
+  "depth": {
+   "spec": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/SPEC_TIER_M_R1_DEPTH.json",
+    "sha256": "b0cde8a2c8f7cb903a4182d7e9b44184b329684a0df890c305867377ba4dff55",
+    "name": "aux-m3d-large-depth-m1-v1"
+   },
+   "pins": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/PINS_M1.json",
+    "sha256": "d0b404e74658139fa400009eeb1f50e29c8a48ef108f47a97dd914394300ecdc"
+   },
+   "packet_zip": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-20261021-r1.zip",
+    "sha256": "b6b35a24c1d79654319e216435928ce4e4bb7709a852baacbf77de7782e06f35",
+    "bytes": 51232
+   },
+   "launcher_r4": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/launcher-r4/run_bounded_container_self_launch.py",
+    "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+   },
+   "limits": {
+    "memory_gib": 8,
+    "gate": "MemAvailable >= 12 GiB",
+    "deadline_seconds": 900,
+    "tmpfs_mb": 1024,
+    "cpus": 2,
+    "phase_timeouts_s": {
+     "MI": 200,
+     "MA": "the rest of the 900 s deadline less 40 s (about 820 s if MI takes 40 s)"
+    },
+    "expected_peak": "about 6 GB (1.65 GB sealed payload + state + model)"
+   },
+   "pins_equal_to_earlier": {
+    "/runtime/engine": "PINS_E1 /runtime/engine",
+    "/overlay/backend": "PINS_E1 /overlay/backend",
+    "/python-env": "PINS_E1 /python-env",
+    "/aux-v2": "PINS_E1 /aux-v2",
+    "/aux-orig": "PINS_E1 /aux-orig",
+    "/aux-site": "PINS_E1 /aux-site",
+    "/addict": "PINS_C1 /addict",
+    "/weights-m3d": "MERVYN COPIED_SHA256.txt"
+   },
+   "rows": "MI; MA Metric3D-DepthMapPreprocessor (vit-large); G vit-giant2 refusal"
+  },
+  "normal": {
+   "spec": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/SPEC_TIER_M_R1_NORMAL.json",
+    "sha256": "0e1db2ee7f531143403d19204861b984b4b6d10e4c7a792c37bf275361297858",
+    "name": "aux-m3d-large-normal-m1-v1"
+   },
+   "pins": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/PINS_M1.json",
+    "sha256": "d0b404e74658139fa400009eeb1f50e29c8a48ef108f47a97dd914394300ecdc"
+   },
+   "packet_zip": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-20261021-r1.zip",
+    "sha256": "b6b35a24c1d79654319e216435928ce4e4bb7709a852baacbf77de7782e06f35",
+    "bytes": 51232
+   },
+   "launcher_r4": {
+    "file": "consumers/ned-controlnet-aux-metric3d-large-runs-20261021/launcher-r4/run_bounded_container_self_launch.py",
+    "sha256": "3c33ea261d63e213d4c11f0f2b3e863bd6e15779c6ec16276edcd30e85c047ca"
+   },
+   "limits": {
+    "memory_gib": 8,
+    "gate": "MemAvailable >= 12 GiB",
+    "deadline_seconds": 900,
+    "tmpfs_mb": 1024,
+    "cpus": 2,
+    "phase_timeouts_s": {
+     "MI": 200,
+     "MA": "the rest of the 900 s deadline less 40 s (about 820 s if MI takes 40 s)"
+    },
+    "expected_peak": "about 6 GB (1.65 GB sealed payload + state + model)"
+   },
+   "pins_equal_to_earlier": {
+    "/runtime/engine": "PINS_E1 /runtime/engine",
+    "/overlay/backend": "PINS_E1 /overlay/backend",
+    "/python-env": "PINS_E1 /python-env",
+    "/aux-v2": "PINS_E1 /aux-v2",
+    "/aux-orig": "PINS_E1 /aux-orig",
+    "/aux-site": "PINS_E1 /aux-site",
+    "/addict": "PINS_C1 /addict",
+    "/weights-m3d": "MERVYN COPIED_SHA256.txt"
+   },
+   "rows": "MI; MA Metric3D-NormalMapPreprocessor (vit-large)"
+  }
+ },
+ "mounts": {
+  "/runtime/engine": {
+   "source": "core a2 d1a9259 (equal to PINS_E1)",
+   "entries": 1308
+  },
+  "/overlay/backend": {
+   "source": "backend a1 894ead3 backend/ (equal to PINS_E1)",
+   "entries": 458
+  },
+  "/python-env": {
+   "source": "readable copy of the always-on venv (equal to PINS_E1)",
+   "entries": 870
+  },
+  "/aux-v2": {
+   "source": "corpus main a45522ff v2 + the Aux rev 6 stage d9a586aa (equal to PINS_E1)",
+   "entries": 1594
+  },
+  "/aux-orig": {
+   "source": "pristine upstream 0cd2904 src/, node_wrappers/, utils.py (equal to PINS_E1)",
+   "entries": 704
+  },
+  "/aux-site": {
+   "source": "profile f65ac4fe / lock b6074c82 unpacked read-only (equal to PINS_E1)",
+   "entries": 6941
+  },
+  "/addict": {
+   "source": "addict 2.4.0 test-only root (equal to PINS_C1; request #24)",
+   "entries": 7
+  },
+  "/weights-m3d": {
+   "source": "MERVYN's pinned fetch: metric_depth_vit_large_800k.pth (COPIED_SHA256.txt 96ed7ccc...)",
+   "entries": 1
+  },
+  "/port": {
+   "source": "candidate _metric3d/selection.py, 2 GiB per-checkpoint budget (from the sealed packet zip)",
+   "entries": 1
+  },
+  "/selections": {
+   "source": "the rev 6 tier A Metric3D test-only selection (rev 4 + torch pin) and its evidence: the base MI extends (from the zip)",
+   "entries": 13
+  },
+  "/driver": {
+   "source": "attempt entries, phases MI and MA, the original side, resource pins (from the sealed packet zip)",
+   "entries": 7
+  }
+ },
+ "weights": {
+  "receipt": "# MERVYN pinned fetch (JUGGHM/Metric3D @ 80d2d1410afb4b23cd9d18c6be9144483d4b70b6; HF tree metadata sha256+size; one attempt), 2026-10-21T23:04:02Z. File 0644.\n15328ffc42b528b95f188687418f6f03b3f123eb34ccdbd686c112abbea6d972  1647972663  weights-m3d/controlnet/huggingface/JUGGHM/Metric3D/80d2d1410afb4b23cd9d18c6be9144483d4b70b6/metric_depth_vit_large_800k.pth\n",
+  "giant2": "file facts from the Hugging Face tree metadata (MERVYN m_de9d0f771d); never fetched"
+ },
+ "sandbox": "off (COMFY_SECURE_SANDBOX_MODE=off): protocol and host-provider evidence, not sandbox evidence",
+ "harness_substitutions": [
+  "test-only approved selection derived in each run (base 51f16bd3 + vit-large; rebuilt byte-exact here)",
+  "addict 2.4.0 test-only dependency root",
+  "original side: the rev 4 original side, with node and backbone as arguments"
+ ]
+}
