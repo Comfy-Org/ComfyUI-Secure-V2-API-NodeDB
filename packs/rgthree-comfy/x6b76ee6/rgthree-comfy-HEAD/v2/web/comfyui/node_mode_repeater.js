@@ -2,7 +2,7 @@ import { comfy } from '/comfy/api/v2.js';
 import { NodeTypesString, stripRgthree } from "./constants.js";
 import { PassThroughFollowing, connectedInputNodes, connectedOutputNodes, graphOf, nodeKey, setModeDeep, shouldPassThrough, } from "./base_any_input_connected_node.js";
 import { defineCollectorNode } from "./base_node_collector.js";
-import { changedNode, helpMenuItem } from "./base_node.js";
+import { changedMode, changedNode, helpMenuItem } from "./base_node.js";
 
 // Mute / Bypass Repeater — when this node's own mode changes it repeats that mode onto
 // every node wired into its inputs, or, if nothing is wired in and the node sits inside a
@@ -121,7 +121,8 @@ comfy.onReady(() => {
         if (!node) {
             return;
         }
-        const mode = node.getMode();
+        // The new mode from the event; see `changedMode` in base_node.js.
+        const mode = changedMode(event) ?? node.getMode();
         const linkedNodes = connectedInputNodes(node).filter((n) => n.type !== NodeTypesString.NODE_MODE_RELAY);
         if (linkedNodes.length) {
             comfy.graph.batch(() => setModeDeep(linkedNodes, mode));
