@@ -1,10 +1,15 @@
 > **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
 > Revision 7 (corpus PR #74) passed its browser staging on live host stack r3: gate rows S1, S2, S3 and S5.
-> Revision 8 (2026-10-22) is docs and evidence only. It re-derives every row from the staging of revisions 5-7, plus the
+> Revision 8 (corpus PR #75) is docs and evidence only. It re-derived every row from the staging of revisions 5-7, plus the
 > existing backend native cases and module tests.
-> Nodes: 37 of 40 upstream converted; 6 tested (scoped), 13 converted but untested/partly tested,
-> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-> The counts were re-derived in revision 8. The evidence is in `validation/20261022-rgthree-browser-staging-r5-r7/`.
+> Revision 9 R2 (2026-10-26) keeps the F01 expanded layouts and Reroute definition, restores the published contract,
+> and removes the unapproved collapsed title-edge socket field (audit V3). F01 is PARTIAL for collapsed title-edge
+> sockets pending an approved API or a separate critical-pack shim. No shim or new API is included.
+> Revision 9 and R2 have not run in a browser.
+> Nodes: 38 of 40 upstream converted; 6 tested (scoped), 13 converted but untested/partly tested,
+> 21 partial or pending: 19 converted with a behaviour blocked by a missing host capability, 2 pending.
+> Revision 9 moves one row, Reroute (missing to converted, PARTIAL). Every other count waits for browser evidence.
+> The revision 8 evidence is in `validation/20261022-rgthree-browser-staging-r5-r7/`.
 > Not accepted: no whole-pack certificate. Open gates are listed below.
 
 <!-- secure-conversion-report-v1 -->
@@ -12,9 +17,67 @@
 
 ## What this revision contains
 
-- **Base:** revision 7 (corpus PR #74, merged as `d16cb2f6`). Revision 7 was built on revision 6 (PR #69), revision 6
-  on revision 5 (PR #54), revision 5 on revision 4 (PR #17), and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
+- **Base:** revision 8 (corpus PR #75, merged as `74264998`). Revision 8 was built on revision 7 (PR #74), revision 7
+  on revision 6 (PR #69), revision 6 on revision 5 (PR #54), revision 5 on revision 4 (PR #17), and revision 4 on
+  revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
   `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
+- **Changed in revision 9 R2:** the draft's pack-local API edit is backed out before publication, as its README
+  documented. `comfy-api.d.ts` is byte-identical to main's published `53c296aa7e1f3454ecbf02980a2f3d532d79f7f5e99eda311de689ff56447ded`.
+  `connection_layout.js` no longer reads or emits `collapsedPosition`; its last-sent cache and key helper are removed.
+  Expanded layouts, grouping, labels, disabled colours, original node IDs and layout math remain unchanged. The
+  Reroute source and all other served JS remain byte-identical to the draft. No API addition or shim is implemented.
+  The collapsed title-edge socket geometry is an explicit F01 partial for all 24 types, pending MIKE's publication of a
+  general API or a separately reviewed critical-pack shim. Draft node disposition counts are retained; no row is promoted.
+- **Changed in revision 9** (F01 connection layouts and the Reroute definition). Source and hermetic tests only: nothing
+  has run in a browser, so only the Reroute row moves.
+  - **F01, connection layouts (24 node IDs).** New `web/comfyui/connection_layout.js`: the Left/Right/Top/Bottom socket
+    layouts, the "Connections Layout" menus, "Show Connections" / "Collapse Connections" on the 8 collapsible types,
+    hidden labels and greyed disabled sockets. They are saved with the node (`rgthree_connections_v1`), and the
+    original's saved slot fields are read on load.
+    - It writes published slot patches only: `position`, `direction`, `label`, `color` and
+      `colorWhenUnconnected`. The original's `getConnectionPos` class patch stays refused.
+    - Sources: the successor tranche (`connection_layout.js` `7fa0e4c2`, 46 original-comparison cases) and MOE's
+      draft (`2942aef0`), with the unapproved S02 collapsed-socket dependency removed in R2. The draft registers one `extend` per type
+      (no `builder.def`) and uses two fixed menu labels chosen by `when`, never a label function.
+    - Any Switch, the six Context types and the any-input base (Fast Muter, Fast Bypasser, Node Collector, Random
+      Unmuter, Fast Actions Button, Relay, Repeater) reapply the layout after their delayed stabilization. Their
+      per-node records are keyed by graph and node id (successor tranche).
+    - Kept from revisions 4-8: no `onBeforeConnect`, the ring-safe walk, the fixed per-type "Convert To …" labels, Merge
+      Big's corrected label, `changedNode`, and the Combiner's `graph.replace` upgrade.
+    - **PARTIAL in R2:** whole-node collapsed title-edge socket placement is not authored. The draft's
+      `collapsedPosition` field was not in a MIKE-published contract (audit V1-V3); a live frontend implementation
+      does not make it public API. The pack does not use it, even if a host happens to expose it.
+  - **Reroute (rgthree) is defined** (`web/comfyui/reroute.js`, from the consumer `3bed5217`). It resolves as a
+    pass-through. It carries type, name and slot colour down chains of reroutes, drops an incompatible target, and
+    forwards a widget input's declaration to a Primitive. It keeps the four-sided layout, resizing (40×30 default; a 10 px
+    strip flips the sides), rotate, flip, static sizes, the label toggle and "Clone New Reroute". Changes from the
+    consumer:
+    - no `onBeforeConnect`: the loop guard is kept, unregistered, as `rerouteConnectionRule` (F17);
+    - the label's zoom test is `screenRect.width < bounds.width * 0.6`, exact at a scale of 0.6. The consumer's quotient
+      hid the label at 0.6 for 19 of the integer widths 1-2000;
+    - the geometry relay (L2) is feature-detected. Without it the label is drawn at every zoom, and nothing subscribes to
+      `onViewportChanged`;
+    - host r3's guest answers are handled. `defs.typeColor` and `isTypeCompatible` arrive there as Promises, and are never
+      put into a slot patch. `mergeWidgetConfig` is absent, so the target's own declaration is forwarded. A clone made by
+      `graph.add` is wired and selected once the host confirms it, and `graph.add` gets only `NodeInit` members;
+    - a layout pass sends only what differs from the slot's snapshot;
+    - `DEFINED_NODE_TYPES` lists Reroute, and the module imports both every-node registration modules.
+  - **On host r3** (guest `c6b97a15`, and r4a r2's guest `16924bbe`): see *Host behaviour and remaining revision 9 R2 gaps*
+    below.
+  - **R2 evidence (finite existing suites; Windows Node 25.9.0; no browser):**
+    - the successor's 46 original-comparison cases pass on the rebased files;
+    - revision 7 r2's 63 module checks pass. Two expectations were updated for Reroute in `DEFINED_NODE_TYPES`;
+    - the ring-safe walk test passes;
+    - 45 module checks: the exact published contract, zero unpublished slot patches, strict snapshot reads and patch
+      keys (768 layout cases times 6 passes), negative controls using the rejected draft, Reroute without L2, the 0.6 boundary at every
+      integer width 1-2000, save and reload of layouts, the host r3 answers, registration policy, and stabilization
+      timing;
+    - AST API-member classification passes against the pinned published contract; the same checker rejects the
+      draft's unapproved contract. Exact commands, module hashes and receipts are in the R2 handoff's `tests/results/`.
+    - The draft's 31 real-guest checks and its 23 + 22 mutant checks are historical evidence in the original packet.
+      They were not rerun for R2 and do not certify this successor. No service or scientific runtime was started.
+  - **Counts:** Reroute moves from missing to converted, PARTIAL, so 38 of 40 are converted (was 37). Every other row
+    keeps its disposition until the browser F01 slice passes.
 - **Changed in revision 8** (docs and evidence only; no served file changes). BART's staging of revision 7 on host r3
   passed its gate. Every row was re-derived from the staging of revisions 5-7 and from the existing backend native
   cases and module tests. The rule was conservative: a row moves only if passing evidence covers every open item it
@@ -244,11 +307,8 @@
 - **Revision 1** (kept): the registered Label revision (draft PR #6) plus 16 tested frontend files: the 14-file first repair
   tranche, `display_any.js` (F14), and `media/svgs.js` (worker-safe logo URL).
 - **Held back** (listed as open):
-  - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
-    pass their tests, and their frontend changes are live (served frontend since 2026-10-20 09:06Z). Still missing: S02's
-    guest relay (2 of its 3 `guest.mjs` hunks are absent from live guest `c6b97a15`) and the pack side
-    (`connection_layout.js`, `reroute.js`).
   - The optional Dynamic Context backend, which waits on the repeated-output API.
+  - (The Reroute definition and the F01 connection-layout port, held back until revision 8, are in revision 9.)
 - **Resolved since revision 1:** the startup callback error (`comfy.defs.onRefreshed` inside the sandbox). The host fix is
   deployed and passed browser acceptance on 2026-10-15: no DataCloneError at login, and a refresh reaches the pack's
   worker.
@@ -275,39 +335,39 @@ pack-side gap is open. Deployment-wide gates (live browser, asset delivery, gVis
 | `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
 | `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 | `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
-| `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 connection layouts are not in this revision. |
-| `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 is open. An own-node PNG metadata candidate passed separately and is not in this revision. |
-| `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 is open. |
+| `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. An own-node PNG metadata candidate passed separately and is not in this revision. |
+| `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 | `Fast Groups Bypasser (rgthree)` | converted, partly tested | Tested repair ships here (row state, graph-scoped identities, saved filters). F10 fit-group navigation is open. |
 | `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 | `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 | `Label (rgthree)` | tested (scoped) | Frontend-only. **Scope:** browser on live host stack r3 (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). **Dialog edits:** 9/9 persist on Classic and on Vue, on live bytes after the focus fix (live 2026-10-21 03:26Z). Each value shows in the dialog, persists to the node, and survives reopen and save/reload. This was measured with revision 4's `label.js`; the dialog path has changed since only by `refresh`'s optional title argument. **Title refresh:** revision 7 staging S1, by byte overlay, Classic renderer. A rename in the title editor redraws and resizes the Label (79×12 → 155×12; a fresh Label 79×12 → 183×12), and a two-line title gives a two-line Label. This held on the untouched startup graph and after a workflow load, with 0 packerrors. **Not staged:** the title refresh under Vue. |
-| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
+| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F03, F04, F13. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 | `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
-| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
-| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
+| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 | `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass. Since revision 4 the "Show/Hide Type Selector Widget" entry is two fixed-label items, and a right-click shows exactly the one the original showed; a differential test against the original's label function covers both states and the toggle. "Set type" works. The rest of its frontend is untested. |
 | `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
-| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) and F01 are open. |
-| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
-| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
-| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
-| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
-| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
-| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S3:** a Relay with nothing wired in drives its Repeater and the KSampler behind it, 0 → 2 → 0. Its mode when driven by its inputs lags on host r3 (stale copies, R6-13). Otherwise untested. F01 is open. |
-| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S2:** the wired KSampler follows 0 → 2 → 0 → 4, whether it was added after load or was in the loaded workflow. Otherwise untested. F01 is open. |
-| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
-| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. **Host r3 staging (revision 6 R5, revision 7 S5):** the upgrade keeps the position, the order of the 3 inputs, the 2 outgoing links and the title, and one Ctrl+Z restores the Combiner. Otherwise untested. Legacy node. F01 is open. |
-| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
+| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) is open. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F11 is open. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S3:** a Relay with nothing wired in drives its Repeater and the KSampler behind it, 0 → 2 → 0. Its mode when driven by its inputs lags on host r3 (stale copies, R6-13). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S2:** the wired KSampler follows 0 → 2 → 0 → 4, whether it was added after load or was in the loaded workflow. Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. **Host r3 staging (revision 6 R5, revision 7 S5):** the upgrade keeps the position, the order of the 3 inputs, the 2 outgoing links and the title, and one Ctrl+Z restores the Combiner. Otherwise untested. Legacy node. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
+| `Reroute (rgthree)` | converted, PARTIAL | Frontend-only. Defined since revision 9 (`web/comfyui/reroute.js`, from the consumer `3bed5217`): a pass-through that resolves to its input, type and slot-colour propagation down chains, the four-sided layout with S04's compact sizing and resize side flips, rotate, flip, static sizes, the label toggle and "Clone New Reroute". Missing: F05 (inserting a reroute during an unfinished link drag), F06 per-link colour, and F17 connection policy (the loop guard; a ring is accepted, and the walks stop at visited nodes). The low-zoom label rule needs the host geometry relay (L2); on host r3 the label is drawn at every zoom. Module-tested only; not yet in a browser. |
 | `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Missing: F17 connection policy — refusing another Dynamic Context's context output on a non-base input. |
 | `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 
@@ -370,6 +430,9 @@ renderer. "Constructs" means r5 row 6: all 36 registered types construct and sta
 - tested (scoped): 5 → 6;
 - converted, untested or partly tested: 14 → 13;
 - partial or missing: 21 → 21.
+
+**Revision 9** moves one row: Reroute, from missing to converted, PARTIAL. Partial or pending stays 21: 19 PARTIAL
+(was 18) and 2 pending (was 3 missing or pending). 38 of 40 node IDs are converted.
 
 ## Refused techniques (never-do) and their public replacements
 
@@ -455,7 +518,7 @@ Each of these needs a host capability that does not exist yet; none is a refused
 
 | Behaviour | Needs | Nodes |
 | --- | --- | --- |
-| Connection filtering: the cycle guard's up-front refusal ("time paradox"; a ring is now accepted, and the link walk is ring-safe) and per-node connection rules (the Repeater's two Relay rules still apply after the fact) | Missing: F17 connection policy (`setConnectionPolicy` / `SlotPatch.linkable`), a policy the host can evaluate without a synchronous worker call. Not registered. | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
+| Connection filtering: the cycle guard's up-front refusal ("time paradox"; a ring is now accepted, and the link walk is ring-safe) and per-node connection rules (the Repeater's two Relay rules still apply after the fact) | Missing: F17 connection policy (`setConnectionPolicy` / `SlotPatch.linkable`), a policy the host can evaluate without a synchronous worker call. Not registered. | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter, Reroute (revision 9; `rerouteConnectionRule`); Dynamic Context (opt-in) |
 | Refusing links from disabled outputs | Missing: F17 connection policy, as above. Not registered. | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
 | Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
 | Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
@@ -476,13 +539,32 @@ follows the published API and needs no change when the guest catches up.
 Revision 6 works around four more such gaps, as described above: the `onNodeChanged` node, a stored setting read at
 load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 
+### Host behaviour and remaining revision 9 R2 gaps
+
+The original draft's historical real-guest runs used host r3 (`63d9437e` / `c6b97a15`), r4a r2 (`16924bbe`) and
+a candidate with geometry relay L2. Those runs are not R2 browser or real-guest acceptance. R2 removes the
+unpublished collapsed-socket dependency on every host; the Reroute source and its existing fallbacks are unchanged.
+
+| Node | R2 behaviour on host r3 (and r4a r2) | Missing | With an approved geometry relay L2 |
+| --- | --- | --- | --- |
+| The 24 F01 types | Expanded layouts, collapse grouping, labels and greying use the published contract. Whole-node collapsed title-edge socket geometry is PARTIAL; no collapsed-socket field is read or written. | MIKE-published general API or a separately reviewed critical-pack shim | Still partial; L2 does not supply this authority |
+| The 24 F01 types | During a load or after a layout change, a hook can carry a node snapshot the host took before the pack's own slot writes arrived. `position` and `direction` may then be sent once more; this settles on the next pass. | (guest replica timing; historical draft evidence) | Same |
+| Reroute | The label is drawn at every zoom (the original hides it below 0.6), and nothing subscribes to `onViewportChanged`. No error. | L2 (`getBounds`, `getScreenRect`, coalesced `onViewportChanged`) | The original's rule, exact at 0.6 |
+| Reroute | On r3, `defs.typeColor` and `isTypeCompatible` answer a message later. The colour patch and the disconnect of an incompatible target follow when the answer arrives. r4a's colour tables (R6-9) answer at once. | Synchronous answers (r4a R6-9) | — |
+| Reroute | A chain into a widget input forwards the target's own declaration, not the merged one. | `InputSlotHandle.mergeWidgetConfig` in the guest | — |
+| Reroute | "Clone New Reroute": the clone is wired and selected once the host confirms it (polled, up to about 2 s). | Synchronous confirmation of `graph.add` | — |
+| Reroute | Rings are accepted (no loop guard). | F17 | F17 |
+
 ## Pending items (not yet supported)
 
+- F01 (partial): whole-node collapsed title-edge socket geometry for all 24 layout types. It needs a MIKE-published
+  general API or a separate critical-pack shim; the draft's unapproved field and L1 relay are not an API dependency.
 - F02 — repeated (dynamic) outputs for the opt-in Dynamic Context nodes.
 - F03 — model metadata provider: trained words, Civitai details and images.
 - F04 — same-user JS↔Python model-info storage continuity.
 - F05 — Reroute insertion/reposition during an unfinished link drag.
-- F06 — remaining Reroute presentation parity: per-link colour, low-zoom label suppression.
+- F06 — remaining Reroute presentation parity: per-link colour. (The low-zoom label rule is in revision 9 and needs
+  the host geometry relay, L2.)
 - F07 — Random Unmuter choosing independently for each prompt in a batch.
 - F08 — fast toggle actions in group headers.
 - F09 — Bookmark navigation into a hidden subgraph with the original viewport offset.
@@ -498,6 +580,7 @@ load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
   - The per-node rules no longer reach it: the Node Collector, Node Combiner, Relay and Repeater rules sit in each
     definition's `beforeConnect`, which `defineAnyInputConnectedNode` no longer reads. They must be threaded through
     again.
+  - Reroute's loop guard is kept, unregistered, as `rerouteConnectionRule` (revision 9).
 - F18 — host-owned contribution for links dropped on empty canvas (replaces `onUnplacedLink`).
 - F19 — host node-drop contribution (replaces `onDragOver`/`onDrop`).
 - F20 — sandbox subscriptions for `queue.onPendingChanged` and `queue.onInterrupted`.
@@ -506,9 +589,11 @@ load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 
 ## Open test gates
 
-- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. Their frontend
-  changes are live (since 2026-10-20 09:06Z). Open: S02's guest relay (absent from live guest `c6b97a15`), a re-run of
-  the S01–S04 suites on the live frontend source, and a browser check.
+- Revision 9 R2's browser checks: expanded F01 layouts, the unchanged Reroute conversion and the production
+  regressions. The original packet's `BROWSER_SMOKE_PLAN.md` is historical; its collapsed-socket/L1 rows are held
+  until an API is published or a separate shim is approved. G01–G10 still need the published geometry relay L2.
+- Host renderer prerequisites S01–S04: historical frontend changes require verification against an approved host
+  successor. The unapproved S02 collapsedPosition surface and L1 relay must not be treated as pack API.
 - Backend native cases running inside the Guest (sandboxed), and Core prompt validation at runtime for the Lora Loader Stack
   validator. Its checks pass structurally and in the Guest.
 - Image Comparer with an empty image batch.
@@ -526,11 +611,10 @@ load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 - `assets` (4): Lora Loader Stack, Power Lora Loader, Power Prompt, SDXL Power Prompt - Positive.
 - `raw` (7): Display Any, Image Inset Crop, Image Resize, Image or Latent Size, Power Primitive, Power Puter, SDXL Empty Latent Image.
 - `ui` (1): Image Comparer.
-- Frontend: `web_directory` is `web`, served at `/extensions/rgthree-comfy/`. Each of its 73 `.js` files is an entry
-  module of the sandboxed pack worker. No static directories and no pack HTTP routes.
+- Frontend: `web_directory` is `web`, served at `/extensions/rgthree-comfy/`. Each of its 74 `.js` files is an entry
+  module of the sandboxed pack worker (73 until revision 8; revision 9 adds `comfyui/connection_layout.js`). No static directories and no pack HTTP routes.
   Runtime: Python >=3.13,<3.14.
 
 ## Assets and weights
 
 No weights are committed. LoRAs, checkpoints, CLIP and embeddings come from the user's managed model catalogue.
-

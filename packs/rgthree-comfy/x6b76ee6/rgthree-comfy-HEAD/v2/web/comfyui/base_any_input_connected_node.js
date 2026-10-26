@@ -1,6 +1,7 @@
 import { comfy } from '/comfy/api/v2.js';
 import { debounce } from "../common/shared_utils.js";
 import { whereSupported } from "./sandbox_limits.js";
+import { applyConnectionLayout } from './connection_layout.js';
 // Imported for their registrations, which every node type must receive before this
 // pack's `define` calls run (extendEveryNodeType in base_node.js).
 import "./menu_queue_node.js";
@@ -55,11 +56,12 @@ import "./feature_import_individual_nodes.js";
 //   node that arrives restored but not loading came from a paste or a duplicate. The
 //   flag itself was a global on the `rgthree` singleton set from a canvas callback, and
 //   goes with it.
-// REFUSED, not a gap: the `collapse_connections` property subtracted
-//   `LiteGraph.NODE_SLOT_HEIGHT` per row inside `computeSize` so every slot drew at one
-//   point. It is the other half of `addConnectionLayoutSupport` — renderer geometry
-//   recomputed from renderer constants — so the property and its "Collapse Connections"
-//   menu entry go with it. See utils.js.
+// CONVERTED (revision 9, F01): saved layouts and the `collapse_connections` socket
+//   grouping, with its "Show / Collapse Connections" menu entries, are handled by
+//   connection_layout.js through public slot patches; `stabilize` reapplies them after
+//   it grows or trims the inputs. Not converted: the original also subtracted
+//   `LiteGraph.NODE_SLOT_HEIGHT` per collapsed row inside `computeSize`, which needs a
+//   host layout primitive (see connection_layout.js).
 export const PassThroughFollowing = {
     ALL: 0,
     NONE: 1,
@@ -296,6 +298,7 @@ export function defineAnyInputConnectedNode(config) {
             stabilizeInputs(node, following);
             handleLinkedNodes?.(node, connectedInputNodes(node, { following }));
         });
+        applyConnectionLayout(node);
     }
     // Registered before `define`, which is the point at which extensions are applied.
     comfy.defs.extend(type, (b) => {

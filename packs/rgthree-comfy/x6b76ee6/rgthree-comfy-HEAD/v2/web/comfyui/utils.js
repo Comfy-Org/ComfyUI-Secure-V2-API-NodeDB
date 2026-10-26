@@ -18,27 +18,16 @@ import { graphOf } from "./base_any_input_connected_node.js";
 // affected link in one batch, and `add`/`remove` are on the same collection for inputs
 // and outputs alike.
 //
-// REFUSED, not a gap: deciding where the renderer draws a slot.
+// CONVERTED (revision 9, F01): the "Connections Layout" feature —
 //   `addConnectionLayoutSupport` / `getConnectionPosForLayout` /
-//   `setConnectionsLayout` / `setConnectionsCollapse` are the pack's
-//   "Connections Layout" feature, and they work by patching `getConnectionPos`,
-//   `getInputPos` and `getOutputPos` on a node class and recomputing socket
-//   positions from `LiteGraph.NODE_SLOT_HEIGHT`, `NODE_TITLE_HEIGHT` and
-//   `NODE_COLLAPSED_WIDTH`. Where a socket sits, how tall a slot row is and how wide
-//   a collapsed node draws are the renderer's, and the renderer is ours to replace —
-//   a pack that hardcodes today's layout constants breaks on the day we change them,
-//   silently and for its users rather than for its author. `node.getSlotPosition()`
-//   *reads* where the renderer put a slot, which is what a pack anchoring something
-//   to a socket actually needs; choosing the position is not published and is not
-//   waiting on anything.
-//   Two riders go with it. `toggleConnectionLabel` blanks a slot's label by writing
-//   `cxn.label = " "` from inside that position callback — a per-frame write to
-//   serialized state, which `slot.modify({label})` replaces for any pack that wants
-//   the effect on its own terms. The disabled-slot recolouring is also inside the
-//   callback: writing the grey is `slot.modify({color, colorWhenUnconnected})`, but
-//   restoring it is not, because the routine stashes `cxn.color_on` in `_color_on_org`
-//   first and nothing published reads a slot's colour back — `SlotSnapshot` is
-//   `{id,index,name,type,label,isConnected}`.
+//   `setConnectionsLayout` / `setConnectionsCollapse`. The original patched
+//   `getConnectionPos`, `getInputPos` and `getOutputPos` on a node class; that patch
+//   stays refused. connection_layout.js declares the same per-node geometry through
+//   public slot patches (`position`, `direction`, `collapsedPosition`, `label`, and the
+//   disabled grey through `color` / `colorWhenUnconnected`), so the host keeps drawing
+//   and hit-testing its own sockets. The pack keeps its own 20 px row and 10 px inset as
+//   layout values; it reads no renderer constant. It remembers the hidden labels and the
+//   colours it greyed, because nothing published reads a slot's colour back.
 // COSMETIC: (8) an entry cannot be positioned among *core's* menu items.
 //   `addMenuItem` / `addMenuItemOnExtraMenuOptions` patch `getExtraMenuOptions` and
 //   splice an entry in by string-matching an anchor ("Shape", "Properties Panel").

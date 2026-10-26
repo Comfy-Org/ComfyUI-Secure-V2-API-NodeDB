@@ -43,9 +43,10 @@ export const NodeTypesString = {
     IMAGE_COMPARER: addRgthree("Image Comparer"),
     IMAGE_INSET_CROP: addRgthree("Image Inset Crop"),
 };
-// Every type this pack registers itself with `comfy.defs.define` (the 12 frontend-only
-// nodes and the opt-in Power Conductor). An extension meant for every node type names
-// these one by one, before they are defined; see `extendEveryNodeType` in base_node.js.
+// Every type this pack registers itself with `comfy.defs.define` (the 13 frontend-only
+// nodes, Reroute included since revision 9, and the opt-in Power Conductor). An
+// extension meant for every node type names these one by one, before they are defined;
+// see `extendEveryNodeType` in base_node.js.
 export const DEFINED_NODE_TYPES = Object.freeze([
     NodeTypesString.FAST_GROUPS_MUTER,
     NodeTypesString.FAST_GROUPS_BYPASSER,
@@ -59,6 +60,7 @@ export const DEFINED_NODE_TYPES = Object.freeze([
     NodeTypesString.RANDOM_UNMUTER,
     NodeTypesString.BOOKMARK,
     NodeTypesString.LABEL,
+    NodeTypesString.REROUTE,
     NodeTypesString.POWER_CONDUCTOR,
 ]);
 const UNRELEASED_KEYS = {

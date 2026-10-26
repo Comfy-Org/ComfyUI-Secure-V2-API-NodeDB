@@ -43,9 +43,9 @@ import { RgthreeLoraInfoDialog } from './dialog_info.js';
 //   {type: "combo", values: [...]}` told the properties panel to edit that property
 //   with a two-item picker rather than a free text field; `"@Match"` declared the
 //   other as a string. Both properties still exist, still save and still work.
-// Pending pack port: saved connection layouts can now use public slot positions
-// and directions. The old global renderer patch remains refused; the safe
-// per-node capability is tracked in the frontend lane's gap ledger.
+// CONVERTED (revision 9, F01): saved connection layouts use public slot positions
+// and directions (connection_layout.js). The old global renderer patch stays
+// refused.
 //
 // WIRE FORMAT: changed, and deliberately. A row is two widgets now — a hidden one
 // holding `{on, lora, strength, strengthTwo?}`, which is what the prompt reads

@@ -1,0 +1,396 @@
+{
+ "test": "walk_ring_test.mjs",
+ "status": "PASS",
+ "module_under_test": "the \"r2\" slot holds the revision 6 candidate module; its walk and kept rule are revision 5 (r2), unchanged",
+ "node": "v25.9.0",
+ "modules": {
+  "r2": {
+   "path": "C:\\Users\\benjc\\.popbot-host\\workspaces\\scratch\\chat_f38536805264\\coordination\\rgthree-rev9-r2-20261026\\stage\\packs\\rgthree-comfy\\x6b76ee6\\rgthree-comfy-HEAD\\v2\\web\\comfyui\\base_any_input_connected_node.js",
+   "sha256": "967d8bc93ac4ef8601b34dc7d47cb43a9f13b9c9f151e3273cf1d6653e00ca2b",
+   "imports": [
+    "/comfy/api/v2.js",
+    "../common/shared_utils.js",
+    "./sandbox_limits.js",
+    "./connection_layout.js",
+    "./menu_queue_node.js",
+    "./feature_import_individual_nodes.js"
+   ]
+  },
+  "rev4": {
+   "path": "\\\\wsl.localhost\\Ubuntu-24.04\\home\\benjc\\.popbot-host\\workspaces\\scratch\\chat_f38536805264\\rgthree-layout-r2-work\\main\\packs\\rgthree-comfy\\x6b76ee6\\rgthree-comfy-HEAD\\v2\\web\\comfyui\\base_any_input_connected_node.js",
+   "sha256": "45d0976fbd4811c7117ab1f2301f8d66783211eed1353355ccdb8e0d6805b8c8",
+   "imports": [
+    "/comfy/api/v2.js",
+    "../../rgthree/common/shared_utils.js",
+    "./sandbox_limits.js"
+   ]
+  },
+  "r1": {
+   "path": "C:\\Users\\benjc\\.popbot-host\\workspaces\\scratch\\chat_f38536805264\\coordination\\rgthree-web-layout-fix-20261020-r1\\stage\\packs\\rgthree-comfy\\x6b76ee6\\rgthree-comfy-HEAD\\v2\\web\\comfyui\\base_any_input_connected_node.js",
+   "sha256": "864714223937f2d8568e5a36ffcd32315ed27a4602ba98be35320656167164c6",
+   "imports": [
+    "/comfy/api/v2.js",
+    "../common/shared_utils.js",
+    "./sandbox_limits.js"
+   ]
+  }
+ },
+ "isolation": "each module alone in a fresh vm context with no Node globals; its imports are synthetic stubs; any other specifier is refused",
+ "rings": {
+  "pass": true,
+  "cases": [
+   {
+    "name": "collector-reroute ring: inputs, unfiltered",
+    "start": "C",
+    "direction": "input",
+    "options": {
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "R"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "R"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "collector-reroute ring: inputs, filtered",
+    "start": "C",
+    "direction": "input",
+    "options": {},
+    "r2": {
+     "ok": true,
+     "value": []
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "collector-reroute ring: outputs (notifyConnectionsChain)",
+    "start": "C",
+    "direction": "output",
+    "options": {},
+    "r2": {
+     "ok": true,
+     "value": []
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "collector-collector ring: inputs, unfiltered",
+    "start": "C1",
+    "direction": "input",
+    "options": {
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "C2"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "C2"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "combiner-combiner ring: outputs, unfiltered",
+    "start": "B1",
+    "direction": "output",
+    "options": {
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "B2"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "B2"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "muter fed from a collector-reroute ring: filtered (stabilize)",
+    "start": "M",
+    "direction": "input",
+    "options": {
+     "following": 0
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "K"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "K"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "muter fed from a collector-reroute ring: unfiltered",
+    "start": "M",
+    "direction": "input",
+    "options": {
+     "following": 0,
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "C",
+      "R",
+      "K"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "C",
+     "R",
+     "K"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "three-reroute ring into a muter: unfiltered",
+    "start": "M",
+    "direction": "input",
+    "options": {
+     "following": 0,
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "R3",
+      "R2",
+      "R1"
+     ]
+    },
+    "rev4": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "r1": {
+     "ok": false,
+     "error": "RangeError: Maximum call stack size exceeded"
+    },
+    "expected_r2": [
+     "R3",
+     "R2",
+     "R1"
+    ],
+    "expected_reference": "RangeError",
+    "pass": true
+   },
+   {
+    "name": "muter self-ring through a reroute: filtered",
+    "start": "M",
+    "direction": "input",
+    "options": {
+     "following": 0
+    },
+    "r2": {
+     "ok": true,
+     "value": []
+    },
+    "rev4": {
+     "ok": true,
+     "value": [
+      "M"
+     ]
+    },
+    "r1": {
+     "ok": true,
+     "value": [
+      "M"
+     ]
+    },
+    "expected_r2": [],
+    "expected_reference": [
+     "M"
+    ],
+    "pass": true
+   },
+   {
+    "name": "muter self-ring through a reroute: unfiltered",
+    "start": "M",
+    "direction": "input",
+    "options": {
+     "following": 0,
+     "filtered": false
+    },
+    "r2": {
+     "ok": true,
+     "value": [
+      "R"
+     ]
+    },
+    "rev4": {
+     "ok": true,
+     "value": [
+      "R",
+      "M"
+     ]
+    },
+    "r1": {
+     "ok": true,
+     "value": [
+      "R",
+      "M"
+     ]
+    },
+    "expected_r2": [
+     "R"
+    ],
+    "expected_reference": [
+     "R",
+     "M"
+    ],
+    "pass": true
+   }
+  ]
+ },
+ "kept_rule": {
+  "pass": true,
+  "cases": [
+   {
+    "name": "loop refused: answer false, one host notice",
+    "r2": {
+     "ok": true,
+     "value": false,
+     "notices": [
+      {
+       "severity": "warn",
+       "summary_head": "Whoa, whoa, whoa. You've just tried to c"
+      }
+     ]
+    },
+    "r1": {
+     "ok": false,
+     "error": "ReferenceError: alert is not defined",
+     "notices": []
+    },
+    "pass": true,
+    "r1_is_negative_control": true
+   },
+   {
+    "name": "no loop: the node rule decides",
+    "r2": {
+     "ok": true,
+     "value": "node-rule",
+     "notices": []
+    },
+    "pass": true
+   },
+   {
+    "name": "no loop, no node rule: allowed",
+    "r2": {
+     "ok": true,
+     "value": true,
+     "notices": []
+    },
+    "pass": true
+   }
+  ]
+ },
+ "acyclic_equivalence": {
+  "pass": true,
+  "reference": "revision 4 (corpus main)",
+  "trials": 4000,
+  "comparisons": 786198,
+  "mismatches": [],
+  "seed": "0x5eed1234",
+  "diamond": {
+   "r2": {
+    "ok": true,
+    "value": [
+     "A",
+     "C",
+     "X",
+     "B"
+    ]
+   },
+   "rev4": {
+    "ok": true,
+    "value": [
+     "A",
+     "C",
+     "X",
+     "B"
+    ]
+   },
+   "pass": true
+  }
+ }
+}
