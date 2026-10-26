@@ -1,0 +1,621 @@
+"""UNRUN finite complete-original/default-SDK comparison worker.
+
+For a separately selected MIKE-owned process only. No outer runner or runtime
+selection is supplied here. This module imports only stdlib until main verifies
+the operator's exact source paths and fresh authority metadata.
+"""
+import argparse
+import ast
+import asyncio
+import hashlib
+import importlib.util
+import json
+import os
+import inspect
+import uuid
+from pathlib import Path
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent
+PACK = ROOT/'packs/comfy-image-saver/x65e6903/ComfyUI-Image-Saver-HEAD'
+sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+
+def load_module(name, path, package=False):
+    spec = importlib.util.spec_from_file_location(name, path,
+        submodule_search_locations=[str(Path(path).parent)] if package else None)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def equal(a, b):
+    # Comparator controls must detect value AND scalar-type differences.
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(equal(a[k], b[k]) for k in a)
+    if isinstance(a, (tuple, list)):
+        return len(a) == len(b) and all(equal(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+async def compare(config, report, mode):
+    import numpy as np
+    import torch
+    import piexif
+    from PIL import Image
+    from comfy.cli_args import args
+    args.cpu = True
+    import nodes as core_nodes
+    import execution
+    import folder_paths
+    from comfy_api.latest import io, sdk, _sdk
+    from comfy_api.latest._execution_metadata import ExecutionMetadataScope
+    from comfy_execution.graph import DynamicPrompt
+    from comfy_execution.validation import validate_node_input
+    from comfy_secure_nodes.packmanifest import encode_schema, encode_validation_inputs
+
+    assert sha(_sdk.__file__) == config['sdk_sha256']
+    assert Path(_sdk.__file__).resolve() == Path(config['source_roles']['sdk']).resolve()
+    assert 'jpeg_subsampling' in inspect.signature(_sdk.OutputDomain.save_images).parameters
+    assert hasattr(_sdk,'_png_text_entries')
+    assert sha(execution.__file__) == config['core_execution_sha256']
+    assert type(_sdk.providers.ctx_provider) is _sdk.InProcessCtxProvider
+    assert type(_sdk.providers.ops_provider) is _sdk.InProcessOps
+    # These fixtures replace only this worker's native input/output/catalogue
+    # roots. No providers or model/encoder algorithms are replaced.
+    old_checkpoints = folder_paths.folder_names_and_paths['checkpoints']
+    old_input = folder_paths.get_input_directory()
+    old_output = folder_paths.get_output_directory()
+    rows = report['comparisons']
+
+    def check(case, old, new):
+        assert equal(old, new), (case, old, new)
+        rows.append(dict(case=case, status='PASS'))
+
+    with tempfile.TemporaryDirectory(prefix='giriss-owned-fixtures-', dir=config['work_root']) as temporary:
+        work = Path(temporary)
+        checkpoint_root = work/'checkpoints'; checkpoint_root.mkdir()
+        (checkpoint_root/'nested').mkdir()
+        # Opaque digest/filename fixtures only. They are never loaded as weights.
+        (checkpoint_root/'base.safetensors').write_bytes(b'GIRISS metadata digest fixture A\n')
+        (checkpoint_root/'nested/model.one.safetensors').write_bytes(b'GIRISS metadata digest fixture B\n')
+        input_root = work/'input'; input_root.mkdir()
+        Image.new('RGB', (8, 8), (20, 60, 180)).save(input_root/'fixture.png')
+        folder_paths.folder_names_and_paths['checkpoints'] = ([str(checkpoint_root)], old_checkpoints[1])
+        folder_paths.filename_list_cache.clear()
+        folder_paths.set_input_directory(str(input_root))
+        try:
+            original = load_module('giriss_genuine_original', PACK/'nodes.py')
+            # Complete unchanged source imported, including its real piexif and
+            # Core imports. No AST extraction or encoder truncation.
+            backend = None
+            previous_backend = _sdk.providers.execution_backend
+            registration = None
+            component_session = None
+            component_pgid = None
+            component_sockdir = None
+            creation_observer = None
+            prompt_identity = 'giriss-' + mode + '-' + uuid.uuid4().hex
+            if mode == 'native':
+                candidate = load_module('giriss_candidate', PACK/'v2/__init__.py', package=True)
+                extension = await candidate.comfy_entrypoint()
+                classes = await extension.get_node_list()
+            elif config['qualification_route'] == 'component':
+                from comfy_secure_nodes import packdb
+                from comfy_secure_nodes.transport.host import GuestSession
+                loaded = packdb.load_pack(PACK.parent,mount_name='custom_nodes.giriss_component_'+uuid.uuid4().hex)
+                classes = list(loaded.node_mappings.values())
+                assert all(c.SECURE_NODE_PROXY and c.SDK_REFS for c in classes)
+                assert os.environ.get('COMFY_SECURE_SANDBOX_MODE') == 'required'
+                assert os.environ.get('COMFY_SECURE_SANDBOX_BACKEND') == config['component_sandbox_kind'] == 'seatbelt'
+                observer = load_module('giriss_actual_creation_observer',ROOT/'guest_startup_observer.py')
+                creation_observer = observer.GuestStartupObserver(work,config['observer_binding']['subprocess_source'])
+                (work/'guest-work').mkdir()
+                component_session = GuestSession('giriss-component-'+uuid.uuid4().hex,
+                    runtime=None,tenant=config['tenant_id'],work_root=work/'guest-work',guest_runtime_root=PACK/'v2')
+                creation_observer.begin_creation()
+                try:
+                    await component_session.start()
+                finally:
+                    creation_observer.end_creation()
+                    report['actual_creation_observation'] = creation_observer.snapshot()
+                report['actual_component_startup'] = creation_observer.verify_session(component_session)
+                forbidden = {Path('/'),Path('/Users/ben'),Path('/Users/ben/popbot/workspaces'),Path('/private/tmp')}
+                assert not any(Path(p).resolve() in forbidden for p in report['actual_component_startup']['ordered_read_roots_source_bound'])
+                assert component_session.sandbox_kind == 'seatbelt'
+                assert component_session._pgid == component_session.pid and component_session.pid != os.getpid()
+                component_pgid = component_session._pgid
+                component_sockdir = Path(component_session._sockdir)
+                component_modules = {c.__module__ for c in classes}
+                allowed = frozenset(('assets','graph.metadata','output','output.overwrite'))
+                class ForwardToActualGuest:
+                    # Trusted test dispatch adapter, reused from accepted Join R6.
+                    # All refs/ctx/ops and encoder/data providers remain genuine.
+                    async def dispatch(self,plan,local_call,runtime=None):
+                        assert runtime is not None and type(plan) is _sdk.ExecutionPlan
+                        assert plan.input_mode == 'refs' and plan.method == 'execute'
+                        assert plan.node_module in component_modules
+                        module = sys.modules.get(plan.node_module)
+                        assert module is not None and Path(module.__file__).resolve().is_relative_to((PACK/'v2').resolve())
+                        caps = frozenset(plan.permissions or ())
+                        assert caps <= allowed
+                        report['actual_component_dispatches'].append(dict(node_id=plan.node_id,
+                            node_class=plan.node_type,capabilities=sorted(caps),Guest_PID=component_session.pid))
+                        # Never call local_call; candidate execution is the real Guest.
+                        return await component_session.execute(plan,runtime,capabilities=caps,tenant=config['tenant_id'])
+                backend = ForwardToActualGuest()
+                _sdk.providers.register_execution_backend(backend)
+                report['managed_runtime_admission'] = False
+            else:
+                from comfy_secure_nodes import register_pack, packdb, cloudpins, runtime_readiness
+                from comfy_secure_nodes.execution import CloudExecutionBackend
+                from comfy_secure_nodes.transport import host
+                import comfy_secure_nodes as actual_backend
+                actual_modules = {'registration':actual_backend.__file__,
+                    'packdb':packdb.__file__,'cloudpins':cloudpins.__file__,
+                    'readiness':runtime_readiness.__file__,'host':host.__file__,
+                    'backend_execution':inspect.getfile(CloudExecutionBackend)}
+                for role,filename in actual_modules.items():
+                    assert Path(filename).resolve() == Path(config['source_roles'][role]).resolve()
+                    assert sha(filename) == config['actual_source_pins'][config['source_roles'][role]]['sha256']
+                # The export must come from the manager's actual trusted registry.
+                # No release IDs/digests are invented or inferred from pack bytes.
+                release_record = json.loads(Path(config['registry_release_file']).read_bytes())
+                release = cloudpins.runtime_release(release_record)
+                registration = register_pack(PACK.parent, nodes_module=core_nodes, registry_release=release)
+                manifest_ids = set(json.loads((PACK/'v2/secure-nodes.json').read_bytes())['nodes'])
+                assert set(registration.node_ids) == manifest_ids == set(release.node_types)
+                classes = [core_nodes.NODE_CLASS_MAPPINGS[n] for n in registration.node_ids]
+                assert all(c.SECURE_NODE_PROXY and c.SDK_REFS for c in classes)
+                backend = CloudExecutionBackend()
+                assert backend.require_registry_pins is True and backend._readiness_prepared is True
+                assert backend._readiness_definition_sha256 == config['warm_state_sha256']
+                bindings = {node:dict(revision_id=release.binding.revision_id,
+                    pack_id=release.binding.pack_id,image_digest=release.binding.image_digest) for node in manifest_ids}
+                ready = await runtime_readiness.acknowledge(backend,dict(bindings=bindings,
+                    challenge=uuid.uuid4().hex+uuid.uuid4().hex,expected_engine_epoch=None,
+                    expected_ready_definition_sha256=config['warm_state_sha256']),core_nodes,packdb)
+                assert ready['status'] == 'ready'
+                report['actual_readiness'] = ready
+                report['actual_registry_release_sha256'] = sha(config['registry_release_file'])
+                await backend.on_prompt_start(prompt_identity,
+                    {cloudpins.KEY:bindings,'comfy_secure_tenant_id':config['tenant_id']})
+                _sdk.providers.execution_backend = backend
+            by_name = {c.define_schema().display_name:c for c in classes}
+            assert set(by_name) == set(original.NODE_CLASS_MAPPINGS)
+            manifest = json.loads((PACK/'v2/secure-nodes.json').read_bytes())
+
+            async def invoke(cls, inputs, prompt=None, extra=None, method='execute'):
+                prompt = prompt if prompt is not None else {'1':dict(class_type=cls.define_schema().node_id, inputs={})}
+                dynamic = DynamicPrompt(prompt)
+                with ExecutionMetadataScope(prompt_identity, dynamic, extra) as metadata:
+                    if mode == 'Guest':
+                        # The real Core outer owns planning, refs, dispatch and cleanup.
+                        mapped = await execution._async_map_node_over_list(prompt_identity,'1',cls,
+                            {key:[value] for key,value in inputs.items()},method)
+                        resolved = await execution.resolve_map_node_over_list_results(mapped)
+                        assert len(resolved) == 1
+                        return resolved[0]
+                    refs = _sdk.InProcessRefResolver()
+                    plan = _sdk.ExecutionPlan(prompt_id=prompt_identity, node_id='1',
+                        node_type=cls.__name__, node_module=cls.__module__, inputs=inputs,
+                        method=method, permissions=cls.SDK_PERMISSIONS, input_mode='refs',
+                        prompt=prompt, extra_pnginfo=extra, dynamic_prompt=dynamic,
+                        execution_metadata=metadata)
+                    ctx = _sdk.InProcessCtxProvider().build(plan)
+                    try:
+                        with _sdk.bind_runtime(refs, ctx, _sdk.InProcessOps()):
+                            passed = dict(inputs)
+                            if method == 'execute' and 'images' in passed:
+                                passed['images'] = await sdk.ImageRef.from_value(passed['images'])
+                            value = getattr(cls, method)(**passed)
+                            return await value if inspect.isawaitable(value) else value
+                    finally:
+                        refs.clear()
+
+            if mode == 'native':
+                for name, cls in by_name.items():
+                    native = original.NODE_CLASS_MAPPINGS[name]
+                    old = native.INPUT_TYPES(); schema = cls.define_schema()
+                    declared = [(key, spec, section) for section in ('required','optional')
+                        for key,spec in old.get(section,{}).items()]
+                    assert [v.id for v in schema.inputs] == [v[0] for v in declared]
+                    for item,(key,spec,section) in zip(schema.inputs, declared):
+                        assert item.optional == (section == 'optional')
+                        assert item.io_type == ('COMBO' if isinstance(spec[0],list) else spec[0])
+                        if len(spec)>1:
+                            for k,v in spec[1].items():assert item.as_dict()[k] == v
+                        if isinstance(spec[0],list) and key not in ('ckpt_name','modelname'):
+                            assert item.options == spec[0]
+                    assert schema.category == native.CATEGORY
+                    assert schema.is_output_node == getattr(native,'OUTPUT_NODE',False)
+                    assert len(schema.outputs) == len(native.RETURN_TYPES)
+                    for actual,kind in zip(schema.outputs,native.RETURN_TYPES):
+                        assert actual.io_type == ('COMBO' if isinstance(kind,list) else kind)
+                        if isinstance(kind,list) and name!='Checkpoint Selector':assert actual.options==kind
+                    if hasattr(native,'RETURN_NAMES'):
+                        assert [o.display_name for o in schema.outputs]==list(native.RETURN_NAMES)
+                    entry = manifest['nodes'][schema.node_id]
+                    assert encode_schema(schema) == entry['schema']
+                    assert list(cls.SDK_PERMISSIONS) == entry['permissions']
+                    if entry['methods']['validate_inputs']:
+                        assert encode_validation_inputs(cls) == entry['validation_inputs']
+                    report['schema_checks'].append(dict(node=name, status='PASS',
+                        dynamic_catalogue_options='runtime membership checked separately' if name in ('Checkpoint Selector','Save Image w/Metadata') else None))
+
+            literals = [
+                ('Seed Generator','seed',[0,1,2**64-1]),
+                ('String Literal','string',['','a\nβ\t','%seed/../literal']),
+                ('Width/Height Literal','int',[1,512,io.MAX_RESOLUTION]),
+                ('Cfg Literal','float',[0.0,8.0,100.0]),
+                ('Int Literal','int',[0,43,1000000]),
+            ]
+            for name,key,values in literals:
+                native=original.NODE_CLASS_MAPPINGS[name]()
+                for index,value in enumerate(values):
+                    old=getattr(native,native.FUNCTION)(**{key:value})
+                    new=await invoke(by_name[name],{key:value})
+                    check(f'{name}:{index}',old,new.result)
+            for name,key in [('Sampler Selector','sampler_name'),('Scheduler Selector','scheduler'),('Checkpoint Selector','ckpt_name')]:
+                native=original.NODE_CLASS_MAPPINGS[name]()
+                choices=native.INPUT_TYPES()['required'][key][0]
+                assert len(choices)>=2
+                for index,value in enumerate((choices[0],choices[-1])):
+                    new=await invoke(by_name[name],{key:value})
+                    check(f'{name}:{index}',getattr(native,native.FUNCTION)(value),new.result)
+
+            if mode == 'native':
+                # Actual Core validation, including a genuine LoadImage producer.
+                selected={c.define_schema().node_id:c for c in classes}
+                previous={k:core_nodes.NODE_CLASS_MAPPINGS.get(k) for k in selected}
+                core_nodes.NODE_CLASS_MAPPINGS.update(selected)
+                try:
+                    for name,key in [('Checkpoint Selector','ckpt_name'),('Save Image w/Metadata','modelname')]:
+                        cls=by_name[name];identifier=cls.define_schema().node_id
+                        valid_name='base.safetensors'
+                        for label,logical,expected in [('valid',valid_name,True),('nested','nested/model.one.safetensors',True),('missing','missing.safetensors',False),('escape','../base.safetensors',False)]:
+                            if name=='Checkpoint Selector':
+                                inputs={key:logical};prompt={'1':dict(class_type=identifier,inputs=inputs)}
+                            else:
+                                inputs=saver_inputs(None,'png');inputs['images']=['img',0];inputs[key]=logical
+                                prompt={'img':dict(class_type='LoadImage',inputs=dict(image='fixture.png')),
+                                    '1':dict(class_type=identifier,inputs=inputs)}
+                            answer=await execution.validate_inputs('giriss-validator',prompt,'1',{})
+                            assert answer[0] is expected,(name,label,answer)
+                            report['validator_checks'].append(dict(node=name,case=label,accepted=answer[0],status='PASS'))
+                    # The specific validator must not suppress unrelated numeric checks.
+                    cls=by_name['Save Image w/Metadata'];inputs=saver_inputs(None,'png')
+                    inputs['images']=['img',0];inputs['steps']=0
+                    prompt={'img':dict(class_type='LoadImage',inputs=dict(image='fixture.png')),
+                        '1':dict(class_type=cls.define_schema().node_id,inputs=inputs)}
+                    answer=await execution.validate_inputs('giriss-validator',prompt,'1',{})
+                    assert not answer[0] and any(e['type']=='value_smaller_than_min' for e in answer[1])
+                    report['validator_checks'].append(dict(node='Save Image w/Metadata',case='steps-still-validated',status='PASS'))
+                    # Linked checkpoint names arrive unresolved at queue validation.
+                    # Only Core-provided type metadata permits deferral, and all
+                    # other linked types must retain the real Core compatibility.
+                    pick=by_name['Checkpoint Selector'];pick_id=pick.define_schema().node_id
+                    for label,model_value,image_value,expected in [
+                        ('linked-name',['pick',0],['img',0],True),
+                        ('wrong-image-link',['pick',0],['integer',0],False),
+                        ('literal-None',None,['img',0],False),
+                    ]:
+                        inputs=saver_inputs(None,'png');inputs['images']=image_value;inputs['modelname']=model_value
+                        prompt={'img':dict(class_type='LoadImage',inputs=dict(image='fixture.png')),
+                            'pick':dict(class_type=pick_id,inputs=dict(ckpt_name='base.safetensors')),
+                            'integer':dict(class_type=by_name['Int Literal'].define_schema().node_id,inputs={'int':1}),
+                            '1':dict(class_type=cls.define_schema().node_id,inputs=inputs)}
+                        answer=await execution.validate_inputs('giriss-validator',prompt,'1',{})
+                        assert answer[0] is expected,(label,answer)
+                        report['validator_checks'].append(dict(node='Save Image w/Metadata',case=label,status='PASS',accepted=answer[0]))
+                    for label,value in [('literal-None',None),('wrong-typed-link',['integer',0])]:
+                        prompt={'integer':dict(class_type=by_name['Int Literal'].define_schema().node_id,inputs={'int':1}),
+                            '1':dict(class_type=pick_id,inputs=dict(ckpt_name=value))}
+                        answer=await execution.validate_inputs('giriss-validator',prompt,'1',{})
+                        assert answer[0] is False,(label,answer)
+                        report['validator_checks'].append(dict(node='Checkpoint Selector',case=label,status='PASS',accepted=False))
+                finally:
+                    for k,v in previous.items():
+                        if v is None:core_nodes.NODE_CLASS_MAPPINGS.pop(k,None)
+                        else:core_nodes.NODE_CLASS_MAPPINGS[k]=v
+
+            saver=by_name['Save Image w/Metadata']
+            if mode == 'native':
+                compatibility=sys.modules['giriss_candidate._validation'].compatible
+                type_pairs=[('IMAGE','IMAGE'),('INT','IMAGE'),('COMBO','COMBO'),(['a'],'COMBO'),
+                    (['a'],['a','b']),(['a'],['b']),('FLOAT','INT'),('INT,FLOAT','FLOAT'),
+                    ('BOOLEAN','FLOAT'),('*','IMAGE'),('IMAGE','*'),('INT,*','IMAGE'),
+                    (io.MatchType.io_type,'IMAGE'),(None,'IMAGE')]
+                for received,expected in type_pairs:
+                    assert compatibility(received,expected)==validate_node_input(received,expected)
+                report['link_compatibility_cases']=len(type_pairs)
+            for name,key in [('Checkpoint Selector','ckpt_name'),('Save Image w/Metadata','modelname')]:
+                for label,value in [('None',None),('not-current','missing.safetensors')]:
+                    inputs={key:value} if name=='Checkpoint Selector' else saver_inputs(torch.zeros((1,8,8,3)),'png')
+                    inputs[key]=value
+                    try:await invoke(by_name[name],inputs)
+                    except Exception as error:
+                        expected = 'Checkpoint name must be a string' if value is None else 'Checkpoint is not in the current checkpoints catalogue'
+                        assert expected in str(error), (name,label,type(error).__name__,str(error))
+                        if mode == 'native': assert isinstance(error,ValueError)
+                        report['runtime_membership_checks'].append(dict(node=name,case=label,status='REJECTED_AS_REQUIRED'))
+                    else:raise AssertionError('resolved checkpoint membership was not checked')
+            if mode == 'native':
+                adapted=sys.modules['giriss_candidate._saver']
+                formatting=[
+                    ('parse_name',('nested/model.one.safetensors',)),
+                    ('parse_name',('nodot',)),
+                    ('handle_whitespace',(' a\nβ\r\t ',)),
+                    ('handle_whitespace',('',)),
+                    ('make_filename',('',42,'nested/model.one.safetensors',7,'STAMP')),
+                    ('make_filename',('%model_%seed_%counter_%time',42,'nested/model.one.safetensors',7,'STAMP')),
+                    ('make_pathname',('%model/%seed/%counter/%time',42,'nested/model.one.safetensors',7,'STAMP')),
+                    ('make_pathname',('',42,'base.safetensors',0,'STAMP')),
+                ]
+                for index,(function,values) in enumerate(formatting):
+                    check('saver-format-'+str(index),getattr(original,function)(*values),getattr(adapted,function)(*values))
+            for fmt,batch,lossless in [('png',1,True),('png',3,True),('webp',1,True),('webp',3,True),('webp',1,False),('webp',3,False),('jpeg',1,True),('jpeg',3,True),('png-duplicates',1,True),('png-duplicates',3,True)]:
+                duplicate_profile = fmt == 'png-duplicates'
+                case=f'save-{fmt}-{batch}-{lossless}'
+                fmt = 'png' if duplicate_profile else fmt
+                native_root=work/(case+'-native');native_root.mkdir()
+                sdk_root=work/(case+'-sdk');sdk_root.mkdir()
+                pixels=torch.linspace(-0.1,1.1,batch*8*8*3,dtype=torch.float32).reshape(batch,8,8,3)
+                prompt={'1':dict(class_type=saver.define_schema().node_id,inputs=dict(images=['img',0]))}
+                extra={'workflow':{'version':0.4,'nodes':[]},'custom':{'β':True}}
+                if duplicate_profile:
+                    extra.update(parameters='OVERRIDE',prompt={'overridden':True})
+                previous_pixels = None
+                for revision in range(2):
+                    tensor=pixels if revision==0 else pixels.flip(2)
+                    inputs=saver_inputs(tensor,fmt);inputs['lossless_webp']=lossless
+                    native=original.ImageSaveWithMetadata();native.output_dir=str(native_root)
+                    old=native.save_files(**inputs,prompt=prompt,extra_pnginfo=extra)
+                    old_ui={'images':list(old['ui']['images'])}
+                    folder_paths.set_output_directory(str(sdk_root))
+                    new=await invoke(saver,inputs,prompt,extra)
+                    check(case+f'-{revision}-ui',old_ui,new.ui)
+                    assert new.result is None
+                    old_observations=[];new_observations=[]
+                    for item in old_ui['images']:
+                        relative=Path(item['subfolder'])/item['filename']
+                        a=native_root/relative;b=sdk_root/relative
+                        def observation(path):
+                            with Image.open(path) as image:
+                                result=dict(mode=image.mode,size=image.size,pixels=np.asarray(image).tobytes())
+                                if fmt=='png':result.update(metadata=dict(image.info),file_bytes=path.read_bytes())
+                                else:result['metadata']={'UserComment':piexif.load(str(path))['Exif'][piexif.ExifIFD.UserComment]}
+                                return result
+                        old_observations.append(observation(a));new_observations.append(observation(b))
+                    check(case+f'-{revision}-pixels-metadata-files',old_observations,new_observations)
+                    if duplicate_profile:
+                        assert text_keys(a.read_bytes()).count('parameters') == text_keys(b.read_bytes()).count('parameters') == 2
+                        assert text_keys(a.read_bytes()).count('prompt') == text_keys(b.read_bytes()).count('prompt') == 2
+                    if revision:
+                        assert previous_pixels != new_observations[-1]['pixels'], 'overwrite must change pixels'
+                    previous_pixels = new_observations[-1]['pixels']
+                    last_observation=new_observations[-1]
+
+            for label,path,filename in [('parent','..','safe'),('absolute','/outside','safe'),('filename-parent','','../outside')]:
+                refused=saver_inputs(torch.zeros((1,8,8,3)),'png')
+                refused.update(path=path,filename=filename)
+                try:await invoke(saver,refused)
+                except Exception as error:
+                    expected = 'relative logical names' if label == 'absolute' else 'output name escapes'
+                    assert expected in str(error), (label,type(error).__name__,str(error))
+                    if mode == 'native': assert isinstance(error,ValueError)
+                    report['resource_refusals'].append(dict(case=label,status='EXPECTED_REFUSAL',original_executed=False))
+                else:raise AssertionError('output escape accepted: '+label)
+
+            if mode == 'Guest':
+                # Reduce only a trusted proxy's declared request in this private
+                # worker; all real Host permission enforcement remains active.
+                for permission in ('assets','output','output.overwrite','graph.metadata'):
+                    prior = saver.SDK_PERMISSIONS
+                    assert permission in prior
+                    saver.SDK_PERMISSIONS = tuple(p for p in prior if p != permission)
+                    try:
+                        try:
+                            await invoke(saver,saver_inputs(torch.zeros((1,8,8,3)),'png'))
+                        except Exception as error:
+                            assert any(word in str(error).lower() for word in ('permission','capability','denied','not granted'))
+                            report['permission_negatives'].append(dict(permission=permission,status='REAL_HOST_REFUSAL'))
+                        else:
+                            raise AssertionError('missing Host permission was accepted: '+permission)
+                    finally:
+                        saver.SDK_PERMISSIONS = prior
+                assert len(report['permission_negatives']) == 4
+                if config['qualification_route'] == 'component':
+                    assert component_session.alive() and component_session.resolved_runtime is not None
+                    assert component_session.last_guest_pid == component_session.pid
+                    assert report['actual_component_dispatches']
+                    report['actual_sessions'] = [dict(pid=component_session.pid,pgid=component_session._pgid,
+                        sandbox_kind=component_session.sandbox_kind,managed_runtime_admission=False,
+                        runtime_root=str(component_session.resolved_runtime.venv_root))]
+                else:
+                    sessions = list(backend.guests._sessions.values())
+                    assert sessions and all(s.pid and s.pid != os.getpid() and s.pack_runtime is not None
+                        and s.resolved_runtime is not None and s.alive() for s in sessions)
+                    report['actual_sessions'] = [dict(pid=s.pid,sandbox_kind=s.sandbox_kind,
+                        pack_id=s.pack_runtime.pack_id,runtime_root=str(s.resolved_runtime.venv_root)) for s in sessions]
+
+            # Independent comparator controls, no changed producer/provider.
+            wrong_pixels=dict(last_observation,pixels=bytes([last_observation['pixels'][0]^1])+last_observation['pixels'][1:])
+            wrong_metadata=dict(last_observation,metadata={'UserComment':b'WRONG'})
+            controls=[('wrong-scalar',(43,),(44,)),('wrong-pixels',last_observation,wrong_pixels),('wrong-metadata',last_observation,wrong_metadata)]
+            for name,a,b in controls:
+                assert not equal(a,b)
+                report['comparator_controls'].append(dict(case=name,status='REJECTED_AS_REQUIRED'))
+            if mode == 'native':
+                control_root=work/'real-encoder-controls';control_root.mkdir()
+                folder_paths.set_output_directory(str(control_root))
+                checker=torch.tensor([[([1.,0.,0.] if (x+y)%2 else [0.,0.,1.]) for x in range(8)] for y in range(8)]).reshape(1,8,8,3)
+                direct=original.ImageSaveWithMetadata()
+                jpeg_names=direct.save_images(checker,str(control_root),'native-jpeg','CONTROL','jpeg',92,True,None,None)
+                duplicate_names=direct.save_images(checker,str(control_root),'native-png','CONTROL','png',92,True,None,{'parameters':'OVERRIDE','tail':'B'})
+                refs=_sdk.InProcessRefResolver()
+                plan=_sdk.ExecutionPlan(prompt_id=prompt_identity,node_id='controls',node_type='GIRISSControls',node_module=__name__,inputs={},permissions=('output','output.overwrite'))
+                context=_sdk.InProcessCtxProvider().build(plan)
+                try:
+                    with _sdk.bind_runtime(refs,context,_sdk.InProcessOps()):
+                        image=await sdk.ImageRef.from_value(checker)
+                        for label,fmt,options in [
+                            ('ignoredJPEGminus1','jpeg',dict(a1111_parameters='CONTROL',jpeg_subsampling=0)),
+                            ('collapsedPNGduplicates','png',dict(png_text={'parameters':json.dumps('OVERRIDE'),'tail':json.dumps('B')})),
+                            ('reorderedPNGchunks','png',dict(png_text=[('tail',json.dumps('B')),('parameters','CONTROL'),('parameters',json.dumps('OVERRIDE'))])),
+                        ]:
+                            await sdk.ctx().output.save_images(image,filenames=[label+'.'+fmt],image_format=fmt,quality=92,lossless=True,optimize=True,overwrite=True,save_metadata=False,**options)
+                            left=control_root/(jpeg_names[0] if fmt=='jpeg' else duplicate_names[0])
+                            right=control_root/(label+'.'+fmt)
+                            if fmt=='jpeg':
+                                with Image.open(left) as a,Image.open(right) as b:
+                                    assert not np.array_equal(np.asarray(a),np.asarray(b))
+                            else:
+                                assert left.read_bytes()!=right.read_bytes() and text_keys(left.read_bytes())!=text_keys(right.read_bytes())
+                            report['encoder_controls'].append(dict(case=label,status='REAL_ENCODER_COUNTERFACTUAL_REJECTED'))
+                finally:
+                    refs.clear()
+                assert len(report['encoder_controls'])==3
+            assert len(rows)==(69 if mode == 'native' else 61)
+            assert len(report['schema_checks'])==(9 if mode == 'native' else 0)
+            assert len(report['validator_checks'])==(14 if mode == 'native' else 0)
+            assert len(report['runtime_membership_checks'])==4
+            assert report['diagnostics'] == []
+            assert len(report['resource_refusals'])==3
+            assert len(report['comparator_controls'])==3
+        finally:
+            cleanup_errors = []
+            try:
+                if mode == 'Guest':
+                    if config['qualification_route'] == 'component' and 'component_session' in locals() and component_session is not None:
+                        try:
+                            # Save PGID before kill, which clears the session fields.
+                            selected_pgid = component_pgid or component_session._pgid
+                            selected_sockdir = component_sockdir or (Path(component_session._sockdir) if component_session._sockdir else None)
+                            await asyncio.wait_for(component_session.kill(),3)
+                            if selected_pgid is not None:
+                                try: os.killpg(selected_pgid,0)
+                                except ProcessLookupError: report['component_group_absent_normal_path'] = True
+                                else: raise AssertionError('component Guest group remains')
+                            if selected_sockdir is not None: assert not selected_sockdir.exists()
+                        except BaseException as error:
+                            cleanup_errors.append('component Guest kill/absence: '+repr(error))
+                    elif 'backend' in locals() and backend is not None:
+                        try:
+                            await backend.on_prompt_end(prompt_identity,{})
+                        finally:
+                            await backend.shutdown()
+            finally:
+                if mode == 'Guest' and 'previous_backend' in locals():
+                    _sdk.providers.register_execution_backend(previous_backend)
+                if 'creation_observer' in locals() and creation_observer is not None:
+                    report['actual_creation_observation'] = creation_observer.snapshot()
+                    try:
+                        if creation_observer.errors: cleanup_errors.append('actual creation observer reported errors')
+                        creation_observer.close()
+                    except BaseException as error:
+                        cleanup_errors.append('creation observer close: '+repr(error))
+                folder_paths.folder_names_and_paths['checkpoints']=old_checkpoints
+                folder_paths.filename_list_cache.clear()
+                folder_paths.set_input_directory(old_input)
+                folder_paths.set_output_directory(old_output)
+                report['cleanup_errors'] = cleanup_errors
+            assert not cleanup_errors, cleanup_errors
+
+
+def saver_inputs(images,fmt):
+    return dict(images=images,seed_value=42,steps=20,cfg=8.0,sampler_name='euler',scheduler='normal',
+        positive=' a\nβ\t ',negative='bad\r',modelname='base.safetensors',quality_jpeg_or_webp=92,
+        lossless_webp=True,width=8,height=8,counter=0,filename='fixed_%seed_%counter',path='nested',
+        extension=fmt,time_format='STAMP')
+
+
+def text_keys(data):
+    assert data[:8]==b'\x89PNG\r\n\x1a\n'
+    offset=8;keys=[]
+    while offset<len(data):
+        assert offset+12<=len(data)
+        length=int.from_bytes(data[offset:offset+4],'big')
+        assert length<=1024*1024 and offset+12+length<=len(data)
+        kind=data[offset+4:offset+8];payload=data[offset+8:offset+8+length]
+        if kind in (b'tEXt',b'iTXt',b'zTXt'):keys.append(payload.split(b'\x00',1)[0].decode('latin1'))
+        offset+=12+length
+    return keys
+
+
+async def run_all(config, report):
+    # Both phases run in this single selected parent's worker, sequentially.
+    modes = ('native',) if config['qualification_route'] == 'native_only' else ('native','Guest')
+    for mode in modes:
+        phase = dict(mode=mode,status='RUNNING',comparisons=[],schema_checks=[],validator_checks=[],
+            runtime_membership_checks=[],diagnostics=[],comparator_controls=[],resource_refusals=[],permission_negatives=[],encoder_controls=[],actual_component_dispatches=[])
+        report['phases'].append(phase)
+        await compare(config,phase,mode)
+        phase['status'] = 'PASS_FINITE_SELECTED_COHORT_ONLY'
+    assert sum(len(p['comparisons']) for p in report['phases']) == (69 if config['qualification_route'] == 'native_only' else 130)
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--config',required=True)
+    parser.add_argument('--config-sha256',required=True)
+    parser.add_argument('--output',required=True)
+    argv=parser.parse_args()
+    assert sha(argv.config) == argv.config_sha256
+    config=json.loads(Path(argv.config).read_bytes())
+    assert config['execution_selected'] is True and config['root_runtime_authority']
+    assert config['root_runtime_authority'] not in ('SOURCE_ONLY','m_2635090061','m_02833cd822')
+    assert config['qualification_route'] in ('native_only','component','managed')
+    if config['qualification_route'] == 'managed':
+        assert config['registry_export_provenance']['actual_manager_registry_export'] is True
+        assert config['registry_export_provenance']['not_a_synthetic_RuntimeRelease'] is True
+    pins=json.loads((ROOT/'INPUTS.json').read_bytes())
+    for name,row in pins.items():
+        path=(ROOT/name).resolve()
+        assert path.is_relative_to(ROOT.resolve()) and path.is_file() and not path.is_symlink()
+        assert path.stat().st_size==row['bytes'] and sha(path)==row['sha256'],name
+    required_roles={'sdk','public_types','guest','host','core_execution','backend_execution','registration','packdb','readiness','cloudpins'}
+    assert required_roles.issubset(config['source_roles'])
+    assert all(config['source_roles'][role] in config['actual_source_pins'] for role in required_roles)
+    for name,row in config['actual_source_pins'].items():
+        path=Path(name).resolve(strict=True)
+        assert path.is_file() and path.stat().st_size==row['bytes'] and sha(path)==row['sha256'],name
+    if config['qualification_route'] == 'managed':
+        for key in ('registry_release_file','warm_state_ready'):
+            assert sha(config[key]) == config[key+'_sha256']
+        assert os.environ.get('COMFY_SECURE_WARM_STATE_READY') == config['warm_state_ready']
+        assert os.environ.get('COMFY_SECURE_WARM_STATE_SHA256') == config['warm_state_sha256']
+        assert os.environ.get('COMFY_SECURE_REQUIRE_REGISTRY_PINS','').lower() in ('true','1')
+    elif config['qualification_route'] == 'component':
+        assert config['managed_runtime_admission_claim'] is False
+        assert config['component_sandbox_kind'] == 'seatbelt'
+        subprocess_pin=config['observer_binding']['subprocess_source']
+        assert sha(subprocess_pin['path']) == subprocess_pin['sha256']
+    assert not os.environ.get('COMFY_UNSANDBOXED_NODES')
+    assert config['sdk_sha256'] != '19945795d5a6188e8d122e96ea82d7a8887c752bced9c776cdf79aba3afc700d'
+    assert config['core_execution_sha256'] == 'fbe39401517a8bdd15991f53efa8d2d3d03794dbc7bf77dbd0732ee59da5d20e'
+    assert not Path(argv.output).exists()
+    sys.dont_write_bytecode=True
+    sys.path[:0]=config['host_import_roots']
+    sys.argv=[sys.argv[0],'--cpu']
+    report=dict(status='RUNNING',authority=config['root_runtime_authority'],phases=[],
+        scope='Complete original/default SDK then registered real Cloud Guest; no trained inference/frontend/service acceptance',
+        comparator_controls_only_not_new_node_passes=True,whole_pack_acceptance=False)
+    try:
+        asyncio.run(run_all(config,report))
+        report['status'] = {'native_only':'PASS_NATIVE69_ONLY','component':'PASS_NATIVE69_REAL_COMPONENT_GUEST61_ONLY','managed':'PASS_NATIVE69_REGISTERED_MANAGED_GUEST61_ONLY'}[config['qualification_route']]
+        report['managed_runtime_admission'] = config['qualification_route'] == 'managed'
+    except BaseException as error:
+        report['status']='FAILED'
+        report['error']=dict(type=type(error).__name__,message=str(error))
+        raise
+    finally:
+        Path(argv.output).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+
+
+if __name__=='__main__':main()

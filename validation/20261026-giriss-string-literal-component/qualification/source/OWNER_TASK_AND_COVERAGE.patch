@@ -1,0 +1,79 @@
+--- a/sdk_video_reverse_outer_r1.py
++++ b/sdk_giriss_scalar_outer_r2.py
+@@ -117,13 +117,13 @@
+     if sys.platform != 'darwin' or digest(args.config) != args.config_sha256:
+         raise RuntimeError('Exact reviewed Darwin configuration required')
+     config = json.loads(args.config.read_bytes())
+-    if config['task'] not in {'http_guest_only', 'join_core_guest', 'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest'}:
+-        raise RuntimeError('Only the inherited finite payloads and VideoReverse source successor are supported')
++    if config['task'] not in {'http_guest_only', 'join_core_guest', 'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest', 'giriss_string_literal'}:
++        raise RuntimeError('Only the inherited finite payloads, VideoReverse and focused GIRISS scalar successor are supported')
+     limits = config['limits']
+     expected_limits = ({'work_seconds': 120, 'cleanup_seconds': 15, 'outer_seconds': 150}
+                        if config['task'] == 'http_guest_only'
+                        else {'work_seconds': 180, 'cleanup_seconds': 15, 'outer_seconds': 200})
+-    if config['task'] == 'video_reverse_native_guest':
++    if config['task'] in {'video_reverse_native_guest', 'giriss_string_literal'}:
+         expected_limits = {'work_seconds': 90, 'cleanup_seconds': 15, 'outer_seconds': 120}
+     if limits != expected_limits:
+         raise RuntimeError('Exact task deadline envelope required')
+@@ -138,6 +138,11 @@
+     if helpers.inventory(packet) != config['input_files']:
+         raise RuntimeError('Sealed payload inventory differs')
+     checked(config['handoff'])
++    if config['task'] == 'giriss_string_literal':
++        if checked(config['payload']).resolve() != (packet / 'scalar_entry.py').resolve():
++            raise RuntimeError('Focused GIRISS task requires the exact scalar entry slot')
++        if config['success_status'] != 'PASS_GIRISS_STRING_LITERAL_ORIGINAL_DEFAULT_GUEST_ONLY':
++            raise RuntimeError('Focused GIRISS result scope differs')
+     profile = json.loads(checked(config['profile']).read_bytes())
+     backend = json.loads(checked(config['backend']).read_bytes())
+     science = json.loads(checked(config['science']).read_bytes())
+@@ -272,9 +277,9 @@
+             while process.poll() is None:
+                 observe()
+                 receipt['watchdog_fired'] = (time.monotonic() - started >= limits['work_seconds']
+-                    or receipt['aggregate_rss_peak_bytes'] > (2*1024**3 if config['task'] in {'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest'} else 1024**3)
+-                    or stdout.tell() > (512*1024 if config['task'] == 'video_reverse_native_guest' else 1024**2)
+-                    or stderr.tell() > (512*1024 if config['task'] == 'video_reverse_native_guest' else 1024**2) or bool(tracker.errors))
++                    or receipt['aggregate_rss_peak_bytes'] > (2*1024**3 if config['task'] in {'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest', 'giriss_string_literal'} else 1024**3)
++                    or stdout.tell() > (512*1024 if config['task'] in {'video_reverse_native_guest', 'giriss_string_literal'} else 1024**2)
++                    or stderr.tell() > (512*1024 if config['task'] in {'video_reverse_native_guest', 'giriss_string_literal'} else 1024**2) or bool(tracker.errors))
+                 receipt['watchdog_fired'] = receipt['watchdog_fired'] or bool(receipt['monitor_errors'])
+                 if receipt['watchdog_fired'] or receipt.get('termination_signal') or OWNER['deadline_fired']:
+                     break
+@@ -386,6 +391,34 @@
+         result = {}
+     receipt['payload_status'] = result.get('status')
+     def payload_coverage():
++        if config['task'] == 'giriss_string_literal':
++            expected = json.loads((packet / 'consumer' / 'CASES.json').read_bytes())['cases']
++            focused = result.get('consumer', {})
++            rows = focused.get('rows', [])
++            startup = result.get('actual_startup', {})
++            return (result.get('status') == 'PASS_GIRISS_STRING_LITERAL_ORIGINAL_DEFAULT_GUEST_ONLY'
++                and result.get('authorization_message') == focused.get('authorization_message') == args.authorization_message
++                and focused.get('status') == 'PASS_FOCUSED_GIRISS_STRING_LITERAL_COMPONENT_ONLY'
++                and focused.get('node_id') == 'String_Literal_5bb4d668d27398985246d1d5'
++                and focused.get('Guest_dispatches') == len(rows) == len(expected) == 13
++                and len({r.get('case') for r in rows}) == 13
++                and all(r.get('case') == e['id'] and r.get('type') == 'str' and r.get('tuple_items') == 1
++                    and r.get('utf8_bytes') == len(e['value'].encode('utf-8'))
++                    and r.get('sha256') == hashlib.sha256(e['value'].encode('utf-8')).hexdigest()
++                    and r.get('original_default_Guest_exact') is True
++                    and r.get('Guest_pid') == focused.get('actual_Guest_pid') == startup.get('pid')
++                    for r, e in zip(rows, expected))
++                and focused.get('controls') == ['changed-string', 'wrong-container']
++                and focused.get('normalgen_runs') == focused.get('encoder_calls') == focused.get('new_API_or_generated_contract_edits') == 0
++                and focused.get('whole_pack_accepted') is False
++                and result.get('Guest_instances') == 1 and result.get('scope_complete') is True
++                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
++                and startup.get('sandbox_kind') == 'seatbelt'
++                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True
++                and result.get('normal_path_guest_group_absent') is True
++                and result.get('normal_path_guest_socket_absent') is True
++                and result.get('normal_generator_runs') == result.get('replay_runs') == 0
++                and result.get('whole_pack_accepted') is False and result.get('cleanup_errors') == [])
+         if config['task'] == 'video_reverse_native_guest':
+             rows = result.get('rows', [])
+             startup = result.get('actual_startup', {})
