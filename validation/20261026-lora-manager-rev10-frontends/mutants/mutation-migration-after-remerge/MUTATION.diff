@@ -1,0 +1,14 @@
+diff -ru assembled/secure_web/text_row_sync.js results-2/mutation-migration-after-remerge/assembled/secure_web/text_row_sync.js
+--- assembled/secure_web/text_row_sync.js	2026-10-26 14:21:01.594015600 -0700
++++ results-2/mutation-migration-after-remerge/assembled/secure_web/text_row_sync.js	2026-10-26 14:30:21.985510800 -0700
+@@ -98,8 +98,9 @@
+         rowsToText.cancel(); restoring = true;
+         try {
+           // The migration runs first, feeding the re-merge; older and rev 10 saves are not matched.
++          mergeText();
+           const saved = originalAutocompleteLayout(data, true);
+-          mergeText(saved);
++          if (saved) { text.setValue(saved.text); rows.setValue(saved.rows); }
+         } catch (error) { console.error('[LoRA Manager] LoRA restore merge failed:', error); }
+         finally { restoring = false; }
+       },

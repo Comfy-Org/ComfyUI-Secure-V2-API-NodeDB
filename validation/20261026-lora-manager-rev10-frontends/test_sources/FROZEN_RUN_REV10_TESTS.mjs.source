@@ -1,0 +1,1176 @@
+// LoRA Manager rev 10 unit tests against hermetic guest fakes (MERVYN m_6934bd4d0f; run approved in m_8fa000143e).
+// Only converted code runs: the assembled rev 10 secure_web (main a45522ff plus the candidate overlay) and, for the
+// before/after contrasts, main's own secure_web copies. The original TriggerWord serializer is a checked transcription
+// (original_serializer_transcribed.mjs). No network, no installs, nothing loaded from the corpus.
+//
+// usage: node run_rev10_tests.mjs <assembled secure_web dir> <base secure_web dir> <original trigger_word_toggle.js> <out.json>
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { Worker } from 'node:worker_threads';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHost } from './fakes.mjs';
+import { SOURCE, originalSerializeValue } from './original_serializer_transcribed.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.dirname(HERE); // the rev 10 workspace
+const [assembledDir, baseDir, originalFile, outFile] = process.argv.slice(2).map(arg => path.resolve(arg));
+if (!outFile) { console.error('usage: node run_rev10_tests.mjs <assembled> <base> <original trigger_word_toggle.js> <out.json>'); process.exit(64); }
+const rel = file => path.relative(ROOT, file).split(path.sep).join('/');
+const sha256 = data => createHash('sha256').update(data).digest('hex');
+const fileSha = file => sha256(fs.readFileSync(file));
+
+// ---- Preconditions: the transcription is byte-faithful and the inputs are the pinned ones. ----
+function transcriptionCheck() {
+  const original = fs.readFileSync(originalFile);
+  const lines = original.toString('utf8').split('\n');
+  const span = (from, to) => lines.slice(from - 1, to).join('\n') + '\n';
+  const transcribed = fs.readFileSync(path.join(HERE, 'original_serializer_transcribed.mjs'), 'utf8').split('\n');
+  const begin = transcribed.indexOf('// BEGIN BODY'), end = transcribed.indexOf('// END BODY');
+  const body = transcribed.slice(begin + 1, end).join('\n') + '\n';
+  const check = {
+    originalFile: rel(originalFile),
+    fileSha256: sha256(original), expectedFileSha256: SOURCE.fileSha256,
+    linesSha256: sha256(span(SOURCE.lines[0], SOURCE.lines[1])), expectedLinesSha256: SOURCE.linesSha256,
+    sourceBodySha256: sha256(span(SOURCE.bodyLines[0], SOURCE.bodyLines[1])),
+    transcribedBodySha256: sha256(body), expectedBodySha256: SOURCE.bodySha256,
+    noCarriageReturns: !original.includes(13),
+    firstLine: lines[SOURCE.lines[0] - 1].trim(), lastLine: lines[SOURCE.lines[1] - 1].trim(),
+  };
+  check.ok = check.fileSha256 === check.expectedFileSha256 && check.linesSha256 === check.expectedLinesSha256 &&
+    check.sourceBodySha256 === check.expectedBodySha256 && check.transcribedBodySha256 === check.expectedBodySha256 &&
+    check.noCarriageReturns && check.firstLine === 'result.widget.serializeValue = function() {' && check.lastLine === '};';
+  return check;
+}
+const transcription = transcriptionCheck();
+if (!transcription.ok) {
+  fs.writeFileSync(outFile, JSON.stringify({ refused: 'transcription check failed', transcription }, null, 2) + '\n');
+  console.error('REFUSED: the TriggerWord transcription does not match its pinned source');
+  process.exit(2);
+}
+
+// The pack's own example workflows, saved by the original: data only, copied with tests/fixtures/example_workflows/FIXTURES.tsv.
+const WORKFLOW_FIXTURES = Object.freeze({
+  'Lora_Manager_Basic.json': 'a57824e8379759b0caf4f336c6e11fcb3173f480eaf02f669764fc066c38d782',
+  'nunchaku-flux.1-dev.json': 'a3bcedf53fdbf3093bed0ed70d1829e5144ccdd920143b119ae09a949ae5ff35',
+  'wanvideo_1_3B_control_lora_example_01.json': '14ffb5c5fa4ddb6611cc49226006e9d574de78d2cb683ff6f280cf152e14fd43',
+});
+const workflows = {};
+for (const [name, expected] of Object.entries(WORKFLOW_FIXTURES)) {
+  const bytes = fs.readFileSync(path.join(HERE, 'fixtures', 'example_workflows', name));
+  if (sha256(bytes) !== expected) {
+    fs.writeFileSync(outFile, JSON.stringify({ refused: `fixture ${name} does not match its recorded sha256` }, null, 2) + '\n');
+    console.error(`REFUSED: fixture ${name} changed`);
+    process.exit(2);
+  }
+  workflows[name] = JSON.parse(bytes.toString('utf8'));
+}
+const nodeOf = (workflow, id) => structuredClone(workflow.nodes.find(node => node.id === id));
+
+const listFiles = dir => fs.readdirSync(dir).filter(name => fs.statSync(path.join(dir, name)).isFile()).sort();
+const manifest = dir => Object.fromEntries(listFiles(dir).map(name => [name, fileSha(path.join(dir, name))]));
+const inputs = {
+  node: process.version, platform: process.platform,
+  assembled: { dir: rel(assembledDir), files: manifest(assembledDir) },
+  base: { dir: rel(baseDir), files: manifest(baseDir) },
+  tests: Object.fromEntries(['fakes.mjs', 'entry_worker.mjs', 'original_serializer_transcribed.mjs', 'run_rev10_tests.mjs']
+    .map(name => [name, fileSha(path.join(HERE, name))])),
+  transcription,
+  workflowFixtures: WORKFLOW_FIXTURES,
+};
+
+// ---- Harness ----
+const unhandled = [];
+process.on('unhandledRejection', reason => { unhandled.push(String(reason?.stack ?? reason).slice(0, 600)); });
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const settle = async (rounds = 4) => { for (let i = 0; i < rounds; i++) await wait(0); };
+const quiesce = async () => { await settle(); await wait(200); await settle(); }; // past the native 80 ms debounce
+const results = [];
+async function test(id, title, fn) {
+  const logs = [];
+  const saved = {};
+  for (const level of ['log', 'info', 'warn', 'error']) {
+    saved[level] = console[level];
+    console[level] = (...args) => logs.push({ level, text: args.map(arg => String(arg?.stack ?? arg)).join(' ').slice(0, 400) });
+  }
+  const unhandledBefore = unhandled.length;
+  const result = { id, title };
+  try {
+    result.evidence = await fn(logs);
+    await settle();
+    if (unhandled.length > unhandledBefore) throw new Error('unhandled rejection: ' + unhandled.slice(unhandledBefore).join(' | '));
+    result.pass = true;
+  } catch (error) {
+    await settle();
+    result.pass = false;
+    result.error = String(error?.stack ?? error).slice(0, 2000);
+  } finally {
+    for (const level of Object.keys(saved)) console[level] = saved[level];
+  }
+  result.logs = logs;
+  results.push(result);
+  saved.log(`${result.pass ? 'PASS' : 'FAIL'} ${id} ${title}`);
+}
+const load = (dir, file) => import(pathToFileURL(path.join(dir, file)).href);
+const runWorker = data => new Promise((resolve, reject) => {
+  const worker = new Worker(new URL('./entry_worker.mjs', import.meta.url), { workerData: data });
+  let message = null;
+  worker.once('message', value => { message = value; });
+  worker.once('error', reject);
+  worker.once('exit', code => (code === 0 && message ? resolve(message) : reject(new Error(`worker exit ${code}`))));
+});
+
+const rev10 = await load(assembledDir, 'lm_frontends.js');
+const triggerLogic = await load(assembledDir, 'trigger_logic.js');
+const { mergeLoras } = await load(assembledDir, 'stacker_merge.js');
+const { normalizeRows } = await load(assembledDir, 'catalogue_selection.js');
+const base = {
+  prompt: await load(baseDir, 'prompt_inputs.js'),
+  stack: await load(baseDir, 'stack_inputs.js'),
+  save: await load(baseDir, 'save_image_extra_output.js'),
+  metadata: await load(baseDir, 'metadata_display.js'),
+  hook: await load(baseDir, 'create_hook_lora.js'),
+};
+
+const TYPES = {
+  prompt: 'Prompt (LoraManager)', combiner: 'Lora Stack Combiner (LoraManager)', save: 'Save Image (LoraManager)',
+  metadata: 'Debug Metadata (LoraManager)', loader: 'Lora Loader (LoraManager)', stacker: 'Lora Stacker (LoraManager)',
+  hook: 'Create Hook LoRA (LoraManager)', wan: 'WanVideo Lora Select (LoraManager)', text: 'Text (LoraManager)',
+  randomizer: 'Lora Randomizer (LoraManager)',
+};
+const FRONTEND_NAMES = ['widgetTypes', 'promptInputs', 'stackInputs', 'saveImage', 'metadataDisplay', 'textRowSync', 'createHook', 'savedLayouts'];
+const WIDGET_TYPES = ['LORAS', 'AUTOCOMPLETE_TEXT_LORAS', 'AUTOCOMPLETE_TEXT_PROMPT'];
+const LORAS_PLACEHOLDER = 'Search LoRAs to add...';
+const PROMPT_PLACEHOLDER = 'Enter prompt... /character, /artist, /wildcard for quick search';
+// Input declarations as in v2/secure-nodes.json (a45522ff): the Loader declares model, text, loras and the optional clip and
+// lora_stack; the Stacker, Create Hook and WanVideo Lora Select declare text and loras (WanVideo also two BOOLEANs).
+const lorasInputs = ({ text, loras, lead = [], tail = [] } = {}) => [
+  ...lead,
+  { name: 'text', type: 'AUTOCOMPLETE_TEXT_LORAS', options: { placeholder: LORAS_PLACEHOLDER }, ...(text !== undefined ? { value: text } : {}) },
+  { name: 'loras', type: 'LORAS', options: {}, ...(loras !== undefined ? { value: loras } : {}) },
+  ...tail,
+];
+const loaderInputs = values => lorasInputs({ ...values, lead: [{ name: 'model', type: 'MODEL' }],
+  tail: [{ name: 'clip', type: 'CLIP', optional: true }, { name: 'lora_stack', type: 'LORA_STACK', optional: true }] });
+const wanInputs = () => lorasInputs({ lead: [{ name: 'low_mem_load', type: 'BOOLEAN', value: false }, { name: 'merge_loras', type: 'BOOLEAN', value: true }] });
+const promptInputs = () => [
+  { name: 'text', type: 'AUTOCOMPLETE_TEXT_PROMPT,STRING', widgetType: 'AUTOCOMPLETE_TEXT_PROMPT', options: { placeholder: PROMPT_PLACEHOLDER } },
+  { name: 'clip', type: 'CLIP' },
+  { name: 'trigger_words1', type: 'STRING', forceInput: true, optional: true },
+];
+const saveInputs = () => [
+  { name: 'images', type: 'IMAGE' },
+  { name: 'filename_prefix', type: 'STRING', value: 'ComfyUI_%date:yyyy-MM-dd%' },
+  { name: 'file_format', type: 'COMBO', value: 'png' },
+  { name: 'lossless_webp', type: 'BOOLEAN', value: false },
+  { name: 'quality', type: 'INT', value: 100 },
+  { name: 'webp_method', type: 'INT', value: 6 },
+  { name: 'jpeg_subsampling', type: 'COMBO', value: '4:2:0' },
+];
+const slotNames = entry => entry.slots.map(slot => slot.name);
+const renderOf = (entry, name) => entry.widgetTypeRenders.find(render => render.name === name)?.container ?? null;
+const valueOf = (entry, name) => entry.node.widgets.get(name)?.getValue();
+const press = (container, label) => {
+  const element = container.byLabel(label);
+  assert.ok(element, `no element labelled ${label}`);
+  element.dispatch('click');
+};
+const typeInto = (container, label, text) => {
+  const element = container.byLabel(label);
+  assert.ok(element, `no element labelled ${label}`);
+  element.dispatch('input', { value: text });
+};
+const changeInput = (container, label, text) => {
+  const element = container.byLabel(label);
+  assert.ok(element, `no element labelled ${label}`);
+  element.dispatch('change', { value: text });
+};
+function disposeAll(registered) {
+  const outcome = {};
+  for (const [name, value] of Object.entries(registered)) {
+    try {
+      if (typeof value === 'function') value();
+      else if (value && typeof value.dispose === 'function') value.dispose();
+      outcome[name] = 'ok';
+    } catch (error) { outcome[name] = 'threw ' + (error?.name ?? 'Error') + ': ' + error?.message; }
+  }
+  return outcome;
+}
+const rowsSummary = rows => (rows || []).map(row => `${row.name}:${row.strength}:${row.clipStrength}:${row.active ? 'on' : 'off'}`);
+
+// =====================================================================================================================
+// E: the self-registering entry, loaded in a fresh worker realm per host model.
+// =====================================================================================================================
+const EXPECTED_EXTENDS = [[TYPES.prompt], [TYPES.combiner], [TYPES.save], [TYPES.metadata], [TYPES.loader, TYPES.stacker], [TYPES.hook], [TYPES.text], [TYPES.wan]];
+for (const [id, model, defineVariant] of [['E1', 'live', 'throw'], ['E2', 'live', 'reject'], ['E3', 'r4a', undefined]]) {
+  await test(id, `entry: lm_frontends.js self-registers once on ${model}${defineVariant ? ` (defineWidgetType ${defineVariant})` : ''}`, async () => {
+    const out = await runWorker({ secureWeb: assembledDir, model, defineVariant });
+    assert.equal(out.workerError, undefined, out.workerError);
+    assert.deepEqual(out.frontendOrder, FRONTEND_NAMES);
+    assert.deepEqual(out.first.failed, {});
+    assert.deepEqual(Object.keys(out.first.registered), FRONTEND_NAMES);
+    assert.deepEqual(out.extendCalls, EXPECTED_EXTENDS);
+    assert.deepEqual(out.defineCalls, WIDGET_TYPES);
+    const types = out.first.registered.widgetTypes;
+    if (model === 'live') {
+      assert.equal(types.available, false);
+      assert.deepEqual(out.widgetTypesRegistered, []);
+      for (const result of types.results) {
+        assert.equal(result.registered, false);
+        if (defineVariant === 'throw') assert.match(result.reason, /^DataCloneError: /);
+        else assert.equal(result.reason, 'no widget-type bridge');
+      }
+    } else {
+      assert.equal(types.available, true);
+      assert.deepEqual(types.results, WIDGET_TYPES.map(type => ({ type, registered: true })));
+      assert.deepEqual(out.widgetTypesRegistered, WIDGET_TYPES);
+    }
+    assert.deepEqual(out.secondLoad, { extendCallsAdded: 0, defineCallsAdded: 0, sameState: true });
+    assert.deepEqual(out.markDescriptor, { configurable: false, writable: false, enumerable: false });
+    assert.equal(out.deleteMark, 'threw: TypeError');
+    assert.deepEqual(out.packerrors, []);
+    assert.deepEqual(out.unhandled, []);
+    assert.deepEqual(out.logs, []);
+    return { widgetTypes: types, secondLoad: out.secondLoad, markDescriptor: out.markDescriptor };
+  });
+}
+
+// =====================================================================================================================
+// L: (a) frontends on the live guest model; (b) inert there.
+// =====================================================================================================================
+await test('L1', 'live: Prompt trigger_words sockets grow, shrink and renumber', async () => {
+  const host = createHost({ model: 'live' });
+  const { failed } = rev10.registerLoraManagerFrontends(host.comfy);
+  assert.deepEqual(failed, {});
+  const node = host.createNode(TYPES.prompt, { inputs: promptInputs() });
+  const trace = [slotNames(node)];
+  assert.deepEqual(trace[0], ['text', 'clip', 'trigger_words1']); // live: no AUTOCOMPLETE_TEXT_PROMPT widget, so a socket
+  host.connect(node, 'trigger_words1', true); trace.push(slotNames(node));
+  assert.deepEqual(trace.at(-1), ['text', 'clip', 'trigger_words1', 'trigger_words2']);
+  host.connect(node, 'trigger_words2', true); trace.push(slotNames(node));
+  assert.deepEqual(trace.at(-1), ['text', 'clip', 'trigger_words1', 'trigger_words2', 'trigger_words3']);
+  host.connect(node, 'trigger_words1', false); trace.push(slotNames(node));
+  assert.deepEqual(trace.at(-1), ['text', 'clip', 'trigger_words1', 'trigger_words2']);
+  assert.deepEqual(node.slots.map(slot => slot.connected), [false, false, true, false]);
+  assert.deepEqual(host.record.packerrors, []);
+  return { trace };
+});
+
+await test('L2', 'live: Lora Stack Combiner lora_stackN sockets grow, shrink, renumber; legacy and empty nodes', async () => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const stackInput = name => ({ name, type: 'LORA_STACK', optional: true });
+  const node = host.createNode(TYPES.combiner, { inputs: [stackInput('lora_stack1'), stackInput('lora_stack2')] });
+  const trace = [slotNames(node)];
+  host.connect(node, 'lora_stack2', true); trace.push(slotNames(node));
+  host.connect(node, 'lora_stack3', true); trace.push(slotNames(node));
+  host.connect(node, 'lora_stack2', false); trace.push(slotNames(node));
+  assert.deepEqual(trace, [
+    ['lora_stack1', 'lora_stack2'],
+    ['lora_stack1', 'lora_stack2', 'lora_stack3'],
+    ['lora_stack1', 'lora_stack2', 'lora_stack3', 'lora_stack4'],
+    ['lora_stack1', 'lora_stack2', 'lora_stack3'],
+  ]);
+  assert.deepEqual(node.slots.map(slot => slot.connected), [false, true, false]);
+  const empty = host.createNode(TYPES.combiner, { inputs: [] });
+  assert.deepEqual(slotNames(empty), ['lora_stack1', 'lora_stack2']);
+  const legacy = host.createNode(TYPES.combiner, { inputs: [stackInput('lora_stack_a'), stackInput('lora_stack_b')] });
+  assert.deepEqual(slotNames(legacy), ['lora_stack_a', 'lora_stack_b']);
+  assert.deepEqual(host.record.packerrors, []);
+  return { trace, empty: slotNames(empty), legacy: slotNames(legacy) };
+});
+
+await test('L3', 'live: Save Image toggles webp/jpeg widgets; serialization sends the widget value unchanged (G1)', async () => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.save, { inputs: saveInputs() });
+  const state = name => { const widget = node.widgetStates.get(name); return { disabled: widget.disabled, hidden: widget.hidden }; };
+  const trace = [{ format: 'png', webp: state('webp_method'), jpeg: state('jpeg_subsampling') }];
+  for (const format of ['webp', 'jpeg', 'png']) {
+    node.node.widgets.get('file_format').setValue(format);
+    trace.push({ format, webp: state('webp_method'), jpeg: state('jpeg_subsampling') });
+  }
+  const hidden = { disabled: true, hidden: true }, shown = { disabled: false, hidden: false };
+  assert.deepEqual(trace.map(step => [step.webp, step.jpeg]), [[hidden, hidden], [shown, hidden], [hidden, shown], [hidden, hidden]]);
+  const values = host.serialize(node);
+  assert.equal(values.filename_prefix, 'ComfyUI_%date:yyyy-MM-dd%');
+  assert.deepEqual(host.record.packerrors, []);
+  return { trace, serializedFilenamePrefix: values.filename_prefix };
+});
+
+await test('L4', 'live: Debug Metadata panel mounts without a value cell (R6-4) and shows execution metadata', async () => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.metadata, { inputs: [{ name: 'images', type: 'IMAGE' }] });
+  const panel = node.mountedRenders.find(render => render.name === 'metadata')?.container;
+  assert.ok(panel, 'metadata panel mounted');
+  const placeholder = panel.text();
+  assert.match(placeholder, /No metadata available/);
+  host.execute(node, { metadata: [{ seed: 42, steps: 30, loras: '<lora:a:1.00>' }] });
+  const shown = panel.text();
+  assert.match(shown, /"seed": 42/);
+  assert.match(shown, /"loras": "<lora:a:1\.00>"/);
+  host.execute(node, { metadata: ['{"cfg": 7}'] });
+  assert.match(panel.text(), /"cfg": 7/);
+  host.execute(node, { other: true }); // no metadata key: unchanged, as native
+  assert.match(panel.text(), /"cfg": 7/);
+  host.serialize(node);
+  assert.deepEqual(host.record.packerrors, []);
+  return { placeholder, shown };
+});
+
+await test('L5', 'live: Loader, Stacker, WanVideo Lora Select, Text, Randomizer stay sockets; nothing wired', async () => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const loader = host.createNode(TYPES.loader, { inputs: loaderInputs() });
+  const stacker = host.createNode(TYPES.stacker, { inputs: lorasInputs() });
+  const wan = host.createNode(TYPES.wan, { inputs: wanInputs() });
+  const text = host.createNode(TYPES.text, { inputs: [promptInputs()[0]] });
+  const randomizer = host.createNode(TYPES.randomizer, { inputs: [{ name: 'randomizer_config', type: 'RANDOMIZER_CONFIG' }, { name: 'loras', type: 'LORAS' }] });
+  const evidence = {};
+  for (const [name, entry] of Object.entries({ loader, stacker, wan, text, randomizer })) {
+    const widgets = entry.node.widgets.names();
+    assert.ok(!widgets.includes('text') && !widgets.includes('loras'), name + ' has no text/loras widget');
+    assert.equal(entry.node.serializingWidgets, false, name + ' untouched');
+    assert.equal(entry.widgetTypeRenders.length, 0);
+    evidence[name] = slotNames(entry);
+  }
+  assert.deepEqual(evidence.loader, ['model', 'text', 'loras', 'clip', 'lora_stack']);
+  assert.deepEqual(evidence.stacker, ['text', 'loras']); // no lora_stack added on live: (b) is inert
+  assert.deepEqual(host.record.packerrors, []);
+  return evidence;
+});
+
+await test('L6', 'live: Create Hook LoRA adds prev_hooks and stays inert without its widgets', async logs => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.hook, { inputs: lorasInputs() });
+  assert.deepEqual(node.slots.map(slot => [slot.name, slot.type, slot.shape]),
+    [['text', 'AUTOCOMPLETE_TEXT_LORAS', 'default'], ['loras', 'LORAS', 'default'], ['prev_hooks', 'HOOKS', 'optional']]);
+  assert.ok(logs.some(entry => entry.level === 'warn' && /text\/loras widgets not found for Create Hook LoRA/.test(entry.text)));
+  assert.deepEqual(host.record.packerrors, []);
+  return { slots: slotNames(node) };
+});
+
+await test('L7', 'live: dispose never throws (extend returns a Promise) and leaves the hooks inert', async () => {
+  const host = createHost({ model: 'live' });
+  const { registered } = rev10.registerLoraManagerFrontends(host.comfy);
+  const prompt = host.createNode(TYPES.prompt, { inputs: promptInputs() });
+  const first = disposeAll(registered);
+  const second = disposeAll(registered);
+  assert.deepEqual(first, Object.fromEntries(FRONTEND_NAMES.map(name => [name, 'ok'])));
+  assert.deepEqual(second, first);
+  host.connect(prompt, 'trigger_words1', true);
+  assert.deepEqual(slotNames(prompt), ['text', 'clip', 'trigger_words1']); // disposed: no socket added
+  const combiner = host.createNode(TYPES.combiner, { inputs: [] });
+  assert.deepEqual(slotNames(combiner), []);
+  return { first, afterDispose: { prompt: slotNames(prompt), combiner: slotNames(combiner) } };
+});
+
+await test('L8', 'live: one refused frontend is logged and does not stop the others', async logs => {
+  const host = createHost({ model: 'live' });
+  const extend = host.comfy.defs.extend;
+  host.comfy.defs.extend = (selector, apply) => {
+    if (selector === TYPES.save) throw new Error('host refused Save Image');
+    return extend(selector, apply);
+  };
+  const { registered, failed } = rev10.registerLoraManagerFrontends(host.comfy);
+  assert.deepEqual(failed, { saveImage: 'host refused Save Image' });
+  assert.deepEqual(Object.keys(registered), FRONTEND_NAMES.filter(name => name !== 'saveImage'));
+  assert.ok(logs.some(entry => entry.level === 'error' && /the saveImage frontend was not registered/.test(entry.text)));
+  const prompt = host.createNode(TYPES.prompt, { inputs: promptInputs() });
+  host.connect(prompt, 'trigger_words1', true);
+  assert.deepEqual(slotNames(prompt), ['text', 'clip', 'trigger_words1', 'trigger_words2']);
+  return { failed };
+});
+
+await test('L9', 'live: a rejected extend acknowledgement and a rejected defineWidgetType leave no unhandled rejection', async logs => {
+  const host = createHost({ model: 'live', defineVariant: 'reject' });
+  const extend = host.comfy.defs.extend;
+  host.comfy.defs.extend = (selector, apply) => {
+    const sent = extend(selector, apply);
+    return selector === TYPES.metadata ? Promise.reject(new Error('host refused the definition hook')) : sent;
+  };
+  const { registered, failed } = rev10.registerLoraManagerFrontends(host.comfy);
+  assert.deepEqual(failed, {});
+  assert.deepEqual(registered.widgetTypes.results.map(result => result.reason), WIDGET_TYPES.map(() => 'no widget-type bridge'));
+  await settle();
+  assert.ok(logs.some(entry => entry.level === 'error' && /a node definition hook was refused by the host/.test(entry.text)));
+  return { widgetTypes: registered.widgetTypes.results };
+});
+
+// =====================================================================================================================
+// B: main's (rev 9) modules on the live guest model, for contrast: the failures the rev 10 edits remove.
+// =====================================================================================================================
+await test('B1', 'contrast: main prompt_inputs/stack_inputs throw at registration on live; rev 10 does not', async () => {
+  const host = createHost({ model: 'live' });
+  assert.throws(() => base.prompt.registerPromptInputs(host.comfy), /Definition unsubscribe contract is unavailable/);
+  assert.throws(() => base.stack.registerStackInputs(host.comfy), /Definition unsubscribe contract is unavailable/);
+  const fresh = createHost({ model: 'live' });
+  const { failed } = rev10.registerLoraManagerFrontends(fresh.comfy);
+  assert.deepEqual(failed, {});
+  return { main: 'throws Error: Definition unsubscribe contract is unavailable', rev10: 'registered' };
+});
+
+await test('B2', 'contrast: main Save Image raises a packerror on every serialization and throws on dispose; rev 10 neither', async () => {
+  const host = createHost({ model: 'live' });
+  const off = base.save.registerSaveImageExtraOutput(host.comfy);
+  const node = host.createNode(TYPES.save, { inputs: saveInputs() });
+  host.serialize(node);
+  assert.equal(host.record.packerrors.length, 1);
+  assert.match(host.record.packerrors[0].hook, /^beforeSerialize:filename_prefix$/);
+  assert.match(host.record.packerrors[0].error, /setSerializedValue is not a function/);
+  assert.throws(() => off(), TypeError);
+  const fresh = createHost({ model: 'live' });
+  const { registered } = rev10.registerLoraManagerFrontends(fresh.comfy);
+  fresh.serialize(fresh.createNode(TYPES.save, { inputs: saveInputs() }));
+  assert.deepEqual(fresh.record.packerrors, []);
+  assert.doesNotThrow(() => registered.saveImage());
+  return { mainPackerror: host.record.packerrors[0].error.split('\n')[0] };
+});
+
+await test('B3', 'contrast: main Debug Metadata fails to mount on live (no value cell); rev 10 mounts', async () => {
+  const host = createHost({ model: 'live' });
+  base.metadata.registerMetadataDisplay(host.comfy);
+  host.createNode(TYPES.metadata, { inputs: [{ name: 'images', type: 'IMAGE' }] });
+  assert.equal(host.record.packerrors.length, 1);
+  assert.equal(host.record.packerrors[0].hook, 'mount:metadata');
+  assert.match(host.record.packerrors[0].error, /TypeError/);
+  return { mainPackerror: host.record.packerrors[0].error.split('\n')[0] };
+});
+
+await test('B4', 'contrast: main Create Hook dispose throws on live; rev 10 does not', async () => {
+  const host = createHost({ model: 'live' });
+  const registration = base.hook.registerCreateHookLora(host.comfy);
+  assert.throws(() => registration.dispose(), TypeError);
+  const fresh = createHost({ model: 'live' });
+  const { registered } = rev10.registerLoraManagerFrontends(fresh.comfy);
+  assert.doesNotThrow(() => registered.createHook.dispose());
+  return { main: 'TypeError on dispose', rev10: 'ok' };
+});
+
+// =====================================================================================================================
+// R: (b) on the r4a/#11 model. The text <-> rows tests run with synchronous and asynchronous change delivery.
+// =====================================================================================================================
+await test('R0', 'r4a: the three widget types register with closed definitions', async () => {
+  const host = createHost({ model: 'r4a' });
+  const { registered, failed } = rev10.registerLoraManagerFrontends(host.comfy);
+  assert.deepEqual(failed, {});
+  assert.equal(registered.widgetTypes.available, true);
+  assert.deepEqual([...host.widgetTypes.keys()], WIDGET_TYPES);
+  const defs = Object.fromEntries([...host.widgetTypes].map(([type, def]) => [type,
+    Object.fromEntries(Object.entries(def).map(([key, value]) => [key, typeof value === 'function' ? 'function' : value]))]));
+  assert.deepEqual(defs, {
+    LORAS: { defaultValue: [], minHeight: 160, serialize: true, render: 'function' },
+    AUTOCOMPLETE_TEXT_LORAS: { defaultValue: '', minHeight: 56, serialize: true, render: 'function' },
+    AUTOCOMPLETE_TEXT_PROMPT: { defaultValue: '', minHeight: 56, serialize: true, render: 'function' },
+  });
+  // A second registration in the same host (no entry guard) is refused per type and recorded, not thrown.
+  const again = rev10.registerLoraManagerFrontends(host.comfy).registered.widgetTypes;
+  assert.equal(again.available, false);
+  assert.ok(again.results.every(result => !result.registered && /already registered/.test(result.reason)));
+  return { defs, secondRegistration: again.results };
+});
+
+for (const delivery of ['sync', 'async']) {
+  await test(`R1.${delivery}`, `r4a (${delivery}): Loader rows editor adds a LoRA; the text follows after the debounce`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const node = host.createNode(TYPES.loader, { inputs: loaderInputs() });
+    // clip and lora_stack are declared: the socket check finds them and adds nothing.
+    assert.deepEqual(node.slots.map(slot => [slot.name, slot.type, slot.shape]),
+      [['model', 'MODEL', 'default'], ['clip', 'CLIP', 'optional'], ['lora_stack', 'LORA_STACK', 'optional']]);
+    assert.deepEqual(node.node.widgets.names(), ['text', 'loras']);
+    assert.equal(node.node.serializingWidgets, true);
+    await settle(); // catalogue refresh
+    assert.equal(host.record.modelsListCalls, 1);
+    const rows = renderOf(node, 'loras');
+    press(rows, 'loras.add.a.safetensors');
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), '<lora:a:1.00>');
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:1:1:on']);
+    assert.equal(valueOf(node, 'loras')[0].selected, true);
+    press(renderOf(node, 'loras'), 'loras.add.b.safetensors');
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), '<lora:a:1.00> <lora:b:1.00>');
+    press(renderOf(node, 'loras'), 'loras.remove.a');
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), '<lora:b:1.00>');
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['b:1:1:on']);
+    const textarea = renderOf(node, 'text').byLabel('text');
+    assert.equal(textarea.value, '<lora:b:1.00>');
+    assert.equal(textarea.getAttribute('placeholder'), LORAS_PLACEHOLDER);
+    const serialized = host.serialize(node);
+    assert.deepEqual(Object.keys(serialized), ['text', 'loras']);
+    assert.deepEqual(host.record.packerrors, []);
+    return { text: valueOf(node, 'text'), rows: valueOf(node, 'loras') };
+  });
+
+  await test(`R2.${delivery}`, `r4a (${delivery}): typed Loader text merges into rows without rewriting the text; a row edit rewrites it`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const node = host.createNode(TYPES.loader, { inputs: loaderInputs() });
+    await settle();
+    const typed = '<lora:b:0.8> sunset,, glow';
+    typeInto(renderOf(node, 'text'), 'text', typed);
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), typed, 'own merge echo must not rewrite typed text');
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['b:0.8:0.8:on']);
+    changeInput(renderOf(node, 'loras'), 'loras.strength.b', '0.5');
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), '<lora:b:0.50> sunset, glow'); // native applyLoraValuesToText cleanup
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['b:0.50:0.50:on']);
+    typeInto(renderOf(node, 'text'), 'text', '<lora:b:0.50> sunset, glow <lora:c:1.2:0.9>');
+    await quiesce();
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['b:0.50:0.50:on', 'c:1.2:0.9:on']);
+    assert.equal(valueOf(node, 'loras')[1].expanded, true);
+    assert.equal(valueOf(node, 'text'), '<lora:b:0.50> sunset, glow <lora:c:1.2:0.9>');
+    assert.deepEqual(host.record.packerrors, []);
+    return { text: valueOf(node, 'text'), rows: rowsSummary(valueOf(node, 'loras')) };
+  });
+
+  await test(`R3.${delivery}`, `r4a (${delivery}): workflow restore re-merges saved text into saved rows without rewriting the text`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const savedText = '<lora:a:0.6> <lora:b:1.2:0.9>';
+    const savedRows = [{ name: 'a', strength: 0.6, clipStrength: 0.6, active: false, expanded: false }];
+    const node = host.createNode(TYPES.loader, { inputs: loaderInputs({ text: savedText, loras: savedRows }) });
+    host.configure(node);
+    await quiesce();
+    assert.equal(valueOf(node, 'text'), savedText);
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:0.6:0.6:off', 'b:1.2:0.9:on']);
+    assert.ok(renderOf(node, 'loras').byLabel('loras.select.b'), 'restored row b rendered');
+    assert.deepEqual(host.record.packerrors, []);
+    return { text: valueOf(node, 'text'), rows: rowsSummary(valueOf(node, 'loras')) };
+  });
+
+  await test(`R4.${delivery}`, `r4a (${delivery}): Create Hook LoRA text/rows sync and active names`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    const { registered } = rev10.registerLoraManagerFrontends(host.comfy);
+    const node = host.createNode(TYPES.hook, { inputs: lorasInputs() });
+    assert.deepEqual(slotNames(node), ['prev_hooks']);
+    await settle();
+    typeInto(renderOf(node, 'text'), 'text', '<lora:c:0.7>');
+    await quiesce();
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['c:0.7:0.7:on']);
+    assert.deepEqual([...registered.createHook.activeNames(node.node)], ['c']);
+    press(renderOf(node, 'loras'), 'loras.active.c');
+    await quiesce();
+    assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['c:0.7:0.7:off']);
+    assert.equal(valueOf(node, 'text'), '<lora:c:0.70>');
+    assert.deepEqual([...registered.createHook.activeNames(node.node)], []);
+    assert.deepEqual(host.record.packerrors, []);
+    return { text: valueOf(node, 'text'), rows: rowsSummary(valueOf(node, 'loras')) };
+  });
+}
+
+await test('R5', 'r4a: Lora Stacker syncs like the Loader', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.stacker, { inputs: lorasInputs() });
+  await settle();
+  assert.deepEqual(node.slots.map(slot => [slot.name, slot.type, slot.shape]), [['lora_stack', 'LORA_STACK', 'optional']]);
+  typeInto(renderOf(node, 'text'), 'text', '<lora:a:0.9>');
+  await quiesce();
+  assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:0.9:0.9:on']);
+  press(renderOf(node, 'loras'), 'loras.add.c.safetensors');
+  await quiesce();
+  assert.equal(valueOf(node, 'text'), '<lora:a:0.90> <lora:c:1.00>'); // a row edit rewrites the text in native form
+  assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:0.9:0.9:on', 'c:1:1:on']);
+  return { text: valueOf(node, 'text') };
+});
+
+await test('R6', 'r4a: Prompt text widget (placeholder, typing, external set, byte limit) and its sockets', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.prompt, { inputs: promptInputs() });
+  assert.deepEqual(slotNames(node), ['clip', 'trigger_words1']);
+  const panel = renderOf(node, 'text');
+  const textarea = panel.byLabel('text');
+  assert.equal(textarea.getAttribute('placeholder'), PROMPT_PLACEHOLDER);
+  typeInto(panel, 'text', 'a cat, (masterpiece:1.2)');
+  await settle();
+  assert.equal(valueOf(node, 'text'), 'a cat, (masterpiece:1.2)');
+  node.node.widgets.get('text').setValue('loaded prompt');
+  await settle();
+  assert.equal(textarea.value, 'loaded prompt');
+  assert.equal(textarea.textContent, 'loaded prompt');
+  typeInto(panel, 'text', 'x'.repeat(262145));
+  await settle();
+  assert.equal(valueOf(node, 'text'), 'loaded prompt');
+  assert.match(panel.text(), /262144-byte owned profile/);
+  host.connect(node, 'trigger_words1', true);
+  assert.deepEqual(slotNames(node), ['clip', 'trigger_words1', 'trigger_words2']);
+  assert.equal(host.serialize(node).text, 'loaded prompt');
+  return { slots: slotNames(node) };
+});
+
+await test('R7', 'r4a: WanVideo Lora Select, Text and Lora Randomizer get the widgets; no sync is wired for them', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const wan = host.createNode(TYPES.wan, { inputs: wanInputs() });
+  const text = host.createNode(TYPES.text, { inputs: [promptInputs()[0]] });
+  const randomizer = host.createNode(TYPES.randomizer, { inputs: [{ name: 'randomizer_config', type: 'RANDOMIZER_CONFIG' }, { name: 'loras', type: 'LORAS' }] });
+  await settle();
+  assert.deepEqual(wan.node.widgets.names(), ['low_mem_load', 'merge_loras', 'text', 'loras']);
+  typeInto(renderOf(wan, 'text'), 'text', '<lora:a:0.5>');
+  await quiesce();
+  assert.equal(valueOf(wan, 'text'), '<lora:a:0.5>');
+  assert.deepEqual(valueOf(wan, 'loras'), []); // not synced
+  assert.deepEqual(text.node.widgets.names(), ['text']);
+  assert.deepEqual(randomizer.node.widgets.names(), ['loras']);
+  assert.deepEqual(slotNames(randomizer), ['randomizer_config']);
+  return { wan: wan.node.widgets.names(), text: text.node.widgets.names(), randomizer: randomizer.node.widgets.names() };
+});
+
+await test('R8', 'r4a: comfy.models.list refused (G6): rows still render and sync; the refusal is shown', async () => {
+  const host = createHost({ model: 'r4a', refuseModelsList: true });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.loader, { inputs: loaderInputs({ text: '<lora:a:0.6>', loras: [{ name: 'a', strength: 0.6, clipStrength: 0.6, active: true }] }) });
+  await quiesce();
+  const panel = renderOf(node, 'loras');
+  const shownAfterMount = panel.text();
+  assert.match(shownAfterMount, /comfy\.models\.list is not a declared path/);
+  assert.ok(panel.byLabel('loras.select.a'));
+  assert.equal(panel.findAll(element => /^loras\.add\./.test(element.getAttribute('aria-label') ?? '')).length, 0);
+  typeInto(renderOf(node, 'text'), 'text', '<lora:a:0.6> <lora:b:1>');
+  await quiesce();
+  assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:0.6:0.6:on', 'b:1:1:on']);
+  // Retained row_editor.js semantics: a value change revalidates the rows and clears the shown error.
+  const shownAfterEdit = panel.text();
+  assert.doesNotMatch(shownAfterEdit, /not a declared path/);
+  assert.deepEqual(host.record.packerrors, []);
+  return { shownAfterMount, shownAfterEdit, modelsListCalls: host.record.modelsListCalls };
+});
+
+await test('R9', 'r4a: dispose unregisters the widget types and stops the sync', async () => {
+  const host = createHost({ model: 'r4a' });
+  const { registered } = rev10.registerLoraManagerFrontends(host.comfy);
+  const node = host.createNode(TYPES.loader, { inputs: loaderInputs() });
+  await settle();
+  const outcome = disposeAll(registered);
+  assert.deepEqual(outcome, Object.fromEntries(FRONTEND_NAMES.map(name => [name, 'ok'])));
+  assert.deepEqual(host.record.unregistered, WIDGET_TYPES);
+  assert.equal(host.widgetTypes.size, 0);
+  press(renderOf(node, 'loras'), 'loras.add.a.safetensors'); // the mounted editor lives until the node goes
+  await quiesce();
+  assert.deepEqual(rowsSummary(valueOf(node, 'loras')), ['a:1:1:on']);
+  assert.equal(valueOf(node, 'text'), '', 'sync disposed: text not rewritten');
+  const later = host.createNode(TYPES.loader, { inputs: loaderInputs() });
+  assert.deepEqual(slotNames(later), ['model', 'text', 'loras', 'clip', 'lora_stack']); // types gone: sockets again
+  assert.deepEqual(disposeAll(registered), outcome);
+  host.remove(node);
+  assert.equal(renderOf(node, 'loras').children.length, 0);
+  return { unregistered: host.record.unregistered };
+});
+
+await test('R10', 'r4a: a reconstructed Stacker lora_stack socket is kept; an incompatible one refuses visibly and wires nothing', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  // A workflow saved by the original carries the frontend-added lora_stack socket; reconstruction restores it first.
+  const kept = host.createNode(TYPES.stacker, { inputs: lorasInputs({ tail: [{ name: 'lora_stack', type: 'LORA_STACK', optional: true }] }) });
+  assert.deepEqual(kept.slots.map(slot => [slot.name, slot.type]), [['lora_stack', 'LORA_STACK']]);
+  const bad = host.createNode(TYPES.stacker, { inputs: lorasInputs({ tail: [{ name: 'lora_stack', type: 'MODEL', optional: true }] }) });
+  assert.equal(host.record.packerrors.length, 1);
+  assert.equal(host.record.packerrors[0].hook, `onCreated:${TYPES.stacker}`);
+  assert.match(host.record.packerrors[0].error, /Existing lora_stack socket is ambiguous\/incompatible/);
+  assert.deepEqual(bad.slots.map(slot => [slot.name, slot.type]), [['lora_stack', 'MODEL']]);
+  assert.equal(bad.node.serializingWidgets, false);
+  await settle();
+  typeInto(renderOf(bad, 'text'), 'text', '<lora:a:0.5>');
+  await quiesce();
+  assert.deepEqual(valueOf(bad, 'loras'), []); // not wired
+  return { kept: slotNames(kept), refused: host.record.packerrors[0].error.split('\n')[0] };
+});
+
+await test('R11', 'r4a: values shifted by the original autocomplete-metadata slot are refused visibly, not converted or overwritten', async () => {
+  // No-migration control. The current original saves the Loader as [{version:1,textWidgetName:'text'}, text, rows]
+  // (hidden widget __lm_autocomplete_meta_text). Core places widgets_values by position (host-stack r4a W1), so rev 10's
+  // [text, loras] receive the metadata object and the text string. Without the saved array in onConfigured's data there is
+  // nothing to migrate from: the shift is refused visibly. The M tests below cover the migration itself.
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const meta = { version: 1, textWidgetName: 'text' };
+  const shiftedText = '<lora:illustrious_all_rated_v1:0.60> <lora:69yottea_illu_v2:0.40>';
+  const node = host.createNode(TYPES.loader, { inputs: loaderInputs({ text: meta, loras: shiftedText }) });
+  host.configure(node);
+  await quiesce();
+  assert.match(renderOf(node, 'text').text(), /LoRA text requires a string within the 262144-byte owned profile/);
+  assert.equal(renderOf(node, 'loras').findAll(element => /^loras\.select\./.test(element.getAttribute('aria-label') ?? '')).length, 0);
+  assert.deepEqual(valueOf(node, 'text'), meta); // nothing converted or overwritten
+  assert.equal(valueOf(node, 'loras'), shiftedText);
+  const prompt = host.createNode(TYPES.prompt, { inputs: [{ ...promptInputs()[0], value: meta }, ...promptInputs().slice(1)] });
+  assert.match(renderOf(prompt, 'text').text(), /262144-byte owned profile/);
+  assert.deepEqual(host.record.packerrors, []);
+  return { loaderText: renderOf(node, 'text').text(), rowsRendered: 0 };
+});
+
+// =====================================================================================================================
+// M: the onConfigured migration of original-format saves (MERVYN m_42dcac33a1), on the pack's own example workflows.
+// =====================================================================================================================
+const META = Object.freeze({ version: 1, textWidgetName: 'text' });
+const sinceLoad = (entry, name) => entry.widgetStates.get(name).writes.slice(entry.placedWrites[name]);
+async function resaveIsIdempotent(host, type, inputs, saved, entry) {
+  const resave = host.save(entry);
+  const again = await host.load(type, { inputs }, { ...saved, widgets_values: resave.widgets_values });
+  await quiesce();
+  for (const name of Object.keys(again.placedWrites)) assert.deepEqual(sinceLoad(again, name), [], `loading the re-save wrote ${name}`);
+  assert.deepEqual(host.save(again).widgets_values, resave.widgets_values, 'a second save equals the first');
+  return resave.widgets_values;
+}
+
+for (const delivery of ['sync', 'async']) {
+  await test(`M1.${delivery}`, `r4a (${delivery}): original-format Loader (Lora_Manager_Basic.json node 56) re-placed by name; re-save idempotent`, async () => {
+    const saved = nodeOf(workflows['Lora_Manager_Basic.json'], 56);
+    const [meta, text, rows] = saved.widgets_values;
+    assert.deepEqual(meta, META);
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const entry = await host.load(TYPES.loader, { inputs: loaderInputs() }, saved);
+    assert.deepEqual(entry.placed, { text: meta, loras: text }, 'before: core placed by position (the R11 shift)');
+    await quiesce();
+    assert.equal(valueOf(entry, 'text'), text);
+    assert.deepEqual(valueOf(entry, 'loras'), rows, 'after: rows as saved, flags and strengths included');
+    assert.deepEqual(sinceLoad(entry, 'loras'), [rows], 'rows written once, never rebuilt from the text');
+    assert.deepEqual(sinceLoad(entry, 'text'), [text], 'text written once and not rewritten');
+    assert.equal(renderOf(entry, 'text').byLabel('text').value, text);
+    assert.doesNotMatch(renderOf(entry, 'text').text(), /owned profile/);
+    for (const row of rows) assert.ok(renderOf(entry, 'loras').byLabel('loras.select.' + row.name), 'row rendered: ' + row.name);
+    const resaved = await resaveIsIdempotent(host, TYPES.loader, loaderInputs(), saved, entry);
+    assert.deepEqual(resaved, [text, rows], 'the next save is the converted layout');
+    assert.deepEqual(host.record.packerrors, []);
+    return { placedText: entry.placed.text, rows: rowsSummary(valueOf(entry, 'loras')), resaved: resaved.length };
+  });
+
+  await test(`M2.${delivery}`, `r4a (${delivery}): original-format Prompts (Lora_Manager_Basic.json nodes 78, 79) re-placed by name; re-save idempotent`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const evidence = {};
+    for (const id of [78, 79]) {
+      const saved = nodeOf(workflows['Lora_Manager_Basic.json'], id);
+      const [meta, text] = saved.widgets_values;
+      assert.deepEqual(meta, META);
+      const entry = await host.load(TYPES.prompt, { inputs: promptInputs() }, saved);
+      assert.deepEqual(entry.placed, { text: meta }, 'before: shifted');
+      await quiesce();
+      assert.equal(valueOf(entry, 'text'), text);
+      assert.deepEqual(sinceLoad(entry, 'text'), [text]);
+      assert.equal(renderOf(entry, 'text').byLabel('text').value, text);
+      assert.deepEqual(await resaveIsIdempotent(host, TYPES.prompt, promptInputs(), saved, entry), [text]);
+      evidence[id] = text.length;
+    }
+    assert.deepEqual(host.record.packerrors, []);
+    return { textLengths: evidence };
+  });
+
+  await test(`M3.${delivery}`, `r4a (${delivery}): current-format Stacker (derived: nunchaku-flux.1-dev.json node 55 with the metadata slot) re-placed`, async () => {
+    // The pack's examples hold no current-format Stacker; this prepends the original's metadata value to its older save.
+    const older = nodeOf(workflows['nunchaku-flux.1-dev.json'], 55);
+    const [text, rows] = older.widgets_values;
+    const saved = { ...older, widgets_values: [{ ...META }, text, rows] };
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const entry = await host.load(TYPES.stacker, { inputs: lorasInputs() }, saved);
+    assert.deepEqual(entry.placed, { text: META, loras: text });
+    await quiesce();
+    const expected = normalizeRows(mergeLoras(text, normalizeRows(rows))); // the native load re-merge of the saved rows
+    assert.equal(valueOf(entry, 'text'), text);
+    assert.deepEqual(valueOf(entry, 'loras'), expected);
+    assert.deepEqual(sinceLoad(entry, 'loras'), [expected], 'rows written once');
+    assert.deepEqual(rowsSummary(expected), ['FLUX.1-Turbo-Alpha:1:1:on']);
+    assert.deepEqual(await resaveIsIdempotent(host, TYPES.stacker, lorasInputs(), saved, entry), [text, expected]);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(expected) };
+  });
+
+  await test(`M4.${delivery}`, `r4a (${delivery}): older-format saves (nunchaku-flux.1-dev.json Loader 48, Stacker 55) are not migrated`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const evidence = {};
+    for (const [id, type, inputs] of [[48, TYPES.loader, loaderInputs()], [55, TYPES.stacker, lorasInputs()]]) {
+      const saved = nodeOf(workflows['nunchaku-flux.1-dev.json'], id);
+      const [text, rows] = saved.widgets_values;
+      const entry = await host.load(type, { inputs }, saved);
+      assert.deepEqual(entry.placed, { text, loras: rows }, 'aligned as placed');
+      await quiesce();
+      assert.equal(valueOf(entry, 'text'), text);
+      assert.deepEqual(sinceLoad(entry, 'text'), [], 'the text is never written');
+      // Only the existing re-merge applies (the native loadedGraphNode merge): row strengths win over the text's.
+      assert.deepEqual(valueOf(entry, 'loras'), normalizeRows(mergeLoras(text, normalizeRows(rows))));
+      await resaveIsIdempotent(host, type, inputs, saved, entry);
+      evidence[id] = rowsSummary(valueOf(entry, 'loras'));
+    }
+    assert.deepEqual(host.record.packerrors, []);
+    return evidence;
+  });
+}
+
+await test('M5', 'live: the migration is inert (no widget types): original-format saves load as sockets without errors', async () => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const loader = await host.load(TYPES.loader, { inputs: loaderInputs() }, nodeOf(workflows['Lora_Manager_Basic.json'], 56));
+  const prompt = await host.load(TYPES.prompt, { inputs: promptInputs() }, nodeOf(workflows['Lora_Manager_Basic.json'], 78));
+  await quiesce();
+  assert.deepEqual(loader.node.widgets.names(), []);
+  assert.deepEqual(prompt.node.widgets.names(), []);
+  assert.deepEqual(slotNames(loader), ['model', 'text', 'loras', 'clip', 'lora_stack']);
+  assert.deepEqual(slotNames(prompt), ['text', 'clip', 'trigger_words1']);
+  assert.deepEqual(host.record.packerrors, []);
+  return { loader: slotNames(loader), prompt: slotNames(prompt) };
+});
+
+await test('M6', 'r4a: near-miss layouts are not migrated: left as placed and refused visibly', async () => {
+  const saved = nodeOf(workflows['Lora_Manager_Basic.json'], 56);
+  const [, text, rows] = saved.widgets_values;
+  const variants = {
+    version2: [{ version: 2, textWidgetName: 'text' }, text, rows],
+    noTextWidgetName: [{ version: 1 }, text, rows],
+    numericTextWidgetName: [{ version: 1, textWidgetName: 7 }, text, rows],
+    extraKey: [{ version: 1, textWidgetName: 'text', extra: true }, text, rows],
+    twoValues: [{ ...META }, text],
+    rowsNotArray: [{ ...META }, text, 'rows'],
+  };
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  for (const [name, values] of Object.entries(variants)) {
+    const entry = await host.load(TYPES.loader, { inputs: loaderInputs() }, { ...saved, widgets_values: values });
+    await quiesce();
+    assert.deepEqual(valueOf(entry, 'text'), values[0], name + ': text left as placed');
+    assert.deepEqual(sinceLoad(entry, 'text'), [], name);
+    assert.deepEqual(sinceLoad(entry, 'loras'), [], name);
+    assert.match(renderOf(entry, 'text').text(), /262144-byte owned profile/, name + ': refused visibly');
+  }
+  assert.deepEqual(host.record.packerrors, []);
+  return { variants: Object.keys(variants) };
+});
+
+// =====================================================================================================================
+// H, X, V (r3, review LORA10-B1): Create Hook LoRA, Text and WanVideo Lora Select saved layouts.
+// The pack's examples hold no current-format save of these nodes. The layouts are the source-proven ones: the original's
+// widget factory puts the metadata slot before every autocomplete text (lora-manager-widgets.js 16723-16758, 16852-16860).
+// The values are real saved values, so these fixtures are disclosed as derived, like M3:
+// - Basic Loader node 56's text and rows;
+// - Basic Prompt node 78's text;
+// - the Wan example node 107's text and rows.
+// The Wan example itself (an older original, before merge_loras) is a real negative case.
+// =====================================================================================================================
+const BASIC_56 = nodeOf(workflows['Lora_Manager_Basic.json'], 56).widgets_values;
+const BASIC_TEXT = BASIC_56[1], BASIC_ROWS = BASIC_56[2];
+const PROMPT_TEXT = nodeOf(workflows['Lora_Manager_Basic.json'], 78).widgets_values[1];
+const WAN_107 = nodeOf(workflows['wanvideo_1_3B_control_lora_example_01.json'], 107);
+const [WAN_LOW_MEM, WAN_TEXT, WAN_ROWS] = WAN_107.widgets_values;
+const derived = (type, widgets_values) => ({ id: 900, type, widgets_values });
+const textInputs = () => [promptInputs()[0]];
+const loraRows = (text, rows) => normalizeRows(mergeLoras(text, normalizeRows(rows))); // the LORAS widget's native load merge
+// r4: the original Hook loadedGraphNode (create_hook_lora.js 117-135) merges the raw saved array (getWidgetSerializedValue
+// reads widgets_values) and assigns the result through the shared LORAS setter (loras_widget.js 812-834).
+const hookRows = (text, rows) => normalizeRows(mergeLoras(text, rows));
+const noWrites = (entry, label) => { for (const name of Object.keys(entry.placedWrites)) assert.deepEqual(sinceLoad(entry, name), [], `${label}: ${name} written`); };
+
+for (const delivery of ['sync', 'async']) {
+  await test(`H1.${delivery}`, `r4a (${delivery}): Create Hook LoRA, original layout [meta, text, rows] (derived): restored by onConfigured with the native merge; re-save idempotent`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    const { registered } = rev10.registerLoraManagerFrontends(host.comfy);
+    const saved = derived(TYPES.hook, [{ ...META }, BASIC_TEXT, BASIC_ROWS]);
+    const entry = await host.load(TYPES.hook, { inputs: lorasInputs() }, saved);
+    assert.deepEqual(entry.placed, { text: META, loras: BASIC_TEXT }, 'before: shifted by core');
+    await quiesce();
+    const expected = hookRows(BASIC_TEXT, BASIC_ROWS); // r4 correction: through the LORAS setter, not raw mergeLoras
+    assert.deepEqual(expected, BASIC_ROWS, 'these saved rows are already setter-normal, so they round-trip exactly');
+    assert.equal(valueOf(entry, 'text'), BASIC_TEXT);
+    assert.deepEqual(valueOf(entry, 'loras'), expected);
+    assert.deepEqual(sinceLoad(entry, 'loras'), [expected], 'rows written once, from the saved rows');
+    assert.deepEqual(sinceLoad(entry, 'text'), [BASIC_TEXT], 'text written once');
+    assert.deepEqual([...registered.createHook.activeNames(entry.node)], BASIC_ROWS.filter(row => row.active).map(row => row.name));
+    assert.deepEqual(slotNames(entry), ['prev_hooks']);
+    assert.deepEqual(await resaveIsIdempotent(host, TYPES.hook, lorasInputs(), saved, entry), [BASIC_TEXT, expected]);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(expected) };
+  });
+
+  await test(`H2.${delivery}`, `r4a (${delivery}): Create Hook LoRA, older/converted layout [text, rows]: not migrated; the native load merge still runs`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    // r4: rows without `locked`, as older saves have (the nunchaku example's rows lack it too), so the setter must
+    // normalize them. rev 10's own already-normal saves need no write; every re-save idempotence check covers that.
+    const olderRows = BASIC_ROWS.map(({ locked, ...row }) => row);
+    const saved = derived(TYPES.hook, [BASIC_TEXT, olderRows]);
+    const entry = await host.load(TYPES.hook, { inputs: lorasInputs() }, saved);
+    assert.deepEqual(entry.placed, { text: BASIC_TEXT, loras: olderRows }, 'aligned as placed');
+    await quiesce();
+    const expected = hookRows(BASIC_TEXT, olderRows);
+    assert.deepEqual(expected, BASIC_ROWS, 'the setter adds locked:false and changes nothing else');
+    assert.deepEqual(valueOf(entry, 'loras'), expected);
+    assert.deepEqual(sinceLoad(entry, 'text'), [], 'the text is never written');
+    assert.deepEqual(sinceLoad(entry, 'loras'), [expected], 'the native merge writes once');
+    await resaveIsIdempotent(host, TYPES.hook, lorasInputs(), saved, entry);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(expected) };
+  });
+
+  await test(`H3.${delivery}`, `r4a (${delivery}): Create Hook LoRA near-miss layouts are left as placed (no writes) and refused visibly`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const variants = {
+      version2: [{ version: 2, textWidgetName: 'text' }, BASIC_TEXT, BASIC_ROWS],
+      extraKey: [{ ...META, extra: true }, BASIC_TEXT, BASIC_ROWS],
+      twoValues: [{ ...META }, BASIC_TEXT],
+      rowsNotArray: [{ ...META }, BASIC_TEXT, 'rows'],
+    };
+    for (const [name, values] of Object.entries(variants)) {
+      const entry = await host.load(TYPES.hook, { inputs: lorasInputs() }, derived(TYPES.hook, values));
+      await quiesce();
+      noWrites(entry, name);
+      assert.deepEqual(valueOf(entry, 'text'), values[0], name + ': left as placed');
+      assert.match(renderOf(entry, 'text').text(), /262144-byte owned profile/, name + ': refused visibly');
+    }
+    assert.deepEqual(host.record.packerrors, []);
+    return { variants: Object.keys(variants) };
+  });
+
+  await test(`X1.${delivery}`, `r4a (${delivery}): Text, original layout [meta, text] (derived): text restored by name; re-save idempotent`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const saved = derived(TYPES.text, [{ ...META }, PROMPT_TEXT]);
+    const entry = await host.load(TYPES.text, { inputs: textInputs() }, saved);
+    assert.deepEqual(entry.placed, { text: META }, 'before: shifted by core');
+    await quiesce();
+    assert.equal(valueOf(entry, 'text'), PROMPT_TEXT);
+    assert.deepEqual(sinceLoad(entry, 'text'), [PROMPT_TEXT]);
+    assert.equal(renderOf(entry, 'text').byLabel('text').value, PROMPT_TEXT);
+    assert.deepEqual(await resaveIsIdempotent(host, TYPES.text, textInputs(), saved, entry), [PROMPT_TEXT]);
+    assert.deepEqual(host.record.packerrors, []);
+    return { textLength: PROMPT_TEXT.length };
+  });
+
+  await test(`V1.${delivery}`, `r4a (${delivery}): WanVideo Lora Select, original layout [low_mem_load, merge_loras, meta, text, rows] (derived): BOOLEANs kept, text and rows restored with the native merge; re-save idempotent`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const saved = derived(TYPES.wan, [WAN_LOW_MEM, true, { ...META }, WAN_TEXT, WAN_ROWS]);
+    const entry = await host.load(TYPES.wan, { inputs: wanInputs() }, saved);
+    assert.deepEqual(entry.placed, { low_mem_load: WAN_LOW_MEM, merge_loras: true, text: META, loras: WAN_TEXT }, 'before: BOOLEANs placed, the rest shifted');
+    await quiesce();
+    const expected = loraRows(WAN_TEXT, WAN_ROWS); // wanvideo_lora_select.js 117-132 through the LORAS setter
+    assert.deepEqual([valueOf(entry, 'low_mem_load'), valueOf(entry, 'merge_loras')], [WAN_LOW_MEM, true]);
+    assert.deepEqual(sinceLoad(entry, 'low_mem_load'), [], 'BOOLEAN prefix not touched');
+    assert.deepEqual(sinceLoad(entry, 'merge_loras'), [], 'BOOLEAN prefix not touched');
+    assert.equal(valueOf(entry, 'text'), WAN_TEXT);
+    assert.deepEqual(valueOf(entry, 'loras'), expected);
+    assert.deepEqual(sinceLoad(entry, 'loras'), [expected], 'rows written once');
+    assert.deepEqual(sinceLoad(entry, 'text'), [WAN_TEXT], 'text written once');
+    assert.deepEqual(await resaveIsIdempotent(host, TYPES.wan, wanInputs(), saved, entry), [WAN_LOW_MEM, true, WAN_TEXT, expected]);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(expected) };
+  });
+
+  await test(`V2.${delivery}`, `r4a (${delivery}): WanVideo Lora Select, converted layout [low_mem_load, merge_loras, text, rows]: not migrated; the native load merge still runs`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const saved = derived(TYPES.wan, [WAN_LOW_MEM, false, WAN_TEXT, WAN_ROWS]);
+    const entry = await host.load(TYPES.wan, { inputs: wanInputs() }, saved);
+    assert.deepEqual(entry.placed, { low_mem_load: WAN_LOW_MEM, merge_loras: false, text: WAN_TEXT, loras: WAN_ROWS }, 'aligned as placed');
+    await quiesce();
+    const expected = loraRows(WAN_TEXT, WAN_ROWS);
+    assert.deepEqual(sinceLoad(entry, 'text'), [], 'the text is never written');
+    assert.deepEqual(sinceLoad(entry, 'loras'), [expected], 'the native merge writes once');
+    await resaveIsIdempotent(host, TYPES.wan, wanInputs(), saved, entry);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(expected) };
+  });
+}
+
+// r4 (review of r3): Hook rows go through the shared LORAS setter's normalization on every write. The expected rows below
+// are written out by hand from the setter (loras_widget.js 812-834), not computed with the code under test.
+const H5_TEXT = '<lora:a:1> <lora:b:0.8> <lora:c:0.7:0.4> <lora:d:1.0:0.6>';
+const H5_SAVED_ROWS = [
+  { name: 'a', strength: 1, clipStrength: 0, active: true },                                 // zero clip strength
+  { name: 'b', strength: 0.5, clipStrength: 0.5, active: false, expanded: false },           // duplicate: first
+  { name: 'b', strength: 0.8, clipStrength: 0.8, active: true },                             // duplicate: last, kept
+  { name: 'c', strength: 0.7, clipStrength: 0.4, active: true },                             // no expanded: merge sets false
+];
+const H5_EXPECTED = [ // a, d: clipStrength || strength; b: the last duplicate; d (text only): expanded = clip != strength; locked: false
+  { name: 'a', strength: 1, active: true, expanded: false, clipStrength: 1, selected: false, locked: false },
+  { name: 'b', strength: 0.8, active: true, expanded: false, clipStrength: 0.8, selected: false, locked: false },
+  { name: 'c', strength: 0.7, active: true, expanded: false, clipStrength: 0.4, selected: false, locked: false },
+  { name: 'd', strength: 1, active: true, clipStrength: 0.6, selected: false, expanded: true, locked: false },
+];
+for (const delivery of ['sync', 'async']) {
+  await test(`H5.${delivery}`, `r4a (${delivery}): Create Hook restore normalizes like the original LORAS setter: zero clip strength, last duplicate, default expanded, locked:false; re-save idempotent`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    assert.deepEqual(hookRows(H5_TEXT, H5_SAVED_ROWS), H5_EXPECTED, 'the hand-written setter result');
+    const saved = derived(TYPES.hook, [{ ...META }, H5_TEXT, H5_SAVED_ROWS]);
+    const entry = await host.load(TYPES.hook, { inputs: lorasInputs() }, saved);
+    await quiesce();
+    assert.equal(valueOf(entry, 'text'), H5_TEXT);
+    assert.deepEqual(valueOf(entry, 'loras'), H5_EXPECTED);
+    assert.equal(valueOf(entry, 'loras')[0].clipStrength, 1, 'a saved clipStrength 0 restores as the strength, not 0');
+    assert.deepEqual(sinceLoad(entry, 'loras'), [H5_EXPECTED], 'rows written once');
+    assert.deepEqual(await resaveIsIdempotent(host, TYPES.hook, lorasInputs(), saved, entry), [H5_TEXT, H5_EXPECTED]);
+    // The converted save of the same rows takes the same path (no migration) and restores identically.
+    const converted = await host.load(TYPES.hook, { inputs: lorasInputs() }, derived(TYPES.hook, [H5_TEXT, H5_SAVED_ROWS]));
+    await quiesce();
+    assert.deepEqual(valueOf(converted, 'loras'), H5_EXPECTED);
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(H5_EXPECTED) };
+  });
+
+  await test(`H6.${delivery}`, `r4a (${delivery}): Create Hook text edits also write setter-normal rows (<lora:e:1:0> gives clipStrength 1, locked:false)`, async () => {
+    const host = createHost({ model: 'r4a', delivery });
+    rev10.registerLoraManagerFrontends(host.comfy);
+    const node = host.createNode(TYPES.hook, { inputs: lorasInputs() });
+    await settle();
+    typeInto(renderOf(node, 'text'), 'text', '<lora:e:1:0>');
+    await quiesce();
+    assert.deepEqual(valueOf(node, 'loras'), [{ name: 'e', strength: 1, active: true, clipStrength: 1, selected: false, expanded: false, locked: false }]);
+    assert.equal(valueOf(node, 'text'), '<lora:e:1:0>', 'the typed text is not rewritten');
+    assert.deepEqual(host.record.packerrors, []);
+    return { rows: rowsSummary(valueOf(node, 'loras')) };
+  });
+}
+
+await test('X2', 'r4a: Text saves that are not the original layout are left untouched: the converted [text] and near misses', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const variants = { converted: [PROMPT_TEXT], version2: [{ version: 2, textWidgetName: 'text' }, PROMPT_TEXT], threeValues: [{ ...META }, PROMPT_TEXT, []] };
+  for (const [name, values] of Object.entries(variants)) {
+    const entry = await host.load(TYPES.text, { inputs: textInputs() }, derived(TYPES.text, values));
+    await quiesce();
+    noWrites(entry, name);
+    assert.deepEqual(valueOf(entry, 'text'), values[0], name + ': left as placed');
+  }
+  assert.deepEqual(host.record.packerrors, []);
+  return { variants: Object.keys(variants) };
+});
+
+await test('V3', 'r4a: the real Wan example (an older original, before merge_loras: [low_mem_load, text, rows]) is not matched and is left as placed', async () => {
+  // Core places it by position onto [low_mem_load, merge_loras, text, loras]: merge_loras gets the text string and text gets
+  // the rows. That misplacement predates rev 10 (on live the BOOLEANs are the only widgets and merge_loras gets the text the
+  // same way). It is not the metadata-first layout of B1, so r3 records it and does not repair it.
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const entry = await host.load(TYPES.wan, { inputs: wanInputs() }, WAN_107);
+  await quiesce();
+  assert.deepEqual(entry.placed, { low_mem_load: WAN_LOW_MEM, merge_loras: WAN_TEXT, text: WAN_ROWS, loras: [] });
+  noWrites(entry, 'older Wan example');
+  assert.match(renderOf(entry, 'text').text(), /262144-byte owned profile/);
+  assert.deepEqual(host.record.packerrors, []);
+  return { placed: Object.keys(entry.placed) };
+});
+
+await test('V4', 'r4a: WanVideo Lora Select near-miss layouts are left as placed (no writes)', async () => {
+  const host = createHost({ model: 'r4a' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const variants = {
+    stringPrefix: ['false', true, { ...META }, WAN_TEXT, WAN_ROWS],
+    version2: [WAN_LOW_MEM, true, { version: 2, textWidgetName: 'text' }, WAN_TEXT, WAN_ROWS],
+    rowsNotArray: [WAN_LOW_MEM, true, { ...META }, WAN_TEXT, 'rows'],
+  };
+  for (const [name, values] of Object.entries(variants)) {
+    const entry = await host.load(TYPES.wan, { inputs: wanInputs() }, derived(TYPES.wan, values));
+    await quiesce();
+    noWrites(entry, name);
+    assert.match(renderOf(entry, 'text').text(), /262144-byte owned profile/, name + ': refused visibly');
+  }
+  assert.deepEqual(host.record.packerrors, []);
+  return { variants: Object.keys(variants) };
+});
+
+await test('L10', 'live: Create Hook, Text and Wan loads are inert (no widget types): no writes, no errors', async logs => {
+  const host = createHost({ model: 'live' });
+  rev10.registerLoraManagerFrontends(host.comfy);
+  const hook = await host.load(TYPES.hook, { inputs: lorasInputs() }, derived(TYPES.hook, [{ ...META }, BASIC_TEXT, BASIC_ROWS]));
+  const text = await host.load(TYPES.text, { inputs: textInputs() }, derived(TYPES.text, [{ ...META }, PROMPT_TEXT]));
+  const wan = await host.load(TYPES.wan, { inputs: wanInputs() }, derived(TYPES.wan, [WAN_LOW_MEM, true, { ...META }, WAN_TEXT, WAN_ROWS]));
+  await quiesce();
+  assert.deepEqual(hook.node.widgets.names(), []);
+  assert.deepEqual(slotNames(hook), ['text', 'loras', 'prev_hooks']);
+  assert.deepEqual(text.node.widgets.names(), []);
+  assert.deepEqual(wan.node.widgets.names(), ['low_mem_load', 'merge_loras']);
+  assert.deepEqual([valueOf(wan, 'low_mem_load'), valueOf(wan, 'merge_loras')], [WAN_LOW_MEM, true]);
+  noWrites(wan, 'live Wan');
+  assert.ok(logs.some(entry => entry.level === 'warn' && /text\/loras widgets not found for Create Hook LoRA/.test(entry.text)));
+  assert.deepEqual(host.record.packerrors, []);
+  return { hook: slotNames(hook), wan: wan.node.widgets.names() };
+});
+
+// =====================================================================================================================
+// T: TriggerWord Toggle: can a #11 widget type reproduce the original serializer byte for byte?
+// =====================================================================================================================
+const { reconcileTags, applyHighlightTags, collectHighlightTokens, serializeTags } = triggerLogic;
+const withStrength = (tags, strengths) => tags.map((tag, index) => (index in strengths ? { ...tag, strength: strengths[index] } : tag));
+// Real trigger-word strings from the pack's own tests (v2/tests/nodes/test_trigger_word_toggle.py and
+// v2/tests/frontend/components/triggerWords.escaping.test.js); tag values are built with the converted reconcileTags.
+const FIXTURES = [
+  { id: 'F1', source: 'test_trigger_words_same_as_original_processes_toggle', mode: 'tags, no strength',
+    tags: () => reconcileTags([], 'word1, word2', false, true, false).map((tag, i) => ({ ...tag, active: i === 0 })) },
+  { id: 'F2', source: 'test_group_mode_preserves_parenthesized_groups', mode: 'tags, strengths adjusted',
+    tags: () => withStrength(reconcileTags([], 'flat color, dark theme, (a, really, long, test, trigger, word:1.06), (sinozick style:0.94)', false, true, true), { 0: 1.2, 3: 1.1 }) },
+  { id: 'F3', source: 'test_duplicate_words_preserve_strength_per_instance', mode: 'duplicate tags, per-instance strengths',
+    tags: () => reconcileTags([
+      { text: '(A:0.50)', active: false, strength: 0.5, highlighted: false },
+      { text: 'A', active: true, strength: 1.2, highlighted: false },
+      { text: '(A:0.75)', active: true, strength: 0.75, highlighted: false },
+    ], 'A, A, A', false, true, true) },
+  { id: 'F4', source: 'test_group_mode_keeps_group_strength_when_individual_tags_are_excluded', mode: 'group with items and a group strength',
+    tags: () => reconcileTags([{ text: '(outfit red, outfit blue, smiling:1.15)', active: true, strength: 1.15, highlighted: false,
+      items: [{ text: 'outfit red', active: true, highlighted: false }, { text: 'outfit blue', active: false, highlighted: false }, { text: 'smiling', active: true, highlighted: false }] }],
+    'outfit red, outfit blue, smiling', true, true, true) },
+  { id: 'F5', source: 'test_group_mode_omits_group_when_all_children_are_disabled', mode: 'groups, no strength',
+    tags: () => reconcileTags([], 'A, B,, C, D', true, true, false).map((tag, i) => (i === 0 ? { ...tag, items: tag.items.map(item => ({ ...item, active: false })) } : tag)) },
+  { id: 'F6', source: 'triggerWords.escaping.test.js + test_trigger_words_override_different_from_original', mode: 'markup characters, highlight, one strength',
+    tags: () => withStrength(applyHighlightTags(reconcileTags([], '<style>guangying</style>, fym <artist>, 69yottea_style_illu', false, true, true),
+      collectHighlightTokens(['69yottea_style_illu'])), { 1: 0.8 }) },
+  { id: 'F7', source: 'test_trigger_words_override_with_new_format', mode: 'group, default inactive, highlight, group strength',
+    tags: () => withStrength(applyHighlightTags(reconcileTags([], 'masterpiece, best quality, very aesthetic, absurdres', true, false, true),
+      collectHighlightTokens(['best quality'])), { 0: 1.05 }) },
+];
+const tagDiffs = (left, right) => left.flatMap((tag, index) => (JSON.stringify(tag) === JSON.stringify(right[index]) ? [] :
+  [{ index, original: tag.text, widgetType: right[index]?.text, strength: right[index]?.strength }]));
+const triggerWord = { fixtures: [] };
+await test('T1', 'TriggerWord: the converted serializeTags equals the transcribed original serializer on every fixture', async () => {
+  for (const fixture of FIXTURES) {
+    const tags = fixture.tags();
+    const original = originalSerializeValue.call({ value: structuredClone(tags) });
+    const converted = serializeTags(structuredClone(tags));
+    assert.equal(JSON.stringify(converted), JSON.stringify(original), fixture.id);
+  }
+  return { fixtures: FIXTURES.length };
+});
+await test('T2', 'TriggerWord: a #11 type serializing its one value cannot match the original prompt bytes (stays under (c))', async () => {
+  for (const fixture of FIXTURES) {
+    const tags = fixture.tags();
+    const value = structuredClone(tags);
+    const originalPrompt = JSON.stringify(originalSerializeValue.call({ value: structuredClone(tags) }));
+    const originalValue = JSON.stringify(value); // what the original widget holds (and LiteGraph saves as widgets_values)
+    const widgetTypeSent = JSON.stringify(structuredClone(tags)); // a #11 type: core serializes the stored value as-is
+    const promptForm = JSON.parse(originalPrompt); // the alternative: store the prompt form as the value
+    const hasStrength = tags.some(tag => tag.strength !== undefined && tag.strength !== null);
+    const record = {
+      id: fixture.id, source: fixture.source, mode: fixture.mode, tags: tags.length,
+      sha256: { originalPrompt: sha256(originalPrompt), originalValue: sha256(originalValue), widgetTypeSent: sha256(widgetTypeSent) },
+      bytes: { originalPrompt: Buffer.byteLength(originalPrompt), widgetTypeSent: Buffer.byteLength(widgetTypeSent) },
+      rawValueMatchesOriginalPrompt: widgetTypeSent === originalPrompt,
+      rawValueMatchesOriginalValue: widgetTypeSent === originalValue,
+      promptFormMatchesOriginalValue: JSON.stringify(promptForm) === originalValue,
+      differingTags: tagDiffs(JSON.parse(originalPrompt), JSON.parse(widgetTypeSent)),
+    };
+    assert.equal(record.rawValueMatchesOriginalPrompt, !hasStrength, fixture.id + ' prompt match iff no strength');
+    assert.equal(record.rawValueMatchesOriginalValue, true);
+    assert.equal(record.promptFormMatchesOriginalValue, !hasStrength);
+    triggerWord.fixtures.push(record);
+  }
+  triggerWord.exact = triggerWord.fixtures.every(record => record.rawValueMatchesOriginalPrompt && record.promptFormMatchesOriginalValue);
+  assert.equal(triggerWord.exact, false);
+  return { exact: triggerWord.exact, differing: triggerWord.fixtures.filter(record => record.differingTags.length).map(record => record.id) };
+});
+
+// ---- Report ----
+await settle();
+const summary = { total: results.length, passed: results.filter(result => result.pass).length };
+summary.failed = summary.total - summary.passed;
+const report = { suite: 'lora-rev10-frontends unit tests (hermetic guest fakes)', inputs, summary, triggerWord, unhandled, results };
+fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + '\n');
+console.log(`${summary.passed}/${summary.total} passed; TriggerWord exact: ${triggerWord.exact}; report ${rel(outFile)} sha256 ${fileSha(outFile)}`);
+process.exitCode = summary.failed ? 1 : 0;

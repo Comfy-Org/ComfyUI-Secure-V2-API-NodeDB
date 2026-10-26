@@ -9,6 +9,10 @@
 > service it still fails until the host ships native ComfyUI-GGUF and the gguf package. See "Revision 8".
 > **Revision 9 (2026-10-21):** Lora Info's frontend and its 3 routes are ported; the node is partial. Every route
 > function needs platform request #15, so on live the widget shows "No LoRA selected" or route errors. See "Revision 9".
+> **Revision 10 (2026-10-26):** one self-registering frontend entry, `secure_web/lm_frontends.js`. On the live service
+> it activates the Prompt and Lora Stack Combiner sockets, Save Image's widget toggling, the Debug Metadata panel and
+> Create Hook's `prev_hooks` socket; the LoRA rows and text widgets wait for the host's widget-type bridge (#11, r4a).
+> Frontend logic is unit-tested on host fakes only, so the counts are unchanged. See "Revision 10".
 
 # LoRA Manager — Secure V2 conversion (in progress)
 
@@ -23,6 +27,49 @@
   pinned SDK (Core `6257422`, backend `745b88f`) on 2026-10-15: 21/21 equal to the expected rows.
 - `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
   (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
+
+## Revision 10 (2026-10-26): self-registering frontends
+
+Revision 10 adds `secure_web/lm_frontends.js`, which registers the pack's frontends when the host loads it, as
+`lora_info.js` does, and changes only `secure_web/` and this report. Python, schemas, `secure-nodes.json` and every
+other file are unchanged, and no node's disposition changes.
+
+| Frontend | Live service (host-stack r3, guest c6b97a15) | Host-stack r4a (widget-type bridge #11; not deployed) |
+| --- | --- | --- |
+| Prompt: dynamic `trigger_wordsN` sockets | active | active; `text` becomes a text box |
+| Lora Stack Combiner: dynamic `lora_stackN` sockets | active | active |
+| Save Image: webp/jpeg widget toggling | active; the `%…%` filename expansion stays held (needs a `beforeSerialize` replacement value) | same |
+| Debug Metadata: execution metadata panel | active; not restored from a saved workflow (needs the mount value handle) | same |
+| Create Hook LoRA | adds the optional `prev_hooks` socket; its rows editor and text wait for r4a | rows editor and text, kept in sync |
+| Lora Loader, Lora Stacker | inert: their inputs stay sockets, as before | rows editor and text, kept in sync; the Stacker gains its optional `lora_stack` socket |
+| Text, WanVideo Lora Select | inert | text box and rows editor; saved-workflow restore only (WanVideo's edit-time sync stays held) |
+
+- **Widget types.** LORAS, AUTOCOMPLETE_TEXT_LORAS and AUTOCOMPLETE_TEXT_PROMPT register through
+  `comfy.defs.defineWidgetType`. On the live service the call is refused and nothing changes.
+- **Saved workflows.** The original saves a hidden `{"version":1,"textWidgetName":"text"}` value before each autocomplete
+  text, and core restores `widgets_values` by position, so on r4a an original save would land shifted by one. Each
+  affected node recognises its exact layout in `onConfigured` and restores the values by name:
+  - Lora Loader, Lora Stacker and Create Hook LoRA: `[meta, text, rows]`;
+  - Prompt and Text: `[meta, text]`;
+  - WanVideo Lora Select: `[low_mem_load, merge_loras, meta, text, rows]`.
+  Rows go through the same normalization as the original LORAS widget setter. Older saves and this revision's own saves
+  are left as they are. A WanVideo save from before `merge_loras` existed is placed by position, as on the live service
+  today, and is not repaired.
+- **Still held:** TriggerWord Toggle's frontend (a widget type cannot reproduce its prompt serializer exactly),
+  autocomplete and keyboard insertion, node markers, manager settings, the workflow registry and templates, and the
+  Lora Randomizer's and WanVideo Lora Select's own frontend behaviour.
+- **Evidence:** 64/64 unit tests over hermetic host fakes of the live guest and r4a, and 7 mutants, each caught by its
+  intended tests; a repeat run was byte-identical (`validation/20261026-lora-manager-rev10-frontends/`).
+  - The retained first attempt (62/64) failed one test on a stale expectation, which the recorded run corrects.
+  - This is frontend-logic evidence, not a browser run, a backend run or an original-versus-converted comparison.
+  - The status line keeps "frontend 0/17 browser-tested", the counts stay 19/21 scoped, and the existing native and
+    browser holds above and under Pending are unchanged.
+- **Recorded difference** (inherited; Lora Loader, Lora Stacker, WanVideo Lora Select). A saved row with no `expanded`
+  field and a CLIP strength different from its model strength restores with `expanded: true`, where the original
+  restores `expanded: false`. Both strengths restore equal. A later strength edit in the rows editor can then differ,
+  because only a collapsed row copies the strength to CLIP. The pack's own example rows all carry `expanded`.
+- **Deliberate difference:** row on/off state is shown with inline styles, because the host sanitizer removes
+  `aria-pressed`, `aria-checked` and `aria-expanded`.
 
 ## Revision 9 (2026-10-21): Lora Info frontend and routes
 
@@ -258,8 +305,8 @@ call runs with only the permissions listed.
 ## What is in v2/
 
 - `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
-- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) registers itself when
-  loaded; the other modules only export functions, and none registers on load. `secure_services/lora_info_routes.py`:
+- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) and
+  `lm_frontends.js` (revision 10) register themselves when loaded; the other modules only export functions. `secure_services/lora_info_routes.py`:
   the 3 declared Lora Info routes. `secure_routes/` and `held-registration/`: unregistered route work.
 - Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
   their queue validators check the selected name, because remote dropdowns carry no static options. GGUF names, which

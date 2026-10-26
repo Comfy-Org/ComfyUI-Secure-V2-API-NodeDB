@@ -1,4 +1,8 @@
-// Save Image frontend source; browser/serialization/backend closure is pending.
+// Save Image frontend source; registered by lm_frontends.js (rev 10). The webp/jpeg widget toggling runs on the live guest.
+// The %node.widget% / %date:...% filename expansion needs a beforeSerialize replacement value (platform gap G1): where the
+// event carries no setSerializedValue the handler returns at once, so the widget's own value is sent, as with no frontend.
+import { canReplaceSerializedValue, definitionOff } from './guest_compat.js';
+
 const TYPE = 'Save Image (LoraManager)';
 const keyOf = node => JSON.stringify([node.graphId, node.id]);
 
@@ -74,7 +78,7 @@ function graphRows(comfy) {
 export function registerSaveImageExtraOutput(comfy) {
   const instances = new Map();
   let stopped = false;
-  const offDefinition = comfy.defs.extend(TYPE, builder => {
+  const offDefinition = definitionOff(comfy.defs.extend(TYPE, builder => {
     builder.onCreated(node => {
       if (stopped || node.isDeleted) return;
       const key = keyOf(node);
@@ -107,7 +111,7 @@ export function registerSaveImageExtraOutput(comfy) {
       };
       try {
         subscriptions.push(filename.on('beforeSerialize', event => {
-          if (!valid()) return;
+          if (!valid() || !canReplaceSerializedValue(event)) return;
           // Native serializeValue reads the widget's live value directly.
           const value = filename.getValue();
           if (!value || typeof value !== 'string' || !value.includes('%')) {
@@ -136,7 +140,7 @@ export function registerSaveImageExtraOutput(comfy) {
       for (const instance of [...instances.values()])
         if (instance.node.isDeleted) instance.dispose();
     });
-  });
+  }));
   return () => {
     if (stopped) return;
     stopped = true;

@@ -1,0 +1,302 @@
+// Hermetic guest fakes for LoRA Manager rev 10. No browser and no host code; only the shapes rev 10 depends on.
+// Two host models:
+// - live: the deployed guest c6b97a15. defs.extend returns a Promise of acknowledgements (guest 578-604); widgets.mount calls
+//   render(container) only and reports render errors as packerror (2124-2148); beforeSerialize events carry no
+//   setSerializedValue (G1); defs.defineWidgetType falls through to the generic rpc, which cannot clone the render function
+//   (variant 'throw': synchronous DataCloneError; variant 'reject': a rejected Promise).
+// - r4a: the same, plus the #11 bridge (host-stack r4a L1 guest b3c7fac4). defineWidgetType validates the closed def and
+//   returns a synchronous Unsubscribe. An input whose type (or widgetType) is registered becomes a widget whose renderer runs
+//   on node ready with (container, value cell, name, context); value.set notifies the widget's change listeners and the
+//   cell's onChange listeners; core serializes the cell value. models.list can be refused (G6 variant).
+// Change delivery: 'sync' notifies listeners inside setValue/set (in-process shape); 'async' applies the write at once
+// (optimistic local value) and notifies on a later macrotask, as a worker's published handles receive host updates.
+
+export class StubElement {
+  constructor(tag, doc) {
+    this.tagName = String(tag).toUpperCase(); this.ownerDocument = doc; this.children = []; this.parent = null;
+    this.attributes = new Map(); this.listeners = new Map(); this.style = { cssText: '' };
+    this.textContent = ''; this.value = ''; this.type = ''; this.disabled = false; this.checked = false; this.placeholder = '';
+  }
+  setAttribute(key, value) { this.attributes.set(key, String(value)); if (key === 'value') this.value = String(value); }
+  getAttribute(key) { return this.attributes.has(key) ? this.attributes.get(key) : null; }
+  append(...nodes) { for (const node of nodes) this.appendChild(node); }
+  appendChild(node) {
+    if (node.parent) node.parent.children = node.parent.children.filter(child => child !== node);
+    node.parent = this; this.children.push(node); return node;
+  }
+  replaceChildren(...nodes) { for (const child of this.children) child.parent = null; this.children = []; this.append(...nodes); }
+  addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, new Set()); this.listeners.get(type).add(fn); }
+  removeEventListener(type, fn) { this.listeners.get(type)?.delete(fn); }
+  listenerCount() { let n = 0; for (const set of this.listeners.values()) n += set.size; return n; }
+  dispatch(type, init = {}) {
+    if ('value' in init) this.value = init.value;
+    for (const fn of [...(this.listeners.get(type) || [])])
+      fn({ type, target: this, currentTarget: this, preventDefault() {}, stopPropagation() {}, ...init });
+  }
+  *walk() { yield this; for (const child of this.children) yield* child.walk(); }
+  find(predicate) { for (const node of this.walk()) if (predicate(node)) return node; return null; }
+  findAll(predicate) { return [...this.walk()].filter(predicate); }
+  byLabel(label) { return this.find(node => node.getAttribute('aria-label') === label); }
+  text() { return this.textContent + this.children.map(child => child.text()).join(''); }
+}
+
+export class StubDocument { createElement(tag) { return new StubElement(tag, this); } }
+
+const clone = value => (value === undefined ? undefined : structuredClone(value));
+const CORE_WIDGET_TYPES = new Set(['STRING', 'INT', 'FLOAT', 'BOOLEAN', 'COMBO']);
+const NAME_RULE = /^[A-Z][A-Z0-9_]{0,127}$/;
+const DEF_FIELDS = new Set(['defaultValue', 'height', 'minWidth', 'minHeight', 'serialize', 'render']);
+
+class WidgetState {
+  constructor(name, type, value, kind, delivery = 'sync') {
+    this.name = name; this.type = type; this.value = clone(value); this.kind = kind; this.delivery = delivery;
+    this.listeners = new Map(); this.cellListeners = new Set(); this.disabled = false; this.hidden = false;
+    this.writes = []; // every value written after construction, in order
+  }
+  on(event, fn) {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    this.listeners.get(event).add(fn);
+    return () => this.listeners.get(event)?.delete(fn);
+  }
+  emit(event, payload) { for (const fn of [...(this.listeners.get(event) || [])]) fn(payload); }
+  write(value) {
+    this.value = clone(value);
+    this.writes.push(clone(value));
+    const delivered = clone(this.value);
+    const notify = () => {
+      for (const fn of [...this.cellListeners]) fn(clone(delivered));
+      this.emit('change', clone(delivered));
+    };
+    if (this.delivery === 'async') setTimeout(notify, 0); else notify();
+  }
+  handle() {
+    const state = this;
+    return {
+      name: state.name, get widgetType() { return state.type; },
+      getValue: () => clone(state.value),
+      setValue: value => state.write(value),
+      on: (event, fn) => state.on(event, fn),
+      setDisabled: flag => { state.disabled = !!flag; },
+      setHidden: flag => { state.hidden = !!flag; },
+    };
+  }
+  cell() {
+    const state = this;
+    return {
+      get: () => clone(state.value),
+      set: value => state.write(value),
+      onChange: fn => { state.cellListeners.add(fn); return () => state.cellListeners.delete(fn); },
+    };
+  }
+}
+
+export function createHost({ model, defineVariant = 'throw', modelsList = ['a.safetensors', 'b.safetensors', 'c.safetensors'],
+                             refuseModelsList = false, delivery = 'sync' } = {}) {
+  if (model !== 'live' && model !== 'r4a') throw new Error('model must be live or r4a');
+  if (delivery !== 'sync' && delivery !== 'async') throw new Error('delivery must be sync or async');
+  const doc = new StubDocument();
+  const record = { extendCalls: [], packerrors: [], defineCalls: [], unregistered: [], modelsListCalls: 0, console: [] };
+  const builders = new Map(); // type -> [{hooks}]
+  const widgetTypes = new Map(); // type -> def
+  const nodes = [];
+  let nextNodeId = 1;
+
+  const builderFor = type => {
+    const hooks = { onCreated: [], onConfigured: [], onRemoved: [], onConnectionsChanged: [], onExecuted: [] };
+    const builder = {};
+    for (const key of Object.keys(hooks)) builder[key] = fn => { hooks[key].push(fn); };
+    builder.def = { type };
+    return { builder, hooks };
+  };
+  const catalogue = new Set();
+  const defs = {
+    extend(selector, apply) {
+      const types = Array.isArray(selector) ? selector : [selector];
+      record.extendCalls.push(types.slice());
+      const sent = [];
+      for (const type of types) {
+        catalogue.add(type);
+        const { builder, hooks } = builderFor(type);
+        apply(builder);
+        if (!builders.has(type)) builders.set(type, []);
+        builders.get(type).push(hooks);
+        sent.push(Promise.resolve({ type, ok: true }));
+      }
+      return Promise.all(sent); // live c6b97a15 shape; r4a does not change it
+    },
+    defineWidgetType(type, def) {
+      record.defineCalls.push(type);
+      if (model === 'live') {
+        if (defineVariant === 'reject')
+          return Promise.reject(new DOMException('function could not be cloned', 'DataCloneError'));
+        structuredClone([type, def]); // throws DataCloneError on the render function, as postMessage does
+        return Promise.resolve(undefined);
+      }
+      if (typeof type !== 'string' || !NAME_RULE.test(type)) throw new TypeError('not a widget type name');
+      if (!def || typeof def.render !== 'function') throw new TypeError('the definition needs a render function');
+      for (const key of Object.keys(def)) if (!DEF_FIELDS.has(key)) throw new TypeError(`unsupported field '${key}'`);
+      if (widgetTypes.has(type)) throw new Error('already registered by this pack');
+      structuredClone(def.defaultValue);
+      widgetTypes.set(type, def);
+      const off = () => { widgetTypes.delete(type); record.unregistered.push(type); };
+      off.registered = Promise.resolve(true);
+      return off;
+    },
+  };
+  const models = {
+    async list(folder) {
+      record.modelsListCalls++;
+      if (refuseModelsList) throw new Error('[allowlist] comfy.models.list is not a declared path');
+      if (folder !== 'loras') throw new Error('unexpected folder');
+      return modelsList.slice();
+    },
+  };
+
+  function makeNode(type, { inputs = [], widgets = [], graphId = 'root', title } = {}) {
+    const id = String(nextNodeId++);
+    const slots = [];
+    const widgetStates = new Map();
+    const order = [];
+    const mountedRenders = [];
+    let serializeWidgets = false;
+    let nextSlot = 1;
+    const node = {
+      id, graphId, comfyClass: type, isDeleted: false,
+      getProperty: name => (name === 'Node name for S&R' ? type : undefined),
+      getTitle: () => title ?? type,
+      setSerializeWidgets: flag => { serializeWidgets = !!flag; },
+      get serializingWidgets() { return serializeWidgets; },
+    };
+    const slotHandle = slot => ({
+      get id() { return slot.id; }, get name() { return slot.name; }, get type() { return slot.type; },
+      get shape() { return slot.shape; }, get isConnected() { return slot.connected; },
+      modify(patch) { if (patch && typeof patch.name === 'string') slot.name = patch.name; },
+    });
+    node.inputs = {
+      all: () => slots.map(slotHandle),
+      byName: name => { const slot = slots.find(s => s.name === name); return slot ? slotHandle(slot) : null; },
+      add: (name, slotType, options) => { slots.push({ id: 's' + nextSlot++, name, type: slotType, shape: options?.shape || 'default', connected: false }); },
+      remove: slotId => { const index = slots.findIndex(s => s.id === slotId); if (index >= 0) slots.splice(index, 1); },
+    };
+    node.widgets = {
+      get: name => (widgetStates.has(name) ? widgetStates.get(name).handle() : null),
+      add: def => { const state = new WidgetState(def.name, def.type, def.value, 'added', delivery); widgetStates.set(def.name, state); order.push(def.name); return state.handle(); },
+      remove: name => { widgetStates.delete(name); const index = order.indexOf(name); if (index >= 0) order.splice(index, 1); },
+      names: () => order.slice(),
+      move: (name, index) => { const from = order.indexOf(name); if (from >= 0) { order.splice(from, 1); order.splice(index, 0, name); } },
+      mount: def => {
+        const name = def?.name || 'panel';
+        const state = new WidgetState(name, 'mounted', undefined, 'mounted', delivery);
+        widgetStates.set(name, state); order.push(name);
+        const container = doc.createElement('div');
+        try { def?.render?.(container); } // live: no value cell (R6-4)
+        catch (error) { record.packerrors.push({ hook: `mount:${name}`, error: String(error?.stack || error) }); }
+        mountedRenders.push({ name, container });
+        return state.handle();
+      },
+    };
+    const widgetTypeMounts = [];
+    for (const input of inputs) {
+      const widgetType = input.widgetType ?? input.type;
+      if (model === 'r4a' && widgetTypes.has(widgetType)) {
+        const def = widgetTypes.get(widgetType);
+        const state = new WidgetState(input.name, widgetType, input.value !== undefined ? input.value : def.defaultValue, 'widgetType', delivery);
+        widgetStates.set(input.name, state); order.push(input.name);
+        widgetTypeMounts.push({ input, def, state });
+      } else if (CORE_WIDGET_TYPES.has(input.type) && !input.forceInput) {
+        const state = new WidgetState(input.name, input.type, input.value, 'core', delivery);
+        widgetStates.set(input.name, state); order.push(input.name);
+      } else {
+        slots.push({ id: 's' + nextSlot++, name: input.name, type: input.type, shape: input.optional ? 'optional' : 'default', connected: false });
+      }
+    }
+    for (const widget of widgets) {
+      const state = new WidgetState(widget.name, widget.type, widget.value, 'core', delivery);
+      widgetStates.set(widget.name, state); order.push(widget.name);
+    }
+    const entry = { node, slots, widgetStates, mountedRenders, widgetTypeRenders: [], widgetTypeMounts };
+    nodes.push(entry);
+    return entry;
+  }
+
+  // The guest runs each pack hook on its own and reports a throw as a packerror; the other hooks still run.
+  const runHooks = (type, hook, ...args) => {
+    for (const hooks of builders.get(type) || []) for (const fn of hooks[hook]) {
+      try { fn(...args); }
+      catch (error) { record.packerrors.push({ hook: `${hook}:${type}`, error: String(error?.stack || error) }); }
+    }
+  };
+
+  const serializable = entry => entry.node.widgets.names().filter(name => entry.widgetStates.get(name)?.kind !== 'mounted');
+  const host = {
+    model, delivery, doc, record, widgetTypes, nodes,
+    comfy: { defs, models, graph: { root: () => null, subgraphs: () => [] } },
+    /** Construct, run onCreated, then mount any widget-type widgets on node ready (#11 lifecycle order). */
+    createNode(type, spec) {
+      const entry = makeNode(type, spec);
+      runHooks(type, 'onCreated', entry.node);
+      for (const { input, def, state } of entry.widgetTypeMounts) {
+        const container = doc.createElement('div');
+        const context = {
+          getOptions: () => Object.freeze({ ...(input.options || {}) }),
+          onNodeReady: fn => { const off = fn(entry.node); return () => { if (typeof off === 'function') off(); }; },
+        };
+        let teardown;
+        try { teardown = def.render(container, state.cell(), input.name, context); }
+        catch (error) { record.packerrors.push({ hook: `widgetType:${state.type}`, error: String(error?.stack || error) }); }
+        entry.widgetTypeRenders.push({ name: input.name, type: state.type, container, teardown });
+      }
+      return entry;
+    },
+    configure(entry) { runHooks(entry.node.comfyClass, 'onConfigured', entry.node); },
+    /**
+     * Workflow load, shaped like host-stack r4a test W1 (deployed core configure): widgets_values are placed by position
+     * over the serializable widgets and mirrored to the worker unconverted (change listeners fire), then
+     * onConfigured(node, data) receives the saved node object. With async delivery it arrives after those notifications.
+     * entry.placed holds the values as placed; entry.placedWrites the write counts at that point.
+     */
+    async load(type, spec, savedNode) {
+      const entry = host.createNode(type, spec);
+      const names = serializable(entry);
+      const values = Array.isArray(savedNode?.widgets_values) ? savedNode.widgets_values : [];
+      names.forEach((name, index) => { if (index < values.length) entry.widgetStates.get(name).write(values[index]); });
+      entry.placed = Object.fromEntries(names.map(name => [name, clone(entry.widgetStates.get(name).value)]));
+      entry.placedWrites = Object.fromEntries(names.map(name => [name, entry.widgetStates.get(name).writes.length]));
+      const configure = () => runHooks(type, 'onConfigured', entry.node, clone(savedNode));
+      if (delivery === 'async') await new Promise(resolve => setTimeout(() => { configure(); resolve(); }, 0));
+      else configure();
+      return entry;
+    },
+    /** LGraphNode.serialize shape: widgets_values by position over the serializable widgets. */
+    save(entry) {
+      return { type: entry.node.comfyClass, widgets_values: serializable(entry).map(name => clone(entry.widgetStates.get(name).value)) };
+    },
+    execute(entry, raw) { runHooks(entry.node.comfyClass, 'onExecuted', entry.node, { raw }); },
+    remove(entry) {
+      entry.node.isDeleted = true;
+      for (const render of entry.widgetTypeRenders) if (typeof render.teardown === 'function') render.teardown();
+      runHooks(entry.node.comfyClass, 'onRemoved', entry.node);
+    },
+    connect(entry, slotName, connected) {
+      const index = entry.slots.findIndex(slot => slot.name === slotName);
+      if (index < 0) throw new Error('no slot ' + slotName);
+      entry.slots[index].connected = connected;
+      runHooks(entry.node.comfyClass, 'onConnectionsChanged', entry.node,
+        { side: 'input', index, connected, peerNodeId: '99', reconstructing: false });
+    },
+    /** Core serialization: beforeSerialize listeners get an event without setSerializedValue (G1, both models). */
+    serialize(entry) {
+      const values = {};
+      for (const name of entry.node.widgets.names()) {
+        const state = entry.widgetStates.get(name);
+        if (!state) continue;
+        const event = { widget: name };
+        try { state.emit('beforeSerialize', event); }
+        catch (error) { record.packerrors.push({ hook: `beforeSerialize:${name}`, error: String(error?.stack || error) }); }
+        values[name] = clone(state.value);
+      }
+      return values;
+    },
+  };
+  return host;
+}
