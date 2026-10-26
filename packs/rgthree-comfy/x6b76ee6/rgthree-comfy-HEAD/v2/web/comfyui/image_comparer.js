@@ -37,11 +37,10 @@ import { RgthreeBaseWidget, mountRgthreeWidget } from "./utils_widgets.js";
 //   value is trivial to reproduce; "am I on cloud?" is not readable, so the cache buster
 //   is unconditional and a cloud install re-fetches each image once per execution. The
 //   images shown are correct either way — this costs bandwidth, not behaviour.
-// REFUSED, not a gap: `addConnectionLayoutSupport` — the pack's Left/Right slot layout,
-//   which patches `getConnectionPos` on the node class and recomputes socket positions
-//   from renderer constants. Deciding where the renderer draws a socket is refused, not
-//   pending; see utils.js. `getSlotPosition()` reads where the renderer put one, which
-//   is what anchoring to a socket needs.
+// CONVERTED (revision 9, F01): the pack's Left/Right slot layout. The original patched
+//   `getConnectionPos` on the node class; connection_layout.js declares the same
+//   positions with public slot patches instead. `getSlotPosition()` reads where the
+//   renderer put a socket, which is what anchoring to one needs.
 // COSMETIC: no property metadata. `RgthreeImageComparer["@comparer_mode"] =
 //   {type: "combo", values: ["Slide", "Click"]}` told the properties panel to edit
 //   that property with a two-item picker rather than a free text field. The property

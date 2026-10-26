@@ -4,8 +4,11 @@ import { whereSupported } from "./sandbox_limits.js";
 import { NodeTypesString } from "./constants.js";
 import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
 import { matchLocalSlotsToServer } from "./utils.js";
+import { applyConnectionLayout } from './connection_layout.js';
+import { nodeKey } from './base_any_input_connected_node.js';
 // Handles hold no arbitrary properties, so the per-node debounce target lives
-// here. `debounce` keys by function identity, so each node needs its own.
+// here, keyed by graph and node id. `debounce` keys by function identity, so each
+// node needs its own.
 const stabilizersByNode = new Map();
 const CONVERT_TO = {
     [NodeTypesString.CONTEXT]: {
@@ -52,6 +55,7 @@ function stabilize(node) {
         return;
     removeUnusedInputsFromEnd(node, 4);
     addContextInput(node);
+    applyConnectionLayout(node);
 }
 // An early build shipped this output misspelled, so saved workflows still carry
 // it. The author's note says the rename lives here in perpetuity.
@@ -174,15 +178,15 @@ comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
         if (event.side !== "input" || !MULTI_CTX_INPUT_TYPES.includes(node.type)) {
             return;
         }
-        let stabilizer = stabilizersByNode.get(node.id);
+        let stabilizer = stabilizersByNode.get(nodeKey(node));
         if (!stabilizer) {
             stabilizer = () => stabilize(node);
-            stabilizersByNode.set(node.id, stabilizer);
+            stabilizersByNode.set(nodeKey(node), stabilizer);
         }
         debounce(stabilizer, 64);
     });
     b.onRemoved((node) => {
-        stabilizersByNode.delete(node.id);
+        stabilizersByNode.delete(nodeKey(node));
     });
     whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
     // The original's label was a function of the node's type, and a menu label must
@@ -225,10 +229,8 @@ comfy.defs.extend(Object.keys(CONVERT_TO), (b) => {
 //   `slotDefaults` extension fills both tables from every registered definition, so a
 //   context link dropped on empty canvas already offers the nodes that declare
 //   `RGTHREE_CONTEXT` — which is these. What is lost is putting them *first*.
-// REFUSED, not a gap: `addConnectionLayoutSupport` put the inputs on the left and the
-//   outputs on the right by patching `getConnectionPos` on the node class. Deciding
-//   where the renderer draws a socket is refused, not pending — see utils.js. The
-//   nodes work; their sockets sit where the renderer puts them.
+// CONVERTED (revision 9, F01): connection_layout.js restores saved Left/Right layouts
+//   with public slot patches, including inputs added by the delayed stabilization pass.
 // NO LONGER A GAP: dropping a context link on a node and having EVERY matching
 //   slot wire at once is `b.onUnplacedLink`, converted above. The original got
 //   there by replacing `connectByType` on LGraphNode.prototype, which changed

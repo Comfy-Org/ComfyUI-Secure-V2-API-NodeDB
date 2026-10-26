@@ -1,13 +1,18 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,536 @@
+@@ -0,0 +1,620 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request (revision 4).
 +> Revision 7 (corpus PR #74) passed its browser staging on live host stack r3: gate rows S1, S2, S3 and S5.
-+> Revision 8 (2026-10-22) is docs and evidence only. It re-derives every row from the staging of revisions 5-7, plus the
++> Revision 8 (corpus PR #75) is docs and evidence only. It re-derived every row from the staging of revisions 5-7, plus the
 +> existing backend native cases and module tests.
-+> Nodes: 37 of 40 upstream converted; 6 tested (scoped), 13 converted but untested/partly tested,
-+> 21 partial or missing: 18 converted with a behaviour blocked by a missing host capability, 3 missing or pending.
-+> The counts were re-derived in revision 8. The evidence is in `validation/20261022-rgthree-browser-staging-r5-r7/`.
++> Revision 9 R2 (2026-10-26) keeps the F01 expanded layouts and Reroute definition, restores the published contract,
++> and removes the unapproved collapsed title-edge socket field (audit V3). F01 is PARTIAL for collapsed title-edge
++> sockets pending an approved API or a separate critical-pack shim. No shim or new API is included.
++> Revision 9 and R2 have not run in a browser.
++> Nodes: 38 of 40 upstream converted; 6 tested (scoped), 13 converted but untested/partly tested,
++> 21 partial or pending: 19 converted with a behaviour blocked by a missing host capability, 2 pending.
++> Revision 9 moves one row, Reroute (missing to converted, PARTIAL). Every other count waits for browser evidence.
++> The revision 8 evidence is in `validation/20261022-rgthree-browser-staging-r5-r7/`.
 +> Not accepted: no whole-pack certificate. Open gates are listed below.
 +
 +<!-- secure-conversion-report-v1 -->
@@ -15,9 +20,67 @@
 +
 +## What this revision contains
 +
-+- **Base:** revision 7 (corpus PR #74, merged as `d16cb2f6`). Revision 7 was built on revision 6 (PR #69), revision 6
-+  on revision 5 (PR #54), revision 5 on revision 4 (PR #17), and revision 4 on revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
++- **Base:** revision 8 (corpus PR #75, merged as `74264998`). Revision 8 was built on revision 7 (PR #74), revision 7
++  on revision 6 (PR #69), revision 6 on revision 5 (PR #54), revision 5 on revision 4 (PR #17), and revision 4 on
++  revision 3 (PR #13). Revision 2 is kept in the corpus but held from the registry, because its
 +  `prompt_service.js` raises DataCloneErrors in the sandbox; revision 3 fixed that.
++- **Changed in revision 9 R2:** the draft's pack-local API edit is backed out before publication, as its README
++  documented. `comfy-api.d.ts` is byte-identical to main's published `53c296aa7e1f3454ecbf02980a2f3d532d79f7f5e99eda311de689ff56447ded`.
++  `connection_layout.js` no longer reads or emits `collapsedPosition`; its last-sent cache and key helper are removed.
++  Expanded layouts, grouping, labels, disabled colours, original node IDs and layout math remain unchanged. The
++  Reroute source and all other served JS remain byte-identical to the draft. No API addition or shim is implemented.
++  The collapsed title-edge socket geometry is an explicit F01 partial for all 24 types, pending MIKE's publication of a
++  general API or a separately reviewed critical-pack shim. Draft node disposition counts are retained; no row is promoted.
++- **Changed in revision 9** (F01 connection layouts and the Reroute definition). Source and hermetic tests only: nothing
++  has run in a browser, so only the Reroute row moves.
++  - **F01, connection layouts (24 node IDs).** New `web/comfyui/connection_layout.js`: the Left/Right/Top/Bottom socket
++    layouts, the "Connections Layout" menus, "Show Connections" / "Collapse Connections" on the 8 collapsible types,
++    hidden labels and greyed disabled sockets. They are saved with the node (`rgthree_connections_v1`), and the
++    original's saved slot fields are read on load.
++    - It writes published slot patches only: `position`, `direction`, `label`, `color` and
++      `colorWhenUnconnected`. The original's `getConnectionPos` class patch stays refused.
++    - Sources: the successor tranche (`connection_layout.js` `7fa0e4c2`, 46 original-comparison cases) and MOE's
++      draft (`2942aef0`), with the unapproved S02 collapsed-socket dependency removed in R2. The draft registers one `extend` per type
++      (no `builder.def`) and uses two fixed menu labels chosen by `when`, never a label function.
++    - Any Switch, the six Context types and the any-input base (Fast Muter, Fast Bypasser, Node Collector, Random
++      Unmuter, Fast Actions Button, Relay, Repeater) reapply the layout after their delayed stabilization. Their
++      per-node records are keyed by graph and node id (successor tranche).
++    - Kept from revisions 4-8: no `onBeforeConnect`, the ring-safe walk, the fixed per-type "Convert To …" labels, Merge
++      Big's corrected label, `changedNode`, and the Combiner's `graph.replace` upgrade.
++    - **PARTIAL in R2:** whole-node collapsed title-edge socket placement is not authored. The draft's
++      `collapsedPosition` field was not in a MIKE-published contract (audit V1-V3); a live frontend implementation
++      does not make it public API. The pack does not use it, even if a host happens to expose it.
++  - **Reroute (rgthree) is defined** (`web/comfyui/reroute.js`, from the consumer `3bed5217`). It resolves as a
++    pass-through. It carries type, name and slot colour down chains of reroutes, drops an incompatible target, and
++    forwards a widget input's declaration to a Primitive. It keeps the four-sided layout, resizing (40×30 default; a 10 px
++    strip flips the sides), rotate, flip, static sizes, the label toggle and "Clone New Reroute". Changes from the
++    consumer:
++    - no `onBeforeConnect`: the loop guard is kept, unregistered, as `rerouteConnectionRule` (F17);
++    - the label's zoom test is `screenRect.width < bounds.width * 0.6`, exact at a scale of 0.6. The consumer's quotient
++      hid the label at 0.6 for 19 of the integer widths 1-2000;
++    - the geometry relay (L2) is feature-detected. Without it the label is drawn at every zoom, and nothing subscribes to
++      `onViewportChanged`;
++    - host r3's guest answers are handled. `defs.typeColor` and `isTypeCompatible` arrive there as Promises, and are never
++      put into a slot patch. `mergeWidgetConfig` is absent, so the target's own declaration is forwarded. A clone made by
++      `graph.add` is wired and selected once the host confirms it, and `graph.add` gets only `NodeInit` members;
++    - a layout pass sends only what differs from the slot's snapshot;
++    - `DEFINED_NODE_TYPES` lists Reroute, and the module imports both every-node registration modules.
++  - **On host r3** (guest `c6b97a15`, and r4a r2's guest `16924bbe`): see *Host behaviour and remaining revision 9 R2 gaps*
++    below.
++  - **R2 evidence (finite existing suites; Windows Node 25.9.0; no browser):**
++    - the successor's 46 original-comparison cases pass on the rebased files;
++    - revision 7 r2's 63 module checks pass. Two expectations were updated for Reroute in `DEFINED_NODE_TYPES`;
++    - the ring-safe walk test passes;
++    - 45 module checks: the exact published contract, zero unpublished slot patches, strict snapshot reads and patch
++      keys (768 layout cases times 6 passes), negative controls using the rejected draft, Reroute without L2, the 0.6 boundary at every
++      integer width 1-2000, save and reload of layouts, the host r3 answers, registration policy, and stabilization
++      timing;
++    - AST API-member classification passes against the pinned published contract; the same checker rejects the
++      draft's unapproved contract. Exact commands, module hashes and receipts are in the R2 handoff's `tests/results/`.
++    - The draft's 31 real-guest checks and its 23 + 22 mutant checks are historical evidence in the original packet.
++      They were not rerun for R2 and do not certify this successor. No service or scientific runtime was started.
++  - **Counts:** Reroute moves from missing to converted, PARTIAL, so 38 of 40 are converted (was 37). Every other row
++    keeps its disposition until the browser F01 slice passes.
 +- **Changed in revision 8** (docs and evidence only; no served file changes). BART's staging of revision 7 on host r3
 +  passed its gate. Every row was re-derived from the staging of revisions 5-7 and from the existing backend native
 +  cases and module tests. The rule was conservative: a row moves only if passing evidence covers every open item it
@@ -247,11 +310,8 @@
 +- **Revision 1** (kept): the registered Label revision (draft PR #6) plus 16 tested frontend files: the 14-file first repair
 +  tranche, `display_any.js` (F14), and `media/svgs.js` (worker-safe logo URL).
 +- **Held back** (listed as open):
-+  - The Reroute definition and the F01 connection-layout port, which wait on host renderer prerequisites S01–S04. All four
-+    pass their tests, and their frontend changes are live (served frontend since 2026-10-20 09:06Z). Still missing: S02's
-+    guest relay (2 of its 3 `guest.mjs` hunks are absent from live guest `c6b97a15`) and the pack side
-+    (`connection_layout.js`, `reroute.js`).
 +  - The optional Dynamic Context backend, which waits on the repeated-output API.
++  - (The Reroute definition and the F01 connection-layout port, held back until revision 8, are in revision 9.)
 +- **Resolved since revision 1:** the startup callback error (`comfy.defs.onRefreshed` inside the sandbox). The host fix is
 +  deployed and passed browser acceptance on 2026-10-15: no DataCloneError at login, and a refresh reaches the pack's
 +  worker.
@@ -278,39 +338,39 @@
 +| `Image Resize (rgthree)` | tested (scoped) | Backend native cases: 150/150 equal the original. That is 10 sizes × 5 scaling methods × 3 fit modes, compared tensor-for-tensor with current Core's scaling. No custom frontend. |
 +| `Lora Loader Stack (rgthree)` | tested (scoped) | Fixed in revision 2: exact-name resolution (the previous v2 fuzzy-matched names) and an input validator. Backend native cases: 8/8 equal the original. Validator checks: 21/21, run in the Guest. One accepted difference, listed below. No custom frontend. |
 +| `SDXL Empty Latent Image (rgthree)` | tested (scoped) | Fixed in revision 2: the latent carries `downscale_ratio_spacial` like the original. Backend native cases: 72/72 equal the original. No custom frontend. |
-+| `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 connection layouts are not in this revision. |
-+| `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 is open. An own-node PNG metadata candidate passed separately and is not in this revision. |
-+| `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 is open. |
++| `Any Switch (rgthree)` | converted, partly tested | Backend native cases pass. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Display Any (rgthree)` | converted, partly tested | Backend native cases pass; the F14 serialization fix ships here. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. An own-node PNG metadata candidate passed separately and is not in this revision. |
++| `Display Int (rgthree)` | converted, partly tested | Backend native cases pass; F14 ships here. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 +| `Fast Groups Bypasser (rgthree)` | converted, partly tested | Tested repair ships here (row state, graph-scoped identities, saved filters). F10 fit-group navigation is open. |
 +| `Fast Groups Muter (rgthree)` | converted, partly tested | Tested repair ships here. F10 is open. |
 +| `Image Inset Crop (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 +| `Image or Latent Size (rgthree)` | converted, partly tested | Backend native cases pass; its frontend JS is untested. |
 +| `Label (rgthree)` | tested (scoped) | Frontend-only. **Scope:** browser on live host stack r3 (host-entry `63d9437e`, guest `c6b97a15`, ui-renderer `fca402c9`). **Dialog edits:** 9/9 persist on Classic and on Vue, on live bytes after the focus fix (live 2026-10-21 03:26Z). Each value shows in the dialog, persists to the node, and survives reopen and save/reload. This was measured with revision 4's `label.js`; the dialog path has changed since only by `refresh`'s optional title argument. **Title refresh:** revision 7 staging S1, by byte overlay, Classic renderer. A rename in the title editor redraws and resizes the Label (79×12 → 155×12; a fresh Label 79×12 → 183×12), and a two-line title gives a two-line Label. This held on the untouched startup graph and after a workflow load, with 0 packerrors. **Not staged:** the title refresh under Vue. |
-+| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F01, F03, F04, F13. |
++| `Power Lora Loader (rgthree)` | converted, partly tested | Backend native cases pass. The tested repair ships here: authored model info, row info actions, stale-request guard. Since revision 2 its LoRA list comes from `comfy.models.list('loras')`. Open: F03, F04, F13. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 +| `Power Puter (rgthree)` | converted, partly tested | Backend native cases pass on the bounded evaluator. F03 and F04 are open. |
-+| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 is open. |
-+| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested, and F01 is open. |
++| `Seed (rgthree)` | converted, partly tested | Backend native cases pass. An own-node PNG metadata candidate passed separately and is not in this revision. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Image Comparer (rgthree)` | converted, partly tested | Backend native cases: 5/6 equal the original, including preview pixels and PNG metadata. With an empty image batch, v2 raises where the original skips; this is open. The comparer widget is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
 +| `Power Primitive (rgthree)` | converted, partly tested | Backend native cases pass. Since revision 4 the "Show/Hide Type Selector Widget" entry is two fixed-label items, and a right-click shows exactly the one the original showed; a differential test against the original's label function covers both states and the toggle. "Set type" works. The rest of its frontend is untested. |
 +| `Bookmark (rgthree)` | converted, untested | Frontend-only; its button-settings repair ships here. F09 (hidden-subgraph navigation) and F11 (keyboard) are open. |
-+| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 is open. |
-+| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) and F01 are open. |
-+| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
-+| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested; F01 is open. |
-+| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
-+| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 is open. |
-+| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 and F11 are open. |
-+| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-+| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 is open. |
-+| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S3:** a Relay with nothing wired in drives its Repeater and the KSampler behind it, 0 → 2 → 0. Its mode when driven by its inputs lags on host r3 (stale copies, R6-13). Otherwise untested. F01 is open. |
-+| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S2:** the wired KSampler follows 0 → 2 → 0 → 4, whether it was added after load or was in the loaded workflow. Otherwise untested. F01 is open. |
-+| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 is open. |
-+| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. **Host r3 staging (revision 6 R5, revision 7 S5):** the upgrade keeps the position, the order of the 3 inputs, the 2 outgoing links and the title, and one Ctrl+Z restores the Combiner. Otherwise untested. Legacy node. F01 is open. |
-+| `Reroute (rgthree)` | missing | The frontend definition is not in this revision. A candidate exists, and host prerequisites S01–S04 pass their tests (S04's final run: 418/418). Their frontend changes are live (since 2026-10-20 09:06Z); S02's guest relay is not yet in live guest `c6b97a15`. F05 and F06 are open. |
++| `Context (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Context Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Context Merge (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Context Merge Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has a fixed label per type. Revision 6 changes this type's label from the original's "Convert To Context Switch" to "Convert To Context Merge", which is the conversion it runs (see *Accepted differences*). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Context Switch (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Context Switch Big (rgthree)` | converted, PARTIAL | Backend native cases pass. Since revision 4 the "Convert To …" menu item has the original's label, fixed per type (differential test against the original). Blocked: link fan-out when a link from this node is dropped on empty canvas (`onUnplacedLink`; F18). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Random Unmuter (rgthree)` | converted, PARTIAL | The tested failed-attempt cleanup repair ships here. Missing: F17 connection policy — the cycle guard's up-front refusal of a link that loops back on itself. Such a ring is now accepted, without crashing. F07 (independent choice per batch item) is open. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Power Prompt (rgthree)` | converted, PARTIAL | Fixed in revision 2: prompt-tag LoRA strengths outside ±100 apply as in the original. Backend native cases: 72/72 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Power Prompt - Simple (rgthree)` | converted, PARTIAL | Backend native cases: 16/16 equal the original. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). The rest of the frontend is untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `SDXL Power Prompt - Positive (rgthree)` | converted, PARTIAL | Backend native cases pass, including the revision-2 prompt-tag strength fix. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `SDXL Power Prompt - Simple / Negative (rgthree)` | converted, PARTIAL | Backend native cases: 36/60 equal the original on current Core. In the other 24, the original's sized SDXL encode is broken on current Core and returns no conditioning, while v2 returns the conditioning the original intends; this is an accepted difference, listed below. Missing: F17 connection policy — refusing a link from a disabled output (the output is still drawn grey). F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Fast Actions Button (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F11 is open. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Fast Bypasser (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Fast Muter (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Mute / Bypass Relay (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and keeping its output to a Mute / Bypass Repeater. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S3:** a Relay with nothing wired in drives its Repeater and the KSampler behind it, 0 → 2 → 0. Its mode when driven by its inputs lags on host r3 (stale copies, R6-13). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Mute / Bypass Repeater (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), refusing the same node on a second input, and its output only to the node types that read it. Its two Relay rules still hold after the fact: a Relay input is disconnected again while a toggler is on its output, and its output slot is removed while a Relay drives it. Its mode handler resolves the changed node again, because host r3's `onNodeChanged` event carries a copy without methods; revision 6's version did nothing on host r3 (staging R7/R7b). Revision 7 fixes it and takes the new mode from the event. **Host r3 staging, revision 7 S2:** the wired KSampler follows 0 → 2 → 0 → 4, whether it was added after load or was in the loaded workflow. Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Node Collector (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Otherwise untested. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Node Combiner (rgthree)` | converted, PARTIAL | Frontend-only. Loads and constructs in the sandbox since revision 3. Missing: F17 connection policy — the cycle guard's up-front refusal (a ring is now accepted, without crashing), and refusing the same node on a second input (also through a reroute). Since revision 6, "‼️ Update to Node Collector" rebuilds the node with `graph.replace`. Revision 5's version would not finish on host r3. **Host r3 staging (revision 6 R5, revision 7 S5):** the upgrade keeps the position, the order of the 3 inputs, the 2 outgoing links and the title, and one Ctrl+Z restores the Combiner. Otherwise untested. Legacy node. F01 expanded layouts are ported (revision 9 R2); collapsed title-edge sockets are PARTIAL pending an approved API or separate critical-pack shim; untested in a browser. |
++| `Reroute (rgthree)` | converted, PARTIAL | Frontend-only. Defined since revision 9 (`web/comfyui/reroute.js`, from the consumer `3bed5217`): a pass-through that resolves to its input, type and slot-colour propagation down chains, the four-sided layout with S04's compact sizing and resize side flips, rotate, flip, static sizes, the label toggle and "Clone New Reroute". Missing: F05 (inserting a reroute during an unfinished link drag), F06 per-link colour, and F17 connection policy (the loop guard; a ring is accepted, and the walks stop at visited nodes). The low-zoom label rule needs the host geometry relay (L2); on host r3 the label is drawn at every zoom. Module-tested only; not yet in a browser. |
 +| `Dynamic Context (rgthree)` | pending capability | Opt-in, disabled upstream by default. Needs a public repeated-output API (F02); a runtime test of that candidate is approved. Missing: F17 connection policy — refusing another Dynamic Context's context output on a non-base input. |
 +| `Dynamic Context Switch (rgthree)` | pending capability | Same as Dynamic Context. |
 +
@@ -373,6 +433,9 @@
 +- tested (scoped): 5 → 6;
 +- converted, untested or partly tested: 14 → 13;
 +- partial or missing: 21 → 21.
++
++**Revision 9** moves one row: Reroute, from missing to converted, PARTIAL. Partial or pending stays 21: 19 PARTIAL
++(was 18) and 2 pending (was 3 missing or pending). 38 of 40 node IDs are converted.
 +
 +## Refused techniques (never-do) and their public replacements
 +
@@ -458,7 +521,7 @@
 +
 +| Behaviour | Needs | Nodes |
 +| --- | --- | --- |
-+| Connection filtering: the cycle guard's up-front refusal ("time paradox"; a ring is now accepted, and the link walk is ring-safe) and per-node connection rules (the Repeater's two Relay rules still apply after the fact) | Missing: F17 connection policy (`setConnectionPolicy` / `SlotPatch.linkable`), a policy the host can evaluate without a synchronous worker call. Not registered. | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter; Dynamic Context (opt-in) |
++| Connection filtering: the cycle guard's up-front refusal ("time paradox"; a ring is now accepted, and the link walk is ring-safe) and per-node connection rules (the Repeater's two Relay rules still apply after the fact) | Missing: F17 connection policy (`setConnectionPolicy` / `SlotPatch.linkable`), a policy the host can evaluate without a synchronous worker call. Not registered. | Fast Muter, Fast Bypasser, Node Collector, Node Combiner, Mute / Bypass Repeater, Mute / Bypass Relay, Fast Actions Button, Random Unmuter, Reroute (revision 9; `rerouteConnectionRule`); Dynamic Context (opt-in) |
 +| Refusing links from disabled outputs | Missing: F17 connection policy, as above. Not registered. | Power Prompt, Power Prompt - Simple, SDXL Power Prompt - Positive, SDXL Power Prompt - Simple / Negative |
 +| Link fan-out when a link is dropped on empty canvas | A host-owned unplaced-link contribution (F18) | the six Context nodes |
 +| Dropping a workflow or image onto a node to import its values | A host node-drop contribution (F19) | all node types (pack feature) |
@@ -479,13 +542,32 @@
 +Revision 6 works around four more such gaps, as described above: the `onNodeChanged` node, a stored setting read at
 +load, `queue.run` with handles, and an unconfirmed node from `graph.add`.
 +
++### Host behaviour and remaining revision 9 R2 gaps
++
++The original draft's historical real-guest runs used host r3 (`63d9437e` / `c6b97a15`), r4a r2 (`16924bbe`) and
++a candidate with geometry relay L2. Those runs are not R2 browser or real-guest acceptance. R2 removes the
++unpublished collapsed-socket dependency on every host; the Reroute source and its existing fallbacks are unchanged.
++
++| Node | R2 behaviour on host r3 (and r4a r2) | Missing | With an approved geometry relay L2 |
++| --- | --- | --- | --- |
++| The 24 F01 types | Expanded layouts, collapse grouping, labels and greying use the published contract. Whole-node collapsed title-edge socket geometry is PARTIAL; no collapsed-socket field is read or written. | MIKE-published general API or a separately reviewed critical-pack shim | Still partial; L2 does not supply this authority |
++| The 24 F01 types | During a load or after a layout change, a hook can carry a node snapshot the host took before the pack's own slot writes arrived. `position` and `direction` may then be sent once more; this settles on the next pass. | (guest replica timing; historical draft evidence) | Same |
++| Reroute | The label is drawn at every zoom (the original hides it below 0.6), and nothing subscribes to `onViewportChanged`. No error. | L2 (`getBounds`, `getScreenRect`, coalesced `onViewportChanged`) | The original's rule, exact at 0.6 |
++| Reroute | On r3, `defs.typeColor` and `isTypeCompatible` answer a message later. The colour patch and the disconnect of an incompatible target follow when the answer arrives. r4a's colour tables (R6-9) answer at once. | Synchronous answers (r4a R6-9) | — |
++| Reroute | A chain into a widget input forwards the target's own declaration, not the merged one. | `InputSlotHandle.mergeWidgetConfig` in the guest | — |
++| Reroute | "Clone New Reroute": the clone is wired and selected once the host confirms it (polled, up to about 2 s). | Synchronous confirmation of `graph.add` | — |
++| Reroute | Rings are accepted (no loop guard). | F17 | F17 |
++
 +## Pending items (not yet supported)
 +
++- F01 (partial): whole-node collapsed title-edge socket geometry for all 24 layout types. It needs a MIKE-published
++  general API or a separate critical-pack shim; the draft's unapproved field and L1 relay are not an API dependency.
 +- F02 — repeated (dynamic) outputs for the opt-in Dynamic Context nodes.
 +- F03 — model metadata provider: trained words, Civitai details and images.
 +- F04 — same-user JS↔Python model-info storage continuity.
 +- F05 — Reroute insertion/reposition during an unfinished link drag.
-+- F06 — remaining Reroute presentation parity: per-link colour, low-zoom label suppression.
++- F06 — remaining Reroute presentation parity: per-link colour. (The low-zoom label rule is in revision 9 and needs
++  the host geometry relay, L2.)
 +- F07 — Random Unmuter choosing independently for each prompt in a batch.
 +- F08 — fast toggle actions in group headers.
 +- F09 — Bookmark navigation into a hidden subgraph with the original viewport offset.
@@ -501,6 +583,7 @@
 +  - The per-node rules no longer reach it: the Node Collector, Node Combiner, Relay and Repeater rules sit in each
 +    definition's `beforeConnect`, which `defineAnyInputConnectedNode` no longer reads. They must be threaded through
 +    again.
++  - Reroute's loop guard is kept, unregistered, as `rerouteConnectionRule` (revision 9).
 +- F18 — host-owned contribution for links dropped on empty canvas (replaces `onUnplacedLink`).
 +- F19 — host node-drop contribution (replaces `onDragOver`/`onDrop`).
 +- F20 — sandbox subscriptions for `queue.onPendingChanged` and `queue.onInterrupted`.
@@ -509,9 +592,11 @@
 +
 +## Open test gates
 +
-+- Host renderer prerequisites S01–S04 for the F01 layout port (24 node IDs). All four pass their tests. Their frontend
-+  changes are live (since 2026-10-20 09:06Z). Open: S02's guest relay (absent from live guest `c6b97a15`), a re-run of
-+  the S01–S04 suites on the live frontend source, and a browser check.
++- Revision 9 R2's browser checks: expanded F01 layouts, the unchanged Reroute conversion and the production
++  regressions. The original packet's `BROWSER_SMOKE_PLAN.md` is historical; its collapsed-socket/L1 rows are held
++  until an API is published or a separate shim is approved. G01–G10 still need the published geometry relay L2.
++- Host renderer prerequisites S01–S04: historical frontend changes require verification against an approved host
++  successor. The unapproved S02 collapsedPosition surface and L1 relay must not be treated as pack API.
 +- Backend native cases running inside the Guest (sandboxed), and Core prompt validation at runtime for the Lora Loader Stack
 +  validator. Its checks pass structurally and in the Guest.
 +- Image Comparer with an empty image batch.
@@ -529,14 +614,13 @@
 +- `assets` (4): Lora Loader Stack, Power Lora Loader, Power Prompt, SDXL Power Prompt - Positive.
 +- `raw` (7): Display Any, Image Inset Crop, Image Resize, Image or Latent Size, Power Primitive, Power Puter, SDXL Empty Latent Image.
 +- `ui` (1): Image Comparer.
-+- Frontend: `web_directory` is `web`, served at `/extensions/rgthree-comfy/`. Each of its 73 `.js` files is an entry
-+  module of the sandboxed pack worker. No static directories and no pack HTTP routes.
++- Frontend: `web_directory` is `web`, served at `/extensions/rgthree-comfy/`. Each of its 74 `.js` files is an entry
++  module of the sandboxed pack worker (73 until revision 8; revision 9 adds `comfyui/connection_layout.js`). No static directories and no pack HTTP routes.
 +  Runtime: Python >=3.13,<3.14.
 +
 +## Assets and weights
 +
 +No weights are committed. LoRAs, checkpoints, CLIP and embeddings come from the user's managed model catalogue.
-+
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,126 +1,17 @@
@@ -14184,7 +14268,7 @@
 +}
 --- a/web/comfyui/any_switch.js
 +++ b/v2/web/comfyui/any_switch.js
-@@ -1,69 +1,83 @@
+@@ -1,69 +1,85 @@
 -import { app } from "../../scripts/app.js";
 -import { IoDirection, addConnectionLayoutSupport, followConnectionUntilType } from "./utils.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -14192,7 +14276,7 @@
  import { NodeTypesString } from "./constants.js";
 +import { debounce } from "../common/shared_utils.js";
 +import { followConnectionUntilType } from "./utils.js";
-+import { onConnectionsChainChange } from "./base_any_input_connected_node.js";
++import { nodeKey, onConnectionsChainChange } from "./base_any_input_connected_node.js";
  import { removeUnusedInputsFromEnd } from "./utils_inputs_outputs.js";
 -import { debounce } from "../../rgthree/common/shared_utils.js";
 -class RgthreeAnySwitch extends RgthreeBaseServerNode {
@@ -14245,16 +14329,17 @@
 -            ["Left", "Right"],
 -            ["Right", "Left"],
 -        ]);
++import { applyConnectionLayout } from './connection_layout.js';
 +// HANDLED: Any Switch (rgthree)
 +// Handles hold no arbitrary properties, so what the old class kept on the
-+// instance lives here, keyed by node id and dropped in onRemoved. `debounce`
++// instance lives here, keyed by graph and node id and dropped in onRemoved. `debounce`
 +// keys by function identity, so each node needs its own stabilizer.
 +const stabilizersByNode = new Map();
 +const resolvedTypeByNode = new Map();
 +const unwatchChainByNode = new Map();
 +function addAnyInput(node, num = 1) {
 +    for (let i = 0; i < num; i++) {
-+        node.inputs.add(`any_${String(node.inputs.length + 1).padStart(2, "0")}`, resolvedTypeByNode.get(node.id) || "*");
++        node.inputs.add(`any_${String(node.inputs.length + 1).padStart(2, "0")}`, resolvedTypeByNode.get(nodeKey(node)) || "*");
      }
  }
 -RgthreeAnySwitch.title = NodeTypesString.ANY_SWITCH;
@@ -14275,7 +14360,7 @@
 +        connectedType = followConnectionUntilType(node, true, true);
 +    }
 +    const nodeType = (connectedType === null || connectedType === void 0 ? void 0 : connectedType.type) || "*";
-+    resolvedTypeByNode.set(node.id, nodeType);
++    resolvedTypeByNode.set(nodeKey(node), nodeType);
 +    for (const input of node.inputs) {
 +        input.modify({ type: nodeType });
 +    }
@@ -14289,13 +14374,14 @@
 +                    : nodeType,
 +        });
 +    }
++    applyConnectionLayout(node);
 +}
 +comfy.defs.extend(NodeTypesString.ANY_SWITCH, (b) => {
 +    function scheduleStabilize(node, ms = 64) {
-+        let stabilizer = stabilizersByNode.get(node.id);
++        let stabilizer = stabilizersByNode.get(nodeKey(node));
 +        if (!stabilizer) {
 +            stabilizer = () => stabilize(node);
-+            stabilizersByNode.set(node.id, stabilizer);
++            stabilizersByNode.set(nodeKey(node), stabilizer);
          }
 -    },
 +        return debounce(stabilizer, ms);
@@ -14311,29 +14397,29 @@
 +        // family called on it when their own connections changed. It is a registry
 +        // now — see base_any_input_connected_node.js — because a handle carries none
 +        // of the pack's own methods for a neighbour to duck-type against.
-+        unwatchChainByNode.set(node.id, onConnectionsChainChange(node, () => scheduleStabilize(node, 100)));
++        unwatchChainByNode.get(nodeKey(node))?.();
++        unwatchChainByNode.set(nodeKey(node), onConnectionsChainChange(node, () => scheduleStabilize(node, 100)));
 +    });
 +    b.onConnectionsChanged((node) => {
 +        scheduleStabilize(node);
 +    });
 +    b.onRemoved((node) => {
-+        stabilizersByNode.delete(node.id);
-+        resolvedTypeByNode.delete(node.id);
-+        unwatchChainByNode.get(node.id)?.();
-+        unwatchChainByNode.delete(node.id);
++        stabilizersByNode.delete(nodeKey(node));
++        resolvedTypeByNode.delete(nodeKey(node));
++        unwatchChainByNode.get(nodeKey(node))?.();
++        unwatchChainByNode.delete(nodeKey(node));
 +    });
  });
-+// REFUSED, not a gap: `addConnectionLayoutSupport` put the input on the left and the
-+//   output on the right by patching `getConnectionPos` on the node class. Deciding
-+//   where the renderer draws a socket is refused, not pending — see utils.js. The node
-+//   works; its sockets sit where the renderer puts them.
++// CONVERTED (revision 9, F01): connection_layout.js restores the saved Left/Right
++//   layout with public slot patches. It is reapplied after the delayed input/type
++//   stabilization above, not before those slots exist.
 +// WIRE FORMAT: unchanged. Five `any_XX` inputs are appended after the
 +//   definition's own, exactly as the old constructor did, and the growth/trim
 +//   rule is the same. The resolved type is held in a module Map rather than on
 +//   the instance, so nothing new is serialized.
 --- a/web/comfyui/base_any_input_connected_node.js
 +++ b/v2/web/comfyui/base_any_input_connected_node.js
-@@ -1,208 +1,353 @@
+@@ -1,208 +1,356 @@
 -import { app } from "../../scripts/app.js";
 -import { RgthreeBaseVirtualNode } from "./base_node.js";
 -import { rgthree } from "./rgthree.js";
@@ -14358,6 +14444,7 @@
 +import { comfy } from '/comfy/api/v2.js';
 +import { debounce } from "../common/shared_utils.js";
 +import { whereSupported } from "./sandbox_limits.js";
++import { applyConnectionLayout } from './connection_layout.js';
 +// Imported for their registrations, which every node type must receive before this
 +// pack's `define` calls run (extendEveryNodeType in base_node.js).
 +import "./menu_queue_node.js";
@@ -14412,11 +14499,12 @@
 +//   node that arrives restored but not loading came from a paste or a duplicate. The
 +//   flag itself was a global on the `rgthree` singleton set from a canvas callback, and
 +//   goes with it.
-+// REFUSED, not a gap: the `collapse_connections` property subtracted
-+//   `LiteGraph.NODE_SLOT_HEIGHT` per row inside `computeSize` so every slot drew at one
-+//   point. It is the other half of `addConnectionLayoutSupport` — renderer geometry
-+//   recomputed from renderer constants — so the property and its "Collapse Connections"
-+//   menu entry go with it. See utils.js.
++// CONVERTED (revision 9, F01): saved layouts and the `collapse_connections` socket
++//   grouping, with its "Show / Collapse Connections" menu entries, are handled by
++//   connection_layout.js through public slot patches; `stabilize` reapplies them after
++//   it grows or trims the inputs. Not converted: the original also subtracted
++//   `LiteGraph.NODE_SLOT_HEIGHT` per collapsed row inside `computeSize`, which needs a
++//   host layout primitive (see connection_layout.js).
 +export const PassThroughFollowing = {
 +    ALL: 0,
 +    NONE: 1,
@@ -14655,6 +14743,7 @@
 +            stabilizeInputs(node, following);
 +            handleLinkedNodes?.(node, connectedInputNodes(node, { following }));
 +        });
++        applyConnectionLayout(node);
 +    }
 +    // Registered before `define`, which is the point at which extensions are applied.
 +    comfy.defs.extend(type, (b) => {
@@ -17037,15 +17126,211 @@
 +        new RgthreeConfigDialog().show();
      },
  });
+--- /dev/null
++++ b/v2/web/comfyui/connection_layout.js
+@@ -0,0 +1,192 @@
++import { comfy } from '/comfy/api/v2.js';
++
++// These are rgthree's authored connection layouts. The old implementation
++// replaced getConnectionPos; the same expanded-node positions are now declared
++// through public slot patches. No host renderer or global routing is replaced.
++//
++// Revision 9 R2 (F01). Sources: the successor tranche's module and MOE's
++// draft (one extend per type, so no `builder.def`; two fixed menu labels
++// chosen by `when`, never a label function). Registered here only; no
++// `onBeforeConnect`. Uses the published contract shipped with revision 8.
++// Whole-node collapsed title-edge socket geometry remains partial pending
++// an approved API or a separate critical-pack shim.
++const withSuffix = (name) => `${name} (rgthree)`;
++export const LAYOUT_TYPES = [
++    'Any Switch', 'Context', 'Context Big', 'Context Switch', 'Context Switch Big', 'Context Merge', 'Context Merge Big',
++    'Display Any', 'Display Int', 'Image Comparer', 'Power Lora Loader', 'Power Prompt', 'Power Prompt - Simple',
++    'SDXL Power Prompt - Positive', 'SDXL Power Prompt - Simple / Negative', 'Seed', 'Mute / Bypass Relay',
++    'Mute / Bypass Repeater', 'Fast Muter', 'Fast Bypasser', 'Fast Actions Button', 'Node Collector', 'Node Combiner', 'Random Unmuter',
++].map(withSuffix);
++const layoutTypes = new Set(LAYOUT_TYPES);
++const collapsibleTypes = new Set([
++    'Mute / Bypass Relay', 'Mute / Bypass Repeater', 'Fast Muter', 'Fast Bypasser', 'Fast Actions Button',
++    'Node Collector', 'Node Combiner', 'Random Unmuter',
++].map(withSuffix));
++const displayTypes = new Set(['Display Any', 'Display Int'].map(withSuffix));
++const OPPOSITE = { Left: 'Right', Right: 'Left', Top: 'Bottom', Bottom: 'Top' };
++const DIRECTION = { Left: 'left', Right: 'right', Top: 'up', Bottom: 'down' };
++const LEGACY_DIRECTION = { 0: 'none', 1: 'up', 2: 'down', 3: 'left', 4: 'right', 5: 'center' };
++// The original default geometry uses 20px rows and a 10px socket inset.
++// They are pack layout values here, not reads of private renderer constants.
++const ROW_HEIGHT = 20, INSET = 10;
++const STATE_KEY = 'rgthree_connections_v1';
++const states = new Map();
++const keyOf = (node) => JSON.stringify([node.graphId ?? '', node.id]);
++const slotKey = (side, slot) => `${side}:${slot.id}`;
++const collectionFor = (node, side) => side === 'input' ? node.inputs : node.outputs;
++
++function stateFor(node) {
++    const key = keyOf(node);
++    let state = states.get(key);
++    if (!state) { state = { slots: new Map(), pending: false }; states.set(key, state); }
++    return state;
++}
++function recordFor(state, side, slot) {
++    const key = slotKey(side, slot);
++    let record = state.slots.get(key);
++    if (!record) {
++        record = { label: slot.label, labelHidden: false, slotHidden: false, disabled: false };
++        state.slots.set(key, record);
++    }
++    return record;
++}
++function layoutFor(node) {
++    let layout = node.getProperty('connections_layout') ?? ['Left', 'Right'];
++    if (typeof layout === 'string') layout = layout.split(' -> ');
++    if (!Array.isArray(layout) || !OPPOSITE[layout[0]]) return ['Left', 'Right'];
++    const second = layout[1] ?? (node.outputs.length ? undefined : OPPOSITE[layout[0]]);
++    return OPPOSITE[second] ? [layout[0], second] : ['Left', 'Right'];
++}
++
++// onConfigured publishes a serialized copy of this node. Legacy rgthree saved
++// its hidden-label backup directly on a slot; read those authored fields here,
++// never by inspecting a private live slot. New writes use the pack-owned key.
++function configureState(node, data) {
++    const state = stateFor(node);
++    const owned = data?.[STATE_KEY]?.schema === 1 ? data[STATE_KEY] : undefined;
++    for (const side of ['input', 'output']) {
++        const serialized = owned?.[`${side}s`] ?? data?.[`${side}s`];
++        if (!Array.isArray(serialized)) continue;
++        const slots = collectionFor(node, side).all();
++        for (const [index, slot] of slots.entries()) {
++            const source = serialized[index];
++            if (!source || (source.name !== undefined && source.name !== slot.name)) continue;
++            const record = recordFor(state, side, slot);
++            if (owned) {
++                record.label = source.label_present && typeof source.label === 'string' ? source.label : undefined;
++                record.labelHidden = !!source.label_hidden;
++                record.slotHidden = !!source.slot_hidden;
++                record.disabled = !!source.disabled;
++                record.color = typeof source.color === 'string' ? source.color : undefined;
++                record.colorWhenUnconnected = typeof source.color_when_unconnected === 'string' ? source.color_when_unconnected : undefined;
++            } else {
++                record.label = source.has_old_label ? source.old_label : slot.label;
++                record.labelHidden = !!source.has_old_label;
++                record.slotHidden = !!source.hidden;
++                record.disabled = !!source.disabled;
++                record.color = source.color_on === '#666665' ? source._color_on_org : source.color_on;
++                record.colorWhenUnconnected = source.color_off === '#666665' ? source._color_off_org : source.color_off;
++            }
++        }
++    }
++}
++
++export function applyConnectionLayout(node) {
++    if (node.isDeleted || !layoutTypes.has(node.type)) return;
++    const state = stateFor(node), activeSlots = new Set();
++    const layout = layoutFor(node), collapse = !!node.getProperty('collapse_connections');
++    const size = node.getSize(), overrides = node.getProperty('connections_dir');
++    for (const [sideIndex, side] of ['input', 'output'].entries()) {
++        const edge = layout[sideIndex], slots = collectionFor(node, side).all();
++        let hiddenBefore = 0;
++        for (const [index, slot] of slots.entries()) {
++            const record = recordFor(state, side, slot), key = slotKey(side, slot);
++            activeSlots.add(key);
++            const displayIndex = collapse ? 0 : index - hiddenBefore;
++            if (record.slotHidden) hiddenBefore++;
++            const position = edge === 'Left' ? { x: INSET, y: (displayIndex + 0.7) * ROW_HEIGHT }
++                : edge === 'Right' ? { x: size.width + 1 - INSET, y: (displayIndex + 0.7) * ROW_HEIGHT }
++                : edge === 'Top' ? { x: size.width / 2, y: INSET }
++                : { x: size.width / 2, y: size.height - INSET };
++            const direction = (size.width === 10 || size.height === 10) && Array.isArray(overrides)
++                ? LEGACY_DIRECTION[overrides[sideIndex]] ?? DIRECTION[edge] : DIRECTION[edge];
++            const snapshot = slot.snapshot(), patch = {};
++            if (snapshot.position?.x !== position.x || snapshot.position?.y !== position.y) patch.position = position;
++            if (snapshot.direction !== direction) patch.direction = direction;
++            // A dynamic node may have supplied a new caption since we hid it.
++            // Keep that caption, not the stale pre-layout copy.
++            if (!record.labelHidden || slot.label !== ' ') record.label = slot.label;
++            const hide = edge === 'Top' || edge === 'Bottom' || collapse
++                || (side === 'input' ? edge === 'Right' : edge === 'Left');
++            const label = hide ? ' ' : record.label;
++            if (slot.label !== label) patch.label = label;
++            record.labelHidden = hide;
++            if (record.disabled) {
++                if (!record.grayApplied) {
++                    patch.color = '#666665'; patch.colorWhenUnconnected = '#666665'; record.grayApplied = true;
++                }
++            } else if (record.grayApplied) {
++                patch.color = record.color ?? null; patch.colorWhenUnconnected = record.colorWhenUnconnected ?? null;
++                record.grayApplied = false;
++            }
++            if (Object.keys(patch).length) slot.modify(patch);
++        }
++    }
++    for (const key of state.slots.keys()) if (!activeSlots.has(key)) state.slots.delete(key);
++}
++
++function schedule(node) {
++    const state = stateFor(node);
++    if (state.pending) return;
++    state.pending = true;
++    queueMicrotask(() => {
++        if (states.get(keyOf(node)) !== state) return;
++        state.pending = false;
++        if (!node.isDeleted) applyConnectionLayout(node);
++    });
++}
++function serializedState(node) {
++    const state = stateFor(node), result = { schema: 1 };
++    for (const side of ['input', 'output']) result[`${side}s`] = collectionFor(node, side).all().map((slot) => {
++        const record = recordFor(state, side, slot);
++        if (!record.labelHidden || slot.label !== ' ') record.label = slot.label;
++        return { name: slot.name, label_present: record.label !== undefined, ...(record.label === undefined ? {} : { label: record.label }),
++            label_hidden: record.labelHidden, slot_hidden: record.slotHidden, disabled: record.disabled,
++            ...(record.color === undefined ? {} : { color: record.color }),
++            ...(record.colorWhenUnconnected === undefined ? {} : { color_when_unconnected: record.colorWhenUnconnected }) };
++    });
++    return { [STATE_KEY]: result };
++}
++
++for (const layoutType of LAYOUT_TYPES) comfy.defs.extend(layoutType, (builder) => {
++    const choices = displayTypes.has(layoutType) ? [['Left'], ['Right']] : [['Left', 'Right'], ['Right', 'Left']];
++    builder.addMenuItem({ label: 'Connections Layout', items: choices.map((choice) => ({
++        label: choice.join(' -> '), run(node) {
++            const layout = choice.length === 1 ? [choice[0], OPPOSITE[choice[0]]] : [...choice];
++            node.setProperty('connections_layout', layout); schedule(node);
++        },
++    })) });
++    if (collapsibleTypes.has(layoutType)) for (const [label, collapsed] of [
++        ['Show Connections', false], ['Collapse Connections', true],
++    ]) builder.addMenuItem({
++        label,
++        when(node) { return !!node.getProperty('collapse_connections') !== collapsed; },
++        run(node) { node.setProperty('collapse_connections', collapsed); schedule(node); },
++    });
++    builder.onCreated((node) => schedule(node));
++    builder.onConfigured((node, data) => { configureState(node, data); schedule(node); });
++    builder.onPropertyChanged((node, event) => {
++        if (['connections_layout', 'connections_dir', 'collapse_connections'].includes(event.name)) schedule(node);
++    });
++    builder.onConnectionsChanged((node) => schedule(node));
++    builder.onResized((node) => schedule(node));
++    builder.onSerialize(serializedState);
++    builder.onRemoved((node) => states.delete(keyOf(node)));
++});
++
++// Scope limits are explicit. Widget-backed inputs keep these positions only
++// where the host honours an authored position for them (S03, in the live
++// frontend). The original computeSize override that removed collapsed slot
++// rows from the minimum body height needs a host layout primitive; socket
++// grouping does not rewrite that private routine. None of these limits permits
++// omitting the saved layouts.
 --- a/web/comfyui/constants.js
 +++ b/v2/web/comfyui/constants.js
-@@ -43,6 +43,24 @@
+@@ -43,6 +43,26 @@
      IMAGE_COMPARER: addRgthree("Image Comparer"),
      IMAGE_INSET_CROP: addRgthree("Image Inset Crop"),
  };
-+// Every type this pack registers itself with `comfy.defs.define` (the 12 frontend-only
-+// nodes and the opt-in Power Conductor). An extension meant for every node type names
-+// these one by one, before they are defined; see `extendEveryNodeType` in base_node.js.
++// Every type this pack registers itself with `comfy.defs.define` (the 13 frontend-only
++// nodes, Reroute included since revision 9, and the opt-in Power Conductor). An
++// extension meant for every node type names these one by one, before they are defined;
++// see `extendEveryNodeType` in base_node.js.
 +export const DEFINED_NODE_TYPES = Object.freeze([
 +    NodeTypesString.FAST_GROUPS_MUTER,
 +    NodeTypesString.FAST_GROUPS_BYPASSER,
@@ -17059,6 +17344,7 @@
 +    NodeTypesString.RANDOM_UNMUTER,
 +    NodeTypesString.BOOKMARK,
 +    NodeTypesString.LABEL,
++    NodeTypesString.REROUTE,
 +    NodeTypesString.POWER_CONDUCTOR,
 +]);
  const UNRELEASED_KEYS = {
@@ -17066,7 +17352,7 @@
      [NodeTypesString.DYNAMIC_CONTEXT_SWITCH]: "dynamic_context",
 --- a/web/comfyui/context.js
 +++ b/v2/web/comfyui/context.js
-@@ -1,322 +1,247 @@
+@@ -1,322 +1,249 @@
 -import { app } from "../../scripts/app.js";
 -import { IoDirection, addConnectionLayoutSupport, addMenuItem, matchLocalSlotsToServer, replaceNode, } from "./utils.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -17116,8 +17402,11 @@
 -                return true;
 -            }
 +import { matchLocalSlotsToServer } from "./utils.js";
++import { applyConnectionLayout } from './connection_layout.js';
++import { nodeKey } from './base_any_input_connected_node.js';
 +// Handles hold no arbitrary properties, so the per-node debounce target lives
-+// here. `debounce` keys by function identity, so each node needs its own.
++// here, keyed by graph and node id. `debounce` keys by function identity, so each
++// node needs its own.
 +const stabilizersByNode = new Map();
 +const CONVERT_TO = {
 +    [NodeTypesString.CONTEXT]: {
@@ -17164,6 +17453,7 @@
 +        return;
 +    removeUnusedInputsFromEnd(node, 4);
 +    addContextInput(node);
++    applyConnectionLayout(node);
 +}
 +// An early build shipped this output misspelled, so saved workflows still carry
 +// it. The author's note says the rename lives here in perpetuity.
@@ -17381,15 +17671,15 @@
 +        if (event.side !== "input" || !MULTI_CTX_INPUT_TYPES.includes(node.type)) {
 +            return;
 +        }
-+        let stabilizer = stabilizersByNode.get(node.id);
++        let stabilizer = stabilizersByNode.get(nodeKey(node));
 +        if (!stabilizer) {
 +            stabilizer = () => stabilize(node);
-+            stabilizersByNode.set(node.id, stabilizer);
++            stabilizersByNode.set(nodeKey(node), stabilizer);
 +        }
 +        debounce(stabilizer, 64);
 +    });
 +    b.onRemoved((node) => {
-+        stabilizersByNode.delete(node.id);
++        stabilizersByNode.delete(nodeKey(node));
 +    });
 +    whereSupported(b.def?.type ?? "Context", "link fan-out on empty canvas (onUnplacedLink)", () => b.onUnplacedLink((node, event) => fanOut(node, event)));
 +    // The original's label was a function of the node's type, and a menu label must
@@ -17610,10 +17900,8 @@
 +//   `slotDefaults` extension fills both tables from every registered definition, so a
 +//   context link dropped on empty canvas already offers the nodes that declare
 +//   `RGTHREE_CONTEXT` — which is these. What is lost is putting them *first*.
-+// REFUSED, not a gap: `addConnectionLayoutSupport` put the inputs on the left and the
-+//   outputs on the right by patching `getConnectionPos` on the node class. Deciding
-+//   where the renderer draws a socket is refused, not pending — see utils.js. The
-+//   nodes work; their sockets sit where the renderer puts them.
++// CONVERTED (revision 9, F01): connection_layout.js restores saved Left/Right layouts
++//   with public slot patches, including inputs added by the delayed stabilization pass.
 +// NO LONGER A GAP: dropping a context link on a node and having EVERY matching
 +//   slot wire at once is `b.onUnplacedLink`, converted above. The original got
 +//   there by replacing `connectByType` on LGraphNode.prototype, which changed
@@ -21079,7 +21367,7 @@
 -}
 --- a/web/comfyui/image_comparer.js
 +++ b/v2/web/comfyui/image_comparer.js
-@@ -1,134 +1,81 @@
+@@ -1,134 +1,80 @@
 -import { app } from "../../scripts/app.js";
 -import { api } from "../../scripts/api.js";
 -import { RgthreeBaseServerNode } from "./base_node.js";
@@ -21125,11 +21413,10 @@
 +//   value is trivial to reproduce; "am I on cloud?" is not readable, so the cache buster
 +//   is unconditional and a cloud install re-fetches each image once per execution. The
 +//   images shown are correct either way — this costs bandwidth, not behaviour.
-+// REFUSED, not a gap: `addConnectionLayoutSupport` — the pack's Left/Right slot layout,
-+//   which patches `getConnectionPos` on the node class and recomputes socket positions
-+//   from renderer constants. Deciding where the renderer draws a socket is refused, not
-+//   pending; see utils.js. `getSlotPosition()` reads where the renderer put one, which
-+//   is what anchoring to a socket needs.
++// CONVERTED (revision 9, F01): the pack's Left/Right slot layout. The original patched
++//   `getConnectionPos` on the node class; connection_layout.js declares the same
++//   positions with public slot patches instead. `getSlotPosition()` reads where the
++//   renderer put a socket, which is what anchoring to one needs.
 +// COSMETIC: no property metadata. `RgthreeImageComparer["@comparer_mode"] =
 +//   {type: "combo", values: ["Slide", "Click"]}` told the properties panel to edit
 +//   that property with a two-item picker rather than a free text field. The property
@@ -21286,7 +21573,7 @@
          <li>
            <p>
              <strong>Inputs</strong>
-@@ -163,35 +110,20 @@
+@@ -163,35 +109,20 @@
            </ul>
          </li>
        </ul>`;
@@ -21329,7 +21616,7 @@
      }
      set value(v) {
          let cleanedVal;
-@@ -224,25 +156,32 @@
+@@ -224,25 +155,32 @@
          this._value.images = cleanedVal;
          selected = cleanedVal.filter((d) => d.selected);
          this.setSelected(selected);
@@ -21365,7 +21652,7 @@
          this.hitAreas = {};
          if (this.value.images.length > 2) {
              ctx.textAlign = "left";
-@@ -252,16 +191,16 @@
+@@ -252,16 +190,16 @@
              const spacing = 5;
              let x = 0;
              for (const img of this.value.images) {
@@ -21385,7 +21672,7 @@
              for (const d of drawData) {
                  ctx.fillStyle = d.img.selected ? "rgba(180, 180, 180, 1)" : "rgba(180, 180, 180, 0.5)";
                  ctx.fillText(d.text, x, y);
-@@ -274,13 +213,13 @@
+@@ -274,13 +212,13 @@
              }
              y += 20;
          }
@@ -21403,7 +21690,7 @@
              }
          }
      }
-@@ -293,13 +232,27 @@
+@@ -293,13 +231,27 @@
              selected[1] = bounds.data;
          }
          this.setSelected(selected);
@@ -21432,7 +21719,7 @@
          const imageAspect = (image === null || image === void 0 ? void 0 : image.img.naturalWidth) / (image === null || image === void 0 ? void 0 : image.img.naturalHeight);
          let height = nodeHeight - y;
          const widgetAspect = nodeWidth / height;
-@@ -342,24 +295,114 @@
+@@ -342,24 +294,114 @@
          ctx.globalCompositeOperation = globalCompositeOperation;
          ctx.restore();
      }
@@ -23852,9 +24139,9 @@
 +//   {type: "combo", values: [...]}` told the properties panel to edit that property
 +//   with a two-item picker rather than a free text field; `"@Match"` declared the
 +//   other as a string. Both properties still exist, still save and still work.
-+// Pending pack port: saved connection layouts can now use public slot positions
-+// and directions. The old global renderer patch remains refused; the safe
-+// per-node capability is tracked in the frontend lane's gap ledger.
++// CONVERTED (revision 9, F01): saved connection layouts use public slot positions
++// and directions (connection_layout.js). The old global renderer patch stays
++// refused.
 +//
 +// WIRE FORMAT: changed, and deliberately. A row is two widgets now — a hidden one
 +// holding `{on, lora, strength, strengthTwo?}`, which is what the prompt reads
@@ -25960,7 +26247,7 @@
  });
 --- a/web/comfyui/reroute.js
 +++ b/v2/web/comfyui/reroute.js
-@@ -1,981 +1,78 @@
+@@ -1,981 +1,497 @@
 -var _a, _b;
 -import { app } from "../../scripts/app.js";
 -import { rgthreeConfig } from "../../rgthree/config.js";
@@ -26171,7 +26458,182 @@
 -            data.direction =
 -                layout[0] === "Top" ? 2 : layout[0] === "Bottom" ? 1 : layout[0] === "Left" ? 4 : 3;
 -        }
--        else {
++import { comfy } from '/comfy/api/v2.js';
++import { SERVICE as CONFIG_SERVICE } from './services/config_service.js';
++// Imported for their registrations, which every node type must receive before this
++// module's `define` runs (extendEveryNodeType in base_node.js; Reroute is listed in
++// DEFINED_NODE_TYPES).
++import './menu_queue_node.js';
++import './feature_import_individual_nodes.js';
++
++// Reroute (rgthree), revision 9. Source: the unpublished consumer `3bed5217` (lineage
++// 7114981b → 6f8ba765 → cd29f060 → 3bed5217), rebased onto revision 8 with four
++// changes: no `onBeforeConnect` registration (F17), the exact 0.6 zoom boundary, the
++// geometry relay (layer L2) feature-detected, and the sandbox guest's answers handled
++// where they differ from the in-process API (below).
++//
++// The node's algorithm stays here. Resolution, topology changes, slot geometry and
++// Primitive declarations use the public facade; no renderer class or live link record
++// is patched. A reroute resolves as `{forwardTo: {nodeId: self.id, input: 0}}`.
++//
++// Still REFUSED, as in revisions 1-8 (the techniques, not the node):
++//   - trapping the canvas's gesture state (`Object.defineProperty(canvas,
++//     "connecting_links", …)`) to splice a reroute into a link mid-drag;
++//   - replacing the node's own plumbing (`findInputSlot`, `disconnectInput`, `setSize`,
++//     `clone`, `configure`, `onMouseMove`, …) on the class;
++//   - writing the link table (`app.graph.links[id]`, `origin_id` / `target_slot`);
++//   - impersonating another node's widget (`inputs[0].widget = {name: "value"}` plus
++//     core's private widget config). The public `widget` / `widgetConfig` slot patch
++//     declares the same thing;
++//   - assigning `link.color`, a per-link write into the renderer's own record.
++// Whole-node drawing is the bounded `node.canvas` surface with `presentation`
++// (`title: 'hidden'`, `sizing: 'fixed'`), as for Label.
++//
++// MISSING (pending items):
++//   - F05: inserting or moving a reroute during an unfinished link drag (the
++//     fast-reroute shortcut). It needs a host-owned link-gesture contribution.
++//   - F06 (part): per-link colour. The output slot takes the type's colour; the links
++//     keep the host's.
++//   - F17: the loop guard. The canvas reads that answer synchronously, so
++//     `onBeforeConnect` is not available to a sandboxed pack. It is not registered (no
++//     refusal and no notice). The rule is kept, unregistered, as `rerouteConnectionRule`
++//     for the host's declarative connection policy. A link that closes a ring is
++//     accepted; `stabilize` stops at nodes it has visited.
++//
++// LIVE HOST r3 (guest `c6b97a15`) and r4a r2 (guest `16924bbe`) lack the geometry relay
++// (L2): the node handle has no `getBounds` / `getScreenRect`. Then the label is drawn at
++// every zoom (the original hides it below 0.6), nothing subscribes to `onViewportChanged`,
++// and no error is raised. With L2 the original's rule applies.
++const TYPE = 'Reroute (rgthree)';
++const SIDES = ['Top', 'Right', 'Bottom', 'Left'];
++const OPPOSITE = { Left: 'Right', Right: 'Left', Top: 'Bottom', Bottom: 'Top' };
++const DIRECTIONS = { Left: 'left', Right: 'right', Top: 'up', Bottom: 'down' };
++const LEGACY_DIRECTIONS = { 0: 'none', 1: 'up', 2: 'down', 3: 'left', 4: 'right', 5: 'center' };
++const states = new Map();
++let stopViewport;
++const keyOf = (node) => `${node.graphId ?? ''}:${node.id}`;
++const isReroute = (node) => !!node?.type?.includes('Reroute');
++const scopeOf = (node) => node.graphId && node.graphId !== comfy.graph.id
++    ? comfy.graph.subgraphs().find((scope) => scope.id === node.graphId)
++    : comfy.graph;
++// `defs.typeColor` and `defs.isTypeCompatible` answer synchronously in the published API
++// and on guest r4a (R6-9). Host r3's guest forwards both over its generic call channel,
++// so there they answer with a Promise. A Promise must never reach a slot patch: it
++// cannot be structured-cloned.
++const isPending = (answer) => !!answer && typeof answer.then === 'function';
++
++function defaultSize() {
++    const dimension = (key, fallback) => {
++        const value = Number(CONFIG_SERVICE.getConfigValue(key, fallback));
++        return Math.max(Math.round((Number.isFinite(value) && value ? value : fallback) / 10) * 10, 10);
++    };
++    let width = dimension('nodes.reroute.default_width', 40);
++    let height = dimension('nodes.reroute.default_height', 30);
++    while (width * height < 400) { width += 10; height += 10; }
++    return [width, height];
++}
++
++function layoutOf(node) {
++    const configured = node.getProperty('connections_layout') ?? CONFIG_SERVICE.getConfigValue('nodes.reroute.default_layout', ['Left', 'Right']);
++    const value = typeof configured === 'string' ? configured.split(' -> ') : configured;
++    const input = Array.isArray(value) && SIDES.includes(value[0]) ? value[0] : 'Left';
++    const output = Array.isArray(value) && SIDES.includes(value[1]) && input !== value[1] ? value[1] : OPPOSITE[input];
++    return [input, output];
++}
++
++// Sends only what differs from the slot's snapshot, so a repeated pass writes nothing.
++function applyLayout(node) {
++    const { width, height } = node.getSize();
++    const layout = layoutOf(node);
++    const directions = node.getProperty('connections_dir');
++    const positions = {
++        Left: { x: 5, y: height / 2 }, Right: { x: width + 1 - 5, y: height / 2 },
++        Top: { x: width / 2, y: 5 }, Bottom: { x: width / 2, y: height - 5 },
++    };
++    for (const [index, slot] of [node.inputs.at(0), node.outputs.at(0)].entries()) {
++        if (!slot) continue;
++        const override = (width === 10 || height === 10) && Array.isArray(directions)
++            ? LEGACY_DIRECTIONS[directions[index]] : undefined;
++        const position = positions[layout[index]], direction = override ?? DIRECTIONS[layout[index]];
++        const snapshot = slot.snapshot(), patch = {};
++        if (snapshot.position?.x !== position.x || snapshot.position?.y !== position.y) patch.position = position;
++        if (snapshot.direction !== direction) patch.direction = direction;
++        if (snapshot.label !== ' ') patch.label = ' ';
++        if (Object.keys(patch).length) slot.modify(patch);
++    }
++}
++
++function applySize(node) {
++    const value = node.getProperty('size');
++    const fallback = defaultSize();
++    const size = [0, 1].map((index) => Array.isArray(value) && Number.isFinite(Number(value[index]))
++        ? Math.max(10, Number(value[index])) : fallback[index]);
++    const current = node.getSize();
++    if (current.width !== size[0] || current.height !== size[1]) node.setSize({ width: size[0], height: size[1] });
++    applyLayout(node);
++}
++
++// Preserve upstream's side/direction changes when a resize creates a 10px strip.
++function stabilizeResizeLayout(node, oldSize, newSize) {
++    if (newSize[0] !== 10 && newSize[1] !== 10) return;
++    const layout = [...(node.getProperty('connections_layout') || ['Left', 'Right'])];
++    const directions = [...(node.getProperty('connections_dir') || [-1, -1])];
++    if (oldSize[0] > 10 && newSize[0] === 10) {
++        directions[0] = 2; directions[1] = 1;
++        if (layout[0] === 'Bottom') layout[1] = 'Top';
++        else if (layout[1] === 'Top') layout[0] = 'Bottom';
++        else { layout[0] = 'Top'; layout[1] = 'Bottom'; directions[0] = 1; directions[1] = 2; }
++    } else if (oldSize[1] > 10 && newSize[1] === 10) {
++        directions[0] = 4; directions[1] = 3;
++        if (layout[0] === 'Right') layout[1] = 'Left';
++        else if (layout[1] === 'Left') layout[0] = 'Right';
++        else { layout[0] = 'Left'; layout[1] = 'Right'; directions[0] = 3; directions[1] = 4; }
++    }
++    node.setProperty('connections_layout', layout);
++    node.setProperty('connections_dir', directions);
++}
++
++function saveSize(node, width, height) {
++    node.setProperty('size', [width, height]);
++    applySize(node);
++}
++
++// Layer L2: present when the node handle carries both geometry reads.
++const hasGeometry = (node) => typeof node?.getBounds === 'function' && typeof node?.getScreenRect === 'function';
++
++/**
++ * The original hid the label while `ds.scale` was truthy and below 0.6. The renderer's
++ * scale is `getScreenRect().width / getBounds().width`, and `getScreenRect` computes that
++ * width as the same product, so the comparison is made on the product: exact at a scale
++ * of exactly 0.6, where the quotient falls below 0.6 for some widths (109 is the first
++ * integer). Without L2, or with no finite geometry to measure, the label stays shown.
++ */
++export function labelHiddenByZoom(node) {
++    if (!hasGeometry(node)) return false;
++    let bounds, screenRect;
++    try {
++        bounds = node.getBounds();
++        screenRect = node.getScreenRect();
++    } catch {
++        // Gone, outside its graph, or no finite host geometry: no scale to apply.
++        return false;
++    }
++    if (!screenRect || !(bounds?.width > 0) || !(screenRect.width > 0)) return false;
++    return screenRect.width < bounds.width * 0.6;
++}
++
++function redraw(node) {
++    const state = states.get(keyOf(node));
++    if (!state) return;
++    const size = node.getSize();
++    if (!node.getProperty('showLabel') || !(size.width > 10)) {
++        state.canvas?.remove(); state.canvas = undefined; state.canvasError = undefined;
++        return;
++    }
++    const bounds = { x: 0, y: 0, width: size.width, height: size.height };
++    try {
++        if (state.canvas) state.canvas.setBounds(bounds);
+         else {
 -            entry.node.connect(0, data.node, data.slot);
 -            data.node = entry.node;
 -            data.input = entry.node.inputs[0];
@@ -26191,7 +26653,86 @@
 -            if (entry) {
 -                data.pos = entry.node.getConnectionPos(!!data.input, 0);
 -                this.setCanvasConnectingData(data);
--            }
++            state.canvas = node.canvas({ bounds, layer: 'foreground', draw: (context) => drawLabel(node, context) });
++            state.canvas.redraw();
++        }
++        state.canvasError = undefined;
++    } catch (error) {
++        // A display-surface quota must not disable the node's data forwarding.
++        // Keep the saved size and label setting, and report the real limitation.
++        state.canvas?.remove(); state.canvas = undefined;
++        const detail = String(error?.message ?? error);
++        if (state.canvasError !== detail) comfy.commands.notify({ severity: 'warn', summary: 'Could not draw Reroute label', detail });
++        state.canvasError = detail;
++    }
++}
++
++export function drawLabel(node, context) {
++    if (!node.getProperty('showLabel')) return;
++    const { width, height } = node.getSize();
++    if (!(width > 10)) return;
++    if (labelHiddenByZoom(node)) return;
++    const title = node.getTitle();
++    context.save();
++    context.fillStyle = '#888';
++    context.font = `${Math.min(14, (height * 0.65) | 0)}px Arial`;
++    context.textAlign = 'center';
++    context.textBaseline = 'middle';
++    context.fillText(String(title && title !== TYPE ? title : node.outputs.at(0)?.type || ''), width / 2, height / 2, width - 30);
++    context.restore();
++}
++
++function schedule(node, delay = 64) {
++    const state = states.get(keyOf(node));
++    if (!state || state.timer != null) return;
++    state.timer = setTimeout(() => {
++        state.timer = undefined;
++        if (!node.isDeleted) stabilize(node);
++    }, delay);
++}
++
++// Preserve upstream order: walk inputs to the first non-reroute, then the
++// output branches in stack order. A visited set additionally terminates corrupt
++// cycles loaded from a file without trapping the worker in an infinite walk.
++function stabilize(node) {
++    const scope = scopeOf(node);
++    if (!scope) return;
++    const update = new Map();
++    const visited = new Set();
++    let current = node;
++    let input;
++    while (current) {
++        if (visited.has(current.id)) break;
++        visited.add(current.id);
++        update.set(current.id, current);
++        const link = current.inputs.at(0)?.link();
++        if (!link) break;
++        const parent = scope.node(link.sourceNodeId);
++        if (!parent) { current.inputs.at(0)?.disconnect(); break; }
++        if (isReroute(parent)) {
++            if (visited.has(parent.id)) { current.inputs.at(0)?.disconnect(); break; }
++            current = parent;
++        } else {
++            input = parent.outputs.at(link.sourceIndex);
++            break;
++        }
++    }
++    const inputType = input?.type;
++    let outputType;
++    let widgetConfig;
++    const queue = [node];
++    const traversed = new Set();
++    while (queue.length) {
++        current = queue.pop();
++        if (traversed.has(current.id)) continue;
++        traversed.add(current.id);
++        for (const link of current.outputs.at(0)?.links() ?? []) {
++            const target = scope.node(link.targetNodeId);
++            if (!target) continue;
++            if (isReroute(target)) {
++                if (!traversed.has(target.id)) { queue.push(target); update.set(target.id, target); }
++                continue;
+             }
 -        }
 -    }
 -    handleRemovedNodeMaybeWhileDragging(node) {
@@ -26278,8 +26819,18 @@
 -                for (const link of linksToDisconnect) {
 -                    const node = app.graph.getNodeById(link.target_id);
 -                    node.disconnectInput(link.target_slot);
--                }
--            }
++            const output = target.inputs.at(link.targetIndex);
++            if (!output) continue;
++            if (inputType && inputType !== '*' && output.type !== '*') {
++                const compatible = comfy.defs.isTypeCompatible(inputType, output.type);
++                if (isPending(compatible)) {
++                    // Host r3: decide when the answer arrives; the disconnect restabilizes.
++                    compatible.then((ok) => { if (ok === false) output.disconnect(); }, () => {});
++                } else if (!compatible) {
++                    output.disconnect();
++                    continue;
+                 }
+             }
 -        }
 -        this.scheduleStabilize();
 -    }
@@ -26373,12 +26924,120 @@
 -                    input = (_a = node.outputs[inputNodeOutputSlot]) !== null && _a !== void 0 ? _a : null;
 -                    inputType = (_b = input === null || input === void 0 ? void 0 : input.type) !== null && _b !== void 0 ? _b : null;
 -                    break;
--                }
--            }
++            outputType = output.type;
++            widgetConfig = undefined;
++            if (output.isWidgetInput) {
++                const config = output.widgetConfig();
++                if (config) {
++                    // `mergeWidgetConfig` is published; guests r3 and r4a r2 do not
++                    // provide it yet, so the target's own declaration is used there.
++                    widgetConfig = (typeof output.mergeWidgetConfig === 'function' ? output.mergeWidgetConfig(config) : undefined) ?? config;
++                    outputType = Array.isArray(config.type) ? config.type.join(',') : config.type;
+                 }
+             }
 -            else {
 -                currentNode = null;
 -                break;
--            }
++        }
++    }
++    const displayType = inputType || outputType || '*';
++    const color = comfy.defs.typeColor(displayType);
++    const colorPatch = (value) => ({ color: typeof value === 'string' && value ? value : null });
++    for (const reroute of update.values()) {
++        const output = reroute.outputs.at(0);
++        output?.modify({ type: inputType || '*', name: input?.name || '', ...(isPending(color) ? {} : colorPatch(color)) });
++        const ownInput = reroute.inputs.at(0);
++        if (widgetConfig) ownInput?.modify({ widget: 'value', widgetConfig });
++        else ownInput?.modify({ widget: null });
++        // Only this pack's owned nodes receive its presentation. Other reroute
++        // types remain ordinary peers, as they were during original propagation.
++        if (reroute.type === TYPE) { applyLayout(reroute); redraw(reroute); }
++    }
++    if (isPending(color)) {
++        // Host r3: the colour follows when its answer arrives, for the nodes still there.
++        color.then((value) => {
++            for (const reroute of update.values()) scope.node(reroute.id)?.outputs.at(0)?.modify(colorPatch(value));
++        }, () => {});
++    }
++}
++
++/**
++ * The loop guard, as the original's onConnectInput/onConnectOutput applied it: refuse a
++ * link whose far end is reached from this node through reroutes. MISSING (F17
++ * connection policy): nothing registers it in the sandbox; see the top of this file.
++ */
++export function rerouteConnectionRule(node, event) {
++    if (!event.peerNodeId) return undefined;
++    const scope = scopeOf(node);
++    let current = scope?.node(event.peerNodeId);
++    const seen = new Set();
++    const queue = current ? [current] : [];
++    while (queue.length) {
++        current = queue.pop();
++        if (current.id === node.id) return false;
++        if (!isReroute(current) || seen.has(current.id)) continue;
++        seen.add(current.id);
++        const links = event.side === 'input'
++            ? [current.inputs.at(0)?.link()].filter(Boolean)
++            : current.outputs.at(0)?.links() ?? [];
++        for (const link of links) {
++            const peer = scope.node(event.side === 'input' ? link.sourceNodeId : link.targetNodeId);
++            if (peer) queue.push(peer);
++        }
++    }
++    return undefined;
++}
++
++function rotate(node, degrees) {
++    const step = degrees === -90 ? -1 : degrees === 180 ? 2 : 1;
++    node.setProperty('connections_layout', layoutOf(node).map((side) => SIDES[(SIDES.indexOf(side) + step + 4) % 4]));
++    const { width, height } = node.getSize();
++    // This matches upstream, including its size swap for a 180-degree action.
++    saveSize(node, height, width);
++}
++
++function flip(node, horizontal) {
++    const changed = horizontal ? ['Left', 'Right'] : ['Top', 'Bottom'];
++    node.setProperty('connections_layout', layoutOf(node).map((side) => changed.includes(side) ? OPPOSITE[side] : side));
++    applyLayout(node);
++}
++
++// `graph.add` answers a handle at once. In process it is real immediately. In the sandbox
++// guest it is confirmed when the host answers, and until then its id and slots cannot be
++// read (guest r3 throws on `id`; guest r4a refuses every collection read). So the clone is
++// wired and selected once it is real, and the attempt ends quietly after about 2 s.
++function whenConfirmed(handle, run, attempts = 40) {
++    let id;
++    try { id = handle.id; } catch { id = undefined; }
++    if (id != null && id !== '') { run(); return; }
++    if (attempts > 0) setTimeout(() => whenConfirmed(handle, run, attempts - 1), 50);
++}
++
++function cloneNextTo(node, before) {
++    if (node.graphId && node.graphId !== comfy.graph.id) return;
++    const position = node.getPosition();
++    const title = node.getTitle();
++    const properties = structuredClone(node.getProperties());
++    // Read now: the original wired the clone into the links as they were when chosen.
++    const inputLink = before ? node.inputs.at(0)?.link() : undefined;
++    const outputLinks = before ? [] : node.outputs.at(0)?.links() ?? [];
++    // `NodeInit` carries a title and a position; the properties are set on the handle,
++    // which queues them until the host confirms the node.
++    const clone = comfy.graph.add(TYPE, {
++        position: { x: position.x + (before ? -20 : 20), y: position.y + (before ? -20 : 20) },
++        ...(title && title !== TYPE ? { title } : {}),
++    });
++    for (const [key, value] of Object.entries(properties)) clone.setProperty(key, value);
++    whenConfirmed(clone, () => {
++        // `SlotRef` by position is `{ index }` (a bare number is not a SlotRef).
++        comfy.graph.batch(() => {
++            if (before) {
++                if (inputLink) comfy.graph.node(inputLink.sourceNodeId)?.outputs.at(inputLink.sourceIndex)?.connectTo(clone.id, { index: 0 });
++                clone.outputs.at(0)?.connectTo(node.id, { index: 0 });
++            } else {
++                node.outputs.at(0)?.connectTo(clone.id, { index: 0 });
++                for (const link of outputLinks) clone.outputs.at(0)?.connectTo(link.targetNodeId, { index: link.targetIndex });
+             }
 -        }
 -        const nodes = [this];
 -        let outputNode = null;
@@ -26445,7 +27104,114 @@
 -                            }
 -                        }
 -                    }
--                }
++        });
++        comfy.graph.select([clone]);
++    });
++}
++
++comfy.defs.extend(TYPE, (builder) => {
++    builder.onResized((node, size) => {
++        const oldSize = node.getProperty('size') || defaultSize();
++        const newSize = [size.width, size.height];
++        node.setProperty('size', newSize);
++        stabilizeResizeLayout(node, oldSize, newSize);
++        applyLayout(node);
++        redraw(node);
++    });
++    // MISSING (F17 connection policy): no `builder.onBeforeConnect` here; see
++    // `rerouteConnectionRule`.
++    const toggleLabel = (node) => {
++        node.setProperty('showLabel', !node.getProperty('showLabel')); redraw(node);
++    };
++    builder.addMenuItem({ label: 'Hide Label/Title', when: (node) => !!node.getProperty('showLabel'), run: toggleLabel });
++    builder.addMenuItem({ label: 'Show Label/Title', when: (node) => !node.getProperty('showLabel'), run: toggleLabel });
++    const toggleResizing = (node) => {
++        const resizable = !node.getProperty('resizable');
++        node.setProperty('resizable', resizable);
++        node.setResizable(resizable);
++        const size = node.getSize();
++        saveSize(node, Math.max(40, size.width), Math.max(30, size.height));
++    };
++    builder.addMenuItem({ label: 'No Resizing', when: (node) => !!node.getProperty('resizable'), run: toggleResizing });
++    builder.addMenuItem({ label: 'Allow Resizing', when: (node) => !node.getProperty('resizable'), run: toggleResizing });
++    for (const [name, index] of [['Static Width', 0], ['Static Height', 1]]) {
++        builder.addMenuItem({ label: name, items: Array.from({ length: 8 }, (_, offset) => ({
++            label: String(80 - offset * 10), run(node) {
++                const size = node.getSize();
++                node.setProperty('resizable', false);
++                node.setResizable(false);
++                saveSize(node, index === 0 ? 80 - offset * 10 : size.width, index === 1 ? 80 - offset * 10 : size.height);
++            },
++        })) });
++    }
++    builder.addMenuItem({ label: 'Connections Layout', items: SIDES.flatMap((input) => SIDES.filter((output) => input !== output).map((output) => ({
++        label: `${input} -> ${output}`, run(node) { node.setProperty('connections_layout', [input, output]); applyLayout(node); },
++    }))) });
++    builder.addMenuItem({ label: 'Rotate', items: [
++        { label: 'Rotate 90° Clockwise', run: (node) => rotate(node, 90) },
++        { label: 'Rotate 90° Counter-Clockwise', run: (node) => rotate(node, -90) },
++        { label: 'Rotate 180°', run: (node) => rotate(node, 180) },
++        { label: 'Flip Horizontally', run: (node) => flip(node, true) },
++        { label: 'Flip Vertically', run: (node) => flip(node, false) },
++    ] });
++    builder.addMenuItem({ label: 'Clone New Reroute...', items: [
++        { label: 'Before', run: (node) => cloneNextTo(node, true) },
++        { label: 'After', run: (node) => cloneNextTo(node, false) },
++    ] });
++});
++
++comfy.defs.define({
++    type: TYPE, title: TYPE, category: 'rgthree', execution: 'frontend',
++    presentation: { title: 'hidden', sizing: 'fixed', collapsible: false },
++    inputs: [{ name: '', type: '*' }], outputs: [{ name: '', type: '*' }],
++    resolve: ({ self }) => ({ 0: { forwardTo: { nodeId: self.id, input: 0 } } }),
++    onCreated(node, event) {
++        const key = keyOf(node);
++        const previous = states.get(key);
++        if (previous?.timer != null) clearTimeout(previous.timer);
++        previous?.canvas?.remove();
++        const state = {};
++        states.set(key, state);
++        // Only where the geometry relay (L2) exists: without it the label ignores zoom,
++        // so a viewport subscription would only cost messages.
++        if (!stopViewport && hasGeometry(node)) {
++            stopViewport = comfy.onViewportChanged(() => {
++                // Labels keep their bounded surface even when the last draw
++                // was suppressed at low zoom, so crossing back redraws it.
++                for (const current of states.values()) current.canvas?.redraw();
++            });
++        }
++        node.setSerializeWidgets(false);
++        if (node.getProperty('resizable') == null) node.setProperty('resizable', !!CONFIG_SERVICE.getConfigValue('nodes.reroute.default_resizable', false));
++        if (!node.getProperty('size')) node.setProperty('size', defaultSize());
++        if (!node.getProperty('connections_layout')) node.setProperty('connections_layout', layoutOf(node));
++        if (event?.restored && !event.loading) {
++            node.inputs.at(0)?.modify({ type: '*' }); node.outputs.at(0)?.modify({ type: '*' });
++        }
++        applySize(node);
++        node.setResizable(!!node.getProperty('resizable'));
++        redraw(node);
++        schedule(node);
++    },
++    onConfigured(node) { applySize(node); node.setResizable(!!node.getProperty('resizable')); schedule(node); },
++    onConnectionsChanged(node, event) {
++        if (event.connected && event.side === 'output') {
++            const links = node.outputs.at(0)?.links() ?? [];
++            const scope = scopeOf(node);
++            const types = new Set(links.map((link) => scope?.node(link.targetNodeId)?.inputs.at(link.targetIndex)?.type).filter((type) => type && type !== '*'));
++            if (types.size > 1) {
++                for (const link of links.slice(0, -1)) scope?.node(link.targetNodeId)?.inputs.at(link.targetIndex)?.disconnect();
++            }
++        }
++        schedule(node);
++    },
++    onPropertyChanged(node, event) {
++        if (['size', 'connections_layout', 'connections_dir', 'resizable', 'showLabel'].includes(event.name)) {
++            // The event is before commit. Re-read on the next microtask.
++            queueMicrotask(() => {
++                if (!node.isDeleted && states.has(keyOf(node))) {
++                    applySize(node); node.setResizable(!!node.getProperty('resizable')); redraw(node);
+                 }
 -            }
 -            else {
 -            }
@@ -26745,83 +27511,7 @@
 -        Finally, a comfortable, powerful reroute node with true multi-direction and powerful
 -        shortcuts to bring your workflow to the next level.
 -      </p>
-+// Reroute (rgthree) — the pack's largest single node, 981 lines. A resizable reroute
-+// whose input and output can sit on any of the four sides, which propagates type, label
-+// and link colour down chains of reroutes, plus a "fast reroute" service that spawns a
-+// reroute and splices it into a link **while the user is mid-drag**.
-+//
-+// Its resolution is the easy part: a reroute is `{forwardTo: {nodeId: self.id, input: 0}}`
-+// and the published resolution system already chains reroute → reroute to a fixpoint.
-+// Everything around it is refused, and it is refused as a body of technique rather than
-+// one call at a time.
-+//
-+// REFUSED, not a pending gap: trapping the canvas's own state to observe a gesture. The
-+// fast-reroute service replaces `connecting_links` with an accessor pair —
-+//   Object.defineProperty(canvas, "connecting_links", {get, set})
-+// — so that the pack is told when a drag begins, then reads `connecting_node`,
-+// `connecting_input`, `connecting_output`, `connecting_slot` and `connecting_pos`, writes
-+// new endpoints back into `connecting_links[0]`, and claims the pointer with
-+// `canvas.node_capturing_input = this`. Installing a property trap on the editor and then
-+// rewriting a gesture in flight is the most invasive thing in this pack.
-+// `comfy.isInteracting()` answers *whether* a gesture is running, deliberately and only:
-+// which gestures exist, and what their intermediate state looks like, is the editor's
-+// business and changes with the renderer.
-+//
-+// REFUSED, not a pending gap: drawing a node's whole body. `onDrawForeground(ctx, canvas)`
-+// paints the entire reroute — there is no title bar (`LiteGraph.NO_TITLE`) and no widget
-+// band, so there is nowhere for a `widgets.canvas` to go. Same substance as label.js: a
-+// chromeless node is not something a pack can assemble out of renderer flags and a draw
-+// callback. `getConnectionPos` overridden through `addConnectionLayoutSupport`, with
-+// `LiteGraph.LEFT/RIGHT/UP/DOWN`, `layout_slot_offset` and `hideSlotLabels`, is the same
-+// thing for the sockets — see utils.js.
-+//
-+// REFUSED, not a pending gap: overriding a node's own plumbing. `findInputSlot`,
-+// `findOutputSlot`, `disconnectInput`, `disconnectOutput`, `setSize`, `clone`,
-+// `configure`, `onMouseMove`, `onKeyDown`/`onKeyUp` and `onDeselected` are all replaced
-+// on the class. Those are the host's methods with the host's invariants; a pack that
-+// redefines what "disconnect this input" means for a node is not extending the editor, it
-+// is forking it inside the same process.
-+//
-+// REFUSED, not a pending gap: editing the link table. It reads and writes
-+// `app.graph.links[id]`, calls `removeLink`, and assigns `origin_id` / `origin_slot` /
-+// `target_id` / `target_slot` by hand to splice itself into an existing link. That is the
-+// wire format written directly, with no command behind it and nothing to undo.
-+// `output.moveLinksTo` exists precisely so link ids survive a re-home, but splicing a new
-+// node into the middle of a link is a different operation and the published pair
-+// (`connectTo` + `disconnect`) allocates new ids.
-+//
-+// REFUSED, not a pending gap: impersonating another node's widget. It sets and then
-+// *deletes* `node.inputs[0].widget = {name: "value"}` and carries core's private widget
-+// config through utils_deprecated_comfyui.js — which is refused there, for the same
-+// reason — so that a reroute can sit between a primitive and its target and pretend to be
-+// the widget the primitive is driving.
-+//
-+// REFUSED, not a pending gap: link colour. Reading `LGraphCanvas.link_type_colors[type]`
-+// is `comfy.defs.typeColor(type)`, but assigning `link.color` so a chain keeps the
-+// upstream type's colour is a per-link write into the renderer's own record. Slot colour
-+// is published (`slot.modify({color})`); link colour is not.
-+//
-+// Two of the markers that stood here are closed and are recorded so they are not
-+// re-raised. The fast-reroute chord reads rgthree's own key service, which is converted
-+// (services/key_events_services.js) and needs nothing published. `canvas.selectNode()` is
-+// `comfy.graph.select([node])`, and `convertEventToCanvasOffset(event)` /
-+// `last_mouse_position` — where to drop the new node — is `comfy.graph.pointerPosition()`.
-+// COSMETIC: (8) the rotate / resize / label / connection-layout submenus are all
-+//   expressible through `b.addMenuItem`; only their splice position among core's own
-+//   entries is not.
-+//
-+// The capability is not lost. ComfyUI ships reroutes twice over: the `Reroute` node in
-+// `src/extensions/core/rerouteNode.ts`, which core's own `slotDefaults` offers first for
-+// every type, and native link reroute points (`src/lib/litegraph/src/Reroute.ts` and
-+// `rerouteStore`), which are part of the link rather than a node and so need none of the
-+// machinery above. What a user loses by this refusal is the four-sided slot layout, the
-+// resize handles and the mid-drag splice; what they keep is rerouting.
-+//
-+// INOPERABLE: Reroute (rgthree), and the fast-reroute shortcut with it. State lived in
-+// node `properties` — `resizable`, `size`, `connections_layout`, `connections_dir`,
-+// `showLabel` — and there are no widgets, so a saved workflow holding one keeps
-+// everything it held.
- 
+-
 -      ${!CONFIG_FAST_REROUTE_ENABLED
 -            ? `<p><i>Fast Shortcuts are currently disabled.</b>`
 -            : `
@@ -26873,8 +27563,16 @@
 -    property: "showLabel",
 -    callback: async (node, value) => {
 -        app.graph.setDirtyCanvas(true, true);
--    },
--});
++            });
++        }
++    },
++    onRemoved(node) {
++        const key = keyOf(node), state = states.get(key);
++        if (state?.timer != null) clearTimeout(state.timer);
++        state?.canvas?.remove(); states.delete(key);
++        if (!states.size) { stopViewport?.(); stopViewport = undefined; }
+     },
+ });
 -addMenuItem(RerouteNode, app, {
 -    name: (node) => `${node.resizable ? "No" : "Allow"} Resizing`,
 -    callback: (node) => {
@@ -27018,7 +27716,6 @@
 -        RerouteNode.setUp();
 -    },
 -});
-+export {}
 --- a/web/comfyui/rgthree.css
 +++ b/v2/web/comfyui/rgthree.css
 @@ -691,6 +691,6 @@
@@ -28322,9 +29019,9 @@
 +// COSMETIC: no property metadata — `RgthreeSeed["@randomMax"] = {type: "number"}`
 +//   told the properties panel to edit those two as numbers. They still work, still
 +//   save, and are still clamped by `onPropertyChanged`; they are free-text fields.
-+// REFUSED, not a gap: `addConnectionLayoutSupport` put the input and output on chosen
-+//   sides by patching `getConnectionPos` on the node class. Deciding where the renderer
-+//   draws a socket is refused rather than pending — see utils.js.
++// CONVERTED (revision 9, F01): `addConnectionLayoutSupport` put the input and output on
++//   chosen sides by patching `getConnectionPos` on the node class. connection_layout.js
++//   declares the same sides with public slot patches instead.
 +// COSMETIC: (8) node menu entries are appended. "Show/Hide Last Seed Value" was
 +//   spliced in at `options.length - 1`, so it sat above the last core entry; it is
 +//   present, one place further down.
@@ -28895,7 +29592,7 @@
          });
 --- a/web/comfyui/utils.js
 +++ b/v2/web/comfyui/utils.js
-@@ -1,748 +1,201 @@
+@@ -1,748 +1,190 @@
 -import { app } from "../../scripts/app.js";
 -import { api } from "../../scripts/api.js";
 -import { getResolver, wait } from "../../rgthree/common/shared_utils.js";
@@ -28931,7 +29628,100 @@
 -        oldGetExtraMenuOptions && oldGetExtraMenuOptions.apply(this, [canvas, menuOptions]);
 -        addMenuItemOnExtraMenuOptions(this, config, menuOptions, after);
 -    };
--}
++import { comfy } from '/comfy/api/v2.js';
++import { graphOf } from "./base_any_input_connected_node.js";
++
++// MOST OF THE OLD TOOLKIT WAS DELIBERATELY NOT RESTORED — 748 lines in, two exports out.
++//
++// The pack's shared graph/menu/geometry toolkit, imported by 28 of its 48 files.
++// Its renderer geometry and its prototype patches have no destination and are
++// listed below. Its link walking does, and the type walk in this file
++// is that half converted — the routine that resolves what a `*` slot really carries
++// by following its links until it meets a concrete type. Any Switch and Dynamic
++// Context both need that answer, so it is shared from here. While this file exported
++// nothing its helpers were being copied into consumers instead, and the copies had
++// already drifted.
++//
++// `matchLocalSlotsToServer` is converted below. The marker it carried — "no published
++// way to insert or permute a slot, and none at all for inputs" — named a destination
++// that already existed: `SlotCollection.reorder(names)` permutes and re-points every
++// affected link in one batch, and `add`/`remove` are on the same collection for inputs
++// and outputs alike.
++//
++// CONVERTED (revision 9, F01): the "Connections Layout" feature —
++//   `addConnectionLayoutSupport` / `getConnectionPosForLayout` /
++//   `setConnectionsLayout` / `setConnectionsCollapse`. The original patched
++//   `getConnectionPos`, `getInputPos` and `getOutputPos` on a node class; that patch
++//   stays refused. connection_layout.js declares the same per-node geometry through
++//   public slot patches (`position`, `direction`, `collapsedPosition`, `label`, and the
++//   disabled grey through `color` / `colorWhenUnconnected`), so the host keeps drawing
++//   and hit-testing its own sockets. The pack keeps its own 20 px row and 10 px inset as
++//   layout values; it reads no renderer constant. It remembers the hidden labels and the
++//   colours it greyed, because nothing published reads a slot's colour back.
++// COSMETIC: (8) an entry cannot be positioned among *core's* menu items.
++//   `addMenuItem` / `addMenuItemOnExtraMenuOptions` patch `getExtraMenuOptions` and
++//   splice an entry in by string-matching an anchor ("Shape", "Properties Panel").
++//   `b.addMenuItem` covers the submenu and the callback-computed label, and `order`
++//   sequences a pack's own entries; every pack entry is appended after core's, so each
++//   entry is present and only its neighbourhood differs. `addHelpMenuItem`
++//   ("🛟 Node Help") is `helpMenuItem` in base_node.js.
++// DROPPED: `getLinkById`, `getOriginNodeByLink` and `findFromNodeForSubgraph`. The node
++//   half of this family is published and is used: `getNodeById` is
++//   `[comfy.graph, ...comfy.graph.subgraphs()]` searched in turn,
++//   `findSomethingInAllSubgraphs` is that same iteration (services/bookmarks_services.js
++//   does exactly it), and `reduceNodesDepthFirst` resolves a subgraph node through its
++//   `type`, which is its definition's id. The three above are the half that is not: a
++//   SubgraphHandle exposes `nodes()`/`node()` only, so there is no `links()` to look a
++//   link id up in, and no way back from a definition to the node that places it.
++//   Neither has a caller left — `findFromNodeForSubgraph`'s only one was Bookmark's jump
++//   into a subgraph, which is stated as a LIMITATION in bookmark.js, and nothing calls
++//   `getLinkById` at all once the link table stops being addressed by id.
++// NO LONGER A GAP: `comfy.defs.isTypeCompatible` publishes the host's wildcard
++//   and union rules. The old wrapper has no converted caller, so dead code is
++//   not restored merely because its destination now exists.
++// REFUSED, not a gap: the file also *replaces* `LiteGraph.isValidConnection`
++//   globally so that a COMBO may connect to a comma-joined type list. Replacing
++//   core connection validation for every pack is deliberately not expressible, so
++//   this is not waiting on anything.
++// REFUSED, not a gap: (26) `getNodeByIdFromApiPrompt` / `getFullNodeIdFromApiPrompt`
++//   read a built prompt handed to them by the queue interception in rgthree.js.
++//   Reading the built prompt is not published and will not be.
++// NO LONGER A GAP, and deliberately not restored: `getFullColor` resolved
++//   ComfyUI's named colours through `LGraphCanvas.node_colors[name]`, and
++//   `comfy.defs.nodeColor(name)` publishes that now. It is not brought back
++//   because nothing calls it — no caller in `web/` or in the pack's own
++//   `src_web/` sources, only the export. Fast Groups Muter had its own copy of
++//   the same six lines and that one, which is reachable, is converted.
++// NO LONGER A GAP: `replaceNode` is `comfy.graph.replace(id, type)`. It carries
++//   position, a title the user chose, colour, mode, declared properties and
++//   widget values, sizes the replacement to whichever of the two is larger, and
++//   re-makes every link by slot name in one undo step. Link ids are reallocated,
++//   exactly as this routine's were — it also rebuilt every link on a freshly
++//   created node. Used by the Context ⇄ Context Big menu items (converted) and by
++//   "Convert selected Reroutes".
++//
++// `waitForCanvas` / `waitForGraph` are no longer a gap: they polled `app.canvas`
++// and `app.graph` because nothing said when the app was up, and `comfy.onReady()`
++// is that signal. Every caller here is punted for other reasons, so the poll is
++// simply gone rather than converted.
++//
++// `getGroupNodes(group)` is no longer a gap: it is `group.nodes()`, which the group
++// API recomputes on every call. Its callers are converted in place (see
++// fast_groups_muter.js, menu_queue_node.js) rather than through this file.
++//
++// `IoDirection`, `PassThroughFollowing`, `shouldPassThrough` and the
++// `getConnected*Nodes*` family walk the link table through reroute/collector
++// chains. Those are converted, but in base_any_input_connected_node.js: every
++// caller is a node that file already assembles, so the walk followed its callers
++// rather than staying here.
++
++// The walk resolves peers through `comfy.graph`, which addresses the graph on
++// screen — the same scope the original had, where `getTypeFromSlot` read
++// `app.canvas.getCurrentGraph()`. A link crossing a subgraph boundary was not
++// followed before and is not followed now, so this is not a loss.
++function typeOfSlot(slot) {
++    return { type: slot.type, label: slot.label, name: slot.name };
+ }
 -let canvasResolver = null;
 -export function waitForCanvas() {
 -    if (canvasResolver === null) {
@@ -28945,11 +29735,28 @@
 -                    requestAnimationFrame(_waitForCanvas);
 -                }
 -            }
--        }
++/** The node and slot at the other end of each of this slot's links. */
++function peersOf(node, slot, isOutput) {
++    const graph = graphOf(node);
++    if (isOutput) {
++        const peers = [];
++        for (const link of slot.links()) {
++            const peerNode = graph.node(link.targetNodeId);
++            const peerSlot = peerNode && peerNode.inputs.at(link.targetIndex);
++            if (peerNode && peerSlot)
++                peers.push({ node: peerNode, slot: peerSlot });
+         }
 -        _waitForCanvas();
--    }
++        return peers;
+     }
 -    return canvasResolver.promise;
--}
++    const link = slot.link();
++    if (!link)
++        return [];
++    const peerNode = graph.node(link.sourceNodeId);
++    const peerSlot = peerNode && peerNode.outputs.at(link.sourceIndex);
++    return peerNode && peerSlot ? [{ node: peerNode, slot: peerSlot }] : [];
+ }
 -let graphResolver = null;
 -export function waitForGraph() {
 -    if (graphResolver === null) {
@@ -28963,7 +29770,14 @@
 -                    requestAnimationFrame(_wait);
 -                }
 -            }
--        }
++function getTypeFromSlot(node, slot, isOutput, skipSelf = false) {
++    if (!skipSelf && slot.type && slot.type !== "*") {
++        return typeOfSlot(slot);
++    }
++    for (const peer of peersOf(node, slot, isOutput)) {
++        if (peer.slot.type && peer.slot.type !== "*") {
++            return typeOfSlot(peer.slot);
+         }
 -        _wait();
 -    }
 -    return graphResolver.promise;
@@ -29296,154 +30110,8 @@
 -export function followConnectionUntilType(node, dir, slotNum, skipSelf = false) {
 -    const slots = dir === IoDirection.OUTPUT ? node.outputs : node.inputs;
 -    if (!slots || !slots.length) {
-+import { comfy } from '/comfy/api/v2.js';
-+import { graphOf } from "./base_any_input_connected_node.js";
-+
-+// MOST OF THE OLD TOOLKIT WAS DELIBERATELY NOT RESTORED — 748 lines in, two exports out.
-+//
-+// The pack's shared graph/menu/geometry toolkit, imported by 28 of its 48 files.
-+// Its renderer geometry and its prototype patches have no destination and are
-+// listed below. Its link walking does, and the type walk in this file
-+// is that half converted — the routine that resolves what a `*` slot really carries
-+// by following its links until it meets a concrete type. Any Switch and Dynamic
-+// Context both need that answer, so it is shared from here. While this file exported
-+// nothing its helpers were being copied into consumers instead, and the copies had
-+// already drifted.
-+//
-+// `matchLocalSlotsToServer` is converted below. The marker it carried — "no published
-+// way to insert or permute a slot, and none at all for inputs" — named a destination
-+// that already existed: `SlotCollection.reorder(names)` permutes and re-points every
-+// affected link in one batch, and `add`/`remove` are on the same collection for inputs
-+// and outputs alike.
-+//
-+// REFUSED, not a gap: deciding where the renderer draws a slot.
-+//   `addConnectionLayoutSupport` / `getConnectionPosForLayout` /
-+//   `setConnectionsLayout` / `setConnectionsCollapse` are the pack's
-+//   "Connections Layout" feature, and they work by patching `getConnectionPos`,
-+//   `getInputPos` and `getOutputPos` on a node class and recomputing socket
-+//   positions from `LiteGraph.NODE_SLOT_HEIGHT`, `NODE_TITLE_HEIGHT` and
-+//   `NODE_COLLAPSED_WIDTH`. Where a socket sits, how tall a slot row is and how wide
-+//   a collapsed node draws are the renderer's, and the renderer is ours to replace —
-+//   a pack that hardcodes today's layout constants breaks on the day we change them,
-+//   silently and for its users rather than for its author. `node.getSlotPosition()`
-+//   *reads* where the renderer put a slot, which is what a pack anchoring something
-+//   to a socket actually needs; choosing the position is not published and is not
-+//   waiting on anything.
-+//   Two riders go with it. `toggleConnectionLabel` blanks a slot's label by writing
-+//   `cxn.label = " "` from inside that position callback — a per-frame write to
-+//   serialized state, which `slot.modify({label})` replaces for any pack that wants
-+//   the effect on its own terms. The disabled-slot recolouring is also inside the
-+//   callback: writing the grey is `slot.modify({color, colorWhenUnconnected})`, but
-+//   restoring it is not, because the routine stashes `cxn.color_on` in `_color_on_org`
-+//   first and nothing published reads a slot's colour back — `SlotSnapshot` is
-+//   `{id,index,name,type,label,isConnected}`.
-+// COSMETIC: (8) an entry cannot be positioned among *core's* menu items.
-+//   `addMenuItem` / `addMenuItemOnExtraMenuOptions` patch `getExtraMenuOptions` and
-+//   splice an entry in by string-matching an anchor ("Shape", "Properties Panel").
-+//   `b.addMenuItem` covers the submenu and the callback-computed label, and `order`
-+//   sequences a pack's own entries; every pack entry is appended after core's, so each
-+//   entry is present and only its neighbourhood differs. `addHelpMenuItem`
-+//   ("🛟 Node Help") is `helpMenuItem` in base_node.js.
-+// DROPPED: `getLinkById`, `getOriginNodeByLink` and `findFromNodeForSubgraph`. The node
-+//   half of this family is published and is used: `getNodeById` is
-+//   `[comfy.graph, ...comfy.graph.subgraphs()]` searched in turn,
-+//   `findSomethingInAllSubgraphs` is that same iteration (services/bookmarks_services.js
-+//   does exactly it), and `reduceNodesDepthFirst` resolves a subgraph node through its
-+//   `type`, which is its definition's id. The three above are the half that is not: a
-+//   SubgraphHandle exposes `nodes()`/`node()` only, so there is no `links()` to look a
-+//   link id up in, and no way back from a definition to the node that places it.
-+//   Neither has a caller left — `findFromNodeForSubgraph`'s only one was Bookmark's jump
-+//   into a subgraph, which is stated as a LIMITATION in bookmark.js, and nothing calls
-+//   `getLinkById` at all once the link table stops being addressed by id.
-+// NO LONGER A GAP: `comfy.defs.isTypeCompatible` publishes the host's wildcard
-+//   and union rules. The old wrapper has no converted caller, so dead code is
-+//   not restored merely because its destination now exists.
-+// REFUSED, not a gap: the file also *replaces* `LiteGraph.isValidConnection`
-+//   globally so that a COMBO may connect to a comma-joined type list. Replacing
-+//   core connection validation for every pack is deliberately not expressible, so
-+//   this is not waiting on anything.
-+// REFUSED, not a gap: (26) `getNodeByIdFromApiPrompt` / `getFullNodeIdFromApiPrompt`
-+//   read a built prompt handed to them by the queue interception in rgthree.js.
-+//   Reading the built prompt is not published and will not be.
-+// NO LONGER A GAP, and deliberately not restored: `getFullColor` resolved
-+//   ComfyUI's named colours through `LGraphCanvas.node_colors[name]`, and
-+//   `comfy.defs.nodeColor(name)` publishes that now. It is not brought back
-+//   because nothing calls it — no caller in `web/` or in the pack's own
-+//   `src_web/` sources, only the export. Fast Groups Muter had its own copy of
-+//   the same six lines and that one, which is reachable, is converted.
-+// NO LONGER A GAP: `replaceNode` is `comfy.graph.replace(id, type)`. It carries
-+//   position, a title the user chose, colour, mode, declared properties and
-+//   widget values, sizes the replacement to whichever of the two is larger, and
-+//   re-makes every link by slot name in one undo step. Link ids are reallocated,
-+//   exactly as this routine's were — it also rebuilt every link on a freshly
-+//   created node. Used by the Context ⇄ Context Big menu items (converted) and by
-+//   "Convert selected Reroutes".
-+//
-+// `waitForCanvas` / `waitForGraph` are no longer a gap: they polled `app.canvas`
-+// and `app.graph` because nothing said when the app was up, and `comfy.onReady()`
-+// is that signal. Every caller here is punted for other reasons, so the poll is
-+// simply gone rather than converted.
-+//
-+// `getGroupNodes(group)` is no longer a gap: it is `group.nodes()`, which the group
-+// API recomputes on every call. Its callers are converted in place (see
-+// fast_groups_muter.js, menu_queue_node.js) rather than through this file.
-+//
-+// `IoDirection`, `PassThroughFollowing`, `shouldPassThrough` and the
-+// `getConnected*Nodes*` family walk the link table through reroute/collector
-+// chains. Those are converted, but in base_any_input_connected_node.js: every
-+// caller is a node that file already assembles, so the walk followed its callers
-+// rather than staying here.
-+
-+// The walk resolves peers through `comfy.graph`, which addresses the graph on
-+// screen — the same scope the original had, where `getTypeFromSlot` read
-+// `app.canvas.getCurrentGraph()`. A link crossing a subgraph boundary was not
-+// followed before and is not followed now, so this is not a loss.
-+function typeOfSlot(slot) {
-+    return { type: slot.type, label: slot.label, name: slot.name };
-+}
-+/** The node and slot at the other end of each of this slot's links. */
-+function peersOf(node, slot, isOutput) {
-+    const graph = graphOf(node);
-+    if (isOutput) {
-+        const peers = [];
-+        for (const link of slot.links()) {
-+            const peerNode = graph.node(link.targetNodeId);
-+            const peerSlot = peerNode && peerNode.inputs.at(link.targetIndex);
-+            if (peerNode && peerSlot)
-+                peers.push({ node: peerNode, slot: peerSlot });
-+        }
-+        return peers;
-+    }
-+    const link = slot.link();
-+    if (!link)
-+        return [];
-+    const peerNode = graph.node(link.sourceNodeId);
-+    const peerSlot = peerNode && peerNode.outputs.at(link.sourceIndex);
-+    return peerNode && peerSlot ? [{ node: peerNode, slot: peerSlot }] : [];
-+}
-+function getTypeFromSlot(node, slot, isOutput, skipSelf = false) {
-+    if (!skipSelf && slot.type && slot.type !== "*") {
-+        return typeOfSlot(slot);
-+    }
-+    for (const peer of peersOf(node, slot, isOutput)) {
-+        if (peer.slot.type && peer.slot.type !== "*") {
-+            return typeOfSlot(peer.slot);
-+        }
-+        if (peer.slot.type === "*") {
-+            return followConnectionUntilType(peer.node, isOutput);
-+        }
-+    }
-+    return null;
-+}
-+// The original's `if (slotNum)` treated slot 0 as "none given". The explicit
-+// undefined check keeps Dynamic Context's selected-slot walk without that bug.
-+export function followConnectionUntilType(node, isOutput, skipSelf = false, slotIndex) {
-+    const collection = isOutput ? node.outputs : node.inputs;
-+    const selected = slotIndex == null ? undefined : collection.at(slotIndex);
-+    const slots = selected ? [selected] : slotIndex == null ? collection.all() : [];
-+    if (!slots.length) {
-         return null;
-     }
+-        return null;
+-    }
 -    let type = null;
 -    if (slotNum) {
 -        if (!slots[slotNum]) {
@@ -29483,10 +30151,8 @@
 -        }
 -        else if ((connectedSlot === null || connectedSlot === void 0 ? void 0 : connectedSlot.type) == "*") {
 -            return followConnectionUntilType(connectedNode, dir);
-+    for (const slot of slots) {
-+        const type = getTypeFromSlot(node, slot, isOutput, skipSelf);
-+        if (type) {
-+            return type;
++        if (peer.slot.type === "*") {
++            return followConnectionUntilType(peer.node, isOutput);
          }
      }
      return null;
@@ -29496,7 +30162,15 @@
 -    const newNode = typeof typeOrNewNode === "string" ? LiteGraph.createNode(typeOrNewNode) : typeOrNewNode;
 -    if (existingNode.title != existingCtor.title) {
 -        newNode.title = existingNode.title;
--    }
++// The original's `if (slotNum)` treated slot 0 as "none given". The explicit
++// undefined check keeps Dynamic Context's selected-slot walk without that bug.
++export function followConnectionUntilType(node, isOutput, skipSelf = false, slotIndex) {
++    const collection = isOutput ? node.outputs : node.inputs;
++    const selected = slotIndex == null ? undefined : collection.at(slotIndex);
++    const slots = selected ? [selected] : slotIndex == null ? collection.all() : [];
++    if (!slots.length) {
++        return null;
+     }
 -    newNode.pos = [...existingNode.pos];
 -    newNode.properties = { ...existingNode.properties };
 -    const oldComputeSize = [...existingNode.computeSize()];
@@ -29512,7 +30186,11 @@
 -        setSizeIters++;
 -        if (setSizeIters > 10) {
 -            requestAnimationFrame(setSizeFn);
--        }
++    for (const slot of slots) {
++        const type = getTypeFromSlot(node, slot, isOutput, skipSelf);
++        if (type) {
++            return type;
+         }
 -    };
 -    setSizeFn();
 -    const links = [];
@@ -29616,9 +30294,9 @@
 -        const thing = fn(subgraph);
 -        if (thing)
 -            return thing;
--    }
--    return null;
--}
+     }
+     return null;
+ }
 -export function applyMixins(original, constructors) {
 -    constructors.forEach((baseCtor) => {
 -        Object.getOwnPropertyNames(baseCtor.prototype).forEach((name) => {
@@ -29631,7 +30309,37 @@
 -    const links = [];
 -    if (!inputOrOutput) {
 -        return links;
--    }
++
++/**
++ * Brings a saved node's slot order back in line with the server definition it was saved
++ * against — the pack's most consequential migration, and the reason the `CLIP_HEIGTH`
++ * typo rename "must live in perpetuity".
++ *
++ * The original did it by splicing the live `inputs`/`outputs` arrays and then rewriting
++ * every affected `link.origin_slot` / `link.target_slot` by hand, because a link stores
++ * its endpoint as an index and a bare permutation silently re-points every connection.
++ * `reorder(names)` is that whole second half: it re-points every link into and out of
++ * the node in one batch, so link ids survive and the saved workflow's `links` array is
++ * unchanged.
++ *
++ * Add-then-reorder rather than insert-at-index reaches the same final order, since
++ * `reorder` is given the server's list outright.
++ *
++ * The original ended by calling `stabilize()` on any Reroute downstream of a moved
++ * output. That was needed because rewriting `origin_slot` by hand told nothing; here
++ * each link still lands on the same *named* output it was on, so nothing downstream sees
++ * a different source and there is nothing to restabilize.
++ */
++export function matchLocalSlotsToServer(slots, serverSlots) {
++    const serverNames = serverSlots.map((slot) => slot.name);
++    const names = slots.names();
++    // The original's guard: act only when some slot is not where the server puts it,
++    // which is also false when the node simply has fewer slots than the server declares.
++    // Preserved rather than widened — adding a slot to a node that never had one is a
++    // different migration, and would change the saved workflow for every such node.
++    if (!names.some((name, i) => i !== serverNames.indexOf(name))) {
++        return;
+     }
 -    if ((_a = inputOrOutput.links) === null || _a === void 0 ? void 0 : _a.length) {
 -        const output = inputOrOutput;
 -        for (const linkId of output.links || []) {
@@ -29639,17 +30347,26 @@
 -            if (link) {
 -                links.push({ id: linkId, link: link });
 -            }
--        }
--    }
++    const wanted = new Set(serverNames);
++    for (const name of names) {
++        if (!wanted.has(name)) {
++            slots.remove(name);
+         }
+     }
 -    if (inputOrOutput.link) {
 -        const input = inputOrOutput;
 -        const link = app.graph.links[input.link];
 -        if (link) {
 -            links.push({ id: input.link, link: link });
--        }
--    }
++    const present = new Set(slots.names());
++    for (const slot of serverSlots) {
++        if (!present.has(slot.name)) {
++            slots.add(slot.name, slot.type);
+         }
+     }
 -    return links;
--}
++    slots.reorder(serverNames);
+ }
 -export async function matchLocalSlotsToServer(node, direction, serverNodeData) {
 -    var _a, _b, _c;
 -    const serverSlotNames = direction == IoDirection.INPUT
@@ -29794,51 +30511,6 @@
 -    }
 -    return `#${color}`;
 -}
-+
-+/**
-+ * Brings a saved node's slot order back in line with the server definition it was saved
-+ * against — the pack's most consequential migration, and the reason the `CLIP_HEIGTH`
-+ * typo rename "must live in perpetuity".
-+ *
-+ * The original did it by splicing the live `inputs`/`outputs` arrays and then rewriting
-+ * every affected `link.origin_slot` / `link.target_slot` by hand, because a link stores
-+ * its endpoint as an index and a bare permutation silently re-points every connection.
-+ * `reorder(names)` is that whole second half: it re-points every link into and out of
-+ * the node in one batch, so link ids survive and the saved workflow's `links` array is
-+ * unchanged.
-+ *
-+ * Add-then-reorder rather than insert-at-index reaches the same final order, since
-+ * `reorder` is given the server's list outright.
-+ *
-+ * The original ended by calling `stabilize()` on any Reroute downstream of a moved
-+ * output. That was needed because rewriting `origin_slot` by hand told nothing; here
-+ * each link still lands on the same *named* output it was on, so nothing downstream sees
-+ * a different source and there is nothing to restabilize.
-+ */
-+export function matchLocalSlotsToServer(slots, serverSlots) {
-+    const serverNames = serverSlots.map((slot) => slot.name);
-+    const names = slots.names();
-+    // The original's guard: act only when some slot is not where the server puts it,
-+    // which is also false when the node simply has fewer slots than the server declares.
-+    // Preserved rather than widened — adding a slot to a node that never had one is a
-+    // different migration, and would change the saved workflow for every such node.
-+    if (!names.some((name, i) => i !== serverNames.indexOf(name))) {
-+        return;
-+    }
-+    const wanted = new Set(serverNames);
-+    for (const name of names) {
-+        if (!wanted.has(name)) {
-+            slots.remove(name);
-+        }
-+    }
-+    const present = new Set(slots.names());
-+    for (const slot of serverSlots) {
-+        if (!present.has(slot.name)) {
-+            slots.add(slot.name, slot.type);
-+        }
-+    }
-+    slots.reorder(serverNames);
-+}
 --- a/web/comfyui/utils_canvas.js
 +++ b/v2/web/comfyui/utils_canvas.js
 @@ -1,4 +1,28 @@

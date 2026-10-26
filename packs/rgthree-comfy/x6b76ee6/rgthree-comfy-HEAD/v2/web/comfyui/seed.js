@@ -222,9 +222,9 @@ comfy.defs.extend(NodeTypesString.SEED, (b) => {
 // COSMETIC: no property metadata — `RgthreeSeed["@randomMax"] = {type: "number"}`
 //   told the properties panel to edit those two as numbers. They still work, still
 //   save, and are still clamped by `onPropertyChanged`; they are free-text fields.
-// REFUSED, not a gap: `addConnectionLayoutSupport` put the input and output on chosen
-//   sides by patching `getConnectionPos` on the node class. Deciding where the renderer
-//   draws a socket is refused rather than pending — see utils.js.
+// CONVERTED (revision 9, F01): `addConnectionLayoutSupport` put the input and output on
+//   chosen sides by patching `getConnectionPos` on the node class. connection_layout.js
+//   declares the same sides with public slot patches instead.
 // COSMETIC: (8) node menu entries are appended. "Show/Hide Last Seed Value" was
 //   spliced in at `options.length - 1`, so it sat above the last core entry; it is
 //   present, one place further down.
