@@ -1,0 +1,44 @@
+// The original TriggerWord Toggle tag-widget serializer, transcribed for the rev 10 exactness check (MERVYN m_8fa000143e):
+// nothing from the pristine pack is imported or executed. Source: the pinned upstream pack x2dcaf6a,
+// web/comfyui/trigger_word_toggle.js lines 354-377 (corpus origin/main a45522ff, blob d2cd54e5, file sha256 b1246cd3...).
+// Line 354 `result.widget.serializeValue = function() {` becomes the named function below, called with an explicit `this`
+// ({ value: tags }), and line 377 `};` becomes `}`. The body between the markers is source lines 355-376, byte-identical;
+// run_rev10_tests.mjs re-reads both files as text and refuses to report if the body or the hashes differ.
+export const SOURCE = Object.freeze({
+  pack: 'packs/comfyui-lora-manager/x2dcaf6a/ComfyUI-Lora-Manager-HEAD',
+  path: 'web/comfyui/trigger_word_toggle.js',
+  corpusMain: 'a45522ff2269bd2c9b42b67e36c42855fdbc05c7',
+  blob: 'd2cd54e5fcbe8e7843c16261253e31174a72b136',
+  fileSha256: 'b1246cd349c20409ffff368f5c09e842950c59088346f9e7c2bee4b835e51429',
+  lines: [354, 377],
+  linesSha256: '2ca5096b3f2960a7a9effd70f8603066e01a1b5af6893d560bd1ccda5e330787',
+  bodyLines: [355, 376],
+  bodySha256: '1c19063938ba92c946f5a52be5aed73564a91f9bbf5c67d88a5ad5b0f5e82e65',
+});
+
+export function originalSerializeValue() {
+// BEGIN BODY
+        const value = this.value || [];
+        return value.map((tag) => {
+          if (Array.isArray(tag.items)) {
+            return {
+              ...tag,
+              text:
+                tag.strength !== undefined && tag.strength !== null
+                  ? `(${tag.text}:${tag.strength.toFixed(2)})`
+                  : tag.text,
+              items: tag.items.map((item) => ({ ...item })),
+            };
+          }
+
+          if (tag.strength !== undefined && tag.strength !== null) {
+            return {
+              ...tag,
+              text: `(${tag.text}:${tag.strength.toFixed(2)})`,
+            };
+          }
+
+          return tag;
+        });
+// END BODY
+}

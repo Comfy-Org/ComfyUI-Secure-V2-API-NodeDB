@@ -1,0 +1,20 @@
+# Incremental LoRA rev10 r4 review — 2026-10-26
+
+**CLEAR for Root's normal pack/pair composition, with existing holds. B1 and B2 are closed in the reviewed source scope.** No new blocker found. This verdict does not qualify the browser, backend execution or deployment.
+
+Reviewed immutable sibling `chat_9616a498485b/coordination/lora-rev10-frontends-r4-20261026`, starting with `R4_CHANGES.md` and reusing the r2/r3 findings. `SHA256SUMS` exactly matches `4032c17c81b778490a29a5dca1f33d50100c9d1686fe212d3fa5505e89b126d2`; all **198 pins** verify. R3's 148 frozen pins still verify. The 47-file assembly changes only `create_hook_lora.js`; all other 46 modules remain byte-identical to r3. Hook SHA256 is `a6deaf88e0c4413d970a3a3640a36eae8777c824bada9e39fb574595167eddfa`.
+
+The Hook fix matches the original order: merge the raw saved rows, then apply the retained LORAS setter normalization once. The shared `setRows` covers automatic configure, text edits and the exposed restore path. It normalizes before comparison or mutation and records the normalized echo guard before writing. Therefore zero clip strength falls back to model strength, the last duplicate wins, and default `expanded`/`locked` fields are stored. Debounce cancellation, shape guards, disposal and idempotence behavior from r3 remain. Normalization exceptions are logged, restore reports failure and the rows remain as placed; the `finally` blocks reset the updating guard. No API, declaration, schema or manifest change is introduced.
+
+The revised tests address the former false oracle. H1/H2 now expect post-setter rows. H5's expected rows are written out independently from the original merge/setter rules: zero clip strength, duplicate retention, a saved row lacking `expanded`, a new text-only row with differing clip strength, and `locked:false`. H6 covers text edits with `<lora:e:1:0>` while preserving typed text. Both delivery modes and save/reload idempotence are checked. The new raw-write mutant fails H1/H2/H5/H6 in both modes, so the correction is meaningfully exercised.
+
+The failed first run is preserved as **62/64**, failing only H2.sync/H2.async. Its production hashes equal the passing run's; only the test driver changed. H2's original fixture was already setter-normal and correctly needed no post-placement write. The revised fixture removes `locked`, matching the disclosed older-save form, and asserts that normalization adds only `locked:false`. Existing re-save cases continue to require no write for normal rows. This is a justified fixture correction, with the failed evidence retained.
+
+`results-2/REV10_UNIT_TESTS.json` reports **64/64**, SHA256 `22cb639b669b8aebb58faa1332250b1b45e59f5fd875bd932c746762a54c3237`, and the repro is byte-identical. All production/test/fixture pins match, all r3 cases remain, and all seven mutation reports fail exactly the documented cases with exit 1. These remain fake-host evidence; no native/browser differential was run by this reviewer.
+
+Nonblocking notes:
+
+- The disclosed older-save `expanded` difference in Loader/Stacker/Wan is inherited from r2/r3's normalize-before-merge order. It affects rows missing `expanded` while carrying unequal strengths; the supplied real example rows have that field. Initial strengths remain equal to native, while the expansion flag differs and can affect later UI edits. Retain this precise limitation in publication documentation; it does not reopen unaffected modules in this narrow Hook repair or support a claim of complete historical-workflow parity.
+- FINDING3 remains an undeclared-socket/schema validation gap without demonstrated prompt rejection. The old pre-`merge_loras` Wan layout, G1, R6-4, G3/G4/G5, TriggerWord, manager features, Wan edit-time behavior and all existing runtime/browser/window holds remain. Current live-r3 restoration remains inert without widget handles.
+
+Only source reads and own stdlib hash/JSON/data checks were performed. No supplied code, script, test, SDK import, browser, service or generator ran; no candidate edit, staging, publication or deployment occurred. Detailed integrity and retained-result checks are in `evidence.json`.

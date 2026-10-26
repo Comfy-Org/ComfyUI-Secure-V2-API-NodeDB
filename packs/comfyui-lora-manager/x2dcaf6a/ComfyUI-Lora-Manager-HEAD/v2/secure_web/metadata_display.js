@@ -1,6 +1,11 @@
-// Debug Metadata display on published handles; collector/browser gates remain.
+// Debug Metadata display on published handles; registered by lm_frontends.js (rev 10).
+// On the live guest, widgets.mount calls render(container) without a value cell (R6-4): the panel then shows execution
+// metadata only, and restoring the last panel from a saved workflow waits for R6-4. The native null serializer needs a
+// beforeSerialize replacement value (G1) and is skipped where the event has no setter; 'metadata' is a display widget that
+// the node does not declare as an input.
 import { METADATA_COLORS, displayTokens, executionMetadata,
   metadataSerializeValue, restoreMetadataValue } from './metadata_display_logic.js';
+import { canReplaceSerializedValue, definitionOff } from './guest_compat.js';
 export { displayTokens, executionMetadata } from './metadata_display_logic.js';
 
 const TYPE = 'Debug Metadata (LoraManager)';
@@ -9,7 +14,7 @@ const keyOf = node => JSON.stringify([node.graphId, node.id]);
 export function registerMetadataDisplay(comfy) {
   const instances = new Map();
   let stopped = false;
-  const off = comfy.defs.extend(TYPE, builder => {
+  const off = definitionOff(comfy.defs.extend(TYPE, builder => {
     builder.onCreated(node => {
       if (stopped || node.isDeleted) return;
       const key = keyOf(node);
@@ -66,13 +71,16 @@ export function registerMetadataDisplay(comfy) {
           const panel = container.ownerDocument.createElement('div');
           panel.style.cssText = 'padding:8px;background:rgba(40,44,52,0.6);border-radius:6px;height:100%;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box';
           container.replaceChildren(panel); root = panel;
-          offChange(); offChange = cell.onChange(restore);
-          metadata = restoreMetadataValue(cell.get(), metadata); render();
+          if (cell) {
+            offChange(); offChange = cell.onChange(restore);
+            metadata = restoreMetadataValue(cell.get(), metadata);
+          }
+          render();
         },
         destroy: dispose
       });
       offSerialize = widget.on('beforeSerialize', event => {
-        if (alive && !node.isDeleted) event.setSerializedValue(metadataSerializeValue());
+        if (alive && !node.isDeleted && canReplaceSerializedValue(event)) event.setSerializedValue(metadataSerializeValue());
       });
       instances.set(key, { dispose, execute(output) {
         if (!alive || node.isDeleted) return;
@@ -85,7 +93,7 @@ export function registerMetadataDisplay(comfy) {
     });
     builder.onExecuted((node, result) => instances.get(keyOf(node))?.execute(result.raw));
     builder.onRemoved(node => instances.get(keyOf(node))?.dispose());
-  });
+  }));
   return () => {
     if (stopped) return;
     stopped = true; off();

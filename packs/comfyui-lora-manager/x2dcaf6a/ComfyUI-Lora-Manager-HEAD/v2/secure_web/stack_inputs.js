@@ -1,6 +1,9 @@
 // Typed consumer of the published host-captured reconstruction context.
 // Dynamic tooltips have no public SlotOptions field yet; this is not a full
 // frontend certificate. Never inspect host globals, stack traces or graph paths.
+// Registered by lm_frontends.js (rev 10).
+import { definitionOff } from './guest_compat.js';
+
 const TYPE = 'Lora Stack Combiner (LoraManager)';
 const PATTERN = /^lora_stack\d+$/;
 
@@ -23,7 +26,7 @@ function renumber(inputs) {
 /** @param {import('../comfy-api').Comfy} comfy */
 export function registerStackInputs(comfy) {
   let disposed = false;
-  const unsubscribe = comfy.defs.extend(TYPE, builder => {
+  const unsubscribe = definitionOff(comfy.defs.extend(TYPE, builder => {
     builder.onCreated(node => {
       if (disposed || node.isDeleted) return;
       const inputs = slots(node);
@@ -54,8 +57,7 @@ export function registerStackInputs(comfy) {
         }
       }
     });
-  });
-  if (typeof unsubscribe !== 'function') throw new Error('Definition unsubscribe contract is unavailable');
+  }));
   return () => {
     if (disposed) return;
     disposed = true;

@@ -1,5 +1,10 @@
 // Pinned Prompt dynamic sockets over the published typed node API.
-// Source candidate: browser activation and serialization proof remain pending.
+// Registered by lm_frontends.js (rev 10); browser activation proof is the rev 10 BART smoke.
+// Also migrates an original-format save ([meta, text], placed shifted by core) onto the text widget by name; on live the
+// text input is a socket, so there is no widget and nothing happens.
+import { definitionOff } from './guest_compat.js';
+import { originalAutocompleteLayout } from './original_layout.js';
+
 const TYPE = 'Prompt (LoraManager)';
 const PREFIX = 'trigger_words';
 
@@ -22,7 +27,13 @@ function renumber(slots) {
 /** @param {import('../comfy-api').Comfy} comfy */
 export function registerPromptInputs(comfy) {
   let disposed = false;
-  const unsubscribe = comfy.defs.extend(TYPE, builder => {
+  const unsubscribe = definitionOff(comfy.defs.extend(TYPE, builder => {
+    builder.onConfigured((node, data) => {
+      if (disposed || node.isDeleted) return;
+      const saved = originalAutocompleteLayout(data, false);
+      const text = saved && node.widgets.get('text');
+      if (text && text.getValue() !== saved.text) text.setValue(saved.text);
+    });
     builder.onConnectionsChanged((node, event) => {
       if (disposed || node.isDeleted || event.reconstructing || event.side !== 'input') return;
       if (event.peerNodeId === undefined) return;
@@ -42,8 +53,7 @@ export function registerPromptInputs(comfy) {
         renumber(node.inputs.all());
       }
     });
-  });
-  if (typeof unsubscribe !== 'function') throw new Error('Definition unsubscribe contract is unavailable');
+  }));
   return () => {
     if (disposed) return;
     disposed = true;

@@ -1,0 +1,59 @@
+// Loads the self-registering rev 10 entry (lm_frontends.js) in a fresh worker realm whose globalThis.comfy is a fake guest,
+// the way the extension worker loads it, then loads it a second time under another URL to check the registration guard.
+// workerData: { secureWeb: absolute dir, model: 'live' | 'r4a', defineVariant?: 'throw' | 'reject' }.
+import { parentPort, workerData } from 'node:worker_threads';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import { createHost } from './fakes.mjs';
+
+const logs = [];
+for (const level of ['log', 'info', 'warn', 'error']) {
+  console[level] = (...args) => logs.push({ level, text: args.map(arg => String(arg?.stack ?? arg)).join(' ').slice(0, 600) });
+}
+const unhandled = [];
+process.on('unhandledRejection', reason => { unhandled.push(String(reason?.stack ?? reason).slice(0, 600)); });
+const settle = async (rounds = 3) => { for (let i = 0; i < rounds; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
+
+const MARK = Symbol.for('loramanager.rev10.frontends');
+const summarize = state => {
+  if (!state) return null;
+  const registered = {};
+  for (const [name, value] of Object.entries(state.registered)) {
+    if (name === 'widgetTypes') registered[name] = { available: value.available, results: value.results };
+    else registered[name] = typeof value === 'function' ? 'function' : (value && typeof value.dispose === 'function' ? 'object:dispose' : typeof value);
+  }
+  return { registered, failed: state.failed };
+};
+
+const out = { model: workerData.model, defineVariant: workerData.defineVariant ?? 'throw' };
+try {
+  const host = createHost({ model: workerData.model, defineVariant: workerData.defineVariant ?? 'throw' });
+  globalThis.comfy = host.comfy;
+  const url = pathToFileURL(path.join(workerData.secureWeb, 'lm_frontends.js')).href;
+  const module = await import(url);
+  await settle();
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, MARK);
+  out.first = summarize(globalThis[MARK]);
+  out.markDescriptor = descriptor ? { configurable: descriptor.configurable, writable: descriptor.writable, enumerable: descriptor.enumerable } : null;
+  out.frontendOrder = module.FRONTENDS.map(([name]) => name);
+  out.extendCalls = host.record.extendCalls.map(types => types.slice());
+  out.defineCalls = host.record.defineCalls.slice();
+  out.widgetTypesRegistered = [...host.widgetTypes.keys()];
+  const before = { extend: host.record.extendCalls.length, define: host.record.defineCalls.length };
+  // A second load of the entry in the same worker (another module URL, same realm) must not register again.
+  await import(url + '?second-load');
+  await settle();
+  out.secondLoad = {
+    extendCallsAdded: host.record.extendCalls.length - before.extend,
+    defineCallsAdded: host.record.defineCalls.length - before.define,
+    sameState: summarize(globalThis[MARK]) !== null && JSON.stringify(summarize(globalThis[MARK])) === JSON.stringify(out.first),
+  };
+  out.deleteMark = (() => { try { return delete globalThis[MARK]; } catch (error) { return 'threw: ' + error.name; } })();
+  out.packerrors = host.record.packerrors.slice();
+} catch (error) {
+  out.workerError = String(error?.stack ?? error);
+}
+await settle();
+out.unhandled = unhandled;
+out.logs = logs;
+parentPort.postMessage(out);

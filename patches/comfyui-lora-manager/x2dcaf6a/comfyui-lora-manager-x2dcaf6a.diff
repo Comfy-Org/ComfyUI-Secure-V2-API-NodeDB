@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,389 @@
 +> **STATUS: IN PROGRESS — UNVERIFIED.** Published for evaluation on 2026-10-15 at the user's request.
 +> Nodes: 21 of 21 converted; 19 tested (scoped), 0 converted but untested/partly tested,
 +> 2 partial or missing. Not accepted: no whole-pack certificate. Open gates are listed below.
@@ -12,6 +12,10 @@
 +> service it still fails until the host ships native ComfyUI-GGUF and the gguf package. See "Revision 8".
 +> **Revision 9 (2026-10-21):** Lora Info's frontend and its 3 routes are ported; the node is partial. Every route
 +> function needs platform request #15, so on live the widget shows "No LoRA selected" or route errors. See "Revision 9".
++> **Revision 10 (2026-10-26):** one self-registering frontend entry, `secure_web/lm_frontends.js`. On the live service
++> it activates the Prompt and Lora Stack Combiner sockets, Save Image's widget toggling, the Debug Metadata panel and
++> Create Hook's `prev_hooks` socket; the LoRA rows and text widgets wait for the host's widget-type bridge (#11, r4a).
++> Frontend logic is unit-tested on host fakes only, so the counts are unchanged. See "Revision 10".
 +
 +# LoRA Manager — Secure V2 conversion (in progress)
 +
@@ -26,6 +30,49 @@
 +  pinned SDK (Core `6257422`, backend `745b88f`) on 2026-10-15: 21/21 equal to the expected rows.
 +- `v2/__init__.py` registers the 21 nodes through `comfy_api.latest`; `WEB_DIRECTORY` is `./secure_web`
 +  (the in-graph frontend). Unchanged upstream files are carried as `copy` entries.
++
++## Revision 10 (2026-10-26): self-registering frontends
++
++Revision 10 adds `secure_web/lm_frontends.js`, which registers the pack's frontends when the host loads it, as
++`lora_info.js` does, and changes only `secure_web/` and this report. Python, schemas, `secure-nodes.json` and every
++other file are unchanged, and no node's disposition changes.
++
++| Frontend | Live service (host-stack r3, guest c6b97a15) | Host-stack r4a (widget-type bridge #11; not deployed) |
++| --- | --- | --- |
++| Prompt: dynamic `trigger_wordsN` sockets | active | active; `text` becomes a text box |
++| Lora Stack Combiner: dynamic `lora_stackN` sockets | active | active |
++| Save Image: webp/jpeg widget toggling | active; the `%…%` filename expansion stays held (needs a `beforeSerialize` replacement value) | same |
++| Debug Metadata: execution metadata panel | active; not restored from a saved workflow (needs the mount value handle) | same |
++| Create Hook LoRA | adds the optional `prev_hooks` socket; its rows editor and text wait for r4a | rows editor and text, kept in sync |
++| Lora Loader, Lora Stacker | inert: their inputs stay sockets, as before | rows editor and text, kept in sync; the Stacker gains its optional `lora_stack` socket |
++| Text, WanVideo Lora Select | inert | text box and rows editor; saved-workflow restore only (WanVideo's edit-time sync stays held) |
++
++- **Widget types.** LORAS, AUTOCOMPLETE_TEXT_LORAS and AUTOCOMPLETE_TEXT_PROMPT register through
++  `comfy.defs.defineWidgetType`. On the live service the call is refused and nothing changes.
++- **Saved workflows.** The original saves a hidden `{"version":1,"textWidgetName":"text"}` value before each autocomplete
++  text, and core restores `widgets_values` by position, so on r4a an original save would land shifted by one. Each
++  affected node recognises its exact layout in `onConfigured` and restores the values by name:
++  - Lora Loader, Lora Stacker and Create Hook LoRA: `[meta, text, rows]`;
++  - Prompt and Text: `[meta, text]`;
++  - WanVideo Lora Select: `[low_mem_load, merge_loras, meta, text, rows]`.
++  Rows go through the same normalization as the original LORAS widget setter. Older saves and this revision's own saves
++  are left as they are. A WanVideo save from before `merge_loras` existed is placed by position, as on the live service
++  today, and is not repaired.
++- **Still held:** TriggerWord Toggle's frontend (a widget type cannot reproduce its prompt serializer exactly),
++  autocomplete and keyboard insertion, node markers, manager settings, the workflow registry and templates, and the
++  Lora Randomizer's and WanVideo Lora Select's own frontend behaviour.
++- **Evidence:** 64/64 unit tests over hermetic host fakes of the live guest and r4a, and 7 mutants, each caught by its
++  intended tests; a repeat run was byte-identical (`validation/20261026-lora-manager-rev10-frontends/`).
++  - The retained first attempt (62/64) failed one test on a stale expectation, which the recorded run corrects.
++  - This is frontend-logic evidence, not a browser run, a backend run or an original-versus-converted comparison.
++  - The status line keeps "frontend 0/17 browser-tested", the counts stay 19/21 scoped, and the existing native and
++    browser holds above and under Pending are unchanged.
++- **Recorded difference** (inherited; Lora Loader, Lora Stacker, WanVideo Lora Select). A saved row with no `expanded`
++  field and a CLIP strength different from its model strength restores with `expanded: true`, where the original
++  restores `expanded: false`. Both strengths restore equal. A later strength edit in the rows editor can then differ,
++  because only a collapsed row copies the strength to CLIP. The pack's own example rows all carry `expanded`.
++- **Deliberate difference:** row on/off state is shown with inline styles, because the host sanitizer removes
++  `aria-pressed`, `aria-checked` and `aria-expanded`.
 +
 +## Revision 9 (2026-10-21): Lora Info frontend and routes
 +
@@ -261,8 +308,8 @@
 +## What is in v2/
 +
 +- `secure_*.py`, `secure_services/`, `secure_algorithms/`, `native_metadata/`, `snapshot_metadata.py`: the converted nodes.
-+- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) registers itself when
-+  loaded; the other modules only export functions, and none registers on load. `secure_services/lora_info_routes.py`:
++- `secure_web/`: the in-graph frontend served from `WEB_DIRECTORY`. `lora_info.js` (revision 9) and
++  `lm_frontends.js` (revision 10) register themselves when loaded; the other modules only export functions. `secure_services/lora_info_routes.py`:
 +  the 3 declared Lora Info routes. `secure_routes/` and `held-registration/`: unregistered route work.
 +- Checkpoint and Unet model dropdowns are filled from core's `/models/checkpoints` and `/models/diffusion_models`;
 +  their queue validators check the selected name, because remote dropdowns carry no static options. GGUF names, which
@@ -21060,9 +21107,18 @@
 +}
 --- /dev/null
 +++ b/v2/secure_web/create_hook_lora.js
-@@ -0,0 +1,94 @@
-+// Opt-in source adapter; backend HookGroup creation and trigger routing held.
+@@ -0,0 +1,132 @@
++// Source adapter registered by lm_frontends.js (rev 10); backend HookGroup creation and trigger routing held.
++// Its text/loras widgets exist only once the #11 widget types register (r4a); until then widgets.get returns nothing and it
++// stays inert.
++// r3 (review LORA10-B1): a workflow load now runs the native loadedGraphNode merge from onConfigured, fed by an
++// original-format save ([meta, text, rows], which core places shifted by one) when there is one. The listeners ignore
++// values of the wrong shape, which only a shifted placement or corruption produces.
++// r4 (review of r3): every rows write passes through the shared LORAS setter's normalization, as the original's do.
 +import { debounce } from './stacker_syntax.js';
++import { normalizeRows } from './catalogue_selection.js';
++import { definitionOff } from './guest_compat.js';
++import { originalAutocompleteLayout } from './original_layout.js';
 +import { createHookRowsFromText, createHookTextFromRows, createHookActiveNames,
 +  restoreCreateHookRows, planCreateHookInput, sameCreateHookRows } from './create_hook_logic.js';
 +
@@ -21074,7 +21130,7 @@
 +export function registerCreateHookLora(comfy, { onActiveNames } = {}) {
 +  const states = new Map();
 +  let disposed = false;
-+  const unsubscribe = comfy.defs.extend(TYPE, builder => {
++  const unsubscribe = definitionOff(comfy.defs.extend(TYPE, builder => {
 +    builder.onCreated(node => {
 +      if (disposed || node.isDeleted) return;
 +      const key = keyOf(node);
@@ -21100,13 +21156,19 @@
 +          if (text.getValue() !== next) { ownText = next; text.setValue(next); }
 +        } finally { updating = false; }
 +      }); // Native 80ms debounce; not a queue-time serialization hook.
++      // r4: every native Hook row write goes through the shared LORAS widget setter (web/comfyui/loras_widget.js 812-834;
++      // its LORAS factory serves Create Hook too): the last duplicate is kept, clipStrength || strength, and expanded and
++      // locked get their defaults. normalizeRows is that setter, as the Loader and WanVideo use it, plus the owned row
++      // bounds, and it throws on rows outside them.
 +      const setRows = next => {
-+        if (sameCreateHookRows(rows.getValue(), next)) return;
-+        ownRows = next;
-+        rows.setValue(next);
++        const normalized = normalizeRows(next);
++        if (sameCreateHookRows(rows.getValue(), normalized)) return;
++        ownRows = normalized;
++        rows.setValue(normalized);
 +      };
 +      offs.push(rows.on('change', value => {
 +        if (!active()) return;
++        if (!Array.isArray(value)) return; // not rows: nothing to publish or write back
 +        if (ownRows && sameCreateHookRows(value, ownRows)) { ownRows = null; return; }
 +        if (updating) return;
 +        updating = true;
@@ -21115,13 +21177,15 @@
 +      }));
 +      offs.push(text.on('change', value => {
 +        if (!active()) return;
++        if (typeof value !== 'string') return; // not text: nothing to merge into the rows
 +        if (ownText !== null && value === ownText) { ownText = null; return; }
 +        if (updating) return;
 +        updating = true;
 +        try {
 +          setRows(createHookRowsFromText(value, rows.getValue() || []));
 +          publish(rows.getValue());
-+        } finally { updating = false; }
++        } catch (error) { console.error('[LoRA Manager] Create Hook text merge failed:', error); }
++        finally { updating = false; }
 +      }));
 +      const state = {
 +        restore(savedValue) {
@@ -21129,6 +21193,26 @@
 +          // Native loadedGraphNode merges values without invoking callbacks.
 +          updating = true;
 +          try { setRows(restoreCreateHookRows(text.getValue(), savedValue)); }
++          catch (error) { console.error('[LoRA Manager] Create Hook restore failed:', error); return false; }
++          finally { updating = false; }
++          return true;
++        },
++        configure(data) {
++          // The automatic load path: web/comfyui/create_hook_lora.js 117-135 reads the saved rows by name and assigns
++          // mergeLoras(text, savedRows) through the LORAS setter (setRows). An original-format save supplies both values
++          // (migration first). A value that is not a string text and a row array, or rows outside the owned bounds, is left as
++          // placed.
++          if (!active()) return false;
++          syncText.cancel();
++          const saved = originalAutocompleteLayout(data, true);
++          const savedText = saved ? saved.text : text.getValue();
++          const savedRows = (saved ? saved.rows : rows.getValue()) ?? [];
++          if (typeof savedText !== 'string' || !Array.isArray(savedRows)) return false;
++          updating = true;
++          try {
++            setRows(restoreCreateHookRows(savedText, savedRows));
++            if (saved && text.getValue() !== savedText) { ownText = savedText; text.setValue(savedText); }
++          } catch (error) { console.error('[LoRA Manager] Create Hook restore failed:', error); return false; }
 +          finally { updating = false; }
 +          return true;
 +        },
@@ -21144,8 +21228,9 @@
 +      // Caller restores the exact saved row cell. Automatic workflow slot
 +      // addressing and asynchronous delivery still require host/browser proof.
 +    });
++    builder.onConfigured((node, data) => states.get(keyOf(node))?.configure(data));
 +    builder.onRemoved(node => states.get(keyOf(node))?.dispose());
-+  });
++  }));
 +  return {
 +    restore(node, savedValue) { return states.get(keyOf(node))?.restore(savedValue) || false; },
 +    activeNames(node) { return states.get(keyOf(node))?.activeNames() ?? new Set(); },
@@ -21295,6 +21380,36 @@
 +      editor.removeEventListener('blur', blurred);
 +    }
 +  };
++}
+--- /dev/null
++++ b/v2/secure_web/guest_compat.js
+@@ -0,0 +1,27 @@
++// LoRA Manager rev 10: guest-shape tolerance shared by the self-registering frontends.
++//
++// definitionOff: the published comfy-api.d.ts types comfy.defs.extend as returning an Unsubscribe, but the live guest
++// (host-stack r3 guest.mjs c6b97a15, lines 578-604) returns a Promise of the host's acknowledgements, and nothing can be
++// unregistered there (forwarded to the r4a composer as R6-11). Calling that result threw TypeError in every dispose. Here a
++// function result is the real Unsubscribe; anything else yields a no-op, and each caller's own disposed/stopped flag keeps its
++// hooks inert after disposal, which is the observable behaviour of unregistering.
++//
++// canReplaceSerializedValue: on the live guest, widget beforeSerialize events reach the worker without setSerializedValue
++// (platform gap G1; the #11 bridge excludes replacement values too). Callers skip the replacement, so the widget's own value
++// is serialized, exactly as when no handler is registered.
++
++/** @param {unknown} result what comfy.defs.extend returned */
++export function definitionOff(result) {
++  if (typeof result === 'function') return result;
++  if (result && typeof (/** @type {any} */ (result)).then === 'function') {
++    (/** @type {Promise<unknown>} */ (result)).then(undefined, error => {
++      console.error('[LoRA Manager] a node definition hook was refused by the host:', error);
++    });
++  }
++  return () => {};
++}
++
++/** @param {any} event a beforeSerialize event */
++export function canReplaceSerializedValue(event) {
++  return !!event && typeof event.setSerializedValue === 'function';
 +}
 --- /dev/null
 +++ b/v2/secure_web/info_notes_editor.js
@@ -21806,6 +21921,70 @@
 +    disposed = true;
 +    try { offStacker(); } finally { offLoader(); installed.delete(comfy); }
 +  };
++}
+--- /dev/null
++++ b/v2/secure_web/lm_frontends.js
+@@ -0,0 +1,61 @@
++// LoRA Manager rev 10: the one self-registering frontend entry (MERVYN m_6934bd4d0f). Like lora_info.js it registers at
++// module load against the worker's comfy object; every other secure_web module only exports functions.
++//
++// (a) live on the current guest (c6b97a15):
++//     - Prompt: the dynamic trigger_wordsN sockets;
++//     - Lora Stack Combiner: the dynamic lora_stackN sockets;
++//     - Save Image: the webp/jpeg widget toggling (its %token% filename expansion waits for G1);
++//     - Debug Metadata: the panel showing execution metadata (restoring it from a saved workflow waits for R6-4).
++// (b) the LORAS / AUTOCOMPLETE_TEXT_LORAS / AUTOCOMPLETE_TEXT_PROMPT widget types (#11, host-stack r4a), inert on live:
++//     - Lora Loader and Lora Stacker: rows and text, with their text <-> rows sync;
++//     - Create Hook LoRA: its text/rows sync and, since r3, its workflow-load restore;
++//     - Prompt: its text;
++//     - Text and WanVideo Lora Select (r3): workflow-load restore only (saved_layout_restore.js); their edit-time
++//       behaviour stays held.
++//     Original-format saves carry a hidden metadata value ahead of each autocomplete text, which core places shifted by
++//     one; each of these nodes migrates it in onConfigured (original_layout.js).
++// Held, not registered: TriggerWord Toggle (R6-4 and G1; a widget type cannot reproduce its prompt serializer exactly),
++// autocomplete and the keyboard path (G3, G4, G5), node markers, manager settings, the workflow registry and templates.
++//
++// Each frontend registers on its own: one refusal is logged and does not stop the others. Registering twice in one worker
++// is prevented.
++import { registerLoraWidgetTypes } from './widget_types.js';
++import { registerPromptInputs } from './prompt_inputs.js';
++import { registerStackInputs } from './stack_inputs.js';
++import { registerSaveImageExtraOutput } from './save_image_extra_output.js';
++import { registerMetadataDisplay } from './metadata_display.js';
++import { registerTextRowSync } from './text_row_sync.js';
++import { registerCreateHookLora } from './create_hook_lora.js';
++import { registerSavedLayoutRestore } from './saved_layout_restore.js';
++
++const MARK = Symbol.for('loramanager.rev10.frontends');
++
++export const FRONTENDS = Object.freeze([
++  // Widget types first, so a bridged host has them before it builds nodes.
++  ['widgetTypes', registerLoraWidgetTypes],
++  ['promptInputs', registerPromptInputs],
++  ['stackInputs', registerStackInputs],
++  ['saveImage', registerSaveImageExtraOutput],
++  ['metadataDisplay', registerMetadataDisplay],
++  ['textRowSync', registerTextRowSync],
++  ['createHook', registerCreateHookLora],
++  ['savedLayouts', registerSavedLayoutRestore], // r3: appended, so the order of the others is unchanged
++]);
++
++/** @param {any} comfy */
++export function registerLoraManagerFrontends(comfy) {
++  const registered = {}, failed = {};
++  for (const [name, register] of FRONTENDS) {
++    try { registered[name] = register(comfy); }
++    catch (error) {
++      failed[name] = String(error?.message ?? error);
++      console.error(`[LoRA Manager] the ${name} frontend was not registered:`, error);
++    }
++  }
++  return { registered, failed };
++}
++
++const comfy = globalThis.comfy;
++if (comfy && !globalThis[MARK]) {
++  Object.defineProperty(globalThis, MARK, { value: registerLoraManagerFrontends(comfy), configurable: false });
 +}
 --- /dev/null
 +++ b/v2/secure_web/loader_text_editor.js
@@ -22865,10 +23044,15 @@
 +}
 --- /dev/null
 +++ b/v2/secure_web/metadata_display.js
-@@ -0,0 +1,94 @@
-+// Debug Metadata display on published handles; collector/browser gates remain.
+@@ -0,0 +1,102 @@
++// Debug Metadata display on published handles; registered by lm_frontends.js (rev 10).
++// On the live guest, widgets.mount calls render(container) without a value cell (R6-4): the panel then shows execution
++// metadata only, and restoring the last panel from a saved workflow waits for R6-4. The native null serializer needs a
++// beforeSerialize replacement value (G1) and is skipped where the event has no setter; 'metadata' is a display widget that
++// the node does not declare as an input.
 +import { METADATA_COLORS, displayTokens, executionMetadata,
 +  metadataSerializeValue, restoreMetadataValue } from './metadata_display_logic.js';
++import { canReplaceSerializedValue, definitionOff } from './guest_compat.js';
 +export { displayTokens, executionMetadata } from './metadata_display_logic.js';
 +
 +const TYPE = 'Debug Metadata (LoraManager)';
@@ -22877,7 +23061,7 @@
 +export function registerMetadataDisplay(comfy) {
 +  const instances = new Map();
 +  let stopped = false;
-+  const off = comfy.defs.extend(TYPE, builder => {
++  const off = definitionOff(comfy.defs.extend(TYPE, builder => {
 +    builder.onCreated(node => {
 +      if (stopped || node.isDeleted) return;
 +      const key = keyOf(node);
@@ -22934,13 +23118,16 @@
 +          const panel = container.ownerDocument.createElement('div');
 +          panel.style.cssText = 'padding:8px;background:rgba(40,44,52,0.6);border-radius:6px;height:100%;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box';
 +          container.replaceChildren(panel); root = panel;
-+          offChange(); offChange = cell.onChange(restore);
-+          metadata = restoreMetadataValue(cell.get(), metadata); render();
++          if (cell) {
++            offChange(); offChange = cell.onChange(restore);
++            metadata = restoreMetadataValue(cell.get(), metadata);
++          }
++          render();
 +        },
 +        destroy: dispose
 +      });
 +      offSerialize = widget.on('beforeSerialize', event => {
-+        if (alive && !node.isDeleted) event.setSerializedValue(metadataSerializeValue());
++        if (alive && !node.isDeleted && canReplaceSerializedValue(event)) event.setSerializedValue(metadataSerializeValue());
 +      });
 +      instances.set(key, { dispose, execute(output) {
 +        if (!alive || node.isDeleted) return;
@@ -22953,7 +23140,7 @@
 +    });
 +    builder.onExecuted((node, result) => instances.get(keyOf(node))?.execute(result.raw));
 +    builder.onRemoved(node => instances.get(keyOf(node))?.dispose());
-+  });
++  }));
 +  return () => {
 +    if (stopped) return;
 +    stopped = true; off();
@@ -23070,6 +23257,56 @@
 +    disposed = true;
 +    unsubscribe();
 +  };
++}
+--- /dev/null
++++ b/v2/secure_web/original_layout.js
+@@ -0,0 +1,47 @@
++// LoRA Manager rev 10: recognising the original pack's saved widget layout, so onConfigured can migrate it.
++//
++// The current original saves every node with an AUTOCOMPLETE_TEXT_* input with a hidden __lm_autocomplete_meta_text widget
++// value ahead of the text: createAutocompleteTextWidgetFactory adds it immediately before each text widget
++// (web/comfyui/vue-widgets/lora-manager-widgets.js 16723-16758, 16852-16860, pinned x2dcaf6a): {"version":1,"textWidgetName":"text"}.
++// - Loader, Stacker and Create Hook LoRA: [meta, text, rows].
++// - Prompt and Text: [meta, text].
++// - WanVideo Lora Select: [low_mem_load, merge_loras, meta, text, rows] (originalWanLayout).
++// Deployed core restores widgets_values by position (LiteGraph.namedValuesRestore is off, and these saves carry no
++// names), so on rev 10's widgets ([text, loras] and [text]) they land shifted. onConfigured(node, data) receives the saved
++// node object, widgets_values included (host-stack r4a test W1). Older saves ([text, rows] / [text]) and rev 10's own saves
++// align already and are not matched.
++
++const isPlainObject = value =>
++  !!value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
++
++/**
++ * The saved text (and rows) when `data.widgets_values` is exactly the original's metadata-first layout, else null.
++ * @param {unknown} data the onConfigured data (the saved node object)
++ * @param {boolean} withRows Loader/Stacker (true: [meta, text, rows]) or Prompt (false: [meta, text])
++ * @returns {{text: string, rows?: unknown[]} | null}
++ */
++export function originalAutocompleteLayout(data, withRows) {
++  const values = isPlainObject(data) ? data.widgets_values : undefined;
++  if (!Array.isArray(values) || values.length !== (withRows ? 3 : 2)) return null;
++  const meta = values[0];
++  if (!isPlainObject(meta) || Object.keys(meta).length !== 2 || meta.version !== 1 || typeof meta.textWidgetName !== 'string')
++    return null;
++  if (typeof values[1] !== 'string') return null;
++  if (!withRows) return { text: values[1] };
++  if (!Array.isArray(values[2])) return null;
++  return { text: values[1], rows: values[2] };
++}
++
++/**
++ * WanVideo Lora Select (r3, review LORA10-B1): the original saves [low_mem_load, merge_loras, meta, text, rows], i.e. its
++ * two BOOLEAN widgets ahead of the same metadata-first text/rows layout. Core places the BOOLEANs correctly; only the rest is
++ * shifted. Returns the saved text and rows when the layout matches exactly, else null.
++ * @param {unknown} data the onConfigured data (the saved node object)
++ * @returns {{text: string, rows: unknown[]} | null}
++ */
++export function originalWanLayout(data) {
++  const values = isPlainObject(data) ? data.widgets_values : undefined;
++  if (!Array.isArray(values) || values.length !== 5) return null;
++  if (typeof values[0] !== 'boolean' || typeof values[1] !== 'boolean') return null;
++  return /** @type {{text: string, rows: unknown[]} | null} */ (originalAutocompleteLayout({ widgets_values: values.slice(2) }, true));
 +}
 --- /dev/null
 +++ b/v2/secure_web/pool_api.js
@@ -23715,9 +23952,14 @@
 +}
 --- /dev/null
 +++ b/v2/secure_web/prompt_inputs.js
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,62 @@
 +// Pinned Prompt dynamic sockets over the published typed node API.
-+// Source candidate: browser activation and serialization proof remain pending.
++// Registered by lm_frontends.js (rev 10); browser activation proof is the rev 10 BART smoke.
++// Also migrates an original-format save ([meta, text], placed shifted by core) onto the text widget by name; on live the
++// text input is a socket, so there is no widget and nothing happens.
++import { definitionOff } from './guest_compat.js';
++import { originalAutocompleteLayout } from './original_layout.js';
++
 +const TYPE = 'Prompt (LoraManager)';
 +const PREFIX = 'trigger_words';
 +
@@ -23740,7 +23982,13 @@
 +/** @param {import('../comfy-api').Comfy} comfy */
 +export function registerPromptInputs(comfy) {
 +  let disposed = false;
-+  const unsubscribe = comfy.defs.extend(TYPE, builder => {
++  const unsubscribe = definitionOff(comfy.defs.extend(TYPE, builder => {
++    builder.onConfigured((node, data) => {
++      if (disposed || node.isDeleted) return;
++      const saved = originalAutocompleteLayout(data, false);
++      const text = saved && node.widgets.get('text');
++      if (text && text.getValue() !== saved.text) text.setValue(saved.text);
++    });
 +    builder.onConnectionsChanged((node, event) => {
 +      if (disposed || node.isDeleted || event.reconstructing || event.side !== 'input') return;
 +      if (event.peerNodeId === undefined) return;
@@ -23760,8 +24008,7 @@
 +        renumber(node.inputs.all());
 +      }
 +    });
-+  });
-+  if (typeof unsubscribe !== 'function') throw new Error('Definition unsubscribe contract is unavailable');
++  }));
 +  return () => {
 +    if (disposed) return;
 +    disposed = true;
@@ -23949,8 +24196,12 @@
 +}
 --- /dev/null
 +++ b/v2/secure_web/save_image_extra_output.js
-@@ -0,0 +1,146 @@
-+// Save Image frontend source; browser/serialization/backend closure is pending.
+@@ -0,0 +1,150 @@
++// Save Image frontend source; registered by lm_frontends.js (rev 10). The webp/jpeg widget toggling runs on the live guest.
++// The %node.widget% / %date:...% filename expansion needs a beforeSerialize replacement value (platform gap G1): where the
++// event carries no setSerializedValue the handler returns at once, so the widget's own value is sent, as with no frontend.
++import { canReplaceSerializedValue, definitionOff } from './guest_compat.js';
++
 +const TYPE = 'Save Image (LoraManager)';
 +const keyOf = node => JSON.stringify([node.graphId, node.id]);
 +
@@ -24026,7 +24277,7 @@
 +export function registerSaveImageExtraOutput(comfy) {
 +  const instances = new Map();
 +  let stopped = false;
-+  const offDefinition = comfy.defs.extend(TYPE, builder => {
++  const offDefinition = definitionOff(comfy.defs.extend(TYPE, builder => {
 +    builder.onCreated(node => {
 +      if (stopped || node.isDeleted) return;
 +      const key = keyOf(node);
@@ -24059,7 +24310,7 @@
 +      };
 +      try {
 +        subscriptions.push(filename.on('beforeSerialize', event => {
-+          if (!valid()) return;
++          if (!valid() || !canReplaceSerializedValue(event)) return;
 +          // Native serializeValue reads the widget's live value directly.
 +          const value = filename.getValue();
 +          if (!value || typeof value !== 'string' || !value.includes('%')) {
@@ -24088,7 +24339,7 @@
 +      for (const instance of [...instances.values()])
 +        if (instance.node.isDeleted) instance.dispose();
 +    });
-+  });
++  }));
 +  return () => {
 +    if (stopped) return;
 +    stopped = true;
@@ -24097,11 +24348,70 @@
 +  };
 +}
 --- /dev/null
++++ b/v2/secure_web/saved_layout_restore.js
+@@ -0,0 +1,53 @@
++// LoRA Manager rev 10 r3 (review LORA10-B1): workflow-load restore for the two other nodes the shared widget types
++// activate on r4a, Text (LoraManager) and WanVideo Lora Select (LoraManager). Registered by lm_frontends.js. Load only:
++// their edit-time behaviour (Wan's text <-> rows sync, autocomplete) stays held.
++// - Text: an original-format save [meta, text] is re-placed by name (as Prompt in prompt_inputs.js). The original Text
++//   node has no loadedGraphNode, so nothing else happens on load.
++// - WanVideo Lora Select: the native loadedGraphNode merge (web/comfyui/wanvideo_lora_select.js 117-132): the saved rows,
++//   read by name, become mergeLoras(text, savedRows). An original-format save [low_mem_load, merge_loras, meta, text, rows]
++//   feeds that merge with its saved text and rows; core already placed the two BOOLEANs correctly, so they are not touched.
++// On live c6b97a15 the text/loras inputs are sockets, so there are no widgets and nothing happens. Values that are not a
++// string text and a row array are left as placed (the text widget refuses them visibly).
++import { normalizeRows } from './catalogue_selection.js';
++import { mergeLoras } from './stacker_merge.js';
++import { definitionOff } from './guest_compat.js';
++import { originalAutocompleteLayout, originalWanLayout } from './original_layout.js';
++
++const TEXT = 'Text (LoraManager)';
++const WAN = 'WanVideo Lora Select (LoraManager)';
++
++function restoreText(node, data) {
++  const saved = originalAutocompleteLayout(data, false);
++  const text = saved && node.widgets.get('text');
++  if (text && text.getValue() !== saved.text) text.setValue(saved.text);
++}
++
++function restoreWan(node, data) {
++  const text = node.widgets.get('text'), rows = node.widgets.get('loras');
++  if (!text || !rows) return;
++  const saved = originalWanLayout(data);
++  const savedText = saved ? saved.text : text.getValue();
++  const savedRows = (saved ? saved.rows : rows.getValue()) ?? [];
++  if (typeof savedText !== 'string' || !Array.isArray(savedRows)) return;
++  // The LORAS widget's native setter normalizes, as for the Loader; each widget is written at most once, rows first.
++  const merged = normalizeRows(mergeLoras(savedText, normalizeRows(savedRows)));
++  if (saved || JSON.stringify(merged) !== JSON.stringify(normalizeRows(savedRows))) rows.setValue(merged);
++  if (saved && text.getValue() !== savedText) text.setValue(savedText);
++}
++
++/** @param {any} comfy */
++export function registerSavedLayoutRestore(comfy) {
++  let disposed = false;
++  const guard = restore => (node, data) => {
++    if (disposed || node.isDeleted) return;
++    try { restore(node, data); }
++    catch (error) { console.error('[LoRA Manager] saved-layout restore failed:', error); }
++  };
++  const offText = definitionOff(comfy.defs.extend(TEXT, builder => { builder.onConfigured(guard(restoreText)); }));
++  const offWan = definitionOff(comfy.defs.extend(WAN, builder => { builder.onConfigured(guard(restoreWan)); }));
++  return () => {
++    if (disposed) return;
++    disposed = true;
++    offText(); offWan();
++  };
++}
+--- /dev/null
 +++ b/v2/secure_web/stack_inputs.js
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,66 @@
 +// Typed consumer of the published host-captured reconstruction context.
 +// Dynamic tooltips have no public SlotOptions field yet; this is not a full
 +// frontend certificate. Never inspect host globals, stack traces or graph paths.
++// Registered by lm_frontends.js (rev 10).
++import { definitionOff } from './guest_compat.js';
++
 +const TYPE = 'Lora Stack Combiner (LoraManager)';
 +const PATTERN = /^lora_stack\d+$/;
 +
@@ -24124,7 +24434,7 @@
 +/** @param {import('../comfy-api').Comfy} comfy */
 +export function registerStackInputs(comfy) {
 +  let disposed = false;
-+  const unsubscribe = comfy.defs.extend(TYPE, builder => {
++  const unsubscribe = definitionOff(comfy.defs.extend(TYPE, builder => {
 +    builder.onCreated(node => {
 +      if (disposed || node.isDeleted) return;
 +      const inputs = slots(node);
@@ -24155,8 +24465,7 @@
 +        }
 +      }
 +    });
-+  });
-+  if (typeof unsubscribe !== 'function') throw new Error('Definition unsubscribe contract is unavailable');
++  }));
 +  return () => {
 +    if (disposed) return;
 +    disposed = true;
@@ -24646,6 +24955,131 @@
 +  };
 +
 +  return { loadWorkflowOptions, getWorkflowOptions, loadTemplateWorkflow, workflowForNewTab };
++}
+--- /dev/null
++++ b/v2/secure_web/text_row_sync.js
+@@ -0,0 +1,122 @@
++// LoRA Manager rev 10: Lora Loader and Lora Stacker text <-> rows sync over the widgets the #11 types create, using widget
++// handles only (getValue, setValue, on('change')). The semantics are the retained editors' (loader_text_editor.js and
++// stacker_editor.js), which are the literal pinned native behaviour:
++// - a text edit merges into the rows with mergeLoras: existing matching rows keep their authored strengths and order;
++// - a row edit rewrites the text with applyLoraValuesToText after the native 80 ms debounce;
++// - a workflow load (onConfigured) re-merges the restored text into the restored rows without rewriting the text, as the
++//   native loadedGraphNode does. An original-format save ([meta, text, rows], which core places shifted by one) is first
++//   re-placed by name from the saved array, inside that same re-merge: each widget is written once, and the rows keep their
++//   saved flags rather than being rebuilt from the text.
++// With the widgets present it also adds the optional sockets the native nodes add at creation (Loader: clip, lora_stack;
++// Stacker: lora_stack), after the retained editors' check that a reconstructed socket of that name is unique and of the
++// right type. Without both widgets (the live guest before r4a, where these inputs are sockets) nothing is changed or wired.
++import { normalizeRows } from './catalogue_selection.js';
++import { mergeLoras } from './stacker_merge.js';
++import { applyLoraValuesToText, debounce } from './stacker_syntax.js';
++import { definitionOff } from './guest_compat.js';
++import { originalAutocompleteLayout } from './original_layout.js';
++
++export const TEXT_ROW_TYPES = Object.freeze(['Lora Loader (LoraManager)', 'Lora Stacker (LoraManager)']);
++// web/comfyui/lora_loader.js 176-187 and lora_stacker.js 17-24 (pinned x2dcaf6a): addInput(..., { shape: 7 }).
++const NATIVE_SOCKETS = Object.freeze({
++  'Lora Loader (LoraManager)': Object.freeze([['clip', 'CLIP'], ['lora_stack', 'LORA_STACK']]),
++  'Lora Stacker (LoraManager)': Object.freeze([['lora_stack', 'LORA_STACK']]),
++});
++const keyOf = node => JSON.stringify([node.graphId, node.id]);
++
++/** @param {any} comfy */
++export function registerTextRowSync(comfy) {
++  const states = new Map();
++  let disposed = false;
++  const off = definitionOff(comfy.defs.extend([...TEXT_ROW_TYPES], builder => {
++    builder.onCreated(node => attach(node));
++    builder.onConfigured((node, data) => states.get(keyOf(node))?.restore(data));
++    builder.onRemoved(node => {
++      const state = states.get(keyOf(node));
++      if (state && (state.node === node || state.node.isDeleted)) state.dispose();
++    });
++  }));
++
++  function attach(node) {
++    if (disposed || node.isDeleted) return;
++    const key = keyOf(node);
++    states.get(key)?.dispose();
++    const text = node.widgets.get('text'), rows = node.widgets.get('loras');
++    if (!text || !rows) return; // sockets, not widgets: nothing to keep in sync
++    // Check every reconstructed socket before the first change; never drop links or replace a mismatching socket.
++    const sockets = NATIVE_SOCKETS[node.comfyClass] ?? [];
++    const slots = node.inputs.all();
++    for (const [name, type] of sockets) {
++      const matching = slots.filter(slot => slot.name === name);
++      if (matching.length > 1 || (matching.length === 1 && matching[0].type !== type))
++        throw new Error(`Existing ${name} socket is ambiguous/incompatible`);
++    }
++    node.setSerializeWidgets(true);
++    for (const [name, type] of sockets) if (!node.inputs.byName(name)) node.inputs.add(name, type, { shape: 'optional' });
++    let alive = true, restoring = false;
++    let observedRows = JSON.stringify(normalizeRows(rows.getValue()));
++    const active = () => alive && !disposed && !node.isDeleted;
++    const currentText = () => { const value = text.getValue(); return typeof value === 'string' ? value : ''; };
++    // `saved`: a migrated original-format save. Its text and rows replace the shifted values in this one merge.
++    const mergeText = (saved = null) => {
++      const current = normalizeRows(saved ? saved.rows : rows.getValue());
++      const nextText = saved ? saved.text : currentText();
++      const merged = normalizeRows(mergeLoras(nextText, current));
++      const signature = JSON.stringify(merged);
++      // Our own merge's change echo must not re-enter the row path and rewrite the text. Recorded before the write, so the
++      // guard holds whether the host delivers the echo synchronously or later (the retained editor records it after the
++      // write, which assumes asynchronous delivery).
++      observedRows = signature;
++      if (saved || signature !== JSON.stringify(current)) rows.setValue(merged);
++      if (saved && text.getValue() !== nextText) text.setValue(nextText);
++    };
++    const rowsToText = debounce(value => {
++      if (!active() || restoring) return;
++      const next = applyLoraValuesToText(currentText(), value);
++      if (next !== currentText()) text.setValue(next);
++    });
++    const offs = [
++      text.on('change', () => {
++        if (!active()) return;
++        rowsToText.cancel();
++        try { mergeText(); } catch (error) { console.error('[LoRA Manager] LoRA text merge failed:', error); }
++      }),
++      rows.on('change', value => {
++        if (!active()) return;
++        let normalized;
++        try { normalized = normalizeRows(value); } catch (error) { console.error('[LoRA Manager] LoRA rows rejected:', error); return; }
++        const signature = JSON.stringify(normalized);
++        if (signature === observedRows) return;
++        observedRows = signature;
++        if (!restoring) rowsToText(normalized);
++      }),
++    ];
++    const state = {
++      node,
++      restore(data) {
++        if (!active()) return;
++        rowsToText.cancel(); restoring = true;
++        try {
++          // The migration runs first, feeding the re-merge; older and rev 10 saves are not matched.
++          const saved = originalAutocompleteLayout(data, true);
++          mergeText(saved);
++        } catch (error) { console.error('[LoRA Manager] LoRA restore merge failed:', error); }
++        finally { restoring = false; }
++      },
++      dispose() {
++        if (!alive) return;
++        alive = false; rowsToText.cancel();
++        offs.splice(0).forEach(fn => fn());
++        if (states.get(key) === state) states.delete(key);
++      },
++    };
++    states.set(key, state);
++  }
++
++  return () => {
++    if (disposed) return;
++    disposed = true;
++    off();
++    [...states.values()].forEach(state => state.dispose());
++  };
 +}
 --- /dev/null
 +++ b/v2/secure_web/trigger_logic.js
@@ -25202,6 +25636,229 @@
 +    update(node, message) { return !removed && !node.isDeleted && instances.get(keyOf(node))?.update(message) || false; },
 +    highlight(node, words) { return !removed && !node.isDeleted && instances.get(keyOf(node))?.highlight(words) || false; },
 +    dispose() { if (removed) return; removed = true; offDelivery(); offDefinition(); [...instances.values()].forEach(state => state.dispose()); },
++  };
++}
+--- /dev/null
++++ b/v2/secure_web/widget_types.js
+@@ -0,0 +1,220 @@
++// LoRA Manager rev 10: the pack's own input widget types, registered through comfy.defs.defineWidgetType (platform request
++// #11, host-stack r4a). LORAS, AUTOCOMPLETE_TEXT_LORAS and AUTOCOMPLETE_TEXT_PROMPT are input types this pack's nodes declare
++// in secure-nodes.json. While no type is registered the host renders those inputs as sockets and drops their values from
++// widgets_values (comfy-api.d.ts, DefRegistry.defineWidgetType).
++//
++// The live guest (c6b97a15) does not bridge defineWidgetType: the call falls through to the generic rpc, which cannot clone
++// the render function. Only a synchronous Unsubscribe counts as registered, so nothing changes on live and the widgets appear
++// once r4a lands.
++//
++// Held (platform list): autocomplete, caret insertion and the keyboard producer need G3 (a textarea element handle), G4 (the
++// settings call through the declared backend API on the pack's own route) and G5 (ui.editable-keyboard). The two text types
++// are plain multiline editors holding the same string value. The live sanitizer strips aria-pressed, aria-checked,
++// aria-expanded and role (G7), so row state is also shown with inline styles.
++import { createCatalogueSelection } from './catalogue_selection.js';
++import { commitStrengthText } from './row_editor.js';
++
++export const LORA_WIDGET_TYPES = Object.freeze(['LORAS', 'AUTOCOMPLETE_TEXT_LORAS', 'AUTOCOMPLETE_TEXT_PROMPT']);
++const encoder = new TextEncoder();
++// The owned text profile of the retained Loader/Stacker editors: refuse visibly, never truncate.
++const MAX_TEXT_BYTES = 262144;
++const MAX_CHOICES = 128;
++
++/** @param {unknown} value */
++function textOf(value) {
++  if (value === null || value === undefined) return '';
++  if (typeof value !== 'string' || encoder.encode(value).length > MAX_TEXT_BYTES)
++    throw new Error('LoRA text requires a string within the 262144-byte owned profile');
++  return value;
++}
++
++/** @param {any} context */
++function optionsOf(context) {
++  try { const options = context?.getOptions?.(); return options && typeof options === 'object' ? options : {}; }
++  catch { return {}; }
++}
++
++/** Plain multiline editor bound to the value cell (both AUTOCOMPLETE_TEXT_* types). */
++export function renderText(container, value, name, context) {
++  const doc = container.ownerDocument;
++  const options = optionsOf(context);
++  const textarea = doc.createElement('textarea');
++  textarea.setAttribute('aria-label', String(name));
++  if (typeof options.placeholder === 'string') textarea.setAttribute('placeholder', options.placeholder);
++  textarea.style.cssText = 'width:100%;min-height:56px;box-sizing:border-box;resize:vertical;font-family:inherit';
++  const status = doc.createElement('p');
++  status.style.cssText = 'margin:2px 0 0;font-size:11px;color:#e57373';
++  container.replaceChildren(textarea, status);
++  const show = () => {
++    let text;
++    try { text = textOf(value.get()); status.textContent = ''; }
++    catch (error) { status.textContent = String(error?.message ?? error); return; }
++    if (textarea.value !== text) textarea.value = text;
++    // The opaque textarea renderer needs literal content as well as the value property.
++    if (textarea.textContent !== text) textarea.textContent = text;
++  };
++  const onInput = () => {
++    try {
++      const next = textOf(textarea.value);
++      if (next !== value.get()) value.set(next);
++      status.textContent = '';
++    } catch (error) { status.textContent = String(error?.message ?? error); }
++  };
++  textarea.addEventListener('input', onInput);
++  const offChange = value.onChange(show);
++  show();
++  return () => {
++    offChange();
++    textarea.removeEventListener('input', onInput);
++    container.replaceChildren();
++  };
++}
++
++/** LORAS rows editor over the retained catalogue controller (same row math as row_editor.js). */
++export function renderLoras(comfy, container, value, name) {
++  const doc = container.ownerDocument;
++  const prefix = String(name);
++  let alive = true, query = '', loading = false, error = null, generation = 0;
++  const listeners = [];
++  const release = () => listeners.splice(0).forEach(off => off());
++  const controller = createCatalogueSelection(comfy, { read: () => value.get(), write: next => value.set(next) });
++  const perform = action => {
++    if (!alive) return;
++    try { error = null; action(); } catch (failure) { error = String(failure?.message ?? failure); }
++    render();
++  };
++  const indexOf = rowName => {
++    const index = controller.snapshot().findIndex(row => row.name === rowName);
++    if (index < 0) throw new Error('LoRA row no longer exists');
++    return index;
++  };
++  async function refresh() {
++    if (!alive) return false;
++    const ticket = ++generation;
++    loading = true; error = null; render();
++    try { return await controller.refresh(); }
++    catch (failure) { if (alive && ticket === generation) error = String(failure?.message ?? failure); return false; }
++    finally { if (alive && ticket === generation) { loading = false; render(); } }
++  }
++  function render() {
++    if (!alive) return;
++    release(); container.replaceChildren();
++    const listen = (element, type, callback) => {
++      element.addEventListener(type, callback);
++      listeners.push(() => element.removeEventListener(type, callback));
++    };
++    const text = (parent, tag, content) => {
++      const element = doc.createElement(tag); element.textContent = content; parent.append(element); return element;
++    };
++    const button = (parent, label, ariaLabel, action) => {
++      const element = text(parent, 'button', label); element.type = 'button';
++      element.setAttribute('aria-label', ariaLabel);
++      listen(element, 'click', () => perform(action));
++      return element;
++    };
++    text(container, 'strong', 'LoRAs');
++    let rows;
++    try { rows = controller.snapshot(); }
++    catch (failure) { text(container, 'p', String(failure?.message ?? failure)); return; }
++    const search = doc.createElement('input'); search.type = 'search';
++    search.setAttribute('aria-label', prefix + '.search'); search.setAttribute('value', query);
++    container.append(search);
++    const choices = doc.createElement('div'); container.append(choices);
++    const choiceOffs = [];
++    listeners.push(() => choiceOffs.splice(0).forEach(off => off()));
++    const searchChoices = () => {
++      choiceOffs.splice(0).forEach(off => off()); choices.replaceChildren();
++      try {
++        for (const choice of controller.search(query).slice(0, MAX_CHOICES)) {
++          const element = text(choices, 'button', choice); element.type = 'button';
++          element.setAttribute('aria-label', prefix + '.add.' + choice);
++          const clicked = () => perform(() => controller.add(choice));
++          element.addEventListener('click', clicked);
++          choiceOffs.push(() => element.removeEventListener('click', clicked));
++        }
++      } catch (failure) { error = String(failure?.message ?? failure); }
++    };
++    listen(search, 'input', () => { query = search.value ?? ''; searchChoices(); });
++    button(container, loading ? 'Refreshing…' : 'Refresh catalogue', prefix + '.refresh', () => { void refresh(); }).disabled = loading;
++    for (const row of rows) {
++      const line = doc.createElement('div'); container.append(line);
++      line.style.cssText = 'display:flex;gap:4px;align-items:center;flex-wrap:wrap' + (row.active ? '' : ';opacity:0.55');
++      const choose = button(line, row.name, prefix + '.select.' + row.name, () => controller.select(row.name));
++      if (row.selected) choose.style.cssText = 'font-weight:bold;outline:1px solid currentColor';
++      button(line, row.active ? 'Active' : 'Inactive', prefix + '.active.' + row.name,
++        () => controller.update(indexOf(row.name), { active: !controller.snapshot()[indexOf(row.name)].active }));
++      const strength = (field, label) => {
++        const input = doc.createElement('input'); input.type = 'text';
++        input.setAttribute('aria-label', label + '.' + row.name);
++        input.setAttribute('value', Number(row[field]).toFixed(2));
++        input.style.cssText = 'width:4.5em';
++        line.append(input);
++        listen(input, 'change', () => perform(() =>
++          controller.update(indexOf(row.name), { [field]: commitStrengthText(input.value) })));
++      };
++      strength('strength', prefix + '.strength');
++      button(line, row.expanded ? 'Collapse CLIP' : 'Expand CLIP', prefix + '.expand.' + row.name,
++        () => controller.update(indexOf(row.name), { expanded: !controller.snapshot()[indexOf(row.name)].expanded }));
++      if (row.expanded) strength('clipStrength', prefix + '.clipStrength');
++      const move = direction => {
++        const from = indexOf(row.name), to = from + direction;
++        if (to >= 0 && to < controller.snapshot().length) controller.move(from, to);
++      };
++      button(line, 'Move up', prefix + '.up.' + row.name, () => move(-1)).disabled = rows[0].name === row.name;
++      button(line, 'Move down', prefix + '.down.' + row.name, () => move(1)).disabled = rows[rows.length - 1].name === row.name;
++      button(line, 'Remove', prefix + '.remove.' + row.name, () => controller.remove(indexOf(row.name)));
++    }
++    text(container, 'p', error ?? '').style.cssText = 'margin:2px 0 0;font-size:11px;color:#e57373';
++    searchChoices();
++  }
++  const offController = controller.onChange(render);
++  const offValue = value.onChange(() => {
++    // A workflow load replaces the rows: validate, never substitute defaults on corruption.
++    try { controller.snapshot(); error = null; } catch (failure) { error = String(failure?.message ?? failure); }
++    render();
++  });
++  render();
++  void refresh();
++  return () => {
++    if (!alive) return;
++    alive = false; ++generation;
++    release(); offController(); offValue(); controller.dispose(); container.replaceChildren();
++  };
++}
++
++/**
++ * @returns {{type: string, registered: boolean, reason?: string, off?: () => void}}
++ */
++function registerType(comfy, type, def) {
++  let result;
++  try { result = comfy.defs.defineWidgetType(type, def); }
++  catch (error) { return { type, registered: false, reason: String(error?.name ?? 'Error') + ': ' + String(error?.message ?? error).slice(0, 160) }; }
++  if (typeof result === 'function') return { type, registered: true, off: result };
++  // A Promise is the generic rpc, not the bridge: let it settle without an unhandled rejection.
++  if (result && typeof result.then === 'function') result.then(undefined, () => {});
++  return { type, registered: false, reason: 'no widget-type bridge' };
++}
++
++/** @param {any} comfy */
++export function registerLoraWidgetTypes(comfy) {
++  const defs = {
++    LORAS: { defaultValue: [], minHeight: 160, serialize: true,
++             render: (container, value, name) => renderLoras(comfy, container, value, name) },
++    AUTOCOMPLETE_TEXT_LORAS: { defaultValue: '', minHeight: 56, serialize: true, render: renderText },
++    AUTOCOMPLETE_TEXT_PROMPT: { defaultValue: '', minHeight: 56, serialize: true, render: renderText },
++  };
++  const results = LORA_WIDGET_TYPES.map(type => registerType(comfy, type, defs[type]));
++  let disposed = false;
++  return {
++    available: results.some(result => result.registered),
++    results: results.map(({ type, registered, reason }) => (reason ? { type, registered, reason } : { type, registered })),
++    dispose() {
++      if (disposed) return;
++      disposed = true;
++      for (const result of results) {
++        if (!result.off) continue;
++        try { result.off(); } catch (error) { console.error('[LoRA Manager] widget type unsubscribe failed:', error); }
++      }
++    },
 +  };
 +}
 --- /dev/null
