@@ -1,0 +1,521 @@
+import time
+
+OWNER_STARTED = time.monotonic()
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import resource
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+
+
+HERE = Path(__file__).resolve().parent
+OWNER = {'phase': 'preflight', 'deadline_fired': False, 'output': None, 'receipt': None}
+
+
+class OwnerDeadline(BaseException):
+    pass
+
+
+def hard_deadline(signum, frame):
+    os._exit(124)
+
+
+def soft_deadline(signum, frame):
+    OWNER['deadline_fired'] = True
+    signal.signal(signal.SIGALRM, hard_deadline)
+    signal.setitimer(signal.ITIMER_REAL, max(.001, OWNER['deadline'] - time.monotonic()))
+    if OWNER['output'] is not None:
+        try:
+            body = json.dumps({'status': 'WHOLE_OWNER_SOFT_DEADLINE_REACHED', 'phase': OWNER['phase'],
+                               'wall_seconds': time.monotonic() - OWNER_STARTED,
+                               'cleanup_reserved_seconds': OWNER['cleanup_seconds']}) + '\n'
+            with (OWNER['output'] / 'OWNER-DEADLINE.json').open('x') as stream:
+                stream.write(body)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except OSError:
+            pass
+    if OWNER['phase'] not in {'payload', 'cleanup'}:
+        raise OwnerDeadline('Whole owner deadline reserves the final cleanup interval')
+
+
+def arm_deadline(limits):
+    OWNER.update(deadline=OWNER_STARTED + limits['outer_seconds'], cleanup_seconds=limits['cleanup_seconds'])
+    remaining = OWNER['deadline'] - limits['cleanup_seconds'] - time.monotonic()
+    signal.signal(signal.SIGALRM, soft_deadline)
+    signal.setitimer(signal.ITIMER_REAL, max(.001, remaining))
+    if remaining <= 0:
+        soft_deadline(signal.SIGALRM, None)
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def checked(row):
+    path = Path(row['path'])
+    if digest(path) != row['sha256']:
+        raise RuntimeError('Pinned source changed: ' + str(path))
+    return path
+
+
+def module_at(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def child_limits():
+    signal.pthread_sigmask(signal.SIG_SETMASK, set())
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024**2, 16 * 1024**2))
+
+
+def process_rows(controller, witnesses):
+    raw = subprocess.check_output(['/bin/ps', '-axww', '-o', 'pid=,ppid=,pgid=,rss=,command='], text=True, timeout=1)
+    rows = []
+    for line in raw.splitlines():
+        parts = line.split(None, 4)
+        if len(parts) == 5:
+            rows.append({'pid': int(parts[0]), 'ppid': int(parts[1]), 'pgid': int(parts[2]),
+                         'rss_bytes': int(parts[3]) * 1024, 'command': parts[4]})
+    accepted = {controller, *witnesses}
+    while True:
+        found = {row['pid'] for row in rows if row['ppid'] in accepted or row['pgid'] in {controller, *witnesses}}
+        if found <= accepted:
+            break
+        accepted.update(found)
+    return [row for row in rows if row['pid'] in accepted]
+
+
+def main():
+    arm_deadline({'outer_seconds': 150, 'cleanup_seconds': 15})
+    parser = argparse.ArgumentParser(description='Prepared shared HTTP/Join owner; separate exact execution selection required')
+    parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--config-sha256', required=True)
+    parser.add_argument('--authorization-message', required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    if not args.execute:
+        print('SOURCE_ONLY_UNRUN_REQUIRES_REVIEW_AND_SEPARATE_SELECTION')
+        return 2
+    if not re.fullmatch('m_[0-9a-f]+', args.authorization_message) or args.authorization_message in {
+            'm_5490a86b18', 'm_f80019c5e5', 'm_f6aa008b69', 'm_1e86db3d4a', 'm_1afb348675', 'm_cfdc69fbd1', 'm_da23687fd1', 'm_f518999f05', 'm_44d1d53e05', 'm_730f4143fe', 'm_905a2c0584', 'm_038ba0cbaf', 'm_a74054489e', 'm_14de85a93c', 'm_a95646c395', 'm_fe660087f2', 'm_a268b1f3b8'}:
+        raise RuntimeError('Source-preparation mail is not a runtime selection')
+    if sys.platform != 'darwin' or digest(args.config) != args.config_sha256:
+        raise RuntimeError('Exact reviewed Darwin configuration required')
+    config = json.loads(args.config.read_bytes())
+    if config['task'] not in {'http_guest_only', 'join_core_guest', 'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest'}:
+        raise RuntimeError('Only the inherited finite payloads and VideoReverse source successor are supported')
+    limits = config['limits']
+    expected_limits = ({'work_seconds': 120, 'cleanup_seconds': 15, 'outer_seconds': 150}
+                       if config['task'] == 'http_guest_only'
+                       else {'work_seconds': 180, 'cleanup_seconds': 15, 'outer_seconds': 200})
+    if config['task'] == 'video_reverse_native_guest':
+        expected_limits = {'work_seconds': 90, 'cleanup_seconds': 15, 'outer_seconds': 120}
+    if limits != expected_limits:
+        raise RuntimeError('Exact task deadline envelope required')
+    arm_deadline(limits)
+    for row in config['operator_sources'].values():
+        checked(row)
+    if Path(config['operator_sources']['outer']['path']).resolve() != Path(__file__).resolve():
+        raise RuntimeError('Invoked owner source differs from the reviewed source')
+    helpers = module_at('mike_existing_owner_helpers', checked(config['operator_sources']['helpers']))
+    journal_module = module_at('mike_shared_creation_journal', checked(config['operator_sources']['journal']))
+    packet = Path(config['packet'])
+    if helpers.inventory(packet) != config['input_files']:
+        raise RuntimeError('Sealed payload inventory differs')
+    checked(config['handoff'])
+    profile = json.loads(checked(config['profile']).read_bytes())
+    backend = json.loads(checked(config['backend']).read_bytes())
+    science = json.loads(checked(config['science']).read_bytes())
+    site = Path(profile['common_site_packages'])
+    prefix = Path(config['component_prefix'])
+    work = args.output
+    if not work.is_absolute() or work.exists() or work.is_symlink() or work.parent.resolve() != work.parent:
+        raise RuntimeError('Fresh absolute owned output under a resolved parent required')
+    for root in [packet, site, prefix, Path(profile['core_source']), *map(Path, config['protected_roots'])]:
+        root = root.resolve()
+        if work.is_relative_to(root) or root.is_relative_to(work):
+            raise RuntimeError('Output overlaps a protected source/root')
+    if shutil.disk_usage(work.parent).free < 256 * 1024**2:
+        raise RuntimeError('Insufficient owned-output filesystem capacity')
+    work.mkdir(mode=0o700)
+    OWNER['output'] = work
+    (work / 'OWNER-STARTED.json').write_text(json.dumps({
+        'owner_started_monotonic': OWNER_STARTED, 'limits': limits,
+        'whole_owner_timer_includes_preflight_payload_cleanup_postflight': True,
+        'soft_deadline_monotonic': OWNER['deadline'] - limits['cleanup_seconds'],
+        'hard_deadline_monotonic': OWNER['deadline'],
+        'preflight_processes_launched': 0}, indent=2) + '\n')
+    runtime_before = helpers.runtime_readback(profile, backend, science)
+    if runtime_before['mismatches']:
+        raise RuntimeError('Selected runtime/source differs')
+    site_before = helpers.inventory(site)
+    if site_before != json.loads(checked(config['baseline_site_map']).read_bytes()):
+        raise RuntimeError('Full retained SITE map differs')
+    prefix_before = helpers.inventory(prefix)
+    if prefix_before != json.loads(checked(config['baseline_component_map']).read_bytes()):
+        raise RuntimeError('Full retained component prefix differs')
+    cfg = checked(config['interpreter_configuration'])
+    cfg_before = digest(cfg)
+    stdlib = checked(config['subprocess_source'])
+    stdlib_before = digest(stdlib)
+    operator_before = {name: digest(checked(row)) for name, row in config['operator_sources'].items()}
+    output = work / 'actual-output'
+    temporary = Path(tempfile.mkdtemp(prefix='mguest-', dir='/private/tmp')).resolve()
+    (temporary / 'home').mkdir()
+    supplemental = work / 'OBSERVER_BINDING.json'
+    source = {**config['subprocess_source'], 'qualified_callable': 'subprocess.Popen.__init__'}
+    supplemental.write_text(json.dumps({'subprocess_source': config['subprocess_source']}, indent=2) + '\n')
+    supplemental_before = digest(supplemental)
+    binding_before = {name: digest(checked(config[name])) for name in [
+        'handoff', 'profile', 'backend', 'science', 'baseline_site_map', 'baseline_component_map']}
+
+    def save(name, value):
+        (work / name).write_text(json.dumps(value, indent=2) + '\n')
+
+    for name, value in [('INPUT-BEFORE.json', config['input_files']), ('RUNTIME-BEFORE.json', runtime_before),
+                        ('FULL-SITE-BEFORE.json', site_before), ('COMPONENT-PREFIX-BEFORE.json', prefix_before)]:
+        save(name, value)
+    tokens = {'@PACKET': str(packet), '@OUTPUT': str(output), '@OBSERVER': str(supplemental), '@AUTH': args.authorization_message}
+    tail = []
+    for value in config['payload_arguments']:
+        for key, replacement in tokens.items():
+            value = value.replace(key, replacement)
+        tail.append(value)
+    argv = [profile['python'], '-I', '-B', str(checked(config['operator_sources']['worker'])),
+            str(checked(config['payload'])), str(supplemental), str(work / 'ACTUAL-IMPORT-ORIGINS.json'), *tail]
+    environment = {'PATH': '/usr/bin:/bin', 'HOME': str(temporary / 'home'), 'TMPDIR': str(temporary),
+                   'XDG_CACHE_HOME': str(temporary / 'cache'), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
+                   'OMP_NUM_THREADS': '1', 'OPENBLAS_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1',
+                   'VECLIB_MAXIMUM_THREADS': '1', 'BLIS_NUM_THREADS': '1', 'NUMEXPR_NUM_THREADS': '1',
+                   'CUDA_VISIBLE_DEVICES': '', 'COMFY_GUEST_DEVICE_CHANNEL': 'shm',
+                   'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1', 'HF_HUB_DISABLE_TELEMETRY': '1',
+                   'COMFY_SECURE_SANDBOX_MODE': 'required', 'COMFY_SECURE_SANDBOX_BACKEND': 'seatbelt'}
+    receipt = {'status': 'RUNNING', 'task': config['task'], 'attempts': 1, 'automatic_retries': 0,
+               'authorization_message': args.authorization_message, 'config_sha256': args.config_sha256,
+               'started_utc': datetime.now(timezone.utc).isoformat(), 'argv': argv, 'environment': environment,
+               'trusted_controller_outside_outer_Seatbelt': True, 'required_Guest_Seatbelt': True,
+               'limits': limits, 'aggregate_rss_peak_bytes': 0, 'observed_processes': [],
+               'monitor_errors': [], 'cleanup_errors': [], 'watchdog_fired': False,
+               'hard_memory_or_CPU_quota': False, 'temporary_root': str(temporary),
+               'pyvenv_cfg_sha256_before': cfg_before, 'stdlib_sha256_before': stdlib_before,
+               'pre_fsync_kill_gap_closed': False}
+    OWNER['receipt'] = receipt
+    save('STARTED.json', receipt)
+    process = None
+    tracker = None
+    controller_witnesses = {}
+    started = time.monotonic()
+    control_signals = {signal.SIGTERM, signal.SIGINT}
+    cleanup_mask = None
+
+    def terminate(signum, frame):
+        receipt['termination_signal'] = signum
+
+    previous_handlers = {signum: signal.signal(signum, terminate) for signum in control_signals}
+
+    def observe(final=False):
+        if tracker is None:
+            return []
+        try:
+            tracker.read(final=final)
+        except BaseException as error:
+            tracker.error('Journal observation failed: ' + repr(error))
+        try:
+            tracker.capture_witnesses()
+        except BaseException as error:
+            tracker.error('Ownership observation failed: ' + repr(error))
+        try:
+            rows = process_rows(process.pid, tracker.witnesses)
+        except BaseException as error:
+            receipt['monitor_errors'].append('Process table: ' + repr(error))
+            return []
+        for row in rows:
+            if row['pgid'] == process.pid and row['pid'] not in controller_witnesses:
+                try:
+                    identity = journal_module.process_identity(row['pid'])
+                    if identity and identity['uid'] == os.getuid() and (identity['pid'] == process.pid or identity['ppid'] == process.pid):
+                        controller_witnesses[row['pid']] = identity
+                except (OSError, RuntimeError) as error:
+                    receipt['monitor_errors'].append('Controller identity: ' + repr(error))
+            if row not in receipt['observed_processes']:
+                receipt['observed_processes'].append(row)
+        receipt['aggregate_rss_peak_bytes'] = max(receipt['aggregate_rss_peak_bytes'], sum(row['rss_bytes'] for row in rows))
+        return rows
+
+    with (work / 'stdout.txt').open('xb') as stdout, (work / 'stderr.txt').open('xb') as stderr:
+        try:
+            OWNER['phase'] = 'payload'
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, control_signals)
+            try:
+                process = subprocess.Popen(argv, cwd=work, env=environment, stdout=stdout, stderr=stderr,
+                                           start_new_session=True, preexec_fn=child_limits)
+                receipt['controller_pid_and_pgid'] = process.pid
+                tracker = journal_module.GuestJournal(output, work, temporary, process.pid, profile['python'], source)
+                save('STARTED.json', receipt)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+            while process.poll() is None:
+                observe()
+                receipt['watchdog_fired'] = (time.monotonic() - started >= limits['work_seconds']
+                    or receipt['aggregate_rss_peak_bytes'] > (2*1024**3 if config['task'] in {'studio3_native_guest', 'custom_pipe_native_guest', 'marko_text_native_guest', 'video_reverse_native_guest'} else 1024**3)
+                    or stdout.tell() > (512*1024 if config['task'] == 'video_reverse_native_guest' else 1024**2)
+                    or stderr.tell() > (512*1024 if config['task'] == 'video_reverse_native_guest' else 1024**2) or bool(tracker.errors))
+                receipt['watchdog_fired'] = receipt['watchdog_fired'] or bool(receipt['monitor_errors'])
+                if receipt['watchdog_fired'] or receipt.get('termination_signal') or OWNER['deadline_fired']:
+                    break
+                time.sleep(.1)
+        except BaseException as error:
+            receipt['monitor_errors'].append(repr(error))
+        finally:
+            cleanup_mask = signal.pthread_sigmask(signal.SIG_BLOCK, control_signals)
+            OWNER['phase'] = 'cleanup'
+            if process is not None:
+                cleanup_end = min(started + limits['work_seconds'] + limits['cleanup_seconds'],
+                                  time.monotonic() + limits['cleanup_seconds'], OWNER['deadline'])
+                try:
+                    observe()
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGINT)
+                        except ProcessLookupError:
+                            pass
+                    grace = min(cleanup_end, time.monotonic() + 2)
+                    while process.poll() is None and time.monotonic() < grace:
+                        observe()
+                        time.sleep(.05)
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    receipt['exit_code'] = process.wait(timeout=max(.001, min(2, cleanup_end - time.monotonic())))
+                    observe(final=True)
+                except BaseException as error:
+                    receipt['cleanup_errors'].append('Controller cleanup: ' + repr(error))
+                try:
+                    members = [row for row in process_rows(process.pid, {}) if row['pgid'] == process.pid]
+                    known = True
+                    for member in members:
+                        previous = controller_witnesses.get(member['pid'])
+                        current = journal_module.process_identity(member['pid'])
+                        if previous is None or current is None or any(previous[key] != current[key] for key in ['pid', 'uid', 'pgid', 'started']):
+                            known = False
+                    if members and known and process.pid != os.getpgrp():
+                        os.killpg(process.pid, signal.SIGKILL)
+                    elif members:
+                        receipt['cleanup_errors'].append('Unwitnessed controller-group identity is not signaled')
+                except BaseException as error:
+                    receipt['cleanup_errors'].append('Controller group cleanup: ' + repr(error))
+                try:
+                    if tracker is not None:
+                        tracker.retire()
+                        while time.monotonic() < cleanup_end:
+                            observe(final=True)
+                            if all(journal_module.pid_absent(pid) and journal_module.group_absent(pid) for pid in tracker.births):
+                                break
+                            time.sleep(.05)
+                        tracker.retire(final=True)
+                    observe(final=True)
+                except BaseException as error:
+                    receipt['cleanup_errors'].append(repr(error))
+    receipt['payload_and_cleanup_wall_seconds'] = time.monotonic() - started
+    OWNER['phase'] = 'postflight'
+    def readback(name, action):
+        try:
+            return action()
+        except OwnerDeadline:
+            raise
+        except BaseException as error:
+            receipt['monitor_errors'].append(name + ': ' + repr(error))
+            return None
+
+    receipt['controller_group_absent'] = process is not None and readback('Controller group absence', lambda: journal_module.group_absent(process.pid))
+    receipt['remaining_owned_processes'] = readback('Remaining owned processes', lambda: process_rows(process.pid, tracker.witnesses if tracker else {})) if process else []
+    receipt['creation_journal'] = tracker.snapshot() if tracker else None
+    receipt['controller_lineage_witnesses'] = controller_witnesses
+    receipt['remaining_socket_paths'] = readback('Socket paths', lambda: [str(path) for path in temporary.rglob('*') if path.is_socket()])
+    if OWNER['deadline_fired']:
+        raise OwnerDeadline('Whole owner deadline reached; postflight cannot establish PASS')
+    after = readback('Input map', lambda: helpers.inventory(packet))
+    runtime_after = readback('Runtime map', lambda: helpers.runtime_readback(profile, backend, science))
+    site_after = readback('Site map', lambda: helpers.inventory(site))
+    prefix_after = readback('Component map', lambda: helpers.inventory(prefix))
+    for name, value in [('INPUT-AFTER.json', after), ('RUNTIME-AFTER.json', runtime_after),
+                        ('FULL-SITE-AFTER.json', site_after), ('COMPONENT-PREFIX-AFTER.json', prefix_after)]:
+        save(name, value)
+    receipt.update(inputs_unchanged=after == config['input_files'], runtime_unchanged=runtime_after == runtime_before,
+                   site_unchanged=site_after == site_before, component_prefix_unchanged=prefix_after == prefix_before,
+                   pyvenv_cfg_sha256_after=readback('Interpreter configuration', lambda: digest(cfg)),
+                   stdlib_sha256_after=readback('Stdlib source', lambda: digest(stdlib)),
+                   config_unchanged=readback('Owner config', lambda: digest(args.config)) == args.config_sha256,
+                   observer_binding_unchanged=readback('Observer binding', lambda: digest(supplemental)) == supplemental_before)
+    binding_after = {name: readback(name + ' binding', lambda name=name: digest(Path(config[name]['path']))) for name in binding_before}
+    save('BINDINGS-BEFORE.json', binding_before)
+    save('BINDINGS-AFTER.json', binding_after)
+    receipt['binding_files_unchanged'] = binding_before == binding_after
+    operator_after = {}
+    for name, row in config['operator_sources'].items():
+        try:
+            operator_after[name] = digest(Path(row['path']))
+        except OSError as error:
+            operator_after[name] = {'error': repr(error)}
+    save('OPERATOR-SOURCES-BEFORE.json', operator_before)
+    save('OPERATOR-SOURCES-AFTER.json', operator_after)
+    receipt['operator_sources_unchanged'] = operator_before == operator_after
+    try:
+        result = json.loads((output / 'RESULT.json').read_bytes()) if (output / 'RESULT.json').exists() else {}
+        if not isinstance(result, dict):
+            raise ValueError('Payload result is not an object')
+    except (OSError, ValueError) as error:
+        receipt['monitor_errors'].append('Payload result readback: ' + repr(error))
+        result = {}
+    receipt['payload_status'] = result.get('status')
+    def payload_coverage():
+        if config['task'] == 'video_reverse_native_guest':
+            rows = result.get('rows', [])
+            startup = result.get('actual_startup', {})
+            controls = result.get('controls', [])
+            commands = result.get('commands', [])
+            return (result.get('status') == 'PASS_VIDEO_REVERSE_ORIGINAL_DEFAULT_GUEST_GENERATION_REPLAYS_ONLY'
+                and result.get('native_cases') == result.get('default_SDK_cases') == result.get('Guest_dispatches') == len(rows) == 24
+                and len({r.get('id') for r in rows}) == len(result.get('dispatches', [])) == 24
+                and all(r.get('equal') is True and r.get('inputs_unchanged') is True
+                        and r.get('original') == r.get('default_SDK') == r.get('Guest') for r in rows)
+                and result.get('ordinary_mismatches') == []
+                and len(result.get('schemas', [])) == 1 and len(controls) == 4
+                and all(r.get('refused') is True and r.get('detected') is True for r in controls)
+                and len(result.get('diagnostics', [])) == 8
+                and all(r.get('public_factory_refused') is True and r.get('Guest_parity_claimed') is False for r in result['diagnostics'])
+                and result.get('Guest_instances') == 1 and len(commands) == 2
+                and all(r.get('all_bytes_modes_equal') is True and r.get('raw_before_and_after_inventories_retained') is True
+                        and r.get('changed_base_refused', {}).get('exception') == 'PackPatchError' for r in commands)
+                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True
+                and result.get('normal_path_guest_group_absent') is True
+                and result.get('manifest', {}).get('normal_generator_runs') == 1
+                and result.get('cleanup_errors') == [])
+        if config['task'] == 'marko_text_native_guest':
+            rows = result.get('rows', [])
+            counts = {name: sum(row.get('node') == name for row in rows) for name in ['ShowText', 'CombinationText', 'PlaceholderText', 'ReplaceText']}
+            startup = result.get('actual_startup', {})
+            return (result.get('status') == 'PASS_MARKO_TEXT_NATIVE_GENUINE_GUEST_NORMALGEN_REPLAYS_ONLY'
+                and result.get('native_cases') == result.get('Guest_dispatches') == len(rows) == 100
+                and counts == {'ShowText': 12, 'CombinationText': 32, 'PlaceholderText': 24, 'ReplaceText': 32}
+                and len({r.get('case_id') for r in rows}) == 100
+                and all(r.get('equal') is True and r.get('inputs_unchanged') is True for r in rows)
+                and result.get('ordinary_mismatches') == []
+                and len(result.get('schemas', [])) == 4 and len(result.get('controls', [])) == 5
+                and all(r.get('refused') is True for r in result.get('controls', []))
+                and result.get('Guest_instances') == 1 and len(result.get('commands', [])) == 2
+                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True
+                and result.get('normal_path_guest_group_absent') is True
+                and result.get('manifest', {}).get('normal_generator_runs') == 1
+                and result.get('cleanup_errors') == [])
+        if config['task'] == 'custom_pipe_native_guest':
+            rows = result.get('rows', [])
+            counts = {name: sum(row.get('node') == name for row in rows) for name in ['DynamicPipePack', 'DynamicPipeUnpack']}
+            startup = result.get('actual_startup', {})
+            return (result.get('status') == 'PASS_CUSTOM_PIPE_NATIVE_GENUINE_GUEST_NORMALGEN_REPLAYS_ONLY'
+                and result.get('native_cases') == result.get('Guest_dispatches') == len(rows) == 198
+                and counts == {'DynamicPipePack': 81, 'DynamicPipeUnpack': 117}
+                and len({r.get('case_id') for r in rows}) == 198
+                and sum(r.get('kind') == 'Guest-Pack-output-fed-to-Guest-Unpack' for r in rows) == 81
+                and all(r.get('equal') is True and r.get('inputs_unchanged') is True for r in rows)
+                and result.get('ordinary_mismatches') == []
+                and len(result.get('schemas', [])) == 2 and len(result.get('controls', [])) == 5
+                and all(r.get('refused') is True for r in result.get('controls', []))
+                and result.get('Guest_instances') == 1 and len(result.get('commands', [])) == 2
+                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True
+                and result.get('normal_path_guest_group_absent') is True
+                and result.get('manifest', {}).get('normal_generator_runs') == 1
+                and result.get('cleanup_errors') == [])
+        if config['task'] == 'studio3_native_guest':
+            rows = result.get('rows', [])
+            counts = {name: sum(row.get('node') == name for row in rows) for name in
+                      ['AspectRatioImageSize', 'AspectRatioResizeImage', 'MarkdownModelNote']}
+            startup = result.get('actual_startup', {})
+            return (result.get('status') == 'PASS_STUDIO3_NATIVE_GENUINE_GUEST_NORMALGEN_REPLAYS_ONLY'
+                and result.get('native_cases') == result.get('Guest_dispatches') == len(rows) == 292
+                and counts == {'AspectRatioImageSize': 140, 'AspectRatioResizeImage': 144, 'MarkdownModelNote': 8}
+                and all(row.get('equal') is True and row.get('inputs_unchanged') is True for row in rows)
+                and len(result.get('schemas', [])) == 3 and len(result.get('controls', [])) == 5
+                and all(row.get('refused') is True for row in result.get('controls', []))
+                and len(result.get('commands', [])) == 2 and result.get('Guest_instances') == 1
+                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True
+                and result.get('normal_path_guest_group_absent') is True
+                and result.get('manifest', {}).get('normal_generator_runs') == 1
+                and result.get('cleanup_errors') == [])
+        if config['task'] == 'http_guest_only':
+            startup = result.get('actual_guest_startup', {})
+            return (len(result.get('cases', [])) == 9
+                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'
+                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True)
+        boundary_path = output / 'BOUNDARY_RESULT.json'
+        boundary = json.loads(boundary_path.read_bytes())
+        return (boundary.get('status') == 'PASS_CORE_FINALIZATION_AND_ORDINARY_CONFINED_GUEST_ONLY'
+            and len(boundary.get('comparisons', [])) == 10 and len(boundary.get('dispatches', [])) == 10
+            and len(boundary.get('wrong_controls', [])) == 1 and result.get('actual_guest_dispatches') == 10
+            and result.get('native_bound_cases') == 9 and result.get('core_original_order_diagnostics') == 1
+            and result.get('wrong_STRING_controls_detected') == 1
+            and result.get('boundary_result_sha256') == digest(boundary_path))
+    receipt['payload_coverage_confirmed'] = readback('Payload coverage', payload_coverage) is True
+    receipt['pending_control_signals'] = sorted(signal.sigpending() & control_signals)
+    receipt['execution_wall_seconds'] = time.monotonic() - OWNER_STARTED
+    receipt['whole_owner_deadline_fired'] = OWNER['deadline_fired']
+    receipt['whole_owner_deadline_includes_preflight_and_postflight'] = True
+    source_unchanged = all(receipt[key] for key in ['inputs_unchanged', 'runtime_unchanged', 'site_unchanged',
+        'component_prefix_unchanged', 'config_unchanged', 'observer_binding_unchanged',
+        'operator_sources_unchanged', 'binding_files_unchanged']) and receipt['pyvenv_cfg_sha256_after'] == cfg_before and receipt['stdlib_sha256_after'] == stdlib_before
+    passed = (receipt.get('exit_code') == 0 and receipt['payload_status'] == config['success_status']
+              and tracker is not None and len(tracker.births) == 1 and not tracker.errors
+              and not receipt['watchdog_fired'] and not receipt['monitor_errors'] and not receipt['cleanup_errors']
+              and not receipt.get('termination_signal') and not receipt['pending_control_signals']
+              and not receipt['whole_owner_deadline_fired']
+              and receipt['controller_group_absent'] and not receipt['remaining_owned_processes']
+              and receipt['payload_coverage_confirmed']
+              and not receipt['remaining_socket_paths']
+              and receipt['execution_wall_seconds'] <= limits['outer_seconds'] and source_unchanged)
+    receipt['status'] = 'PASS_SHARED_OWNER_AND_SCOPED_PAYLOAD_ONLY' if passed else 'FAILED_SINGLE_SHARED_OWNER_ATTEMPT_NO_RETRY'
+    save('OUTER_RECEIPT.json', receipt)
+    print(json.dumps({'status': receipt['status'], 'payload_status': receipt['payload_status'], 'output': str(work)}))
+    for signum, handler in previous_handlers.items():
+        signal.signal(signum, handler)
+    if cleanup_mask is not None:
+        signal.pthread_sigmask(signal.SIG_SETMASK, cleanup_mask)
+    return 0 if passed else 1
+
+
+if __name__ == '__main__':
+    try:
+        code = main()
+    except OwnerDeadline as error:
+        receipt = OWNER['receipt'] or {}
+        receipt.update(status='FAILED_WHOLE_OWNER_DEADLINE_NO_RETRY', automatic_retries=0,
+                       execution_wall_seconds=time.monotonic() - OWNER_STARTED,
+                       whole_owner_deadline_fired=True, stopped_phase=OWNER['phase'], error=str(error))
+        if OWNER['output'] is not None:
+            (OWNER['output'] / 'OUTER_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        print(json.dumps({'status': receipt['status'], 'phase': OWNER['phase'],
+                          'wall_seconds': receipt['execution_wall_seconds']}))
+        code = 124
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    raise SystemExit(code)

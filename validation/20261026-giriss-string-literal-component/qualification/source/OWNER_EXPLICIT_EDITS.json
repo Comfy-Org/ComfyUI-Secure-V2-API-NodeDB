@@ -1,0 +1,37 @@
+[
+  {
+    "after": "'marko_text_native_guest', 'video_reverse_native_guest', 'giriss_string_literal'}:",
+    "before": "'marko_text_native_guest', 'video_reverse_native_guest'}:",
+    "count": 1
+  },
+  {
+    "after": "Only the inherited finite payloads, VideoReverse and focused GIRISS scalar successor are supported",
+    "before": "Only the inherited finite payloads and VideoReverse source successor are supported",
+    "count": 1
+  },
+  {
+    "after": "if config['task'] in {'video_reverse_native_guest', 'giriss_string_literal'}:",
+    "before": "if config['task'] == 'video_reverse_native_guest':",
+    "count": 1
+  },
+  {
+    "after": "'marko_text_native_guest', 'video_reverse_native_guest', 'giriss_string_literal'} else 1024**3)",
+    "before": "'marko_text_native_guest', 'video_reverse_native_guest'} else 1024**3)",
+    "count": 1
+  },
+  {
+    "after": "config['task'] in {'video_reverse_native_guest', 'giriss_string_literal'} else 1024**2",
+    "before": "config['task'] == 'video_reverse_native_guest' else 1024**2",
+    "count": 2
+  },
+  {
+    "after": "    checked(config['handoff'])\n    if config['task'] == 'giriss_string_literal':\n        if checked(config['payload']).resolve() != (packet / 'scalar_entry.py').resolve():\n            raise RuntimeError('Focused GIRISS task requires the exact scalar entry slot')\n        if config['success_status'] != 'PASS_GIRISS_STRING_LITERAL_ORIGINAL_DEFAULT_GUEST_ONLY':\n            raise RuntimeError('Focused GIRISS result scope differs')\n",
+    "before": "    checked(config['handoff'])\n",
+    "count": 1
+  },
+  {
+    "after": "    def payload_coverage():\n        if config['task'] == 'giriss_string_literal':\n            expected = json.loads((packet / 'consumer' / 'CASES.json').read_bytes())['cases']\n            focused = result.get('consumer', {})\n            rows = focused.get('rows', [])\n            startup = result.get('actual_startup', {})\n            return (result.get('status') == 'PASS_GIRISS_STRING_LITERAL_ORIGINAL_DEFAULT_GUEST_ONLY'\n                and result.get('authorization_message') == focused.get('authorization_message') == args.authorization_message\n                and focused.get('status') == 'PASS_FOCUSED_GIRISS_STRING_LITERAL_COMPONENT_ONLY'\n                and focused.get('node_id') == 'String_Literal_5bb4d668d27398985246d1d5'\n                and focused.get('Guest_dispatches') == len(rows) == len(expected) == 13\n                and len({r.get('case') for r in rows}) == 13\n                and all(r.get('case') == e['id'] and r.get('type') == 'str' and r.get('tuple_items') == 1\n                    and r.get('utf8_bytes') == len(e['value'].encode('utf-8'))\n                    and r.get('sha256') == hashlib.sha256(e['value'].encode('utf-8')).hexdigest()\n                    and r.get('original_default_Guest_exact') is True\n                    and r.get('Guest_pid') == focused.get('actual_Guest_pid') == startup.get('pid')\n                    for r, e in zip(rows, expected))\n                and focused.get('controls') == ['changed-string', 'wrong-container']\n                and focused.get('normalgen_runs') == focused.get('encoder_calls') == focused.get('new_API_or_generated_contract_edits') == 0\n                and focused.get('whole_pack_accepted') is False\n                and result.get('Guest_instances') == 1 and result.get('scope_complete') is True\n                and startup.get('status') == 'ACTUAL_GUEST_STARTUP_AND_PROFILE_OBSERVED'\n                and startup.get('sandbox_kind') == 'seatbelt'\n                and startup.get('actual_profile_matches_genuine_supported_source_recipe') is True\n                and result.get('normal_path_guest_group_absent') is True\n                and result.get('normal_path_guest_socket_absent') is True\n                and result.get('normal_generator_runs') == result.get('replay_runs') == 0\n                and result.get('whole_pack_accepted') is False and result.get('cleanup_errors') == [])\n",
+    "before": "    def payload_coverage():\n",
+    "count": 1
+  }
+]
