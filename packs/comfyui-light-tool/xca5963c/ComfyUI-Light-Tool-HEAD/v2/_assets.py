@@ -5,6 +5,8 @@ import uuid
 import numpy as np
 import torch
 from PIL import Image, ImageOps, ImageSequence
+from PIL.PngImagePlugin import PngInfo
+from itertools import islice
 from comfy_api.latest import sdk
 
 
@@ -48,7 +50,7 @@ async def load_images(directory, image_load_num=0, start_index=0, keep_alpha_cha
     if not names:
         raise FileNotFoundError(f"No files in managed input prefix '{directory}'.")
     names = sorted(n for n in names if n.lower().endswith(('.jpg','.jpeg','.png','.webp')))
-    names = names[start_index:None if image_load_num == 0 else start_index + image_load_num]
+    names = list(islice(names, start_index, None if image_load_num == 0 else start_index + image_load_num))
     images, masks = [], []
     for name in names:
         with Image.open(io.BytesIO(await _bytes(name))) as original:
@@ -69,11 +71,23 @@ async def save_metadata(image, metadata):
         image = Image.fromarray(np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
         metadata_dict = json.loads(metadata)
         # Original condition `if "prompt" or "workflow" in metadata_dict` is always true.
-        png_text = {k: v if isinstance(v, str) else json.dumps(v, ensure_ascii=False) for k,v in metadata_dict.items()}
-        pixels = torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+        # Preserve original PngInfo.add_text validation before drawing the UUID.
+        original_metadata = PngInfo()
+        png_text = {}
+        for key, value in metadata_dict.items():
+            value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            original_metadata.add_text(key, value)
+            png_text[key] = value
+        filename = str(uuid.uuid4()) + '.png'
+        encoded_pixels = np.array(image).astype(np.float32) / 255.0
+        if encoded_pixels.ndim == 2:
+            # Codec input to save_images is BHWC, including native PIL L images.
+            # This node has no IMAGE data output; no native dataflow tensor is reshaped.
+            encoded_pixels = encoded_pixels[..., None]
+        pixels = torch.from_numpy(encoded_pixels).unsqueeze(0)
         ref = await sdk.ImageRef.from_value(pixels)
-        result = await sdk.ctx().output.save_images(ref, filename_prefix=str(uuid.uuid4()), compress_level=6,
-            save_metadata=False, png_text=png_text)
+        result = await sdk.ctx().output.save_images(ref, filenames=[filename], compress_level=6,
+            save_metadata=False, png_text=png_text, overwrite=True)
         return {'ui': result}
     except Exception as e:
         raise Exception(f'SaveMetadata(Light-Tool): Failed to save metadata to image, {e}')
