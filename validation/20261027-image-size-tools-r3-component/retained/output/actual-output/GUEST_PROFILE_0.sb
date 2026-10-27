@@ -1,0 +1,38 @@
+(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow file-read-metadata)
+(allow file-read*
+    (literal "/")
+    (subpath "<private-path:850a50bd9c01ef29>")
+    (subpath "<private-path:9412df3f24082d50>")
+    (subpath "<private-path:5289cd0f221ee1de>")
+    (subpath "<private-path:10b2079988256c14>")
+    (subpath "<private-path:c2dbfbbd86ec0095>")
+    (literal "/dev/null")
+    (literal "/dev/zero")
+    (literal "/dev/random")
+    (literal "/dev/urandom")
+    (subpath "<private-path:7075b776f68e10cd>")
+    (subpath "<private-path:9b0178a3af8351dc>")
+    (subpath "<private-path:7895de2ec408ae9d>")
+    (subpath "<private-path:83e50d35e3e33b2a>")
+    (subpath "<private-path:23fc5f36657f7bd2>")
+    (subpath "<private-path:df152ac5c95a4503>")
+    (subpath "<private-path:05eac60bc4e33348>")
+    (subpath "<private-path:560533e864325e46>")
+    (subpath "<private-path:29cac7a193ce9ac9>")
+    (subpath "<private-path:bbddc26bfb3cb221>")
+    (subpath "<private-path:7eebc5cff342ddb7>"))
+(allow sysctl-read)                         ; torch reads hw.* for core counts
+(allow mach-lookup)                         ; TODO tighten to Metal services
+(allow iokit-open iokit-get-properties)     ; the GPU itself
+(allow ipc-posix-shm*)                      ; THE ONE PEOPLE MISS — device refs
+(allow file-write*
+    (literal "/dev/null") (literal "/dev/zero")
+    (literal "/dev/random") (literal "/dev/urandom")
+    (subpath "<private-path:7895de2ec408ae9d>")
+    ; dev-only shader cache, see _shader_cache_clause
+    (subpath "<private-path:72a84e02371ee89f>"))
+(allow network-outbound (literal "<private-path:9e11564b4a308d3f>"))
+; no (allow network*) anywhere -> egress denied by the default
