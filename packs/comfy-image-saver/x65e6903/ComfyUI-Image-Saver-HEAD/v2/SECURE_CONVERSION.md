@@ -1,3 +1,55 @@
+# GIRISS finite qualification: 7 of 9 purposes
+
+Seven original purposes now have finite original/default/required-Guest
+component evidence. The prior String Literal result contributes one purpose;
+the separately accepted six-purpose attempt adds Seed Generator, Int Literal,
+Cfg Literal, Size Literal, Sampler Selector and Scheduler Selector. **Checkpoint
+Selector and Save Image remain unqualified. Whole-pack acceptance is partial.**
+
+The new attempt contains **87 cases per route, 261 calls, 174 strict
+comparisons and 16 local controls**, with no control dispatches. One actual
+required Seatbelt Guest (PID 84332) supplies all 87 joined Guest replies.
+The first seed-zero 1/1/1 gate is included once in 87. Actual per-route return
+records retain one-item tuples, exact builtin type, decimal uint64 integers,
+float.hex (including signed zero), and exact strings. Counts by purpose are
+15, 6, 7, 5, 45 and 9. Selector checks cover the complete ordered 45 sampler
+and 9 scheduler names; both original and io MAX_RESOLUTION are 16384.
+MAX-1 is programmatic in-range coverage under the step-8 schema, not frontend
+step validation. Enum reordering
+controls are direct list inequalities, not sampling algorithms or mutant tests.
+Seed Generator qualifies metadata passthrough only; it grants no RNG/seeding
+or model-execution credit.
+
+The [new scoped report](../../../../../validation/20261027-giriss-six-scalar-selectors-component/SCOPED_REPORT.json),
+[accepted independent intake](../../../../../validation/20261027-giriss-six-scalar-selectors-component/independent-intake/REVIEW.json)
+and [retained evidence provenance](../../../../../validation/20261027-giriss-six-scalar-selectors-component/EVIDENCE_COPY_PROVENANCE.json)
+bind the exact selected source/configuration and raw archive hashes. Public
+evidence copies use opaque aliases for private machine paths; the original
+hash-pinned archive remains retained. These copies are not executable selection
+or authority. The executed historical 16-leaf fixture does not replace the
+current 18-leaf publication root or either qualified declaration.
+
+Limits remain explicit: 2 GiB sampled RSS and passive census are not exhaustive,
+and the pre-fsync uncatchable-kill gap is unclosed. Policy proof is the live
+supported source-recipe attestation, without a separately saved expected raw
+profile or post-retirement rendering. Recorded process/group/socket retirement
+is verified; non-socket home and torchinductor directories remain. Startup
+pynvml and duplicate AVFoundation warnings are retained. No full temporary
+parent removal, encoder/model behavior, scientific generation/replay, browser,
+live service, registry activation, deployment or grants are qualified here.
+
+This documentation/evidence successor preserves all production code, schemas,
+permissions, the normal nine-node manifest, package metadata and both contracts.
+Canonical patch/ZIP file-only replays below add no scientific purpose credit.
+The prior String Literal evidence and its separate 39-call/26-comparison run
+remain intact and are not counted again as part of this 261-call attempt.
+
+## Prior String Literal publication (historical 1-of-9 scope)
+
+The following note records the earlier publication and remains historical.
+Its statements about other purposes being unqualified or source-only describe
+that earlier run, not the combined seven-purpose disposition above.
+
 # GIRISS finite qualification and conversion status
 
 Only the finite String Literal purpose is component-qualified: **1 of 9**
