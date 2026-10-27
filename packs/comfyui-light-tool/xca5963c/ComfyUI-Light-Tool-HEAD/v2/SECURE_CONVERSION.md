@@ -206,3 +206,77 @@ contracts require their own source disposition and separately selected tests.
 Compact evidence: [strict receipt](../../../../../validation/20261020-light-twenty-eight-native-component/VERIFIED_RESULT_RECEIPT.json),
 [actual retained output](../../../../../validation/20261020-light-twenty-eight-native-component/ACTUAL_TWENTY_EIGHT_RESULT.json)
 and [source/scope binding](../../../../../validation/20261020-light-twenty-eight-native-component/SOURCE_AND_SCOPE_BINDING.json).
+
+
+## Final composed-source PNG confirmation (2026-10-26)
+
+The separately selected R7 first attempt passed independent retained-data
+intake (3,268 checks, no blockers) on the final composed source: 25 bounded PNG
+cases, 75 primary route observations and 84 overlapping SDK/Guest calls. The
+three purposes are LoadImage 8, LoadImagesFromDir 5, and SaveMetadata 12.
+There was one required Guest (PID 53823), 42 SDK calls and 42 Guest calls.
+Three comparator controls and three fixture protocol assertions add no ordinary
+case or ID credit. R7 closes the final-source confirmation gate for the same
+three purposes already accepted from R6; it adds zero duplicate promotions.
+This revision records 43/55 scoped IDs, retaining the historically published
+40-ID scope as prior evidence. Full node contracts and whole-pack completion
+are not claimed. The informational55-row table is evidence, not service status.
+
+All executable/module/helper bytes are the exact R7 effective composition,
+including current Light28 restorations, stdout and torchvision declaration.
+Python/TypeScript authoring contracts are unchanged. The only difference from
+the R7 composed review tree is this report-only update. The mandatory actual
+normally generated55 manifest af9d949d is byte-exact. Relative to historical
+be252a65, its sole JSON difference appends output.overwrite to SaveMetadata's
+permissions. The historical be252 fixture file was a comparison oracle, not the
+effective publication manifest. R7's genuine normal generation freshly joined
+all55 class origins to the actual composed modules. No handwritten API file,
+SDK, compute method, permission activation or additional generation is added
+by final packaging. The unrun Resize6 typed import and URL worker changes are
+not incorporated. The unchanged Light root on PR82 is bound in validation.
+
+Scoped comparisons cover finite local RGB/RGBA/L/LA PNG inputs, alpha choice,
+typed image/mask hashes, raw input digests, lexical/islice selection, real
+downstream loads, and bounded saved PNG pixels/text/mode/encoded bytes/UI.
+Native absolute paths project to managed logical names; independent UUID4
+names are observed and projected. Directory HW masks versus downstream BHW
+masks use the explicit comparison-only axis. Other codecs, EXIF/I-mode/MPO/
+animation, widget admission, native missing/empty/subdirectory-only states,
+ambient paths, oversized/invalid keywords and non-atomic host failure effects
+remain outside this release purpose. Same-UUID collision/overwrite sequencing
+was not tested by separate normal UUID draws. Existing KeyValue, ShowAnything
+and ShowText incomplete contracts and all other open purposes stay open.
+
+R7 binds the unchanged d304 live observer, actual saved profile and supported
+source recipe, constructor/journal/adapter evidence and returned Guest PIDs.
+Eight recorded PIDs and four groups were absent in two independent retirement
+observations 0.285015 seconds apart; the socket directory was retired. Two
+non-socket temporary directories, home and torchinductor_ben, remain disclosed.
+Two pynvml deprecation warnings and four duplicate Objective-C class warnings
+are retained. Sampled descendant RSS was839,761,920 bytes, while /usr/bin/time
+maximum RSS was1,072,726,016 bytes. Whole-owner time39.834901750 seconds differs
+from raw external time39.89 seconds. These are sampled/task guards, not hard OS
+quotas, guaranteed allocation or an exhaustive transient-process census. No
+pre-fsync kill-gap closure is claimed.
+
+Tensor observations retain dtype/shape/content SHA256, not separate raw tensor
+arrays; independent fixture-derived hashes were compared. Poison controls
+retain detected booleans, not serialized poisoned outputs. Protocol assertions
+are source-bound records, not extra ordinary or Guest calls. Exact profile
+equality was attested while roots existed and actual profile bytes were saved;
+no separately saved expected raw profile or post-cleanup renderer is claimed.
+The first RGB smoke remains source/order-bound, without a standalone artifact.
+
+R6 remains accepted on its frozen source, and the first failed attempt plus
+R4/R5/R6/R7 source/evidence archives are immutable. A failed attempt receives no
+retroactive credit. The R7 proof confirms composition, not whole workflow,
+browser, graph scheduling, live service, signed admission or managed deployment.
+HTTP/HTTPS authorization is recorded but no live grant is activated. No new
+scientific/SDK/Guest/normal-generation run occurred in this final packaging;
+only two pristine patch replays and two changed-base refusal controls ran.
+
+Evidence: [independent R7 intake](../../../../../validation/20261026-light-png3-r7-final-source/INDEPENDENT_REVIEW.json),
+[scoped disposition](../../../../../validation/20261026-light-png3-r7-final-source/SCOPED_ID_DISPOSITION.json),
+[55-ID table](../../../../../validation/20261026-light-png3-r7-final-source/LIGHT55_SCOPED_PUBLICATION_TABLE.json),
+[source binding](../../../../../validation/20261026-light-png3-r7-final-source/FINAL_SOURCE_BINDING.json),
+and [file-only replays](../../../../../validation/20261026-light-png3-r7-final-source/FILE_ONLY_REPLAYS.json).

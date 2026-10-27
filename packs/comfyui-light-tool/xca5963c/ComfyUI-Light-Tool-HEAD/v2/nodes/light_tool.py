@@ -1527,7 +1527,7 @@ class LoadMetadataFromURL(io.ComfyNode):
 
 class SaveMetadata(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('output', 'raw')
+    SDK_PERMISSIONS = ('output', 'raw', 'output.overwrite')
 
     @classmethod
     def define_schema(cls):

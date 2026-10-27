@@ -1,0 +1,138 @@
+--- current/v2/SECURE_CONVERSION.md
++++ composed/v2/SECURE_CONVERSION.md
+@@ -206,3 +206,64 @@
+ Compact evidence: [strict receipt](../../../../../validation/20261020-light-twenty-eight-native-component/VERIFIED_RESULT_RECEIPT.json),
+ [actual retained output](../../../../../validation/20261020-light-twenty-eight-native-component/ACTUAL_TWENTY_EIGHT_RESULT.json)
+ and [source/scope binding](../../../../../validation/20261020-light-twenty-eight-native-component/SOURCE_AND_SCOPE_BINDING.json).
++
++
++## Scoped local PNG qualification (2026-10-26)
++
++One separately selected Mac component attempt passed independent raw intake
++(2,400 assertions) for 25 bounded PNG cases against the original modules, the
++default SDK and one required Guest: LoadImage 8, LoadImagesFromDir 5, and
++SaveMetadata 12. The 75 primary route observations and 84 overlapping SDK/Guest
++calls including fingerprint/downstream helpers are separate denominators.
++Three comparator controls and three fixture protocol assertions add no ordinary
++case or node-ID credit. Root accepted these three previously unqualified IDs
++for 43/55 scoped purposes in this source revision; this is not 43 completed
++classes. Prior evidence and failed attempts retain their original dispositions.
++
++The PNG helper is byte-identical to the tested _assets.py. Its exact tested
++islice selection, metadata preparation, UUID filename and grayscale codec-input
++adaptation are retained. SaveMetadata declares output.overwrite as tested.
++All three relevant class ASTs match the tested packet. Current Light28 repairs,
++torchvision declaration, unrelated HTTP/media/Aliyun modules and genuine
++Python/TypeScript authoring contracts remain unchanged. This is a narrow source
++composition, not the whole historical test packet copied over current main.
++The composed whole tree was not scientifically rerun. Publication is held for
++separate source review, actual binding and one selected final 25-case R7
++confirmation on this composition. R6 credit remains on its immutable bytes;
++preparing R7 inputs provides no new runtime or completion credit.
++
++The actual normal discovery/encoder output af9d949d is preserved byte-for-byte:
++55 nodes, with only SaveMetadata permissions gaining output.overwrite relative
++to historical be252a65. The generation receipt describes the tested packet's
++origins. Because current nodes/light_tool.py also retains later unrelated
++Light28 repairs, its whole-module hash is different; those origin hashes do not
++claim freshly generated origins for this composed tree. No generator reran.
++
++Exact pixel/mask/digest and PNG metadata/encoded-byte comparisons are limited
++to the finite valid local PNG fixtures. Native absolute paths are projected to
++logical catalogue names, and independently observed UUID4 output names are
++projected. Directory masks are native HW; downstream BHW comparison explicitly
++adjusts that axis. This does not establish literal path or UUID-name parity.
++Other codecs, EXIF/I-mode/MPO/animation, missing/empty/subdirectory-only catalogue
++states, ambient host paths, oversized/invalid metadata and non-atomic failure
++effects remain outside this purpose. Same-UUID collision/overwrite sequencing
++was not qualified by separate normal UUID draws.
++
++Independent intake binds the live d304 observer to the saved exact profile,
++Guest 98954 and constructor/journal/adapter evidence, with eight recorded PIDs,
++four groups and the socket directory retired in two observations. Expected
++raw recipe bytes were not separately saved; equality uses the pinned method,
++ordered roots and saved actual proof. The first RGB case supplies the ordered
++smoke evidence, without a standalone SMOKE artifact. Sampled guards are not OS
++quotas; no exhaustive transient-process census or pre-fsync gap closure is
++claimed. No extra scientific, Guest, SDK or generator run occurred in packaging.
++
++This is component evidence only. No widget/browser, public graph scheduling,
++managed grant, live service/signed admission, HTTP, media, OSS, whole workflow,
++full-class or whole-pack acceptance follows. Existing incomplete KeyValue,
++ShowAnything and ShowText purposes and all other open gates remain open.
++
++Compact evidence: [independent intake](../../../../../validation/20261026-light-png3-component/INDEPENDENT_RAW_REVIEW.json),
++[three scoped purposes](../../../../../validation/20261026-light-png3-component/SCOPED_ID_DISPOSITION.json),
++[source composition](../../../../../validation/20261026-light-png3-component/SOURCE_AND_SCOPE_BINDING.json),
++and [file-only replays](../../../../../validation/20261026-light-png3-component/FILE_ONLY_REPLAYS.json).
+--- current/v2/_assets.py
++++ composed/v2/_assets.py
+@@ -5,6 +5,8 @@
+ import numpy as np
+ import torch
+ from PIL import Image, ImageOps, ImageSequence
++from PIL.PngImagePlugin import PngInfo
++from itertools import islice
+ from comfy_api.latest import sdk
+ 
+ 
+@@ -48,7 +50,7 @@
+     if not names:
+         raise FileNotFoundError(f"No files in managed input prefix '{directory}'.")
+     names = sorted(n for n in names if n.lower().endswith(('.jpg','.jpeg','.png','.webp')))
+-    names = names[start_index:None if image_load_num == 0 else start_index + image_load_num]
++    names = list(islice(names, start_index, None if image_load_num == 0 else start_index + image_load_num))
+     images, masks = [], []
+     for name in names:
+         with Image.open(io.BytesIO(await _bytes(name))) as original:
+@@ -69,11 +71,23 @@
+         image = Image.fromarray(np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+         metadata_dict = json.loads(metadata)
+         # Original condition `if "prompt" or "workflow" in metadata_dict` is always true.
+-        png_text = {k: v if isinstance(v, str) else json.dumps(v, ensure_ascii=False) for k,v in metadata_dict.items()}
+-        pixels = torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
++        # Preserve original PngInfo.add_text validation before drawing the UUID.
++        original_metadata = PngInfo()
++        png_text = {}
++        for key, value in metadata_dict.items():
++            value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
++            original_metadata.add_text(key, value)
++            png_text[key] = value
++        filename = str(uuid.uuid4()) + '.png'
++        encoded_pixels = np.array(image).astype(np.float32) / 255.0
++        if encoded_pixels.ndim == 2:
++            # Codec input to save_images is BHWC, including native PIL L images.
++            # This node has no IMAGE data output; no native dataflow tensor is reshaped.
++            encoded_pixels = encoded_pixels[..., None]
++        pixels = torch.from_numpy(encoded_pixels).unsqueeze(0)
+         ref = await sdk.ImageRef.from_value(pixels)
+-        result = await sdk.ctx().output.save_images(ref, filename_prefix=str(uuid.uuid4()), compress_level=6,
+-            save_metadata=False, png_text=png_text)
++        result = await sdk.ctx().output.save_images(ref, filenames=[filename], compress_level=6,
++            save_metadata=False, png_text=png_text, overwrite=True)
+         return {'ui': result}
+     except Exception as e:
+         raise Exception(f'SaveMetadata(Light-Tool): Failed to save metadata to image, {e}')
+--- current/v2/nodes/light_tool.py
++++ composed/v2/nodes/light_tool.py
+@@ -1527,7 +1527,7 @@
+ 
+ class SaveMetadata(io.ComfyNode):
+     SDK_REFS = True
+-    SDK_PERMISSIONS = ('output', 'raw')
++    SDK_PERMISSIONS = ('output', 'raw', 'output.overwrite')
+ 
+     @classmethod
+     def define_schema(cls):
+--- current/v2/secure-nodes.json
++++ composed/v2/secure-nodes.json
+@@ -7200,7 +7200,8 @@
+       "sdk_refs": true,
+       "permissions": [
+         "output",
+-        "raw"
++        "raw",
++        "output.overwrite"
+       ],
+       "methods": {
+         "validate_inputs": false,
