@@ -1,0 +1,11 @@
+# comfyui-stringcomparenumber: scoped validation, 2026-10-27
+
+The original and converted nodes matched on all 31 selected ordinary cases through the original, default SDK and separate required ordinary Seatbelt Guest routes. The 2 direct-method diagnostics are recorded separately and do not extend schema-domain coverage. All six deliberate wrong-result controls were detected. The saved control records contain detected flags; their mutations are pinned by the tested fixture source, with no claim that concrete poisoned objects were separately captured.
+
+One normal generation registered all 1 original node IDs and actual Python classes. The canonical pair and its unchanged ZIP reconstructed all 14 generated V2 files in both pristine replays. Both deliberately changed-base applications were refused without mutation. All 8 pristine originals, licenses, tested implementation, declarations, generated manifest and distribution bytes remain exact.
+
+`v2/SECURE_CONVERSION.md` is retained as the historical source-authoring note. This validation record supersedes only statements that the selected finite checks and normal packaging remain unrun or pending; it changes no tested source or canonical artifact. Interim PARTIAL and RETIREMENT files were write-ahead progress snapshots. The accepted terminal records belong to one actual attempt with zero automatic retries.
+
+This evidence applies to the exact development f1 macOS Seatbelt tuple, not live Pack Manager, registry, latest production profile or whole-platform adoption. Eight batch Guests ran serially. Independent observations joined all eight birth identities and found all 20 recorded PIDs, 11 groups and eight RPC socket/directories absent twice. One empty temporary home directory remained. These are sampled observations and do not close the pre-fsync gap or establish a hard quota or exhaustive process census.
+
+[Results](SCOPED_RESULTS.json) preserve every selected case value, typed route outcome and control result. [Provenance](SOURCE_PROVENANCE.json), [exact artifact inventory](ARTIFACT_INVENTORY.json) and the unchanged [canonical bundle](patch-bundle.zip) bind the publication. Private operational logs, local account paths and credentials are excluded.
