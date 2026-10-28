@@ -1,0 +1,13 @@
+# TT Resolution Selector: scoped actual accepted; publication pending
+
+The corrective attempt m_0e9723012f has Root's scoped actual acceptance, record SHA256 84de95ad9b84eb04834351ec7ef0acec5d0351f6464308849add8adffde76c38. AMY independently verified 5,299 raw-pin checks and 1,052 science/canonical checks with zero failures; the corrected native process review passed 4,150 checks with zero failures. MIKE explicitly released completed TT resources in m_a901acd465. No next-owner GO or live registration follows.
+
+The exact tested five original files and eleven generated V2 files, normal manifest, canonical pair and bundle are preserved. Both sixteen-file pristine replays match bytes and recorded modes. Only the five validation JSON projections and this report changed from pending R3; no test, generator, replay, supplied comparator, Git publisher or live probe ran during this metadata successor.
+
+The accepted finite scope is 62 ordinary cases and four separate direct-method diagnostics on each of original/default/required-Guest routes, six saved detected comparator controls, one Guest, one normal generation, two pristine replays and two changed-base no-write refusals. Saved typed results and exact acceptance pins are in SCOPED_RESULTS.json and PACKAGING_EVIDENCE.json.
+
+The four diagnostics do not prove invalid-combo queue admission. The execute-phase error envelope proves source frames and session continuity, not a fresh error-reply PID. The six saved control flags are bound to frozen strict-comparator source; poisoned operands were not separately retained or independently rerun. Two short-lived nonrequired helpers have partial historical identities: closure covers strict known roles/resources, not an exhaustive transient process census. The owner was observed before 05:00; the later 05:00:01.270199 receipt is worker-controller dispatch, not owner birth. The original failed A95 attempt m_95e049c8cf, false role flags and scientific/source-argv HOLD remain unchanged.
+
+Only a pyproject MIT declaration is present; no LICENSE file or licence body was invented. Full workflow, browser, platform, registry/service adoption and whole-pack acceptance remain unproven. Historical production documentation is preserved byte-for-byte; later accepted evidence is recorded outside V2. Public projections omit private paths, remote stack frames, command lines and detailed process identities.
+
+This sealed delivery is for final independent metadata review. Root still owns the final publisher config/seal, fresh main/shared-HEAD checks, GitHub publication/merge and exact-source Pack Manager handoff. No publication or count credit has been applied here.
