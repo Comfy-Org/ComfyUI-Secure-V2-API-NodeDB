@@ -1,0 +1,38 @@
+from .BaseTextListProduct import BaseTextListProduct
+
+
+class ProductedString(BaseTextListProduct):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **cls.get_common_input_types(),
+                "newline_char": ("STRING", {"default": "\n"}),
+            },
+            "optional": {
+                "list_a": ("LIST", {"forceInput": True}),
+                "list_b": ("LIST", {"forceInput": True}),
+                "list_c": ("LIST", {"forceInput": True}),
+                "list_d": ("LIST", {"forceInput": True}),
+                "list_e": ("LIST", {"forceInput": True}),
+                "list_f": ("LIST", {"forceInput": True}),
+            },
+        }
+
+    def combine_input_lists(
+        self, separator, max_results, newline_char, **kwargs
+    ) -> tuple[str, list[str]]:
+        # list_aから順に、接続されているものだけをリストにする
+        lists = []
+        for k in sorted(kwargs.keys()):
+            if isinstance(kwargs[k], list):
+                lists.append(kwargs[k])
+        results = list(
+            self.join_filtered_lists(separator, *lists, max_results=max_results)
+        )
+        return (newline_char.join(results), results)
+
+    RETURN_NAMES = ("STRING", "list")
+    RETURN_TYPES = ("STRING", "LIST")
+    FUNCTION = "combine_input_lists"
+    CATEGORY = "TextListProduct"
