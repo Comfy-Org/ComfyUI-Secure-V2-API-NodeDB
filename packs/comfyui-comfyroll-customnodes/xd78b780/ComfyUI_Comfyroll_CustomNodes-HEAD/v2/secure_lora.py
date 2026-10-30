@@ -1,21 +1,24 @@
 """Public model/assets LoRA orchestration. Full Comfyroll release remains pending."""
+from . import secure_budget as budget
 import math
 from comfy_api.latest import io, sdk
 
 def _name(name):
-    if not isinstance(name,str) or not name or len(name.encode('utf-8'))>2048 or '\x00' in name or '\\' in name or name.startswith('/') or ':' in name or any(p in ('','.', '..') for p in name.split('/')):
+    if not isinstance(name,str) or not name or '\x00' in name or '\\' in name or name.startswith('/') or ':' in name or any(p in ('','.', '..') for p in name.split('/')):
         raise ValueError('LoRA name must be a bounded registered logical name')
+    budget.text(name,'LoRA logical name')
     return name
 
 def _weight(value):
-    if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not -100<=value<=100:
-        raise ValueError('LoRA weight must be finite in [-100,100]')
+    if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
+        raise ValueError('LoRA weight must be a finite number')
     return value
 
 def _stack(stack):
     if stack is None: return []
-    if not isinstance(stack,(list,tuple)) or len(stack)>256:
-        raise ValueError('LoRA stack exceeds 256 entries')
+    if not isinstance(stack,(list,tuple)):
+        raise ValueError('LoRA stack must be a list or tuple')
+    budget.data(stack)
     result=[]
     for row in stack:
         if not isinstance(row,(list,tuple)) or len(row)!=3:
@@ -28,7 +31,7 @@ class CR_LoraLoader(io.ComfyNode):
     SDK_PERMISSIONS = ('assets',)
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR Load LoRA', display_name='💊 CR Load LoRA', category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA', inputs=[io.Model.Input('model'), io.Clip.Input('clip'), io.Combo.Input('switch', options=['On', 'Off']), io.Combo.Input('lora_name', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Float.Input('strength_model', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('strength_clip', default=1.0, min=-10.0, max=10.0, step=0.01)], outputs=[io.Model.Output(display_name='MODEL'), io.Clip.Output(display_name='CLIP'), io.String.Output(display_name='show_help')])
+        return io.Schema(node_id='CR Load LoRA', display_name='💊 CR Load LoRA', category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA', inputs=[io.Model.Input('model'), io.Clip.Input('clip'), io.Combo.Input('switch', options=['On', 'Off']), io.Combo.Input('lora_name', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Float.Input('strength_model', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('strength_clip', default=1.0, min=-10.0, max=10.0, step=0.01)], outputs=[io.Model.Output(display_name='MODEL'), io.Clip.Output(display_name='CLIP'), io.String.Output(display_name='show_help')])
 
     @classmethod
     async def execute(cls, model, clip, switch, lora_name, strength_model, strength_clip):
@@ -45,7 +48,7 @@ class CR_LoRAStack(io.ComfyNode):
     SDK_PERMISSIONS = ()
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR LoRA Stack', display_name='💊 CR LoRA Stack', category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA', inputs=[io.Combo.Input('switch_1', options=['Off', 'On']), io.Combo.Input('lora_name_1', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Float.Input('model_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('switch_2', options=['Off', 'On']), io.Combo.Input('lora_name_2', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Float.Input('model_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('switch_3', options=['Off', 'On']), io.Combo.Input('lora_name_3', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Float.Input('model_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)], outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK'), io.String.Output(display_name='show_help')])
+        return io.Schema(node_id='CR LoRA Stack', display_name='💊 CR LoRA Stack', category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA', inputs=[io.Combo.Input('switch_1', options=['Off', 'On']), io.Combo.Input('lora_name_1', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Float.Input('model_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('switch_2', options=['Off', 'On']), io.Combo.Input('lora_name_2', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Float.Input('model_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('switch_3', options=['Off', 'On']), io.Combo.Input('lora_name_3', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Float.Input('model_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)], outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK'), io.String.Output(display_name='show_help')])
 
     @classmethod
     def execute(cls, lora_name_1, model_weight_1, clip_weight_1, switch_1, lora_name_2, model_weight_2, clip_weight_2, switch_2, lora_name_3, model_weight_3, clip_weight_3, switch_3, lora_stack=None):

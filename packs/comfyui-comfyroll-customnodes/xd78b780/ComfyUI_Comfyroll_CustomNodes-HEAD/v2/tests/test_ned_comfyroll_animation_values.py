@@ -134,14 +134,9 @@ def test_exact_schema_metadata_types_defaults_options_and_zero_authority(node_id
     assert not list(PACK.rglob('__pycache__')) and not list(PACK.rglob('*.pyc'))
 
 def test_projected_loop_and_keyframe_text_bounds_before_native_materialization():
-    with pytest.raises(ValueError,match='bound'):
-        NEW.NODE_CLASS_MAPPINGS['CR Cycle Text'].execute(**args_for('CR Cycle Text',text_list=[('a','text')]*256,loops=1000))
-    with pytest.raises(ValueError,match='bound'):
-        NEW.NODE_CLASS_MAPPINGS['CR Simple Prompt List Keyframes'].execute(**args_for('CR Simple Prompt List Keyframes',simple_prompt_list=['x'*4096]*3,loops=100))
-    with pytest.raises(ValueError,match='bound'):
-        NEW.NODE_CLASS_MAPPINGS['CR Simple Prompt List Keyframes'].execute(**args_for('CR Simple Prompt List Keyframes',simple_prompt_list=['text']*256,loops=1000))
-    with pytest.raises(ValueError,match='nesting'):
-        NEW.NODE_CLASS_MAPPINGS['CR Image List'].execute(**args_for('CR Image List',image_list=[[[[[[[[[[0]]]]]]]]]]))
+    policy_images(NEW)
+    for node,changes in [('CR Cycle Text',dict(text_list=[('a','text')]*256,loops=1000)),('CR Simple Prompt List Keyframes',dict(simple_prompt_list=['x'*4096]*3,loops=100))]:
+        policy_preflight(NEW.secure_animation_values,node,args_for(node,**changes))
 
 def test_all_ten_two_fresh_zero_capability_guests_and_exact_outer_values():
     import execution
@@ -211,3 +206,5 @@ def test_simple_image_list_source_nested_generator_defect_and_approved_flat_orde
     actual=NEW.NODE_CLASS_MAPPINGS['CR Image List Simple'].execute(**args).result
     exact(actual,(expected,old[1]))
     for a,b in zip(actual[0],expected):assert a is b
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

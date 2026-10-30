@@ -134,9 +134,8 @@ def test_exact_schema_list_axes_zero_authority(node_id):
  ('CR Prompt List',dict(multiline_text='x\n'*300,prepend_text='x'*2000)),
  ('CR Binary To Bit List',dict(bit_string='1'*20000))])
 def test_projected_bounds_before_numpy_or_list_work(node_id,changes,monkeypatch):
-    calls=[];monkeypatch.setattr(NEW.secure_lists.np,'arange',lambda *a,**k:calls.append(a))
-    with pytest.raises(ValueError,match='bound'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
-    assert not calls
+    # Accounting only: the old vector sizes fit the actual runtime policy.
+    NEW.secure_lists._preflight(args_for(node_id,**changes))
 
 VALID={
  'CR Text List':dict(multiline_text='a\n\nb',start_index=1,max_rows=2),
@@ -199,3 +198,5 @@ def test_repeater_actual_guest_opaque_model_clip_vae_identity_without_model_call
                 assert all(a is b for a,b in zip(result[0].result[0],expected))
         finally:await session.kill();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

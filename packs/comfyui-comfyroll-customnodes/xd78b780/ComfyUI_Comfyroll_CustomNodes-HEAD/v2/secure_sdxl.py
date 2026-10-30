@@ -1,4 +1,5 @@
 """Pinned SDXL token padding, four unscheduled encodes and preset math stay pack-side."""
+from . import secure_budget as budget
 from comfy_api.latest import io
 from .categories import icons
 from .secure_schedules import _guard
@@ -6,11 +7,9 @@ from .secure_schedules import _guard
 def _bounded(tokens):
     if not isinstance(tokens,dict):
         raise TypeError('CLIP tokenization must return a dictionary')
-    if len(tokens)>16:
-        raise ValueError('CLIP token component count exceeds bound')
+    budget.data(tokens)
     _guard(dict(enumerate(tokens.values())))
-    if sum(len(rows) for rows in tokens.values() if isinstance(rows,(list,tuple)))>4096:
-        raise ValueError('CLIP token row workload exceeds bound')
+    budget.items(sum(len(rows) for rows in tokens.values() if isinstance(rows,(list,tuple))),label='CLIP token rows')
 
 def _pad(tokens,empty):
     _bounded(tokens)

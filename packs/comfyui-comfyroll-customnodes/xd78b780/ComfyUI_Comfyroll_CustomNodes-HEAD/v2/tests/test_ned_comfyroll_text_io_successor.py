@@ -1,4 +1,7 @@
-"""Four authored-node managed IO successor; real local brokers, not cloud backing."""
+"""Historical storage/backport/Guest tier, not selected for current SDK acceptance.
+Requires the separately implemented revisioned storage and actual Host/Guest.
+Current managed-input policy has focused real-SDK coverage elsewhere.
+"""
 import asyncio
 import builtins
 import hashlib
@@ -47,6 +50,8 @@ class TracedAssets:
     async def exists(self,folder,name):self.events.append(('exists',folder,name));return await self.real.exists(folder,name)
     async def resolve(self,folder,name):self.events.append(('resolve',folder,name));return await self.real.resolve(folder,name)
     async def size(self,ref):self.events.append(('size',));return await self.real.size(ref)
+    async def read_bytes(self,ref):
+        self.events.append(('bytes',));return await self.real.read_bytes(ref)
     async def read_range(self,ref,offset=0,length=8388608):
         self.events.append(('range',offset,length));return await self.real.read_range(ref,offset,length)
 
@@ -85,7 +90,7 @@ def h(tmp_path,monkeypatch):
 def test_missing_kv_reads_existing_managed_input(h):
     h.input(b' a\r\nb\rc\n')
     assert asyncio.run(h.read())==' a\nb\nc\n'
-    assert h.storage.writes==0 and [e[0] for e in h.events]==['kv-read','resolve','size','range','size']
+    assert h.storage.writes==0 and [e[0] for e in h.events]==['kv-read','resolve','size','bytes','size']
 
 def test_explicit_input_observes_edit_without_kv_cache(h):
     h.storage.store.set('user','pack',M._key((LABEL,'notes','txt')),M._encode((LABEL,'notes','txt'),'authored'))
@@ -145,7 +150,7 @@ def test_imported_bytes_match_exact_source_reader(h,reader,extension,payload):
     expected=oracle_call(old,reader,load_args(extension))
     assert result(asyncio.run(h.execute(reader,load_args(extension))))==expected
     assert h.storage.writes==0
-    assert ('range',0,len(payload.encode('utf-8'))+1) in h.events
+    assert ('bytes',) in h.events if payload else not any(e[0]=='bytes' for e in h.events)
 
 @pytest.mark.parametrize('writer,suffixes',[(WRITERS[0],['notes','notes_1','notes_2']), (WRITERS[1],['notes','notes2','notes3'])])
 def test_kv_and_existing_output_collisions_follow_source_names(h,writer,suffixes):
@@ -223,7 +228,7 @@ def test_failures_before_cas_success_never_publish(h,monkeypatch,mode):
     if mode=='corrupt':h.storage.store.set('user','pack',M._key((LABEL,'notes','txt')),'not JSON')
     elif mode=='quota':monkeypatch.setattr(storage,'MAX_TOTAL_BYTES',1)
     elif mode=='conflict':h.storage.conflicts=32
-    elif mode=='oversize':args['multiline_text']='x'*65536
+    elif mode=='oversize':args['multiline_text']='x'*(1024*1024)
     else:args=save_args(WRITERS[1],value=[('only-one',)])
     writer=WRITERS[1] if mode=='malformed' else WRITERS[0]
     with pytest.raises((ValueError,RuntimeError,IndexError)):
@@ -246,19 +251,19 @@ def test_prior_opaque_kv_read_remains_data_only(h,label):
         asyncio.run(h.execute(WRITERS[0],save_args(label=label)))
     assert json.loads(h.record(label=label))['payload']=='old\r\nrecord'
 
-@pytest.mark.parametrize('payload',[b'\xff',b'\xc0\xaf',b'x'*65537])
+@pytest.mark.parametrize('payload',[b'\xff',b'\xc0\xaf',b'x'*(64*1024*1024+1)])
 def test_import_invalid_utf8_and_size_refused_without_authored_reset(h,payload):
     h.input(payload)
     with pytest.raises((UnicodeDecodeError,ValueError)):
         asyncio.run(h.read())
     assert h.storage.writes==0
-    if len(payload)>65536:assert not any(e[0]=='range' for e in h.events)
+    if len(payload)>64*1024*1024:assert not any(e[0]=='bytes' for e in h.events)
 
 @pytest.mark.parametrize('label',['../escape','input:/absolute','input:a\\b','input:C:/a','input:a/../b'])
 def test_import_names_never_reach_asset_broker(h,label):
     with pytest.raises(ValueError,match='logical|portable'):
         asyncio.run(h.read(label))
-    assert not any(e[0] in ('resolve','range') for e in h.events)
+    assert not any(e[0] in ('resolve','bytes','range') for e in h.events)
 
 def test_unknown_import_does_not_mutate_authored_state(h):
     with pytest.raises(FileNotFoundError):asyncio.run(h.read())
@@ -312,30 +317,29 @@ def test_collision_limit_never_resets_existing_authored_records(h):
     assert before=={key:h.storage.store.read('user','pack',key) for key in before}
     assert h.storage.reads==256 and h.storage.writes==0 and not any(e[0] in ('exists','publish') for e in h.events)
 
-@pytest.mark.parametrize('declared_size',[True,-1,1.0,65537])
+@pytest.mark.parametrize('declared_size',[True,-1,1.0,64*1024*1024+1])
 def test_asset_size_type_and_bound_checked_before_read(h,monkeypatch,declared_size):
     h.input(b'body')
     async def size(ref):return declared_size
     monkeypatch.setattr(h.assets,'size',size)
-    with pytest.raises(ValueError,match='size'):
+    with pytest.raises(ValueError,match='size|asset-read'):
         asyncio.run(h.read())
-    assert not any(e[0]=='range' for e in h.events) and h.storage.writes==0
+    assert not any(e[0]=='bytes' for e in h.events) and h.storage.writes==0
 
-def test_import_bound_is_whole_record_not_payload_only(h):
-    h.input(b'x'*65536)
-    with pytest.raises(ValueError,match='whole record'):
-        asyncio.run(h.read())
-    assert h.storage.writes==0
+def test_managed_input_read_is_not_a_KV_record_write(h):
+    h.input(b'x'*(2*1024*1024))
+    assert asyncio.run(h.read('input:'+LABEL))=='x'*(2*1024*1024)
+    assert h.storage.writes==0 # helper-only, no JSON-wire output claim
 
 @pytest.mark.parametrize('change',['grow','shrink','edit-after-read'])
 def test_complete_read_size_changes_refuse(h,monkeypatch,change):
-    p=h.input(b'body');original=h.assets.read_range
-    async def changed(ref,offset=0,length=8388608):
+    p=h.input(b'body');original=h.assets.read_bytes
+    async def changed(ref):
         if change!='edit-after-read':p.write_bytes(b'body-extra' if change=='grow' else b'b')
-        data=await original(ref,offset,length)
+        data=await original(ref)
         if change=='edit-after-read':p.write_bytes(b'body-extra')
         return data
-    monkeypatch.setattr(h.assets,'read_range',changed)
+    monkeypatch.setattr(h.assets,'read_bytes',changed)
     with pytest.raises(ValueError,match='changed|complete'):asyncio.run(h.read())
     assert h.storage.writes==0
 
@@ -441,8 +445,8 @@ def test_actual_required_fresh_guest_outer_all_four_import_export_and_denial(h,m
                     assert (await outer(READERS[0],load_args(name=name)))[0]==['🙂\n','raw']
                     with pytest.raises(wire.WireError,match='UTF|codec|decode'):
                         bad=h.input(b'\xff',name='bad'+str(generation));await outer(READERS[0],load_args(name=bad.stem))
-                    with pytest.raises(wire.WireError,match='size|bound'):
-                        large=h.input(b'x'*65537,name='large'+str(generation));await outer(READERS[0],load_args(name=large.stem))
+                    large=h.input(b'x'*65537,name='large'+str(generation))
+                    assert (await outer(READERS[0],load_args(name=large.stem)))[0]==['x'*65537]
                     with pytest.raises(wire.WireError,match='logical|portable'):
                         await outer(READERS[0],load_args(label='input:../escape'))
                     assert (await outer(READERS[1],load_args('csv','input:'+LABEL)))[0]==expected_rows

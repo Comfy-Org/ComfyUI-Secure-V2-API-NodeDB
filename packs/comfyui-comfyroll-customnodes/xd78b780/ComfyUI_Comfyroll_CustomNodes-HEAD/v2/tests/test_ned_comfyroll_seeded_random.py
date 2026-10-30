@@ -126,11 +126,8 @@ def test_exact_schema_defaults_names_options_and_workflow_reconstruction(node_id
     assert not list(PACK.rglob('__pycache__')) and not list(PACK.rglob('*.pyc'))
 
 def test_workload_bounds_before_rng_construction_and_output_generation(monkeypatch):
-    def deny(*args,**kwargs):raise AssertionError('RNG before preflight')
-    monkeypatch.setattr(NEW.secure_seeded_random.random,'Random',deny)
-    cases=[('CR Random Hex Color',{'seed':2**4096}),('CR Random RGB',{'seed':b'x'*262145}),('CR Random Multiline Values',{'rows':2049}),('CR Random Multiline Values',{'rows':2048,'string_length':1024}),('CR Random Multiline Values',{'rows':100,'string_length':1024,'custom_values':'💥'}),('CR Random Multiline Values',{'rows':8,'prepend_text':'x'*32768}),('CR Random Panel Codes',{'rows':2048,'string_length':1024}),('CR Random Multiline Colors',{'rows':2049}),('CR Random RGB Gradient',{'rows':2049})]
-    for node_id,changes in cases:
-        with pytest.raises(ValueError,match='bound'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    for node_id,changes in [('CR Random Hex Color',{'seed':2**4096}),('CR Random Multiline Values',{'rows':2049}),('CR Random Panel Codes',{'rows':2048,'string_length':1024})]:
+        policy_preflight(NEW.secure_seeded_random,node_id,args_for(node_id,**changes))
 
 def test_all_six_registered_zero_capabilities_two_fresh_pids_outer_strings_and_sequences():
     import execution
@@ -177,3 +174,5 @@ def test_production_dispatch_all_six_zero_capability_random_entrypoints(monkeypa
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

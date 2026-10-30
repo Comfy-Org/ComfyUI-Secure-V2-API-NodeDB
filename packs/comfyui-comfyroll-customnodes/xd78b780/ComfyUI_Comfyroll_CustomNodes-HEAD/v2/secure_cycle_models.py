@@ -1,4 +1,5 @@
 """Pinned model-selection math plus explicit coordinator-approved output-position repair."""
+from . import secure_budget as budget
 from comfy_api.latest import io, sdk
 from .secure_schedules import _guard
 from .secure_lora import _name
@@ -6,10 +7,9 @@ from .secure_lora import _name
 def _preflight(values):
     _guard(values)
     rows=values['model_list'];loops=values['loops']
-    if rows is not None and (not isinstance(rows,(list,tuple)) or len(rows)>256):
-        raise ValueError('Model cycler list exceeds bound')
-    if isinstance(loops,int) and (abs(loops)>1000 or max(0,loops)*len(rows or [])>16384):
-        raise ValueError('Model cycler projected loop workload exceeds bound')
+    if rows is not None and not isinstance(rows,(list,tuple)):
+        raise ValueError('Model cycler rows must be a list or tuple')
+    if isinstance(loops,int):budget.items(max(0,loops)*len(rows or []),label='model cycle list')
 
 class CR_CycleModels(io.ComfyNode):
     SDK_REFS=True

@@ -1,4 +1,5 @@
 """Confined logical media names; bounded Pillow decoding stays inside raw guest compute."""
+from . import secure_budget as budget
 from io import BytesIO
 import re
 import numpy as np
@@ -10,8 +11,9 @@ from .secure_schedules import _guard,_output
 
 class WorkloadError(ValueError):pass
 def _logical(value,empty=True):
-    if not isinstance(value,str) or len(value.encode('utf-8'))>2048 or any(ord(c)<32 for c in value) or '\\' in value or ':' in value or value.startswith('/') or any(p in ('.','..','') for p in value.split('/') if value):
+    if not isinstance(value,str) or any(ord(c)<32 for c in value) or '\\' in value or ':' in value or value.startswith('/') or any(p in ('.','..','') for p in value.split('/') if value):
         raise ValueError('Media selection requires a bounded logical catalogue prefix/name')
+    budget.text(value,'media logical name')
     if not value and not empty:raise ValueError('Media logical filename must not be empty')
     return value
 def _prefix(input_folder,input_path):
@@ -20,7 +22,7 @@ def _key(filename):
     return sum(((s,int(n)) for s,n in re.findall(r'(\D+)(\d+)','a%s0'%filename)),())
 async def _files(prefix):
     names=await sdk.ctx().assets.list('input',prefix=prefix,recursive=False)
-    if len(names)>4096:raise WorkloadError('Media catalogue exceeds bounded names')
+    budget.data(names)
     marker=prefix+'/' if prefix else ''
     result=[]
     for name in names:
@@ -33,7 +35,10 @@ async def _bytes(prefix,name,total):
     if '/' in name:raise ValueError('Media filename must select one immediate file')
     ref=await sdk.ctx().assets.resolve('input',prefix+'/'+name if prefix else name)
     size=await sdk.ctx().assets.size(ref)
-    if size<0 or size>8*1024*1024 or total['encoded']+size>32*1024*1024:raise WorkloadError('Encoded media workload exceeds bound')
+    if type(size) is not int or size<0:raise WorkloadError('Encoded media size must be a nonnegative integer')
+    # read_bytes has its own64MiB default per-file transport policy.
+    # Previously consumed encoded files are not one combined allocation.
+    budget.asset_bytes(size)
     data=await sdk.ctx().assets.read_bytes(ref)
     if len(data)!=size:raise ValueError('Media changed during bounded read')
     total['encoded']+=size
@@ -42,11 +47,15 @@ async def _open(prefix,name,total):
     return Image.open(BytesIO(await _bytes(prefix,name,total)))
 def _budget(image,count,total):
     width,height=image.size
-    if width<1 or height<1 or max(width,height)>4096 or width*height>4194304 or count>64:raise WorkloadError('Decoded image/frame shape exceeds bound')
-    # RGB image+source mask output=16B/pixel, source four-channel temps<=32B.
+    if width<1 or height<1:raise WorkloadError('Decoded image/frame dimensions must be positive')
     projected=width*height*max(0,count)*16
-    if total['pixels']+projected>32*1024*1024:raise WorkloadError('Projected decoded image batch exceeds bound')
-    total['pixels']+=projected
+    cumulative=total['pixels']+projected
+    # RGB float32 and BHW float32 are distinct published tensors. Do not
+    # compare their aggregate to a per-ref cap. A frame also creates RGBA data.
+    budget.check_bytes(cumulative//16*12,'decoded RGB batch')
+    budget.check_bytes(cumulative//16*4,'decoded mask batch')
+    budget.check_bytes(width*height*16,'decoded RGBA frame')
+    total['pixels']=cumulative
 def pil2tensor(image):
     return torch.from_numpy(np.array(image).astype(np.float32)/255.0).unsqueeze(0)
 def tensor2rgba(t):
@@ -68,7 +77,7 @@ async def _load(start_index,max_images,input_folder,input_path,plus):
     start_index=max(0,min(start_index,len(files)-1))
     end_index=min(start_index+max_images,len(files)-1) # Pinned last-file exclusion.
     selected=range(start_index,end_index)
-    if len(selected)>64:raise WorkloadError('Selected image count exceeds bound')
+    budget.items(len(selected),label='selected media files')
     images=[];masks=[];indices=[];filenames=[];total={'encoded':0,'pixels':0}
     for num in selected:
         with await _open(prefix,files[num],total) as img:
@@ -120,10 +129,10 @@ class CR_LoadGIFAsList(io.ComfyNode):
             with Image.open(BytesIO(data)) as gif:
                 _budget(gif,0,total)
                 for i,frame in enumerate(ImageSequence.Iterator(gif)):
-                    if i>=256:raise WorkloadError('GIF frame scan exceeds bound')
+                    # Native sequential decoder CPU is bounded by the owner deadline.
                     if i<start_frame:continue
                     if max_frames is not None and i>=start_frame+max_frames:break
-                    if len(frames)>=64:raise WorkloadError('Selected GIF frame count exceeds bound')
+                    budget.items(len(frames)+1,label='selected GIF frames')
                     _budget(frame,1,total)
                     img=frame.copy()
                     frames.append(pil2tensor(img.convert('RGB')))

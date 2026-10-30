@@ -1,4 +1,5 @@
 """Pinned seeded scalar random math, per-execution RNG, no global continuation mutation."""
+from . import secure_budget as budget
 import random
 import string
 import matplotlib.colors as mcolors
@@ -8,11 +9,10 @@ from .secure_schedules import _guard, _output
 def _preflight(node_id,values):
     _guard(values)
     seed=values['seed']
-    if isinstance(seed,(bytes,bytearray)) and len(seed)>262144:
-        raise ValueError('Random seed workload exceeds bound')
+    if isinstance(seed,(bytes,bytearray)):budget.data(seed)
     rows=values.get('rows',1);length=values.get('string_length',1)
-    if isinstance(rows,int) and abs(rows)>2048:raise ValueError('Random rows exceed bound')
-    if isinstance(length,int) and abs(length)>1024:raise ValueError('Random string length exceeds bound')
+    if isinstance(rows,int):budget.items(max(0,rows),label='random output rows')
+    if isinstance(length,int):budget.items(max(0,length),label='random character choices')
     if not isinstance(rows,int) or not isinstance(length,int):return
     if node_id=='CR Random Multiline Values':
         prefix=values['prepend_text'];custom=values['custom_values']
@@ -22,7 +22,7 @@ def _preflight(node_id,values):
         max_char=max((len(c.encode('utf-8')) for c in values['values']),default=1)
         per_row=max(0,length)*max_char+2
     else:per_row=128
-    if max(0,rows)*per_row>262144:raise ValueError('Random projected output workload exceeds bound')
+    budget.check_bytes(max(0,rows)*per_row,'random projected output')
 
 def random_hex_color(rng):
     r = rng.randint(0, 255)

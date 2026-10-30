@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from PIL import Image,ImageOps
 from comfy_api.latest import io,sdk
+from . import secure_budget as budget
 from .secure_schedules import _guard
 from .secure_graphics import tensor2pil,pil2tensor
 from .secure_layout import make_grid_panel
@@ -14,30 +15,30 @@ def _preflight(node_id,values):
     if not isinstance(image,torch.Tensor) or image.layout!=torch.strided or image.ndim not in (3,4):
         raise ValueError('Preview grid requires bounded dense HWC/BHWC')
     b,h,w,c=(1,*image.shape) if image.ndim==3 else tuple(image.shape)
-    if b>16 or h>4096 or w>4096 or c>4:
+    if c>4:
         raise ValueError('Preview grid dimensions exceed bound')
     factor=values['rescale_factor']
-    if isinstance(factor,bool) or not isinstance(factor,(int,float)) or not math.isfinite(factor) or abs(factor)>4:
-        raise ValueError('Preview rescale factor exceeds bound')
+    if isinstance(factor,bool) or not isinstance(factor,(int,float)) or not math.isfinite(factor):
+        raise ValueError('Preview rescale factor must be finite numeric')
     if h==1 or w==1 or c==1:h=w=max(h,w,c)
     rw=int(w*factor);rh=int(h*factor)
     if node_id=='CR Thumbnail Preview':
         count=b if image.ndim==4 else int(image.shape[0]);columns=values['max_columns']
-        if type(columns) is not int or abs(columns)>256:raise ValueError('Preview columns exceed bound')
+        if type(columns) is not int:raise TypeError('Preview columns must be an integer')
         rw+=2;rh+=2
         rows=(count-1)//columns+1 if columns else 0
         out_w=rw*min(columns,count);out_h=rh*rows
     else:
         option=values['grid_options']
-        if not isinstance(option,str) or len(option.encode('utf-8'))>128:
-            raise ValueError('Preview grid option text exceeds bound')
+        if not isinstance(option,str):raise TypeError('Preview grid option requires text')
+        budget.text(option,'preview grid option')
         columns=int(option[0]) if option and option[0].isdigit() else 0
         count=columns**2;out_w=rw*columns;out_h=rh*columns
-    input_bytes=image.numel()*image.element_size()
-    output=max(0,out_w)*max(0,out_h)*16
-    repeated=abs(rw*rh)*max(1,count)*16
-    if abs(out_w)>8192 or abs(out_h)>8192 or input_bytes>32*1024*1024 or output>32*1024*1024 or input_bytes+output*3+repeated>128*1024*1024:
-        raise ValueError('Preview grid projected output/temporary workload exceeds bound')
+    input_bytes=budget.tensor(image)
+    output=budget.canvas(1,out_h,out_w,3)
+    # The repeated grid is an RGB PIL canvas, with one float32 RGB publication.
+    repeated=budget.canvas(1,rh,rw,3,itemsize=1,label='preview PIL tile')
+    return budget.projection(input_bytes,[output],repeated)
 
 def apply_resize_image(image: Image.Image, original_width, original_height, rounding_modulus, mode='scale', supersample='true', factor: int=2, width: int=1024, height: int=1024, resample='bicubic'):
     if mode == 'rescale':
@@ -105,4 +106,3 @@ class CR_SeamlessChecker(io.ComfyNode):
 
 NODE_CLASS_MAPPINGS={'CR Thumbnail Preview': CR_ThumbnailPreview, 'CR Seamless Checker': CR_SeamlessChecker}
 NODE_DISPLAY_NAME_MAPPINGS={'CR Thumbnail Preview': '📱 CR Thumbnail Preview', 'CR Seamless Checker': '📱 CR Seamless Checker'}
-

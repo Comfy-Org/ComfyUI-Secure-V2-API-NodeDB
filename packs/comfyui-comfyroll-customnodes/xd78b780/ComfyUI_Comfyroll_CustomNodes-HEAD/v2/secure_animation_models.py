@@ -1,4 +1,5 @@
 """Plain animation catalogue lists and public scoped LoRA application; no legacy host access."""
+from . import secure_budget as budget
 from comfy_api.latest import io,sdk
 from .secure_schedules import _guard,_output
 from .secure_lora import _name,_weight
@@ -8,22 +9,21 @@ def _preflight(values):
     loops=values.get('loops',1)
     for key in ('model_list','lora_list'):
         rows=values.get(key)
-        if rows is not None and (not isinstance(rows,(list,tuple)) or len(rows)>256):
-            raise ValueError('Animation model/LoRA rows exceed bound')
-        if isinstance(loops,int) and (abs(loops)>1000 or max(0,loops)*len(rows or [])>16384):
-            raise ValueError('Animation LoRA projected loop workload exceeds bound')
+        if rows is not None and not isinstance(rows,(list,tuple)):
+            raise ValueError('Animation model/LoRA rows must be a list or tuple')
+        if isinstance(loops,int):budget.items(max(0,loops)*len(rows or []),label='animation model list')
     for key,value in values.items():
         if key.startswith(('ckpt_name','lora_name')):_name(value)
         if key.startswith(('model_strength','clip_strength')):_weight(value)
     projected=sum(len(repr(v).encode('utf-8')) for v in values.values() if isinstance(v,(str,list,tuple)))
-    if projected>262144:raise ValueError('Animation model/LoRA text projection exceeds bound')
+    budget.check_bytes(projected,'animation model text')
 
 class CR_ModelList(io.ComfyNode):
     SDK_REFS=True
     SDK_PERMISSIONS=()
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR Model List',display_name='CR Model List (Legacy)',category='🧩 Comfyroll Studio/🎥 Animation/💀 Legacy',inputs=[io.Combo.Input('ckpt_name1', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True, static_options=['None'])), io.String.Input('alias1', multiline=False, default=''), io.Combo.Input('ckpt_name2', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True, static_options=['None'])), io.String.Input('alias2', multiline=False, default=''), io.Combo.Input('ckpt_name3', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True, static_options=['None'])), io.String.Input('alias3', multiline=False, default=''), io.Combo.Input('ckpt_name4', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True, static_options=['None'])), io.String.Input('alias4', multiline=False, default=''), io.Combo.Input('ckpt_name5', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True, static_options=['None'])), io.String.Input('alias5', multiline=False, default=''), io.Custom('MODEL_LIST').Input('model_list', optional=True)],outputs=[io.Custom('MODEL_LIST').Output(display_name='MODEL_LIST'), io.String.Output(display_name='show_text')])
+        return io.Schema(node_id='CR Model List',display_name='CR Model List (Legacy)',category='🧩 Comfyroll Studio/🎥 Animation/💀 Legacy',inputs=[io.Combo.Input('ckpt_name1', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True)), io.String.Input('alias1', multiline=False, default=''), io.Combo.Input('ckpt_name2', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True)), io.String.Input('alias2', multiline=False, default=''), io.Combo.Input('ckpt_name3', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True)), io.String.Input('alias3', multiline=False, default=''), io.Combo.Input('ckpt_name4', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True)), io.String.Input('alias4', multiline=False, default=''), io.Combo.Input('ckpt_name5', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/checkpoints', refresh_button=True)), io.String.Input('alias5', multiline=False, default=''), io.Custom('MODEL_LIST').Input('model_list', optional=True)],outputs=[io.Custom('MODEL_LIST').Output(display_name='MODEL_LIST'), io.String.Output(display_name='show_text')])
 
     @classmethod
     def execute(cls, ckpt_name1, alias1, ckpt_name2, alias2, ckpt_name3, alias3, ckpt_name4, alias4, ckpt_name5, alias5, model_list=None):
@@ -62,7 +62,7 @@ class CR_LoRAList(io.ComfyNode):
     SDK_PERMISSIONS=()
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR LoRA List',display_name='CR LoRA List (Legacy)',category='🧩 Comfyroll Studio/🎥 Animation/💀 Legacy',inputs=[io.Combo.Input('lora_name1', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.String.Input('alias1', multiline=False, default=''), io.Float.Input('model_strength_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name2', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.String.Input('alias2', multiline=False, default=''), io.Float.Input('model_strength_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name3', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.String.Input('alias3', multiline=False, default=''), io.Float.Input('model_strength_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_LIST').Input('lora_list', optional=True)],outputs=[io.Custom('LORA_LIST').Output(display_name='LORA_LIST'), io.String.Output(display_name='show_text')])
+        return io.Schema(node_id='CR LoRA List',display_name='CR LoRA List (Legacy)',category='🧩 Comfyroll Studio/🎥 Animation/💀 Legacy',inputs=[io.Combo.Input('lora_name1', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.String.Input('alias1', multiline=False, default=''), io.Float.Input('model_strength_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name2', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.String.Input('alias2', multiline=False, default=''), io.Float.Input('model_strength_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name3', options=['None'], remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.String.Input('alias3', multiline=False, default=''), io.Float.Input('model_strength_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_strength_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_LIST').Input('lora_list', optional=True)],outputs=[io.Custom('LORA_LIST').Output(display_name='LORA_LIST'), io.String.Output(display_name='show_text')])
 
     @classmethod
     def execute(cls, lora_name1, model_strength_1, clip_strength_1, alias1, lora_name2, model_strength_2, clip_strength_2, alias2, lora_name3, model_strength_3, clip_strength_3, alias3, lora_list=None):

@@ -5,11 +5,13 @@ import torch
 from comfy_api.latest import io,sdk
 from .categories import icons
 from .secure_schedules import _guard
+from . import secure_budget as budget
 from .secure_managed_image_lists import _logical,_prefix,_files,_open,_budget,WorkloadError
 def _pattern(pattern):
     if pattern is None:return None
-    if not isinstance(pattern,str) or len(pattern.encode('utf-8'))>512 or any(ord(c)<32 for c in pattern) or '/' in pattern or '\\' in pattern or ':' in pattern or pattern in ('.','..'):
+    if not isinstance(pattern,str) or any(ord(c)<32 for c in pattern) or '/' in pattern or '\\' in pattern or ':' in pattern or pattern in ('.','..'):
         raise ValueError('Frame pattern must be a bounded immediate-name glob')
+    budget.text(pattern)
     return re.sub(r'#+','*',pattern)
 def _sort(names,sort_by,pattern):
     pattern=_pattern(pattern)
@@ -25,7 +27,7 @@ async def _frame(prefix,name,total,squeeze):
         value=torch.from_numpy(value)[None,]
         return value.squeeze() if squeeze else value
 def _budget_selected(count):
-    if count>64:raise WorkloadError('Selected frame count exceeds64')
+    budget.items(count,label='selected animation frames')
 class CR_LoadAnimationFrames(io.ComfyNode):
     SDK_REFS=False
     SDK_PERMISSIONS=('assets','raw')

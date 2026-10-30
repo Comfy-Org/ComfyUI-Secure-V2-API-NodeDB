@@ -1,5 +1,6 @@
 """Bounded PIL patterns/shapes; stochastic draws are local to this execution."""
 import math
+from . import secure_budget as budget
 import random
 import numpy as np
 import torch
@@ -15,30 +16,23 @@ def _new_rng():
 def _preflight(node_id, values):
     _guard(values)
     width=values['width'];height=values['height']
-    if type(width) is not int or type(height) is not int or abs(width)>4096 or abs(height)>4096:
-        raise ValueError('Pattern canvas dimensions exceed bound')
-    projected=max(0,width)*max(0,height)*16
-    if projected>32*1024*1024 or projected*3>128*1024*1024:
-        raise ValueError('Pattern projected output/temporary workload exceeds bound')
+    if type(width) is not int or type(height) is not int:
+        raise TypeError('Pattern canvas dimensions must be integers')
+    output=budget.canvas(1,height,width,3)
+    budget.projection(0,[output],max(0,width)*max(0,height)*7)
     pattern=values.get('binary_pattern')
-    if isinstance(pattern,str) and (len(pattern.encode('utf-8'))>16384 or len(pattern)>16384):
-        raise ValueError('Pattern parse/draw workload exceeds bound')
-    for key in ('num_rows','num_cols'):
-        if key in values and (type(values[key]) is not int or abs(values[key])>128):
-            raise ValueError('Pattern rows/columns exceed bound')
-    if 'num_rows' in values and max(0,values['num_rows'])*max(0,values['num_cols'])>16384:
-        raise ValueError('Pattern draw count exceeds bound')
-    for key in ('x_offset','y_offset'):
-        if key in values and (type(values[key]) is not int or abs(values[key])>2048):
-            raise ValueError('Pattern offset exceeds bound')
-    for key in ('outline_thickness','jitter_distance'):
-        if key in values and (type(values[key]) is not int or abs(values[key])>1024):
-            raise ValueError('Pattern line/jitter exceeds bound')
-    for key,limit in (('zoom',10),('rotation',36000),('pie_start',36000),('pie_stop',36000),('bias',10)):
-        if key in values:
-            value=values[key]
-            if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or abs(value)>limit:
-                raise ValueError('Pattern finite scalar exceeds bound')
+    if isinstance(pattern,str):
+        budget.text(pattern)
+        # Parsed Python integer grid, with CPython's actual pointer/int sizes.
+        import sys
+        budget.items(len(pattern),sys.getsizeof(0)+8,label='binary pattern grid')
+    for key in ('num_rows','num_cols','x_offset','y_offset','outline_thickness','jitter_distance'):
+        if key in values and type(values[key]) is not int:raise TypeError('Pattern integer parameter required')
+    for key in ('zoom','rotation','pie_start','pie_stop','bias'):
+        if key in values and (isinstance(values[key],bool) or not isinstance(values[key],(int,float)) or not math.isfinite(values[key])):
+            raise ValueError('Pattern scalar must be finite')
+    # PIL draw loops do not retain one allocation per draw; execution deadline
+    # bounds their CPU use. No invented draw-count memory ceiling.
 
 def draw_circle(draw, center_x, center_y, size, aspect_ratio, color):
     radius = size / 2

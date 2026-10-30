@@ -27,19 +27,29 @@ def create(node_id,native):
         async def execute(cls,**values):
             specs=native.INPUT_TYPES()['required']
             names=[name for name,spec in specs.items() if spec[0]=='IMAGE']
-            _bounds.plan(node_id,[await _bounds.describe(values[name]) for name in names],values)
+            # Shape-only descriptions do not carry a structured dtype. Check
+            # their minimum byte footprint, then meter the actual dense dtype
+            # before executing the original allocation-heavy method.
+            for name in names:_bounds.geometry(await _bounds.describe(values[name]))
             original={name:values[name] for name in names}
             dense={name:await _bounds.raw(values[name]) for name in names}
+            _bounds.plan(node_id,[dense[name] for name in names],values)
             instance=native()
             if node_id=='AsciiArt':instance._secure_font=buffers.BytesIO(await _bounds.font_bytes())
             result=getattr(instance,native.FUNCTION)(**{**values,**dense})
             published=[]
-            for value in result:
+            for kind,value in zip(native.RETURN_TYPES,result,strict=True):
                 if type(value) is not torch.Tensor:raise TypeError('source result must remain a dense Torch tensor')
                 _,count=_bounds.geometry(tuple(value.shape))
-                if count*value.element_size()>_bounds.MAX_OUTPUT:raise ValueError('Post Processing result byte budget exceeded')
+                _bounds.check_bytes(count*value.element_size(),'result')
                 identity=next((original[name] for name,tensor in dense.items() if value is tensor),None)
-                published.append(identity if identity is not None else await sdk.ImageRef.from_value(value))
+                if identity is not None:
+                    published.append(identity)
+                else:
+                    # HSV/Canny declare IMAGE but return BHW. Preserve their
+                    # image socket and pixel bytes as a grayscale BHW1 view.
+                    if kind=='IMAGE' and value.ndim==3:value=value.unsqueeze(-1)
+                    published.append(await sdk.ImageRef.from_value(value))
             return io.NodeOutput(*published)
     Converted.__name__=native.__name__+'Secure'
     Converted.__qualname__=Converted.__name__

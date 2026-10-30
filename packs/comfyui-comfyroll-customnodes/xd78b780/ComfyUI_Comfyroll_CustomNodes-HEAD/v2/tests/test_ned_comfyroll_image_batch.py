@@ -38,7 +38,9 @@ def test_exact_list_schema_and_preflight_before_cat(monkeypatch):
     assert s.node_id==ID and s.is_input_list and s.category==OLD.CATEGORY and c.SDK_PERMISSIONS==('raw',)
     assert [i.id for i in s.inputs]==['image_list'] and [o.io_type for o in s.outputs]==list(OLD.RETURN_TYPES)
     assert [o.display_name for o in s.outputs]==list(OLD.RETURN_NAMES)
-    with pytest.raises(ValueError,match='bound'):asyncio.run(migrated(images(torch.float32,1)*65))
+    many=images(torch.float32,1)*65
+    actual=asyncio.run(migrated(many))
+    assert torch.equal(actual[0],torch.cat(many,dim=0)) and actual[1]==HELP
     assert not list(PACK.rglob('__pycache__')) and not list(PACK.rglob('*.pyc'))
 def test_real_two_guests_outer_list_admission_single_identity_raw_deny_and_production(monkeypatch):
     import execution

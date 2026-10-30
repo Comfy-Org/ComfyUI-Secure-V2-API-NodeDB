@@ -5,28 +5,33 @@ import torch
 from PIL import Image
 from comfy_api.latest import io,sdk
 from .secure_schedules import _guard,_output
+from . import secure_budget as budget
 from .secure_lora import _name
 from .secure_tensors import _preflight as _tensor_preflight
 
 def _inputs(values):
     _guard(values)
     rows=values.get('upscale_stack')
-    if isinstance(rows,(list,tuple)) and len(rows)>16:raise ValueError('Upscale stack workload exceeds16 rows')
+    if isinstance(rows,(list,tuple)):budget.items(len(rows),label='upscale stack')
 def _pixels(image):
-    _tensor_preflight('CR Upscale Image',{'image':image})
-    if image.ndim==4 and image.shape[0]>64:raise ValueError('Upscale batch exceeds64')
+    if not isinstance(image,torch.Tensor) or image.layout!=torch.strided or image.ndim!=4:
+        raise ValueError('Upscale requires a dense BHWC tensor')
+    return image.numel()*image.element_size()
 async def _load(name):
     return await sdk.ctx().models.load_upscale_model(_name(name))
-async def _upscale(model,image):
+async def _upscale(model,image,*,image_ref=None):
     _pixels(image)
-    ref=await sdk.ImageRef.from_value(image)
+    ref=image_ref if image_ref is not None else await sdk.ImageRef.from_value(image)
     n=int(image.shape[0]) if image.ndim else 1
     out=await model.upscale(ref,per_batch=max(1,n),tile_size=512,precision='float32')
     pixels=await out.raw()
-    _pixels(pixels) # Output/workload check AFTER trusted execution, not a host allocation grant.
+    model_bytes=_pixels(pixels)
+    budget.projection(0,[],model_bytes) # Host-made transient, never a guest store admission.
     return pixels
 async def _publish(result,original_ref,original_pixels):
     pixels,help=result
+    _pixels(pixels)
+    budget.canvas(*pixels.shape,itemsize=pixels.element_size())
     ref=original_ref if pixels is original_pixels else await sdk.ImageRef.from_value(pixels)
     return io.NodeOutput(ref,help)
 
@@ -36,7 +41,7 @@ def pil2tensor(image):
 def tensor2pil(image):
     return Image.fromarray(np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
 
-def apply_resize_image(image: Image.Image, original_width, original_height, rounding_modulus, mode='scale', supersample='true', factor: int=2, width: int=1024, height: int=1024, resample='bicubic', *, _batch_count=1):
+def resize_projection(original_width,original_height,rounding_modulus,mode='scale',supersample='true',factor=2,width=1024,channels=3,batch=1):
     if mode == 'rescale':
         new_width, new_height = (int(original_width * factor), int(original_height * factor))
     else:
@@ -47,10 +52,16 @@ def apply_resize_image(image: Image.Image, original_width, original_height, roun
         new_height = height if height % m == 0 else height + (m - height % m)
     if isinstance(new_width, int) and isinstance(new_height, int):
         mult = 8 if supersample == 'true' else 1
-        channels = max(1, len(image.getbands()))
+        channels = max(1,channels)
         projected = max(0, new_width) * max(0, new_height) * channels
-        if new_width > 8192 or new_height > 8192 or new_width * mult > 8192 or (new_height * mult > 8192) or (projected * 4 > 32 * 1024 * 1024) or (projected * 4 * _batch_count > 64 * 1024 * 1024) or (projected * (mult * mult + 8) > 128 * 1024 * 1024) or (projected * (mult * mult + 8 + 4 * _batch_count) > 256 * 1024 * 1024):
-            raise ValueError('Upscale PIL target/temporary workload exceeds bound')
+        # PIL is uint8 per band; pil2tensor returns float32 for every batch item.
+        output=budget.canvas(batch,new_height,new_width,channels)
+        supersampled=projected*mult*mult
+        budget.projection(0,[output],supersampled+projected,output_copies=2)
+    return new_width,new_height
+
+def apply_resize_image(image: Image.Image, original_width, original_height, rounding_modulus, mode='scale', supersample='true', factor: int=2, width: int=1024, height: int=1024, resample='bicubic', *, _batch_count=1):
+    new_width,new_height=resize_projection(original_width,original_height,rounding_modulus,mode,supersample,factor,width,len(image.getbands()),_batch_count)
     resample_filters = {'nearest': 0, 'bilinear': 2, 'bicubic': 3, 'lanczos': 1}
     if supersample == 'true':
         image = image.resize((new_width * 8, new_height * 8), resample=Image.Resampling(resample_filters[resample]))
@@ -72,7 +83,7 @@ class CR_UpscaleImage(io.ComfyNode):
         _original_pixels = image
         _pixels(image)
         up_model = await _load(upscale_model)
-        up_image = await _upscale(up_model, image)
+        up_image = await _upscale(up_model, image, image_ref=_original_ref)
         for img in image:
             pil_img = tensor2pil(img)
             original_width, original_height = pil_img.size
@@ -82,6 +93,7 @@ class CR_UpscaleImage(io.ComfyNode):
         show_help = 'https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki/Upscale-Nodes#cr-upscale-image'
         if upscaled_width == original_width and rescale_factor == 1:
             return await _publish((up_image, show_help), _original_ref, _original_pixels)
+        resize_projection(original_width,original_height,rounding_modulus,mode,supersample,rescale_factor,resize_width,int(up_image.shape[-1]),int(up_image.shape[0]))
         scaled_images = []
         for img in up_image:
             scaled_images.append(pil2tensor(apply_resize_image(tensor2pil(img), original_width, original_height, rounding_modulus, mode, supersample, rescale_factor, resize_width, resampling_method, _batch_count=int(up_image.shape[0]))))
@@ -93,7 +105,7 @@ class CR_MultiUpscaleStack(io.ComfyNode):
     SDK_PERMISSIONS=()
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR Multi Upscale Stack',display_name='🔍 CR Multi Upscale Stack',category='🧩 Comfyroll Studio/✨ Essential/🔍 Upscale',inputs=[io.Combo.Input('switch_1',options=['On', 'Off']),io.Combo.Input('upscale_model_1',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True, static_options=['None'])),io.Float.Input('rescale_factor_1',default=2,min=0.01,max=16.0,step=0.01),io.Combo.Input('switch_2',options=['On', 'Off']),io.Combo.Input('upscale_model_2',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True, static_options=['None'])),io.Float.Input('rescale_factor_2',default=2,min=0.01,max=16.0,step=0.01),io.Combo.Input('switch_3',options=['On', 'Off']),io.Combo.Input('upscale_model_3',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True, static_options=['None'])),io.Float.Input('rescale_factor_3',default=2,min=0.01,max=16.0,step=0.01),io.Custom('UPSCALE_STACK').Input('upscale_stack',optional=True)],outputs=[io.Custom('UPSCALE_STACK').Output(display_name='UPSCALE_STACK'),io.String.Output(display_name='show_help')])
+        return io.Schema(node_id='CR Multi Upscale Stack',display_name='🔍 CR Multi Upscale Stack',category='🧩 Comfyroll Studio/✨ Essential/🔍 Upscale',inputs=[io.Combo.Input('switch_1',options=['On', 'Off']),io.Combo.Input('upscale_model_1',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True)),io.Float.Input('rescale_factor_1',default=2,min=0.01,max=16.0,step=0.01),io.Combo.Input('switch_2',options=['On', 'Off']),io.Combo.Input('upscale_model_2',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True)),io.Float.Input('rescale_factor_2',default=2,min=0.01,max=16.0,step=0.01),io.Combo.Input('switch_3',options=['On', 'Off']),io.Combo.Input('upscale_model_3',options=['None'],remote=io.RemoteOptions(route='/secure-nodes/models/upscale_models', refresh_button=True)),io.Float.Input('rescale_factor_3',default=2,min=0.01,max=16.0,step=0.01),io.Custom('UPSCALE_STACK').Input('upscale_stack',optional=True)],outputs=[io.Custom('UPSCALE_STACK').Output(display_name='UPSCALE_STACK'),io.String.Output(display_name='show_help')])
 
     @classmethod
     def execute(cls, switch_1, upscale_model_1, rescale_factor_1, switch_2, upscale_model_2, rescale_factor_2, switch_3, upscale_model_3, rescale_factor_3, upscale_stack=None):
@@ -141,6 +153,7 @@ class CR_ApplyMultiUpscale(io.ComfyNode):
                 scaled_images = []
                 mode = 'rescale'
                 resize_width = 1024
+                resize_projection(original_width,original_height,rounding_modulus,mode,supersample,rescale_factor,resize_width,int(up_image.shape[-1]),int(up_image.shape[0]))
                 for img in up_image:
                     scaled_images.append(pil2tensor(apply_resize_image(tensor2pil(img), original_width, original_height, rounding_modulus, mode, supersample, rescale_factor, resize_width, resampling_method, _batch_count=int(up_image.shape[0]))))
                 image = torch.cat(scaled_images, dim=0)

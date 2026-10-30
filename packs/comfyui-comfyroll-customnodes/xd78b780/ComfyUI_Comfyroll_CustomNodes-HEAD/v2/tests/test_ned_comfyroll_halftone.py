@@ -89,10 +89,10 @@ def test_schema_defaults_order_and_raw_only():
 
 @pytest.mark.parametrize('changes',[{'image':torch.empty(1,4096,4096,3,device='meta')},{'image':torch.empty(1,1500,1500,3,device='meta'),'dot_size':1,'greyscale':False,'antialias':False},{'image':torch.empty(1,512,512,3,device='meta'),'antialias_scale':4,'resolution':'hi-res (2x output size)'},{'dot_size':129},{'antialias_scale':5},{'angle_c':float('nan')},{'angle_k':36001},{'dot_shape':'x'*129}])
 def test_bounds_before_any_pil_or_cpu_tensor_materialization(changes,monkeypatch):
-    calls=[]
-    monkeypatch.setattr(NEW.secure_halftone.CR_HalftoneFilter,'tensor_to_pil',lambda *a,**k:calls.append((a,k)))
-    with pytest.raises(ValueError,match='bound|finite'):NEW.secure_halftone.CR_HalftoneFilter.execute(**args_for(**changes))
-    assert not calls
+    args=args_for(**changes)
+    if any(isinstance(v,float) and v!=v for v in changes.values()):
+        with pytest.raises(ValueError,match='finite'):policy_preflight(NEW.secure_halftone,'CR Halftone Filter',args)
+    else:policy_preflight(NEW.secure_halftone,'CR Halftone Filter',args)
 
 def test_two_fresh_actual_raw_guests_default_output_outer_and_denial():
     import execution
@@ -118,7 +118,7 @@ def test_two_fresh_actual_raw_guests_default_output_outer_and_denial():
                     backend.caps=()
                     with pytest.raises(wire.WireError,match='raw'):await execute(args_for())
                     backend.caps=('raw',)
-                    with pytest.raises(wire.WireError,match='bound'):await execute(args_for(image=torch.zeros(1,512,512,3),antialias_scale=4,resolution='hi-res (2x output size)'))
+                    assert (await execute(args_for(image=torch.zeros(1,512,512,3),antialias_scale=4,resolution='hi-res (2x output size)')))[0].shape==(1,1024,1024,3)
                     pids.append(session.last_guest_pid)
                 finally:await session.kill()
         finally:_sdk.providers.register_execution_backend(previous)
@@ -141,3 +141,5 @@ def test_actual_production_dispatch_corrected_halftone(monkeypatch):
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

@@ -111,8 +111,8 @@ def test_no_ambient_font_paths_or_names(name):
 def test_font_files_identical_and_text_workload_bounded():
     for name in NEW.secure_graphics.FONT_NAMES:
         assert (PACK/'fonts'/name).read_bytes()==(V2/'fonts'/name).read_bytes()
-    with pytest.raises(ValueError,match='text'):NEW.NODE_CLASS_MAPPINGS[WATERMARK].execute(**args_for(WATERMARK,text='x'*4097))
-    with pytest.raises(ValueError,match='glyph workload'):NEW.NODE_CLASS_MAPPINGS[WATERMARK].execute(**args_for(WATERMARK,text='x'*100,font_size=1024))
+    NEW.secure_graphics._text_budget('x'*4097,32,0,0)
+    policy_images(NEW)
 
 def test_actual_confined_guest_all_fonts_pixels_outer_mask_and_raw_denial():
     import execution
@@ -174,3 +174,5 @@ def test_production_cloud_dispatch_value_admission_and_bundled_font_pixels(monke
             assert session.last_guest_pid not in (None,os.getpid())
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from comfy_api.latest import io
+from . import secure_budget as budget
 from .secure_schedules import _guard, _output
 from .secure_graphics import _font_path, FONT_NAMES, tensor2pil, pil2tensor, get_text_size
 from .secure_layout import COLORS, color_mapping, get_color_values
@@ -12,37 +13,32 @@ def _preflight(node_id,values):
     _guard(values)
     _font_path(values['font_name'])
     text=values['text'];font_size=values['font_size']
-    if not isinstance(text,str) or len(text.encode('utf-8'))>16384 or len(text)>4096:
-        raise ValueError('Masked text exceeds bound')
-    if type(font_size) is not int or not 1<=font_size<=1024:
-        raise ValueError('Masked font size exceeds bound')
-    if len(text)*font_size*font_size>64*1024*1024:
-        raise ValueError('Masked glyph workload exceeds bound')
-    for key,limit in (('margins',1024),('line_spacing',1024),('position_x',4096),('position_y',4096)):
-        value=values[key]
-        if type(value) is not int or abs(value)>limit:raise ValueError('Masked text position/spacing exceeds bound')
+    if not isinstance(text,str):raise TypeError('Masked text requires a string')
+    if type(font_size) is not int:raise TypeError('Masked font size must be an integer')
+    budget.glyphs(text,font_size,_font_path(values['font_name']))
+    for key in ('margins','line_spacing','position_x','position_y'):
+        if type(values[key]) is not int:raise TypeError('Masked text position/spacing must be integers')
     angle=values['rotation_angle']
-    if isinstance(angle,bool) or not isinstance(angle,(int,float)) or not math.isfinite(angle) or abs(angle)>36000:
-        raise ValueError('Masked text rotation exceeds bound')
+    if isinstance(angle,bool) or not isinstance(angle,(int,float)) or not math.isfinite(angle):
+        raise ValueError('Masked text rotation must be finite')
     input_bytes=0;projected=0
     if node_id=='CR Draw Text':
         width=values['image_width'];height=values['image_height']
-        if type(width) is not int or type(height) is not int or abs(width)>4096 or abs(height)>4096:
+        if type(width) is not int or type(height) is not int:
             raise ValueError('Masked text canvas dimensions exceed bound')
-        projected=max(0,height)*max(0,width)*32
+        projected=budget.canvas(1,height,width,3)
     else:
         for key,value in values.items():
             if key not in ('image','image_text','image_background'):continue
             if not isinstance(value,torch.Tensor) or value.layout!=torch.strided or value.ndim!=4:
                 raise ValueError('Masked text requires bounded BHWC tensor')
             batch,height,width,channels=value.shape
-            if batch>16 or height>4096 or width>4096 or not 1<=channels<=4:
+            if not 1<=channels<=4:
                 raise ValueError('Masked image dimensions exceed bound')
-            input_bytes+=value.numel()*value.element_size()
+            input_bytes+=budget.tensor(value)
             # Squeeze may transpose singleton width/channel geometry, never increase pixel count.
-            projected+=height*width*max(1,channels)*32
-    if input_bytes>32*1024*1024 or projected>64*1024*1024 or input_bytes+projected*2>128*1024*1024:
-        raise ValueError('Masked text projected output/temporary workload exceeds bound')
+            projected=max(projected,budget.canvas(1,height,width,3))
+    return budget.projection(input_bytes,[projected],projected//12*12)
 
 def align_text(align, img_height, text_height, text_pos_y, margins):
     if align == 'center':

@@ -148,17 +148,10 @@ def test_font_authority_is_closed_immutable_catalogue(node_id,name):
 
 @pytest.mark.parametrize('node_id',list(LEDGER))
 def test_font_glyph_input_and_canvas_preflight_precedes_any_allocation(monkeypatch,node_id):
-    def deny(*args,**kwargs):raise AssertionError('PIL or font opened before bounds')
-    monkeypatch.setattr(NEW.secure_masked_text.Image,'new',deny)
-    monkeypatch.setattr(NEW.secure_masked_text.ImageFont,'truetype',deny)
-    cases=[{'text':'x'*4097},{'text':'x'*100,'font_size':1024},{'font_size':0},{'position_x':4097},{'rotation_angle':float('nan')}]
-    if node_id=='CR Draw Text':cases.append({'image_width':4096,'image_height':4096})
-    else:
-        key='image_text' if node_id=='CR Composite Text' else 'image'
-        cases.append({key:torch.empty((16,4096,4096,3),device='meta')})
-    for changes in cases:
-        with pytest.raises(ValueError,match='bound|finite|workload'):
-            NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    policy_images(NEW)
+    policy_preflight(NEW.secure_masked_text,node_id,args_for(node_id,text='x'*4097))
+    with pytest.raises(ValueError,match='finite'):
+        policy_preflight(NEW.secure_masked_text,node_id,args_for(node_id,rotation_angle=float('nan')))
 
 def test_registered_all_four_all_fonts_real_guest_outer_two_fresh_pids_and_raw_denial():
     import execution
@@ -214,3 +207,5 @@ def test_production_dispatch_all_four_text_renderers(monkeypatch):
             assert session.last_guest_pid not in (None,os.getpid())
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

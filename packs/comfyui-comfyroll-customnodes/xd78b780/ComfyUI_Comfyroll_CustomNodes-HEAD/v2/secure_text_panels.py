@@ -5,6 +5,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from comfy_api.latest import io
 from .secure_schedules import _guard, _output
+from . import secure_budget as budget
 from .secure_graphics import _font_path, FONT_NAMES, tensor2pil, pil2tensor, get_text_size
 from .secure_layout import COLORS, color_mapping, get_color_values, combine_images
 from .secure_masked_text import align_text, justify_text
@@ -12,40 +13,42 @@ from .secure_masked_text import align_text, justify_text
 def _preflight(node_id,values):
     _guard(values)
     _font_path(values['font_name'])
-    glyph_work=0
     for key in ('text','header_text','footer_text'):
         if key not in values:continue
+        if key=='header_text' and values.get('layout_options') not in ('header','header and footer'):continue
+        if key=='footer_text' and values.get('layout_options') not in ('footer','header and footer'):continue
         text=values[key]
-        if not isinstance(text,str) or len(text.encode('utf-8'))>16384 or len(text)>4096:
-            raise ValueError('Text panel text exceeds bound')
+        if not isinstance(text,str):raise TypeError('Text panel requires text')
+        budget.text(text)
         size=values.get('font_size',0) if key=='text' else values.get(key.replace('_text','_font_size'),0)
-        if type(size) is not int or abs(size)>1024:raise ValueError('Text panel font size exceeds bound')
-        glyph_work+=len(text)*(abs(size)+2*abs(values.get('font_outline_thickness',0)))**2
-    if glyph_work>64*1024*1024:raise ValueError('Text panel glyph workload exceeds bound')
+        if type(size) is not int:raise TypeError('Text panel font size must be an integer')
+        outline=values.get('font_outline_thickness',0)
+        # A glyph mask is rasterized separately, not for all batch frames at once.
+        budget.glyphs(text,size,_font_path(values['font_name']),stroke=outline)
     for key in ('border_thickness','header_height','footer_height','font_outline_thickness'):
-        if key in values and (type(values[key]) is not int or abs(values[key])>1024):
-            raise ValueError('Text panel border/height/outline exceeds bound')
+        if key in values and type(values[key]) is not int:
+            raise TypeError('Text panel border/height/outline must be integers')
     input_bytes=0
     if node_id=='CR Simple Text Panel':
         width=values['panel_width'];height=values['panel_height']
-        if type(width) is not int or type(height) is not int or abs(width)>4096 or abs(height)>4096:
-            raise ValueError('Text panel dimensions exceed bound')
+        if type(width) is not int or type(height) is not int:
+            raise TypeError('Text panel dimensions must be integers')
     else:
         image=values['image_panel']
         if not isinstance(image,torch.Tensor) or image.layout!=torch.strided or image.ndim not in (3,4):
-            raise ValueError('Text panel requires bounded HWC/BHWC tensor')
+            raise ValueError('Text panel requires dense HWC/BHWC tensor')
         batch,h,w,c=(1,*image.shape) if image.ndim==3 else tuple(image.shape)
-        if batch>16 or h>4096 or w>4096 or not 1<=c<=4:raise ValueError('Text panel image dimensions exceed bound')
-        input_bytes=image.numel()*image.element_size()
+        if not 1<=c<=4:raise ValueError('Text panel requires PIL-supported channels')
+        input_bytes=budget.tensor(image)
         width=w;height=h
-        # tensor2pil squeezes singleton axes; conservatively cover swapped geometry.
         if h==1 or w==1 or c==1:width=height=max(h,w,c)
-        height+=max(0,values['header_height'])+max(0,values['footer_height'])
+        # Only selected panels are allocated. Native tensor2pil still rejects B>1.
+        layout=values['layout_options']
+        if layout in ('header','header and footer'):height+=max(0,values['header_height'])
+        if layout in ('footer','header and footer'):height+=max(0,values['footer_height'])
         border=max(0,values['border_thickness'])*2;width+=border;height+=border
-    if abs(width)>8192 or abs(height)>8192:raise ValueError('Text panel projected dimensions exceed bound')
-    projected=max(0,width)*max(0,height)*32
-    if input_bytes>32*1024*1024 or projected>64*1024*1024 or input_bytes+projected*2>128*1024*1024:
-        raise ValueError('Text panel projected output/temporary workload exceeds bound')
+    output=budget.canvas(1,height,width,3,4)
+    return budget.projection(input_bytes,[output],budget.canvas(1,height,width,3,1,'PIL text panel'),output_copies=2)
 
 def text_panel(image_width, image_height, text, font_name, font_size, font_color, font_outline_thickness, font_outline_color, background_color, margins, line_spacing, position_x, position_y, align, justify, rotation_angle, rotation_options):
     """

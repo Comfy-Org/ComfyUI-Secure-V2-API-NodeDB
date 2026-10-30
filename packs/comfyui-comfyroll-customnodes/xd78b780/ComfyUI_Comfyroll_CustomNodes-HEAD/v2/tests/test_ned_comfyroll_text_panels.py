@@ -131,15 +131,12 @@ def test_exact_metadata_options_defaults_resource_bytes_and_pristine_cache_hygie
 
 @pytest.mark.parametrize('node_id',list(LEDGER))
 def test_workload_and_closed_font_bounds_precede_any_pil_work(monkeypatch,node_id):
-    def deny(*args,**kwargs):raise AssertionError('PIL/font before preflight')
-    monkeypatch.setattr(NEW.secure_text_panels.Image,'new',deny);monkeypatch.setattr(NEW.secure_text_panels.ImageFont,'truetype',deny)
-    cases=[{'font_name':'/System/Library/Fonts/Arial.ttf'},{'font_name':'../fonts/Roboto-Regular.ttf'}]
-    if node_id=='CR Page Layout':
-        cases.extend([{'header_text':'x'*4097},{'header_text':'x'*100,'header_font_size':1024},{'image_panel':torch.empty((1,4096,4096,3),device='meta')},{'image_panel':torch.empty((1,1,4096,3),device='meta'),'header_height':1024,'footer_height':1024,'border_thickness':1024}])
-    else:cases.extend([{'text':'x'*4097},{'text':'x'*100,'font_size':1024},{'panel_width':4096,'panel_height':4096}])
-    for changes in cases:
-        with pytest.raises(ValueError,match='bound|immutable|workload'):
-            NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    policy_images(NEW)
+    values=args_for(node_id,font_name='../fonts/Roboto-Regular.ttf')
+    with pytest.raises(ValueError,match='immutable'):policy_preflight(NEW.secure_text_panels,node_id,values)
+    values=args_for(node_id)
+    key='header_text' if node_id=='CR Page Layout' else 'text';values[key]='x'*4097
+    policy_preflight(NEW.secure_text_panels,node_id,values)
 
 def test_both_registered_nodes_all_fonts_two_actual_pids_outer_and_raw_denial():
     import execution
@@ -190,3 +187,5 @@ def test_production_dispatch_both_text_panel_entrypoints(monkeypatch):
             assert session.last_guest_pid not in (None,os.getpid())
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

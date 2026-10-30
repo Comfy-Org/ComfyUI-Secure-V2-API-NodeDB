@@ -1,4 +1,5 @@
 """Bounded pack-side lists; exact source iteration/rounding/list axes retained."""
+from . import secure_budget as budget
 import math
 from itertools import product
 import numpy as np
@@ -8,7 +9,7 @@ from .secure_schedules import _guard, _output
 def _preflight(values):
     _guard(values)
     repeats=values.get('repeats',1);loops=values.get('loops',1)
-    if type(repeats) is not int or type(loops) is not int or abs(repeats)>16384 or abs(loops)>16384:
+    if type(repeats) is not int or type(loops) is not int:
         raise ValueError('List repetition count exceeds bound')
     length=1;byte_count=0
     for key in ('text','values','input_data'):
@@ -16,25 +17,23 @@ def _preflight(values):
             item=values[key]
             length=len(item) if isinstance(item,list) else item.count('\n')+1 if isinstance(item,str) and key!='input_data' else 1
             if isinstance(item,str):byte_count=len(item.encode('utf-8'))
-    if length*max(0,repeats)*max(0,loops)>16384 or byte_count*max(0,repeats)*max(0,loops)>262144:
-        raise ValueError('List projected repeat allocation exceeds bound')
+    budget.items(length*max(0,repeats)*max(0,loops),label='list repetition')
+    budget.check_bytes(byte_count*max(0,repeats)*max(0,loops),'list repetition text')
     if 'text_x' in values:
         x=values['text_x'].strip().split('\n');y=values['text_y'].strip().split('\n')
-        if len(x)*len(y)>16384 or sum(len(v.encode('utf-8')) for v in x)*len(y)+sum(len(v.encode('utf-8')) for v in y)*len(x)>262144:
-            raise ValueError('List projected Cartesian allocation exceeds bound')
+        budget.items(len(x)*len(y),label='Cartesian list')
+        budget.check_bytes(sum(len(v.encode('utf-8')) for v in x)*len(y)+sum(len(v.encode('utf-8')) for v in y)*len(x),'Cartesian list text')
     if 'start' in values and 'end' in values and 'step' in values:
         start,end,step=values['start'],values['end'],values['step']
         if step!=0:
             projected=abs((end-start)/step)+2
-            if not math.isfinite(projected) or projected>16384 or projected*max(0,loops)>16384:
-                raise ValueError('List projected range allocation exceeds bound')
+            if not math.isfinite(projected):raise ValueError('List range projection must be finite')
+            budget.items(math.ceil(projected)*max(0,loops),label='numeric range list')
     if 'prepend_text' in values:
         lines=values['multiline_text'].split('\n')
         overhead=len(values['prepend_text'].encode('utf-8'))+len(values['append_text'].encode('utf-8'))
-        if len(values['multiline_text'].encode('utf-8'))+len(lines)*overhead>262144:
-            raise ValueError('List projected prompt allocation exceeds bound')
-    if 'bit_string' in values and len(values['bit_string'])>16384:
-        raise ValueError('List projected bit allocation exceeds bound')
+        budget.check_bytes(len(values['multiline_text'].encode('utf-8'))+len(lines)*overhead,'prompt text')
+    if 'bit_string' in values:budget.items(len(values['bit_string']),label='bit list')
 
 class CR_TextList(io.ComfyNode):
     SDK_REFS = True

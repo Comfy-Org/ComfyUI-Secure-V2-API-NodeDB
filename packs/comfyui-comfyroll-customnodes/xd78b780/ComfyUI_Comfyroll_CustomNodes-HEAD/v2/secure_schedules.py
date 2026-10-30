@@ -1,21 +1,17 @@
 """Bounded workflow-owned schedules/text lists; native pinned parsing math stays pack-side."""
+from . import secure_budget as budget
 import math
 from comfy_api.latest import io
 
 def _guard(values):
-    totals={'items':0,'bytes':0}
-    def visit(value,depth=0):
-        if depth>8:raise ValueError('Schedule data nesting exceeds bound')
-        totals['items']+=1
-        if totals['items']>16384:raise ValueError('Schedule item workload exceeds bound')
-        if isinstance(value,str):
-            totals['bytes']+=len(value.encode('utf-8'))
-            if totals['bytes']>262144 or value.count('\n')>4096:raise ValueError('Schedule text workload exceeds bound')
-        elif type(value) is int and value.bit_length()>4096:raise ValueError('Schedule integer exceeds bound')
-        elif isinstance(value,float) and not math.isfinite(value):raise ValueError('Schedule scalar must be finite')
+    budget.data(values)
+    def finite(value):
+        if isinstance(value,float) and not math.isfinite(value):raise ValueError('Schedule scalar must be finite')
         elif isinstance(value,(list,tuple)):
-            for child in value:visit(child,depth+1)
-    for value in values.values():visit(value)
+            for child in value:finite(child)
+        elif isinstance(value,dict):
+            for child in value.values():finite(child)
+    finite(values)
 
 def _output(value):
     if isinstance(value,tuple):

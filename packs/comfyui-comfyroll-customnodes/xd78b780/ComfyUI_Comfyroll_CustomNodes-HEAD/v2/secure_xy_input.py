@@ -1,4 +1,5 @@
 """Bounded managed-output XY reader; source grid math and immutable Roboto stay pack-side."""
+from . import secure_budget as budget
 from io import BytesIO
 import numpy as np
 import torch
@@ -11,7 +12,7 @@ from .nodes.functions_xygrid import Annotation,create_images_grid_by_columns
 
 async def _files(prefix):
     names=await sdk.ctx().assets.list('output',prefix=prefix,recursive=False)
-    if len(names)>4096:raise WorkloadError('XY media catalogue exceeds bound')
+    budget.data(names)
     marker=prefix+'/' if prefix else '';result=[]
     for name in names:
         _logical(name,False)
@@ -23,7 +24,8 @@ async def _open(prefix,name,total):
     if '/' in name:raise ValueError('XY filename requires immediate managed file')
     ref=await sdk.ctx().assets.resolve('output',prefix+'/'+name if prefix else name)
     size=await sdk.ctx().assets.size(ref)
-    if size<0 or size>8*1024*1024 or total['encoded']+size>32*1024*1024:raise WorkloadError('XY encoded media exceeds bound')
+    if type(size) is not int or size<0:raise WorkloadError('XY encoded media size must be a nonnegative integer')
+    budget.asset_bytes(size)
     data=await sdk.ctx().assets.read_bytes(ref)
     if len(data)!=size:raise ValueError('XY media changed during bounded read')
     total['encoded']+=size
@@ -33,10 +35,9 @@ def tensor_to_pillow(image):
 def pillow_to_tensor(image):
     return torch.from_numpy(np.array(image).astype(np.float32)/255.).unsqueeze(0)
 def _parameters(max_columns,font_size,gap,x_annotation,y_annotation):
-    if type(max_columns) is not int or not 0<=max_columns<=256:raise WorkloadError('XY columns exceed bounded grid range')
-    if type(font_size) is not int or abs(font_size)>1024 or type(gap) is not int or abs(gap)>1024:raise WorkloadError('XY font/gap workload exceeds bound')
-    text=x_annotation+y_annotation
-    if len(text)>4096 or len(text.encode('utf8'))>16384 or len(text)*font_size*font_size>64*1024*1024:raise WorkloadError('XY annotation/glyph workload exceeds bound')
+    if type(max_columns) is not int or type(font_size) is not int or type(gap) is not int:
+        raise TypeError('XY columns/font/gap must be integers')
+    budget.glyphs(x_annotation+y_annotation,font_size,_font_path('Roboto-Regular.ttf'))
 def _grid_budget(images,gap,max_columns,annotation,total):
     width,height=images[0].size
     rows=(len(images)+max_columns-1)//max_columns
@@ -46,9 +47,9 @@ def _grid_budget(images,gap,max_columns,annotation,total):
     if annotation.column_texts:top=int(annotation.font.size*2)
     final_width=gw+left;final_height=gh+top
     # Preserve admitted native negative/empty errors; positive projections bounded BEFORE Image.new.
-    if max(gw,gh,final_width,final_height)>8192:raise WorkloadError('XY projected grid axes exceed bound')
     pixels=max(0,final_width)*max(0,final_height)
-    if pixels*12>32*1024*1024 or total['pixels']+pixels*96>128*1024*1024:raise WorkloadError('XY projected grid allocation exceeds bound')
+    output=budget.canvas(1,final_height,final_width,3)
+    return budget.projection(total['pixels'],[output],pixels*3)
 
 class CR_XYFromFolder(io.ComfyNode):
     SDK_REFS=False
@@ -72,8 +73,7 @@ class CR_XYFromFolder(io.ComfyNode):
         if len(file_list) < end_index:
             end_index = len(file_list)
         selected = range(start_index, end_index + 1)
-        if len(selected) > 64:
-            raise WorkloadError('XY selected image count exceeds bound')
+        budget.items(len(selected),label='XY selected images')
         for num in selected:
             i = await _open(prefix, file_list[num - 1], total)
             try:
@@ -103,4 +103,3 @@ class CR_XYFromFolder(io.ComfyNode):
 
 NODE_CLASS_MAPPINGS={'CR XY From Folder':CR_XYFromFolder}
 NODE_DISPLAY_NAME_MAPPINGS={'CR XY From Folder':'📉 CR XY From Folder'}
-

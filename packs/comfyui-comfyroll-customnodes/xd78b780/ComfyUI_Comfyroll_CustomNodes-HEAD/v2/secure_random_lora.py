@@ -7,9 +7,11 @@ import json
 from random import random, uniform
 from comfy_api.latest import io, sdk
 from .secure_lora import _name, _weight, _stack
+from .secure_storage import atomic_storage
 
 MAX_CONFLICTS=32
 MAX_DRAW_CYCLES=256
+MAX_RECORD_BYTES=1024*1024  # Deployed storage.py per-value UTF8 byte policy.
 
 def _digest(names):
     return hashlib.sha256(json.dumps(sorted(set(names)),ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()
@@ -39,7 +41,7 @@ def _stack_args(args):
 
 def _decode(value,kind,identity,names=()):
     if value is None:return None
-    if not isinstance(value,str) or len(value.encode('utf-8'))>8192:
+    if not isinstance(value,str) or len(value.encode('utf-8'))>MAX_RECORD_BYTES:
         raise ValueError('Corrupt RandomLoRA state')
     def unique(pairs):
         out={}
@@ -65,13 +67,13 @@ def _decode(value,kind,identity,names=()):
     return record
 
 async def _atomic(key,kind,identity,names,choose):
-    service=sdk.ctx().storage
+    service=atomic_storage()
     for _ in range(MAX_CONFLICTS):
         old=await service.read(key)
         record=_decode(old['value'],kind,identity,names)
         next_record=choose(record)
         encoded=json.dumps(next_record,ensure_ascii=False,separators=(',',':'),allow_nan=False)
-        if len(encoded.encode('utf-8'))>8192:raise ValueError('RandomLoRA record exceeds bound')
+        if len(encoded.encode('utf-8'))>MAX_RECORD_BYTES:raise ValueError('RandomLoRA record exceeds runtime KV value byte limit')
         updated=await service.compare_and_set(key,old['revision'],encoded)
         if updated['updated']:return next_record['last_fingerprint']
     raise RuntimeError('RandomLoRA exceeded 32 storage conflicts; no local choice committed')
@@ -140,7 +142,7 @@ class CR_RandomWeightLoRA(io.ComfyNode):
     SDK_PERMISSIONS=('storage',)
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR Random Weight LoRA',display_name='💊 CR Random Weight LoRA',category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA',inputs=[io.Int.Input('stride', default=1, min=1, max=1000), io.Combo.Input('force_randomize_after_stride', options=['Off', 'On']), io.Combo.Input('lora_name', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Combo.Input('switch', options=['Off', 'On']), io.Float.Input('weight_min', default=0.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('weight_max', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)],outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK')])
+        return io.Schema(node_id='CR Random Weight LoRA',display_name='💊 CR Random Weight LoRA',category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA',inputs=[io.Int.Input('stride', default=1, min=1, max=1000), io.Combo.Input('force_randomize_after_stride', options=['Off', 'On']), io.Combo.Input('lora_name', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Combo.Input('switch', options=['Off', 'On']), io.Float.Input('weight_min', default=0.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('weight_max', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)],outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK')])
 
     @classmethod
     async def fingerprint_inputs(cls, **args):
@@ -154,9 +156,9 @@ class CR_RandomWeightLoRA(io.ComfyNode):
     async def execute(cls, **args):
         _weight_args(args)
         identity=weight_id(args['lora_name'],args['force_randomize_after_stride'],args['stride'],args['weight_min'],args['weight_max'],args['clip_weight'])
-        old=_decode((await sdk.ctx().storage.read('random-weight.v1.'+identity))['value'],'weight',identity)
         result=[row for row in _stack(args.get('lora_stack')) if row[0]!='None']
         if args['lora_name']!='None' and args['switch']=='On':
+            old=_decode((await atomic_storage().read('random-weight.v1.'+identity))['value'],'weight',identity)
             result.append((args['lora_name'],old['last_weight'] if old else 0.0,args['clip_weight']))
         return io.NodeOutput(result)
 
@@ -165,7 +167,7 @@ class CR_RandomLoRAStack(io.ComfyNode):
     SDK_PERMISSIONS=('storage',)
     @classmethod
     def define_schema(cls):
-        return io.Schema(node_id='CR Random LoRA Stack',display_name='💊 CR Random LoRA Stack',category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA',inputs=[io.Combo.Input('exclusive_mode', options=['Off', 'On']), io.Int.Input('stride', default=1, min=1, max=1000), io.Combo.Input('force_randomize_after_stride', options=['Off', 'On']), io.Combo.Input('lora_name_1', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Combo.Input('switch_1', options=['Off', 'On']), io.Float.Input('chance_1', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name_2', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Combo.Input('switch_2', options=['Off', 'On']), io.Float.Input('chance_2', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name_3', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True, static_options=['None'])), io.Combo.Input('switch_3', options=['Off', 'On']), io.Float.Input('chance_3', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)],outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK')])
+        return io.Schema(node_id='CR Random LoRA Stack',display_name='💊 CR Random LoRA Stack',category='🧩 Comfyroll Studio/✨ Essential/💊 LoRA',inputs=[io.Combo.Input('exclusive_mode', options=['Off', 'On']), io.Int.Input('stride', default=1, min=1, max=1000), io.Combo.Input('force_randomize_after_stride', options=['Off', 'On']), io.Combo.Input('lora_name_1', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Combo.Input('switch_1', options=['Off', 'On']), io.Float.Input('chance_1', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_1', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name_2', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Combo.Input('switch_2', options=['Off', 'On']), io.Float.Input('chance_2', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_2', default=1.0, min=-10.0, max=10.0, step=0.01), io.Combo.Input('lora_name_3', options=['None'], default='None', remote=io.RemoteOptions(route='/secure-nodes/models/loras', refresh_button=True)), io.Combo.Input('switch_3', options=['Off', 'On']), io.Float.Input('chance_3', default=1.0, min=0.0, max=1.0, step=0.01), io.Float.Input('model_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Float.Input('clip_weight_3', default=1.0, min=-10.0, max=10.0, step=0.01), io.Custom('LORA_STACK').Input('lora_stack', optional=True)],outputs=[io.Custom('LORA_STACK').Output(display_name='LORA_STACK')])
 
     @classmethod
     async def fingerprint_inputs(cls, **args):
@@ -179,8 +181,10 @@ class CR_RandomLoRAStack(io.ComfyNode):
         _stack_args(args)
         names=deduplicateLoraNames(*(args[f'lora_name_{i}'] for i in range(1,4)))
         identity=_digest(names)
-        old=_decode((await sdk.ctx().storage.read('random-stack.v1.'+identity))['value'],'stack',identity,names)
-        chosen=set(old['used_names']) if old else set()
+        chosen=set()
+        if any(name!='None' and args[f'switch_{i}']=='On' for i,name in enumerate(names,1)):
+            old=_decode((await atomic_storage().read('random-stack.v1.'+identity))['value'],'stack',identity,names)
+            chosen=set(old['used_names']) if old else set()
         result=[row for row in _stack(args.get('lora_stack')) if row[0]!='None']
         for i,name in enumerate(names,1):
             if name!='None' and args[f'switch_{i}']=='On' and name in chosen:

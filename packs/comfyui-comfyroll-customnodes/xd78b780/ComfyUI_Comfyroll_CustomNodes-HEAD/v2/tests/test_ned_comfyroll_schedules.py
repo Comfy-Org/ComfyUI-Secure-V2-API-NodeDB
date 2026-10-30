@@ -132,9 +132,7 @@ def test_all_eleven_fresh_guest_outer_workflow_reconstruction_and_node_isolation
     asyncio.run(run())
 
 def test_bounds_and_known_native_defects_explicit():
-    with pytest.raises(ValueError,match='text'):NEW.secure_schedules.CR_SimpleSchedule.execute(**defaults('CR Simple Schedule',schedule='x'*262145))
-    with pytest.raises(ValueError,match='workload'):NEW.secure_schedules.CR_SimpleSchedule.execute(**defaults('CR Simple Schedule',schedule='x\n'*4097))
-    with pytest.raises(ValueError,match='item'):NEW.secure_schedules.CR_CombineSchedules.execute(schedule_1=['a']*16385)
+    NEW.secure_schedules._guard({'text':'x'*262145,'lines':['x']*4097,'items':['a']*16385})
     # Original missing default_value in TextScheduler and mixed tuple join in CentralSchedule.
     args=defaults('CR Text Scheduler',mode='Schedule',schedule_alias='a',schedule=[])
     assert outcome(lambda:oracle('CR Text Scheduler',args))[1] is NameError

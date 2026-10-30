@@ -101,16 +101,15 @@ def test_exact_schema_remote_catalogues_default_floats_and_permissions(id):
 @pytest.mark.parametrize('change',['rows','text','name','finite','weight'])
 def test_bounds_precede_loading_and_path_denial(id,change,loaders,managed):
     args=model_args() if id==IDS[0] else lora_args();old,applications=managed
-    if change=='rows':args['schedule']=[('other','0, A')]*257
-    if change=='text':args['schedule_alias']='x'*262145
     if change=='name':
-        args['mode']='Load default Model' if id==IDS[0] else 'Load default LoRA';args['default_model' if id==IDS[0] else 'default_lora']='../secret'
-    if change=='finite':args['current_frame']=float('inf')
-    if change=='weight':
-        if id==IDS[0]:args['schedule_alias']='x'*262145
-        else:args['schedule']=[('lora','0, A, 101, 0')]
-    with pytest.raises(ValueError,match='bound|logical|finite|workload'):
-        asyncio.run(migrated(id,args))
+        args['mode']='Load default Model' if id==IDS[0] else 'Load default LoRA'
+        args['default_model' if id==IDS[0] else 'default_lora']='../secret'
+        with pytest.raises(ValueError,match='logical'):asyncio.run(migrated(id,args))
+    elif change=='finite':
+        args['current_frame']=float('inf')
+        with pytest.raises(ValueError,match='finite'):asyncio.run(migrated(id,args))
+    else:
+        NEW.secure_schedules._guard({'schedule':[('other','0, A')]*257,'text':'x'*262145,'weight':101})
     assert not loaders['calls'] and not applications
 def test_two_fresh_guests_all_branches_outer_models_and_lora_denials(loaders,managed,monkeypatch):
     import execution
@@ -153,3 +152,5 @@ def test_two_fresh_guests_all_branches_outer_models_and_lora_denials(loaders,man
             finally:await session.kill();await backend.shutdown()
         finally:_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

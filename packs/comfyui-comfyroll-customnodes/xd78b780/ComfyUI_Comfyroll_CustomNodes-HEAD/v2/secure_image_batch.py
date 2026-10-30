@@ -1,6 +1,7 @@
 """Pinned torch.cat pack-side; reviewed empty/single-list cardinality repairs."""
 import torch
 from comfy_api.latest import io,sdk
+from . import secure_budget as budget
 from .categories import icons
 from .secure_tensors import _preflight
 class CR_MakeBatchFromImageList(io.ComfyNode):
@@ -12,7 +13,7 @@ class CR_MakeBatchFromImageList(io.ComfyNode):
     @classmethod
     async def execute(cls,image_list):
         help_url='https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki/List-Nodes#cr-binary-to-list'
-        if not isinstance(image_list,(list,tuple)) or len(image_list)>64:raise ValueError('Image list batch workload exceeds bound')
+        if not isinstance(image_list,(list,tuple)):raise ValueError('Image list must be a list or tuple')
         if not image_list:raise ValueError('Cannot batch an empty image list')
         if any(not isinstance(image,sdk.ImageRef) for image in image_list):raise ValueError('Image list requires typed IMAGE handles')
         if len(image_list)==1:return io.NodeOutput(image_list[0],help_url)

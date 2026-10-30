@@ -3,6 +3,8 @@ import math
 import torch
 from comfy_api.latest import io
 from .secure_schedules import _guard, _output
+from . import secure_budget as budget
+
 
 def _bytes(t):
     return t.numel()*t.element_size()
@@ -12,10 +14,14 @@ def _preflight(node_id, values):
     def walk(value,depth=0):
         nonlocal items,text_bytes
         items+=1
-        if depth>8 or items>4096:raise ValueError('Tensor container workload exceeds bound')
+        # Structural recursion/liveness guard, not an image or memory ceiling.
+        # Keep traversal well below Python's recursion limit for nested values.
+        if depth>64:raise ValueError('Tensor container nesting exceeds supported traversal depth')
+        budget.items(items,label='tensor container')
         if isinstance(value,torch.Tensor):
-            if value.layout!=torch.strided or value.ndim>8 or any(d>8192 for d in value.shape):
-                raise ValueError('Tensor layout/dimensions exceed bound')
+            if value.layout!=torch.strided:
+                raise ValueError('Tensor requires dense strided layout')
+            budget.tensor(value)
             tensors.append(value)
         elif isinstance(value,(list,tuple)):
             for child in value:walk(child,depth+1)
@@ -25,36 +31,42 @@ def _preflight(node_id, values):
         else:
             if isinstance(value,str):
                 text_bytes+=len(value.encode('utf-8'))
-                if text_bytes>262144:raise ValueError('Tensor metadata text exceeds bound')
+                budget.text(value,'tensor metadata text')
             _guard({'value':value})
     walk(values)
     input_bytes=sum(_bytes(t) for t in tensors)
-    if input_bytes>64*1024*1024:raise ValueError('Tensor inputs exceed 64MiB')
-    projected=input_bytes
+    outputs=[_bytes(t) for t in tensors]
+    projected=max(outputs,default=0)
     if node_id=='CR Latent Batch Size':
         count=values['batch_size']
         if type(count) is int:
-            if abs(count)>64:raise ValueError('Latent batch multiplier exceeds bound')
             latent=values['latent']
             if isinstance(latent,dict) and isinstance(latent.get('samples'),torch.Tensor):
                 projected=max(1,count)*_bytes(latent['samples'])
+                budget.items(max(1,count),label='latent clone list')
+                outputs=[projected]
     elif node_id=='CR Debatch Frames':
         frames=values['frames']
-        if isinstance(frames,torch.Tensor) and frames.ndim and frames.shape[0]>64:
-            raise ValueError('Frame batch exceeds bound')
+        if isinstance(frames,torch.Tensor) and frames.ndim:
+            budget.items(frames.shape[0],label='debatched frame list')
     elif node_id=='CR Conditioning Mixer':
         first=values['conditioning_1'];second=values['conditioning_2']
         if isinstance(first,(list,tuple)) and isinstance(second,(list,tuple)) and first:
-            if len(first)>64 or len(second)>64:raise ValueError('Conditioning rows exceed bound')
+            budget.items(len(first)+len(second),label='conditioning rows')
             if values['mix_method'] in ('Average','Concatenate'):
                 source=first[0][0]
                 if isinstance(source,torch.Tensor) and source.ndim==3:
-                    projected=0
+                    outputs=[]
                     for row in second:
                         target=row[0]
                         if isinstance(target,torch.Tensor) and target.ndim==3:
                             sequence=target.shape[1]+source.shape[1] if values['mix_method']=='Concatenate' else target.shape[1]
-                            projected+=max(source.shape[0],target.shape[0])*sequence*max(source.shape[2],target.shape[2])*max(4,source.element_size(),target.element_size())
+                            dtype=torch.promote_types(source.dtype,target.dtype)
+                            width=torch.empty((),dtype=dtype).element_size()
+                            if values['mix_method']=='Average' and source.shape[1]<target.shape[1]:
+                                dtype=torch.promote_types(dtype,torch.float32)
+                                width=torch.empty((),dtype=dtype).element_size()
+                            outputs.append(max(source.shape[0],target.shape[0])*sequence*max(source.shape[2],target.shape[2])*width)
                             if values['mix_method']=='Average' and isinstance(first[0][1],dict) and isinstance(row[1],dict):
                                 pooled_from=first[0][1].get('pooled_output')
                                 pooled_to=row[1].get('pooled_output',pooled_from)
@@ -62,20 +74,28 @@ def _preflight(node_id, values):
                                     if isinstance(pooled_to,torch.Tensor):
                                         try:pooled_shape=torch.broadcast_shapes(pooled_from.shape,pooled_to.shape)
                                         except RuntimeError:pooled_shape=pooled_from.shape
-                                        projected+=math.prod(pooled_shape)*max(4,pooled_from.element_size(),pooled_to.element_size())
-                                    else:projected+=_bytes(pooled_from)
+                                        pooled_dtype=torch.promote_types(pooled_from.dtype,pooled_to.dtype)
+                                        outputs.append(math.prod(pooled_shape)*torch.empty((),dtype=pooled_dtype).element_size())
+                                    else:outputs.append(_bytes(pooled_from))
     elif node_id=='CR Interpolate Latents':
         weight=values['weight']
-        if isinstance(weight,(int,float)) and abs(weight)>100:raise ValueError('Latent interpolation weight exceeds bound')
+        if isinstance(weight,(int,float)) and not math.isfinite(weight):raise ValueError('Latent interpolation weight must be finite')
         first=values['latent1'];second=values['latent2']
         if isinstance(first,dict) and isinstance(second,dict) and isinstance(first.get('samples'),torch.Tensor) and isinstance(second.get('samples'),torch.Tensor):
             a=first['samples'];b=second['samples']
             try:shape=torch.broadcast_shapes(a.shape,b.shape)
             except RuntimeError:shape=a.shape
-            projected=math.prod(shape)*max(4,a.element_size(),b.element_size())
-            projected+=sum(_bytes(value) for key,value in first.items() if key!='samples' and isinstance(value,torch.Tensor))
-    if projected>64*1024*1024 or input_bytes+6*projected>256*1024*1024:
-        raise ValueError('Tensor projected output/temporary workload exceeds bound')
+            width=torch.empty((),dtype=torch.promote_types(a.dtype,b.dtype)).element_size()
+            projected=math.prod(shape)*width
+            outputs=[projected]+[_bytes(value) for key,value in first.items() if key!='samples' and isinstance(value,torch.Tensor)]
+    elif node_id=='CR Batch Images From List':
+        images=values['image_list']
+        if images:
+            dtype=images[0].dtype
+            for value in images[1:]:dtype=torch.promote_types(dtype,value.dtype)
+            width=torch.empty((),dtype=dtype).element_size()
+            outputs=[sum(t.numel() for t in images)*width]
+    return budget.projection(input_bytes,outputs,max(outputs,default=0)*2,output_copies=2)
 
 class CR_LatentBatchSize(io.ComfyNode):
     SDK_REFS=False

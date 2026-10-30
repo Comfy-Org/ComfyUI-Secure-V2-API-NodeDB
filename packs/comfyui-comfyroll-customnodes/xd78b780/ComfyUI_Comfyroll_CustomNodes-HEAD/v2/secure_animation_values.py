@@ -1,4 +1,5 @@
 """Pinned bounded animation values/opaque image routing, no model or filesystem authority."""
+from . import secure_budget as budget
 from comfy_api.latest import io
 from .secure_schedules import _guard, _output
 
@@ -10,14 +11,12 @@ def _preflight(node_id,values):
         if isinstance(value,str):strings+=len(value.encode('utf-8'))
         elif isinstance(value,(list,tuple)):
             items+=len(value)
-            if items>16384:raise ValueError('Animation item workload exceeds bound')
+            budget.items(items,label='animation items')
             for child in value:visit(child)
     for value in values.values():visit(value)
     loops=values.get('loops',1)
     if isinstance(loops,int):
-        if abs(loops)>1000:raise ValueError('Animation loops exceed bound')
-        if max(0,loops)*max(1,items+5)>16384:
-            raise ValueError('Animation projected item workload exceeds bound')
+        budget.items(max(0,loops)*max(1,items+5),label='animation loop list')
     if node_id in ('CR Simple Prompt List Keyframes','CR Prompt List Keyframes'):
         if not isinstance(loops,int):return
         intervals=[values.get('keyframe_interval',0)]
@@ -26,7 +25,7 @@ def _preflight(node_id,values):
             intervals.extend(row[4] for row in rows if isinstance(row,(list,tuple)) and len(row)>=5)
         digits=max((len(str(v))+len(str(max(1,items)*max(1,loops)))+2 for v in intervals if isinstance(v,(int,float))),default=1)
         projected=max(0,loops)*(strings+max(1,items)*(digits+16))
-        if projected>262144:raise ValueError('Animation projected keyframe text exceeds bound')
+        budget.check_bytes(projected,'animation keyframe text')
 
 class CR_SimplePromptList(io.ComfyNode):
     SDK_REFS=True

@@ -1,3 +1,7 @@
+R11 STAGING NOTE: Pack-local comfy-api.pyi/.d.ts remain unchanged by manager instruction. They advertise members absent on0cd9adec and await the canonical pair. The publication gate must check the real selected public SDK declaration. Existing text/list outputs above the1MiB JSON frame (including envelope) may fail late; this pre-existing transport gap is documented, not fixed here. Legacy text-artifact/IO broker and Guest suites are explicitly out of current-SDK tier scope; no synthetic provider success is qualification.
+
+R10 DRAFT: Current source is not released or whole-pack qualified. See DEFECT_REPAIR_STATUS_20261029.json and current disposition review; older notes below describe predecessor evidence. Native scratch is estimated, not store-capped. Only final published IMAGE geometry/actual dtype bytes use the Host store policy. Nondefault store/asset env propagation remains open. Stubs stay unchanged pending the canonical0cd9adec pair. No new Guest credit.
+
 # Post Processing conversion
 
 All 23 registered source effects remain available through typed public IMAGE inputs and outputs. There are no frontend extensions, routes, models, services or authored-state stores. The original root monolith supplies every effect; historical split modules, example images and source resources remain in the complete tree without being executed.

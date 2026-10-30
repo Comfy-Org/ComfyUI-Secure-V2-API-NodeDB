@@ -2,27 +2,25 @@
 import math
 import torch
 from comfy_api.latest import io
+from . import secure_budget as budget
 
 def _preflight(width,height,batch_size,scale):
     if any(type(v) is not int for v in (width,height,batch_size)):
         raise TypeError('Comfyroll dimensions and batch must be integers')
-    if isinstance(scale,bool) or not isinstance(scale,(int,float)) or not math.isfinite(scale) or abs(scale)>100:
-        raise ValueError('Comfyroll prescale exceeds bounded range')
-    if abs(width)>16384 or abs(height)>16384 or not -64<=batch_size<=64:
-        raise ValueError('Comfyroll dimensions/batch exceed bounded range')
+    if isinstance(scale,bool) or not isinstance(scale,(int,float)) or not math.isfinite(scale):
+        raise ValueError('Comfyroll prescale must be finite')
+    # Check the selected, scaled dimensions in _bounded_zeros, not unused custom inputs.
 
 def _bounded_zeros(shape):
     if len(shape)!=4 or any(type(v) is not int for v in shape):
         raise TypeError('Comfyroll latent shape must contain four integers')
     if any(v<0 for v in shape):
-        # Preserve the pinned Torch error before any memory allocation.
-        raise RuntimeError('Trying to create tensor with negative dimension '+str(shape))
-    if shape[0]>64 or shape[1]!=4 or any(v>2048 for v in shape[2:]):
-        raise ValueError('Comfyroll latent dimensions exceed bounded range')
-    output_bytes=math.prod(shape)*4
-    if output_bytes>64*1024*1024:
-        raise ValueError('Comfyroll whole-batch latent exceeds 64MiB')
-    # Explicit dtype means accounting and pinned normal default agree.
+        # Delegate to Torch: exact original exception text, without allocating data.
+        return torch.zeros(shape,dtype=torch.float32)
+    if shape[1]!=4:
+        raise ValueError('Comfyroll latent requires four channels')
+    output_bytes=budget.check_bytes(math.prod(shape)*4,'latent output tensor')
+    budget.projection(0,[output_bytes],output_copies=1)
     return torch.zeros(shape,dtype=torch.float32)
 
 PRINT_SIZES = {'A4 - 2480x3508': (2480, 3508), 'A5 - 1748x2480': (1748, 2480), 'A6 - 1240x1748': (1240, 1748), 'A7 - 874x1240': (874, 1240), 'A8 - 614x874': (614, 874), 'A9 - 437x614': (437, 614), 'A10 - 307x437': (307, 437), 'B4 - 2953x4169': (2953, 4169), 'B5 - 2079x2953': (2079, 2953), 'B6 - 1476x2079': (1476, 2079), 'B7 - 1039x1476': (1039, 1476), 'B8 - 732x1039': (732, 1039), 'B9 - 520x732': (520, 732), 'B10 - 366x520': (366, 520), 'C4 - 2705x3827': (2705, 3827), 'C5 - 1913x2705': (1913, 2705), 'C6 - 1346x1913': (1346, 1913), 'C7 - 957x1346': (957, 1346), 'C8 - 673x957': (673, 957), 'C9 - 472x673': (472, 673), 'C10 - 331x472': (331, 472), 'Letter (8.5 x 11 inches) - 2550x3300': (2550, 3300), 'Legal (8.5 x 14 inches) - 2550x4200': (2550, 4200)}

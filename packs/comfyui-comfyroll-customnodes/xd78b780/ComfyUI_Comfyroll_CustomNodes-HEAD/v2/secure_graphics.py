@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 from comfy_api.latest import io
+from . import secure_budget as budget
 
 FONT_NAMES = ['Quicksand-Bold.ttf', 'YoungSerif-Regular.ttf', 'Oswald-Bold.ttf', 'Roboto-Regular.ttf', 'comic.ttf', 'impact.ttf', 'AlumniSansCollegiateOne-Regular.ttf', 'Caveat-VariableFont_wght.ttf', 'PixelifySans-Bold.ttf', 'NotoSansArabic-Regular.ttf']
 color_mapping = {'white': (255, 255, 255), 'black': (0, 0, 0), 'red': (255, 0, 0), 'green': (0, 255, 0), 'blue': (0, 0, 255), 'yellow': (255, 255, 0), 'cyan': (0, 255, 255), 'magenta': (255, 0, 255), 'orange': (255, 165, 0), 'purple': (128, 0, 128), 'pink': (255, 192, 203), 'brown': (160, 85, 15), 'gray': (128, 128, 128), 'lightgray': (211, 211, 211), 'darkgray': (102, 102, 102), 'olive': (128, 128, 0), 'lime': (0, 128, 0), 'teal': (0, 128, 128), 'navy': (0, 0, 128), 'maroon': (128, 0, 0), 'fuchsia': (255, 0, 128), 'aqua': (0, 255, 128), 'silver': (192, 192, 192), 'gold': (255, 215, 0), 'turquoise': (64, 224, 208), 'lavender': (230, 230, 250), 'violet': (238, 130, 238), 'coral': (255, 127, 80), 'indigo': (75, 0, 130)}
@@ -15,22 +16,34 @@ def _font_path(name):
         raise ValueError('Font must be an immutable bundled resource')
     return str(Path(__file__).parent/'fonts'/name)
 
-def _image_budget(image):
-    if not isinstance(image,torch.Tensor) or image.ndim!=4:
-        raise ValueError('Expected bounded BHWC tensor')
+def _image_budget(image,operation='vignette'):
+    if not isinstance(image,torch.Tensor) or image.ndim!=4 or image.layout!=torch.strided:
+        raise ValueError('Expected dense BHWC tensor')
     batch,height,width,channels=image.shape
-    if batch>16 or height>4096 or width>4096 or channels not in (1,3,4):
-        raise ValueError('Image dimensions/batch/channels exceed bounded range')
-    if image.numel()*image.element_size()>32*1024*1024 or batch*height*width*96>128*1024*1024:
-        raise ValueError('Image projected temporary/output allocation exceeds bound')
+    if channels not in (1,2,3,4):raise ValueError('PIL-supported image channels required')
+    owned=budget.tensor(image)
+    if operation=='tint':
+        # Fixed RGB float32 weights promote a floating input without narrowing it.
+        width_bytes=torch.empty((),dtype=torch.promote_types(image.dtype,torch.float32)).element_size()
+        output=budget.canvas(batch,height,width,3,width_bytes)
+        return budget.projection(owned,[output],batch*height*width*width_bytes*7,output_copies=2)
+    outputs=[budget.canvas(batch,height,width,3)]
+    if operation=='vignette':outputs.append(budget.canvas(batch,height,width,1,kind='MASK'))
+    # Conversion keeps multiply and clipped arrays of the INPUT dtype alive
+    # together. PIL rgba/mask layers and float32 RGB conversion are per frame;
+    # retain one previous frame's layers until their loop locals are replaced.
+    pixels=height*width
+    pil_layers=pixels*(channels+3*4+2)
+    conversion=pixels*2*channels*image.element_size()
+    frame_peak=pil_layers+max(conversion,pixels*(3+2*3*4))
+    return budget.projection(owned,outputs,frame_peak)
 
 def _text_budget(text,font_size,x_margin,y_margin):
-    if not isinstance(text,str) or len(text.encode('utf-8'))>16384 or len(text)>4096:
-        raise ValueError('Watermark text exceeds bounded range')
-    if type(font_size) is not int or not 1<=font_size<=1024:
-        raise ValueError('Font size exceeds bounded range')
-    if any(type(v) is not int or abs(v)>1024 for v in (x_margin,y_margin)):
-        raise ValueError('Watermark margins exceed bounded range')
+    if not isinstance(text,str):raise TypeError('Watermark requires text')
+    budget.text(text)
+    if type(font_size) is not int:raise TypeError('Font size must be an integer')
+    if any(type(v) is not int for v in (x_margin,y_margin)):
+        raise TypeError('Watermark margins must be integers')
 
 def tensor2pil(image):
     return Image.fromarray(np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
@@ -81,11 +94,10 @@ class CR_SimpleTextWatermark(io.ComfyNode):
     def execute(cls, image, text, align, font_name, font_size, font_color, opacity, x_margin, y_margin, font_color_hex='#000000'):
         _font_path(font_name)
         _text_budget(text, font_size, x_margin, y_margin)
-        _image_budget(image)
-        if image.shape[0]*len(text)*font_size*font_size>64*1024*1024:
-            raise ValueError('Watermark projected glyph workload exceeds bound')
-        if not isinstance(font_color_hex,str) or len(font_color_hex)>128:
-            raise ValueError('Watermark color text exceeds bounded range')
+        _image_budget(image,'watermark')
+        budget.glyphs(text,font_size,_font_path(font_name))
+        if not isinstance(font_color_hex,str):raise TypeError('Watermark color requires text')
+        budget.text(font_color_hex,'watermark color text')
         text_color = get_color_values(font_color, font_color_hex, color_mapping)
         total_images = []
         for img in image:
@@ -131,11 +143,11 @@ class CR_ColorTint(io.ComfyNode):
 
     @classmethod
     def execute(cls, image: torch.Tensor, strength, mode: str='sepia', tint_color_hex='#000000'):
-        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or (not math.isfinite(strength)) or (not 0 <= strength <= 1):
-            raise ValueError('Tint strength exceeds bounded range')
-        if not isinstance(tint_color_hex, str) or len(tint_color_hex) > 128:
-            raise ValueError('Tint color text exceeds bounded range')
-        _image_budget(image)
+        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or (not math.isfinite(strength)):
+            raise ValueError('Tint strength must be finite')
+        if not isinstance(tint_color_hex,str):raise TypeError('Tint color requires text')
+        budget.text(tint_color_hex,'tint color text')
+        _image_budget(image,'tint')
         if strength == 0:
             # Explicit coordinator-approved repair of source one-output defect.
             return io.NodeOutput(image, 'https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki/Filter-Nodes#cr-color-tint')
@@ -160,8 +172,8 @@ class CR_VignetteFilter(io.ComfyNode):
 
     @classmethod
     def execute(cls, image, feather_amount, reverse, vignette_shape='circle', x_offset=0, y_offset=0, zoom=1.0):
-        if type(feather_amount) is not int or not 0 <= feather_amount <= 1024 or any((type(v) is not int or abs(v) > 2048 for v in (x_offset, y_offset))) or isinstance(zoom, bool) or (not isinstance(zoom, (int, float))) or (not math.isfinite(zoom)) or (not 0 <= zoom <= 10):
-            raise ValueError('Vignette parameters exceed bounded range')
+        if type(feather_amount) is not int or feather_amount < 0 or any(type(v) is not int for v in (x_offset, y_offset)) or isinstance(zoom, bool) or (not isinstance(zoom, (int, float))) or (not math.isfinite(zoom)):
+            raise ValueError('Vignette parameters require nonnegative integer feather, integer offsets and finite zoom')
         _image_budget(image)
         images = []
         masks = []

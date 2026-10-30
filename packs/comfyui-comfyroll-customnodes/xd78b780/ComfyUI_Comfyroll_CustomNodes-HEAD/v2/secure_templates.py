@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from PIL import Image,ImageDraw,ImageOps,ImageFont
 from comfy_api.latest import io
+from . import secure_budget as budget
 from .secure_schedules import _guard,_output
 from .secure_graphics import _font_path,FONT_NAMES,tensor2pil,pil2tensor,get_text_size,get_color_values,color_mapping,COLORS
 from .secure_layout import combine_images
@@ -20,12 +21,12 @@ def _preflight(node_id,values):
         if not isinstance(image,torch.Tensor) or image.layout!=torch.strided or image.ndim not in (3,4):
             raise ValueError('Template requires bounded dense HWC/BHWC')
         b,ih,iw,c=(1,*image.shape) if image.ndim==3 else tuple(image.shape)
-        if b>16 or ih>4096 or iw>4096 or c>4:raise ValueError('Template image dimensions exceed bound')
-        input_bytes+=image.numel()*image.element_size()
+        if c>4:raise ValueError('Template image channel count exceeds bound')
+        input_bytes+=budget.tensor(image)
         batch=max(batch,b);h=max(h,ih);w=max(w,iw)
         if ih==1 or iw==1 or c==1:h=w=max(h,w,ih,iw,c)
     size=values.get('max_font_size',values.get('font_size',0))
-    if type(size) is not int or abs(size)>1024:raise ValueError('Template font size exceeds bound')
+    if type(size) is not int:raise TypeError('Template font size must be an integer')
     glyphs=0
     texts=dict(values)
     if node_id=='CR Simple Meme Template':
@@ -35,31 +36,27 @@ def _preflight(node_id,values):
     for key in ('text_top','text_bottom','banner_text','text1','text2'):
         if key not in values:continue
         text=texts[key]
-        if not isinstance(text,str) or len(text.encode('utf-8'))>16384 or len(text)>4096:
-            raise ValueError('Template text exceeds bound')
-        glyphs+=len(text)*abs(size)**2*batch
-    if glyphs>64*1024*1024:raise ValueError('Template glyph workload exceeds bound')
+        if not isinstance(text,str):raise TypeError('Template requires text')
+        budget.text(text)
+        if size>0:budget.glyphs(text,size,_font_path(values['font_name']))
     for key in ('border_thickness','outline_thickness','margin_size','footer_height'):
-        if key in values and (type(values[key]) is not int or abs(values[key])>1024):
+        if key in values and type(values[key]) is not int:
             raise ValueError('Template border/outline/footer exceeds bound')
     if node_id=='CR Comic Panel Templates':
         w=values['page_width'];h=values['page_height'];batch=1
-        if type(w) is not int or type(h) is not int or abs(w)>4096 or abs(h)>4096:
+        if type(w) is not int or type(h) is not int:
             raise ValueError('Comic page dimensions exceed bound')
         layout=values['custom_panel_layout'] if values['template']=='custom' else values['template']
-        if not isinstance(layout,str) or len(layout)>128 or len(layout.encode('utf-8'))>512:
-            raise ValueError('Comic layout exceeds bound')
-        if sum(int(v) for v in layout if v in '0123456789')>512:
-            raise ValueError('Comic panel work exceeds bound')
+        if not isinstance(layout,str):raise TypeError('Comic layout requires text')
+        budget.text(layout)
+        budget.items(sum(int(v) for v in layout if v in '0123456789'),label='comic panels')
         w+=2*abs(values['border_thickness']);h+=2*abs(values['border_thickness'])
     elif node_id=='CR Simple Meme Template':h=int(h*1.4)+4
     elif node_id=='CR Simple Image Compare':
         w=w*2+4*abs(values['border_thickness'])
         h+=max(0,values['footer_height'])+4*abs(values['border_thickness']);batch=1
-    if abs(w)>8192 or abs(h)>8192:raise ValueError('Template projected dimensions exceed bound')
-    projected=max(0,w)*max(0,h)*batch*16
-    if input_bytes>32*1024*1024 or projected>32*1024*1024 or input_bytes+projected*3>128*1024*1024:
-        raise ValueError('Template projected output/temporary workload exceeds bound')
+    projected=budget.canvas(batch,h,w,3)
+    return budget.projection(input_bytes,[projected],max(0,w)*max(0,h)*12)
 
 def draw_text_on_image(draw, y_position, bar_width, bar_height, text, font, text_color, font_outline):
     text_width, text_height = get_text_size(draw, text, font)

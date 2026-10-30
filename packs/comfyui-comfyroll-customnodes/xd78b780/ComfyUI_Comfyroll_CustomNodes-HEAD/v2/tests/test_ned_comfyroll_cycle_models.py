@@ -116,8 +116,9 @@ def test_exact_schema_defaults_and_model_only_permission():
 @pytest.mark.parametrize('changes',[{'model_list':[('a','one')]*257},{'loops':1001},{'model_list':[('a','one')]*256,'loops':1000},{'model_list':[('a','../host')],'current_frame':1,'frame_interval':1},{'model_list':[('a','/host/path')],'current_frame':1,'frame_interval':1}])
 def test_bounds_and_logical_name_denial_before_loader(loaders,changes):
     args=args_for(**changes)
-    with pytest.raises(ValueError,match='bound|logical'):
-        asyncio.run(migrated(args))
+    if any(name.startswith(('../','/')) for _,name in args['model_list']):
+        with pytest.raises(ValueError,match='logical'):asyncio.run(migrated(args))
+    else:NEW.secure_cycle_models._preflight(args)
     assert not loaders['calls']
 
 def test_registered_two_actual_guests_outer_model_clip_vae_identity_and_models_denial(loaders):
@@ -157,3 +158,5 @@ def test_registered_two_actual_guests_outer_model_clip_vae_identity_and_models_d
         finally:_sdk.providers.register_execution_backend(previous)
         assert pids[0]!=pids[1]
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

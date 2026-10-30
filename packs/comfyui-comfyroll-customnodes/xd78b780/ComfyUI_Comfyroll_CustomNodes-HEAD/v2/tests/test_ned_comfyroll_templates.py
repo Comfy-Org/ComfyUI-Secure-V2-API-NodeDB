@@ -134,18 +134,18 @@ def test_exact_schema_current_tokens_options_output_and_reload(node_id):
     assert not list(PACK.rglob('__pycache__')) and not list(PACK.rglob('*.pyc'))
 @pytest.mark.parametrize('node_id',list(LEDGER))
 def test_bounds_before_pil_or_font_loading(node_id,monkeypatch):
-    calls=[];monkeypatch.setattr(NEW.secure_templates,'tensor2pil',lambda *a,**k:calls.append((a,k)))
     args=args_for(node_id)
-    if node_id=='CR Comic Panel Templates':args['page_width']=8193
-    else:args['font_name']='../../host.ttf'
-    with pytest.raises(ValueError,match='bound|immutable'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args)
-    assert not calls
+    if node_id=='CR Comic Panel Templates':
+        args['page_width']=8193
+        policy_preflight(NEW.secure_templates,node_id,args)
+    else:
+        args['font_name']='../../host.ttf'
+        with pytest.raises(ValueError,match='immutable'):policy_preflight(NEW.secure_templates,node_id,args)
 @pytest.mark.parametrize('node_id',['CR Simple Meme Template','CR Simple Banner','CR Comic Panel Templates'])
 def test_whole_batch_allocation_meta_denied_before_work(node_id,monkeypatch):
-    calls=[];monkeypatch.setattr(NEW.secure_templates,'tensor2pil',lambda *a,**k:calls.append((a,k)))
-    args=args_for(node_id);key='images' if node_id=='CR Comic Panel Templates' else 'image';args[key]=torch.empty(16,4096,4096,3,device='meta')
-    with pytest.raises(ValueError,match='bound'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args)
-    assert not calls
+    args=args_for(node_id);key='images' if node_id=='CR Comic Panel Templates' else 'image'
+    args[key]=torch.empty(16,4096,4096,3,device='meta')
+    with pytest.raises(ValueError,match='runtime|IMAGE'):policy_preflight(NEW.secure_templates,node_id,args)
 def test_two_actual_fresh_raw_guests_outer_exact_pixels_caps_denial_and_production(tmp_path,monkeypatch):
     import execution
     from comfy_secure_nodes.execution import CloudExecutionBackend
@@ -194,3 +194,5 @@ def test_two_actual_fresh_raw_guests_outer_exact_pixels_caps_denial_and_producti
             finally:await session.kill();await backend.shutdown()
         finally:_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

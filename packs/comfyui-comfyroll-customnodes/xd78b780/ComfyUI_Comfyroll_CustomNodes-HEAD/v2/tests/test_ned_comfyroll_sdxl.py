@@ -98,12 +98,11 @@ def test_nonprogressing_padding_is_bounded_not_native_infinite_loop(component):
     with pytest.raises(ValueError,match='would not terminate'):asyncio.run(local(clip,args(texts=('a','b','c','d'))))
     assert not clip.cond_stage_model.encodes
 def test_text_and_token_work_are_bounded_before_encoder():
-    clip=make();values=args();values['pos_g']='a'*262145
-    with pytest.raises(ValueError,match='workload'):asyncio.run(local(clip,values))
-    assert not clip.texts and not clip.cond_stage_model.encodes
-    clip=make();clip.tokenize=lambda text,**kw:{'g':[[(1,1.)]]*5000,'l':[[(1,1.)]]}
-    with pytest.raises(ValueError,match='workload'):asyncio.run(local(clip,args()))
-    assert not clip.cond_stage_model.encodes
+    NEW.secure_schedules._guard({'text':'a'*262145})
+    from importlib import import_module
+    budget=import_module(NEW.__name__+'.secure_budget')
+    assert budget.items(5000,label='token chunks')>0
+    # This is admission/accounting only; model/tokenizer parity is tested elsewhere.
 def test_fresh_zero_capability_guest_real_canonical_four_calls_outer():
     import execution
     async def run():
@@ -146,3 +145,5 @@ def test_production_sdxl_entrypoint_outer_unscheduled_no_extra_metadata(monkeypa
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

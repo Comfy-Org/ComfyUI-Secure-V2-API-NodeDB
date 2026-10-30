@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageOps, ImageFilter
 from comfy_api.latest import io
+from . import secure_budget as budget
 from .secure_schedules import _guard, _output
 
 def _preflight(node_id, values):
@@ -15,14 +16,14 @@ def _preflight(node_id, values):
             if value.layout!=torch.strided or value.ndim not in (3,4):
                 raise ValueError('Layout requires bounded HWC/BHWC tensors')
             batch,height,width,channels=(1,*value.shape) if value.ndim==3 else tuple(value.shape)
-            if batch>16 or height>4096 or width>4096 or not 1<=channels<=4:
+            if not 1<=channels<=4:
                 raise ValueError('Layout image dimensions exceed bound')
-            input_bytes+=value.numel()*value.element_size()
+            input_bytes+=budget.tensor(value)
             if value.ndim==3 and node_id in ('CR Image Grid Panel','CR Image Border','CR Feathered Border'):
                 # Pinned loop iterates HWC rows rather than treating HWC as one batch.
                 # Keep that native direct-input behavior within a bounded row workload.
                 batch,height,width,channels=height,width,channels,1
-                if batch>16:raise ValueError('Layout HWC row workload exceeds bound')
+                budget.items(batch,label='layout HWC rows')
             if height==1 or width==1:
                 # tensor2pil squeezes singleton axes; its PIL geometry can swap axes
                 # or promote the channel axis. A square upper bound prevents undercount.
@@ -30,14 +31,13 @@ def _preflight(node_id, values):
                 height=width=side
             dimensions[key]=(batch,height,width,channels)
         if key.endswith('_thickness') or key=='feather_amount':
-            if type(value) is not int or abs(value)>1024:raise ValueError('Layout thickness exceeds bound')
-        if key in ('offset_x','offset_y') and (type(value) is not int or abs(value)>4096):
+            if type(value) is not int:raise TypeError('Layout thickness must be an integer')
+        if key in ('offset_x','offset_y') and type(value) is not int:
             raise ValueError('Layout offset exceeds bound')
-    if input_bytes>32*1024*1024:raise ValueError('Layout image inputs exceed 32MiB')
     canvases=[]
     if node_id=='CR Color Panel':
         width=values['panel_width'];height=values['panel_height']
-        if type(width) is not int or type(height) is not int or abs(width)>4096 or abs(height)>4096:
+        if type(width) is not int or type(height) is not int:
             raise ValueError('Layout panel dimensions exceed bound')
         canvases=[(1,height,width)]
     elif node_id in ('CR Image Panel','CR Image Grid Panel'):
@@ -49,7 +49,7 @@ def _preflight(node_id, values):
                 else:canvases=[(1,sum(h for h,w in sizes),max(w for h,w in sizes))]
         else:
             count,height,width,_=dimensions['images'];columns=values['max_columns']
-            if type(columns) is not int or abs(columns)>256:raise ValueError('Layout columns exceed bound')
+            if type(columns) is not int:raise TypeError('Layout columns must be an integer')
             if count and columns>0:canvases=[(1,(height+padding)*((count-1)//columns+1),(width+padding)*min(columns,count))]
     elif node_id in ('CR Image Border','CR Feathered Border'):
         count,height,width,_=dimensions['image']
@@ -58,24 +58,35 @@ def _preflight(node_id, values):
         canvases=[(count,height+feather+outline+max(0,values['top_thickness'])+max(0,values['bottom_thickness']),width+feather+outline+max(0,values['left_thickness'])+max(0,values['right_thickness']))]
     elif node_id in ('CR Half Drop Panel','CR Diamond Panel'):
         count,height,width,_=dimensions['image'];factor=1 if values['pattern']=='none' else 2
-        if 'drop_percentage' in values and abs(values['drop_percentage'])>10:raise ValueError('Layout drop exceeds bound')
+        if 'drop_percentage' in values and not math.isfinite(values['drop_percentage']):raise ValueError('Layout drop must be finite')
         canvases=[(count,height*factor,width*factor)]
     elif node_id=='CR Overlay Transparent Image':
         _,height,width,_=dimensions['back_image'];canvases=[(1,height,width)]
         _,oh,ow,_=dimensions['overlay_image'];scale=values['overlay_scale_factor']
-        if isinstance(scale,bool) or not isinstance(scale,(int,float)) or not math.isfinite(scale) or abs(scale)>100:
+        if isinstance(scale,bool) or not isinstance(scale,(int,float)) or not math.isfinite(scale):
             raise ValueError('Layout overlay scale exceeds bound')
         angle=values['rotation_angle']
-        if abs(angle)>36000 or not -10<=values['transparency']<=10:raise ValueError('Layout overlay parameters exceed bound')
-        # Expanded rotated canvas is bounded above by the width+height diagonal box.
-        rotated=oh+ow+2
-        canvases.extend([(1,rotated,rotated),(1,int(rotated*abs(scale)),int(rotated*abs(scale)))])
-    projected=0
+        if not math.isfinite(angle) or not math.isfinite(values['transparency']):raise ValueError('Layout overlay parameters must be finite')
+        # Pillow expand=True uses the selected angle, not the largest square
+        # over every possible rotation. Its outward rounding adds at most2px.
+        radians=math.radians(angle%360)
+        rx=ow*abs(math.cos(radians))+oh*abs(math.sin(radians))
+        ry=ow*abs(math.sin(radians))+oh*abs(math.cos(radians))
+        rotated_w=math.ceil(rx)+2;rotated_h=math.ceil(ry)+2
+        scratch=(rotated_h*rotated_w+int(rotated_h*abs(scale))*int(rotated_w*abs(scale)))*4
+        budget.projection(input_bytes,[],scratch)
+    projected=[];frame=0
+    channels=3
+    if node_id=='CR Image Border':channels=dimensions['image'][3]
+    elif node_id=='CR Overlay Transparent Image':channels=dimensions['back_image'][3]
+    elif node_id in ('CR Half Drop Panel','CR Diamond Panel'):
+        if values['pattern']=='none':return budget.projection(input_bytes,[],0)
+        # The original squeezes the entire input; it does not map over a batch.
+        canvases=[(1,h,w) for _,h,w in canvases]
     for batch,height,width in canvases:
-        if abs(height)>8192 or abs(width)>8192:raise ValueError('Layout projected dimensions exceed bound')
-        projected+=max(0,batch)*max(0,height)*max(0,width)*16
-    if projected>32*1024*1024 or input_bytes+3*projected>128*1024*1024:
-        raise ValueError('Layout projected output/temporary workload exceeds bound')
+        projected.append(budget.canvas(batch,height,width,channels))
+        frame=max(frame,max(0,height)*max(0,width)*(channels+4+channels*4))
+    return budget.projection(input_bytes,projected,frame)
 
 color_mapping = {'white': (255, 255, 255), 'black': (0, 0, 0), 'red': (255, 0, 0), 'green': (0, 255, 0), 'blue': (0, 0, 255), 'yellow': (255, 255, 0), 'cyan': (0, 255, 255), 'magenta': (255, 0, 255), 'orange': (255, 165, 0), 'purple': (128, 0, 128), 'pink': (255, 192, 203), 'brown': (160, 85, 15), 'gray': (128, 128, 128), 'lightgray': (211, 211, 211), 'darkgray': (102, 102, 102), 'olive': (128, 128, 0), 'lime': (0, 128, 0), 'teal': (0, 128, 128), 'navy': (0, 0, 128), 'maroon': (128, 0, 0), 'fuchsia': (255, 0, 128), 'aqua': (0, 255, 128), 'silver': (192, 192, 192), 'gold': (255, 215, 0), 'turquoise': (64, 224, 208), 'lavender': (230, 230, 250), 'violet': (238, 130, 238), 'coral': (255, 127, 80), 'indigo': (75, 0, 130)}
 COLORS = ['custom', 'white', 'black', 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta', 'orange', 'purple', 'pink', 'brown', 'gray', 'lightgray', 'darkgray', 'olive', 'lime', 'teal', 'navy', 'maroon', 'fuchsia', 'aqua', 'silver', 'gold', 'turquoise', 'lavender', 'violet', 'coral', 'indigo']

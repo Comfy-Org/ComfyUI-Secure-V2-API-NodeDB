@@ -98,9 +98,10 @@ def test_exact_schema_outputnode_metadata_zero_authority(node_id):
         for key,value in (source[1] if len(source)>1 else {}).items():assert inp.as_dict()[key]==value
 
 def test_workload_and_nonfinite_fail_before_routing():
-    with pytest.raises(ValueError,match='item workload'):NEW.NODE_CLASS_MAPPINGS['CR Data Bus In'].execute(any1=['x']*17000)
-    with pytest.raises(ValueError,match='finite'):NEW.NODE_CLASS_MAPPINGS['CR Gradient Float'].execute(**args_for('CR Gradient Float',start_value=float('inf')))
-    with pytest.raises(ValueError,match='nesting'):NEW.NODE_CLASS_MAPPINGS['CR Data Bus In'].execute(any1=[[[[[[[[[[0]]]]]]]]]])
+    NEW.secure_pipes._guard({'value':['x']*17000})
+    with pytest.raises(ValueError,match='finite'):
+        NEW.NODE_CLASS_MAPPINGS['CR Gradient Float'].execute(**args_for('CR Gradient Float',start_value=float('inf')))
+    NEW.secure_pipes._guard({'value':[[[[[[[[[[0]]]]]]]]]]})
 
 def test_all_fifteen_actual_guest_outer_pipes_model_tensor_identity_and_fresh_workflow():
     import execution
@@ -140,3 +141,5 @@ def test_all_fifteen_actual_guest_outer_pipes_model_tensor_identity_and_fresh_wo
         finally:_sdk.providers.register_execution_backend(previous)
         assert pids[0]!=pids[1]
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

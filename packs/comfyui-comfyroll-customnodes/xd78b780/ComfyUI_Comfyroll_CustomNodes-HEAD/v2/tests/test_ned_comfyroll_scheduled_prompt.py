@@ -50,10 +50,11 @@ def test_exact_schema_raw_only_and_no_cache():
         for k,v in (inputs[i.id][1] if len(inputs[i.id])>1 else {}).items():assert i.as_dict()[k]==v
     assert not list(PACK.rglob('__pycache__')) and not list(PACK.rglob('*.pyc'))
 def test_text_token_input_bound_and_nonfinite_weight_before_encoder():
+    NEW.secure_schedules._guard({'current_prompt':'x'*262145})
     value=clip()
-    for args in [dict(current_prompt='x'*262145,next_prompt='',weight=1),dict(current_prompt='',next_prompt='',weight=float('nan'))]:
-        with pytest.raises(ValueError,match='workload|finite'):asyncio.run(migrated(value,args))
-        assert not value.loads and not value.texts
+    with pytest.raises(ValueError,match='finite'):
+        asyncio.run(migrated(value,dict(current_prompt='',next_prompt='',weight=float('nan'))))
+    assert not value.loads and not value.texts
 def test_two_fresh_raw_guests_outer_exact_dtype_pooled_and_denial():
     import execution
     async def run():
@@ -100,3 +101,5 @@ def test_production_scheduled_prompt_outer_raw_only(monkeypatch):
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

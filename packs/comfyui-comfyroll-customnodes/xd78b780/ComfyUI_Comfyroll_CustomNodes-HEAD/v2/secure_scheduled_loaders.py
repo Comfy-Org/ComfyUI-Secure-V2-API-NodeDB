@@ -1,4 +1,5 @@
 """Pack-owned schedule selection and public managed checkpoint/LoRA brokers."""
+from . import secure_budget as budget
 from comfy_api.latest import io,sdk
 from .secure_schedules import _guard,_output,keyframe_scheduler
 from .secure_lora import _name,_weight
@@ -7,8 +8,7 @@ def _preflight(values):
     _guard(values)
     for key in ('model_list','lora_list','schedule'):
         rows=values.get(key)
-        if isinstance(rows,(list,tuple)) and len(rows)>256:
-            raise ValueError('Scheduled loader rows exceed bound')
+        if isinstance(rows,(list,tuple)):budget.data(rows)
 
 async def _load_checkpoint(name):
     return await sdk.ctx().models.load_checkpoint(_name(name))

@@ -2,6 +2,7 @@
 import io as buffers
 from PIL import Image
 from comfy_api.latest import io
+from . import secure_budget as budget
 from .secure_matplot import np,plt,pil2tensor,_render_lock,_preflight as _base
 from .secure_schedules import _output
 from .secure_style_bars_strips import compatible,allocation_plan,add_artist
@@ -34,8 +35,10 @@ def _preflight(values):
     cells=max(0,height)*max(0,width)**2 if orientation=='vertical' else max(0,height)**2*max(0,width)
     if compatible(values):
         return allocation_plan(width,height,orientation=='vertical')
-    if cells*128+max(0,width)*max(0,height)*96>128*1024*1024:
-        raise ValueError('Pinned cubic StyleBars grid workload exceeds bound; native strip contract unavailable')
+    # The literal fallback really creates cubic float64 grids. Unlike the
+    # strip path, these are native scratch allocations, not stored refs.
+    budget.projection(0,[],cells*8*2)
+    budget.canvas(1,height,width,3)
     return None
 
 class CR_StyleBars(io.ComfyNode):

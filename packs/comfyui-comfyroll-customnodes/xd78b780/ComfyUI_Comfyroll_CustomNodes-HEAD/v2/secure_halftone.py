@@ -1,5 +1,6 @@
 """Pinned PIL halftone math with explicitly approved two-value helper unpack."""
 import math
+from . import secure_budget as budget
 import numpy as np
 import torch
 from PIL import Image,ImageDraw,ImageStat
@@ -10,31 +11,29 @@ def _preflight(values):
     _guard(values)
     image=values['image']
     if not isinstance(image,torch.Tensor) or image.layout!=torch.strided or image.ndim not in (3,4):
-        raise ValueError('Halftone input must be bounded dense HWC/BHWC')
+        raise ValueError('Halftone input must be dense HWC/BHWC')
     b,h,w,c=(1,*image.shape) if image.ndim==3 else tuple(image.shape)
-    if b>16 or h>4096 or w>4096 or c>4:
-        raise ValueError('Halftone input dimensions exceed bound')
-    input_bytes=image.numel()*image.element_size()
+    if c not in (1,3,4):raise ValueError('Halftone requires L/RGB/RGBA channels')
+    owned=budget.tensor(image)
     dot=values['dot_size'];aa=values['antialias_scale']
-    if type(dot) is not int or abs(dot)>128 or type(aa) is not int or abs(aa)>4:
-        raise ValueError('Halftone dot/antialias scale exceeds bound')
-    for key in ('angle_c','angle_m','angle_y','angle_k'):
-        angle=values[key]
-        if isinstance(angle,bool) or not isinstance(angle,(int,float)) or not math.isfinite(angle) or abs(angle)>36000:
-            raise ValueError('Halftone rotation exceeds bound')
-    for key in ('dot_shape','resolution'):
-        if not isinstance(values[key],str) or len(values[key].encode('utf-8'))>128:
-            raise ValueError('Halftone option text exceeds bound')
+    if type(dot) is not int or type(aa) is not int:raise TypeError('Halftone dot/antialias scale must be integers')
+    selected=['angle_k'] if values['greyscale'] else ['angle_c','angle_m','angle_y','angle_k']
     resolution_scale=2 if values['resolution']=='hi-res (2x output size)' else 1
     drawing_scale=resolution_scale*(abs(aa) if values['antialias'] else 1)
-    side=h+w+4;expanded=2*side*drawing_scale+4
-    output=h*w*resolution_scale**2*16
-    temporary=expanded**2*4+output*3+input_bytes
-    if input_bytes>32*1024*1024 or output>32*1024*1024 or temporary>128*1024*1024 or expanded>32768:
-        raise ValueError('Halftone projected rotated output/temporary workload exceeds bound')
-    channels=1 if values['greyscale'] else 4
-    if dot>0 and math.ceil(side/dot)**2*channels>1048576:
-        raise ValueError('Halftone projected dot draw workload exceeds bound')
+    scratch=0
+    for key in selected:
+        angle=values[key]
+        if isinstance(angle,bool) or not isinstance(angle,(int,float)) or not math.isfinite(angle):
+            raise ValueError('Halftone rotation must be finite')
+        a=math.radians(angle%360);co=abs(math.cos(a));si=abs(math.sin(a))
+        rw=math.ceil(w*co+h*si)+2;rh=math.ceil(w*si+h*co)+2
+        draw_w=rw*drawing_scale;draw_h=rh*drawing_scale
+        unrotate_w=math.ceil(draw_w*co+draw_h*si)+2
+        unrotate_h=math.ceil(draw_w*si+draw_h*co)+2
+        scratch=max(scratch,rw*rh+draw_w*draw_h+unrotate_w*unrotate_h)
+    # tensor_to_pil only accepts a singleton batch; preserve that native error.
+    output=budget.canvas(1,h*resolution_scale,w*resolution_scale,3)
+    return budget.projection(owned,[output],scratch+h*w*(c+4+len(selected)*resolution_scale**2))
 
 class CR_HalftoneFilter(io.ComfyNode):
     SDK_REFS=False

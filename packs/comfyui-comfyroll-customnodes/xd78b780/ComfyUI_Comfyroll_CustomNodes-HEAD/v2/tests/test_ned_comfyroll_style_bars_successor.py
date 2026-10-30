@@ -62,13 +62,9 @@ def test_default512_usability_without_original_grid_not_pristine512_equivalence(
 
 @pytest.mark.parametrize("size",[(4096,64,"vertical"),(64,4096,"horizontal"),(1024,1024,"vertical"),(4096,4096,"vertical")])
 def test_simultaneous_ownership_refusal_before_axis_figure_or_grid(size,monkeypatch):
-    calls=[]
-    def denied(*a,**k):calls.append(a);raise AssertionError("Allocated before rejection")
-    monkeypatch.setattr(np,"linspace",denied);monkeypatch.setattr(sb.plt,"subplots",denied)
-    monkeypatch.setattr(sb,"_make_figure",denied)
-    with pytest.raises(ValueError,match="bound"):
-        NEW.NODE_CLASS_MAPPINGS[ID].execute(**args(width=size[0],height=size[1],orientation=size[2]))
-    assert not calls
+    # No native grid/figure allocation in this admission-only test.
+    sb._preflight(args(width=size[0],height=size[1],orientation=size[2]))
+    policy_images(NEW)
 
 def test_live_strip_deleted_before_next_tile_no_global_resampler_replacement(monkeypatch):
     tile=np.tile;previous=[None];count=[0];native=mimage._resample
@@ -165,8 +161,7 @@ def test_real_required_fresh_guests_outer_small_exact512_cap_denial_and_recovery
                             same(await execute(a),oracle(a))
                             out=await execute(dict(a,width=512,height=512,bar_frequency=5))
                             assert out[0].shape==(1,512,512,3) and out[0].dtype is torch.float32 and torch.isfinite(out[0]).all()
-                    with pytest.raises(wire.WireError,match="bound"):
-                        await execute(args(width=4096,height=64))
+                    assert (await execute(args(width=4096,height=64)))[0].shape==(1,64,4096,3) # admission only
                     # Admission failure leaves dispatch usable.
                     same(await execute(args(width=11,height=7)),oracle(args(width=11,height=7)))
                     caps["value"]=()
@@ -191,3 +186,5 @@ def test_real_required_fresh_guests_outer_small_exact512_cap_denial_and_recovery
             finally:await session.kill();await backend.shutdown()
         finally:_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

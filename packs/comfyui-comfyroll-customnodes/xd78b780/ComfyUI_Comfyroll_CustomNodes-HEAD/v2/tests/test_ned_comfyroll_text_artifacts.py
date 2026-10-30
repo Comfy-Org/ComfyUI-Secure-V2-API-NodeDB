@@ -1,4 +1,6 @@
-"""Pinned txt/csv algorithms under recording IO; actual scoped broker/guest continuity."""
+"""Historical storage/Guest tier; unrun on current SDK lacking read/CAS.
+Focused current-SDK controls are separate; no Host/Guest credit from mocks.
+"""
 import ast
 import asyncio
 import copy
@@ -160,8 +162,8 @@ def test_corrupt_identity_not_overwritten_or_skipped(tmp_path,payload,node_id):
     assert service.store.read('user','pack',key)==before and service.writes==0
 
 def test_quota_workload_and_missing_not_reset(tmp_path,monkeypatch):
-    service=LocalService(tmp_path);args=dict(multiline_text='x'*65536,output_file_path='user-authored',file_name='notes',file_extension='txt')
-    with pytest.raises(ValueError,match='64KiB'):asyncio.run(call(service,'CR Save Text To File',args))
+    service=LocalService(tmp_path);args=dict(multiline_text='x'*(1024*1024),output_file_path='user-authored',file_name='notes',file_extension='txt')
+    with pytest.raises(ValueError,match='KV'):asyncio.run(call(service,'CR Save Text To File',args))
     assert service.writes==0
     monkeypatch.setattr(storage,'MAX_TOTAL_BYTES',1);args['multiline_text']='valid'
     with pytest.raises(ValueError,match='quota'):asyncio.run(call(service,'CR Save Text To File',args))

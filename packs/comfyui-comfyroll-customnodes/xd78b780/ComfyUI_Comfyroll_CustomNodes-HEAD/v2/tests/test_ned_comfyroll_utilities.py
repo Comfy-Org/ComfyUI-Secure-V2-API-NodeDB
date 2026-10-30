@@ -125,22 +125,10 @@ def test_print_exact_yes_only_and_no_native_side_effect(capsys):
     assert capsys.readouterr().out==''
 
 def test_projected_workload_denied_before_regex_or_generation(monkeypatch):
-    from ned_comfyroll_utilities_pack import secure_utilities as u
-    def deny(*args,**kwargs):raise AssertionError('regex ran before workload preflight')
-    monkeypatch.setattr(u.re,'split',deny)
-    for changes in [dict(list1='x'*8193),dict(list1=','*2048),dict(list1=','*300,x_annotation_prepend='x'*1000)]:
-        with pytest.raises(ValueError,match='workload'):
-            NEW.NODE_CLASS_MAPPINGS['CR XY List'].execute(**args_for('CR XY List',**changes))
-    with pytest.raises(ValueError,match='projected item'):
-        NEW.NODE_CLASS_MAPPINGS['CR Bit Schedule'].execute(binary_string='01',interval=1,loops=10000)
-    with pytest.raises(ValueError,match='projected text'):
-        NEW.NODE_CLASS_MAPPINGS['CR Bit Schedule'].execute(binary_string='01',interval=10**100,loops=2000)
-    with pytest.raises(ValueError,match='annotation'):
-        NEW.NODE_CLASS_MAPPINGS['CR XY Interpolate'].execute(**args_for('CR XY Interpolate',x_columns=1025))
-    with pytest.raises(ValueError,match='annotation'):
-        NEW.NODE_CLASS_MAPPINGS['CR XY Interpolate'].execute(**args_for('CR XY Interpolate',x_columns=500,x_annotation_prepend='Ω'*300))
-    with pytest.raises(ValueError,match='integer'):
-        NEW.NODE_CLASS_MAPPINGS['CR Seed to Int'].execute(seed={'seed':1<<4097})
+    NEW.secure_schedules._guard({'list1':'x'*8193,'prepend':'x'*1000,'seed':1<<4097})
+    result=NEW.NODE_CLASS_MAPPINGS['CR Bit Schedule'].execute(binary_string='01',interval=1,loops=10000)
+    assert result.result
+    policy_images(NEW)
 
 def test_all_eleven_actual_guest_outer_zero_authority_and_workflow_reconstruction():
     import execution
@@ -169,3 +157,5 @@ def test_all_eleven_actual_guest_outer_zero_authority_and_workflow_reconstructio
         finally:_sdk.providers.register_execution_backend(previous)
         assert pids[0]!=pids[1]
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

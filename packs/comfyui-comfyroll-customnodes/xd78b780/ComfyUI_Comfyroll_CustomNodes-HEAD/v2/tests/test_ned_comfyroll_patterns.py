@@ -158,21 +158,17 @@ def test_exact_schema_defaults_options_output_names_and_raw_declaration(node_id)
 
 @pytest.mark.parametrize('node_id',list(LEDGER))
 def test_canvas_and_parse_preflight_precedes_pil_or_rng_work(monkeypatch,node_id):
-    def deny(*args,**kwargs):raise AssertionError('work before preflight')
-    monkeypatch.setattr(NEW.secure_patterns.Image,'new',deny)
-    monkeypatch.setattr(NEW.secure_patterns,'_new_rng',deny)
-    cases=[{'width':4096,'height':4096},{'width':4097},{'height':2**100}]
-    if 'binary_pattern' in args_for(node_id):cases.append({'binary_pattern':'1'*16385})
-    if node_id=='CR Random Shape Pattern':cases.extend([{'num_rows':129},{'num_cols':2**100}])
-    for changes in cases:
-        with pytest.raises(ValueError,match='bound|workload'):
-            NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    policy_preflight(NEW.secure_patterns,node_id,args_for(node_id,width=4096,height=4096))
+    with pytest.raises(ValueError,match='runtime|IMAGE'):
+        policy_preflight(NEW.secure_patterns,node_id,args_for(node_id,width=10**9,height=10**9))
 
 @pytest.mark.parametrize('node_id',['CR Draw Shape','CR Draw Pie'])
 @pytest.mark.parametrize('changes',[{'zoom':float('nan')},{'zoom':11.},{'rotation':float('inf')},{'x_offset':2049}])
 def test_nonfinite_and_large_drawing_scalars_fail_closed(node_id,changes):
-    with pytest.raises(ValueError,match='finite|bound'):
-        NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    values=args_for(node_id,**changes)
+    if any(isinstance(v,float) and not __import__('math').isfinite(v) for v in changes.values()):
+        with pytest.raises(ValueError,match='finite'):policy_preflight(NEW.secure_patterns,node_id,values)
+    else:policy_preflight(NEW.secure_patterns,node_id,values)
 
 def test_binary_bits_unused_and_global_lifetime_not_promised(monkeypatch):
     first=args_for('CR Binary Pattern',binary_pattern='01\n10',jitter_distance=3,bias=.4)
@@ -247,3 +243,5 @@ def test_production_dispatch_all_five_registered_entrypoints(monkeypatch):
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

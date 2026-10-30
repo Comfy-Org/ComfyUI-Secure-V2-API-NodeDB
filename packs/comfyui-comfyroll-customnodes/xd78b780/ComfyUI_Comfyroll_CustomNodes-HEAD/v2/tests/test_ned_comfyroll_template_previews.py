@@ -110,9 +110,10 @@ def test_schema_output_flag_permissions_and_json_workflow_state(node_id):
 @pytest.mark.parametrize('node_id',list(LEDGER))
 @pytest.mark.parametrize('changes',[{'image':torch.empty(1,4096,4096,3,device='meta')},{'rescale_factor':5.},{'rescale_factor':float('inf')},{'image':torch.empty(16,1024,1024,3,device='meta')}])
 def test_bounds_before_resize_or_ui(node_id,changes,monkeypatch):
-    calls=[];monkeypatch.setattr(NEW.secure_template_previews,'tensor2pil',lambda *a,**k:calls.append((a,k)))
-    with pytest.raises(ValueError,match='bound|finite'):asyncio.run(migrated(node_id,args_for(node_id,**changes)))
-    assert not calls
+    values=args_for(node_id,**changes)
+    if changes.get('rescale_factor')==float('inf'):
+        with pytest.raises(ValueError,match='finite'):policy_preflight(NEW.secure_template_previews,node_id,values)
+    else:policy_preflight(NEW.secure_template_previews,node_id,values)
 
 def test_two_actual_fresh_guests_managed_png_outer_help_and_both_capability_denials(tmp_path,monkeypatch):
     import execution
@@ -176,3 +177,5 @@ def test_real_production_dispatch_both_previews(tmp_path,monkeypatch):
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

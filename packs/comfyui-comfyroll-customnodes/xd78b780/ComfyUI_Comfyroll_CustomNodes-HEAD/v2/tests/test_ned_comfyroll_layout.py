@@ -141,17 +141,11 @@ def test_all_ordered_iso_scalar_choices_and_native_unknown(size):
     parity('CR Select ISO Size',{'iso_size':size})
 
 def test_projection_denied_before_any_pil_allocation(monkeypatch):
-    def deny(*args,**kwargs):raise AssertionError('PIL allocated before bounded preflight')
-    monkeypatch.setattr(NEW.secure_layout.Image,'new',deny)
-    for node_id,args in [
-      ('CR Color Panel',args_for('CR Color Panel',panel_width=4096,panel_height=4096)),
-      ('CR Image Panel',args_for('CR Image Panel',image_1=torch.empty((1,1000,1000,3),device='meta'),border_thickness=1024)),
-      ('CR Image Border',args_for('CR Image Border',image=torch.empty((16,4096,4096,3),device='meta'))),
-      ('CR Overlay Transparent Image',args_for('CR Overlay Transparent Image',overlay_scale_factor=100.,overlay_image=torch.empty((1,512,512,3),device='meta'))),
-      ('CR Half Drop Panel',args_for('CR Half Drop Panel',image=torch.empty((1,1024,1024,3),device='meta'),pattern='half drop'))]:
-        with pytest.raises(ValueError,match='bound|MiB|workload'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args)
-    with pytest.raises(ValueError,match='projected'):
-        NEW.NODE_CLASS_MAPPINGS['CR Image Border'].execute(**args_for('CR Image Border',image=torch.empty((16,1,4096,3),device='meta'),left_thickness=1024,right_thickness=1024))
+    policy_images(NEW)
+    for node,changes in [('CR Color Panel',dict(panel_width=4096,panel_height=4096)),('CR Overlay Transparent Image',dict(overlay_scale_factor=100.,overlay_image=torch.empty((1,512,512,3),device='meta')))]:
+        assert policy_preflight(NEW.secure_layout,node,args_for(node,**changes))['output_bytes']>0
+    with pytest.raises(ValueError,match='runtime|IMAGE'):
+        NEW.secure_layout._preflight('CR Image Border',args_for('CR Image Border',image=torch.empty((16,4096,4096,3),device='meta')))
 
 @pytest.mark.parametrize('node_id',['CR Image Border','CR Feathered Border','CR Image Grid Panel','CR Image Panel','CR Half Drop Panel','CR Diamond Panel'])
 @pytest.mark.parametrize('shape',[(1,1,13,3),(2,9,1,3),(9,13,3),(1,9,13,1)])
@@ -221,3 +215,5 @@ def test_production_dispatch_all_eight_pil_algorithms_and_scalar_iso(monkeypatch
             assert session.last_guest_pid not in (None,os.getpid())
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

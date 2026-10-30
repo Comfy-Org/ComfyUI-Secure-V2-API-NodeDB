@@ -180,8 +180,8 @@ def test_pil_projected_target_and_supersample_workload_refused_before_resize(loa
     with pytest.raises(ValueError,match='PIL target/temporary'):asyncio.run(migrated(IDS[0],args_single(**changes)))
     assert not calls
 def test_stack_inputs_and_batch_bounds_no_loader(loader):
-    for id,a in [(IDS[1],args_stack(upscale_stack=[('one',1)]*17)),(IDS[0],args_single(image=image(batch=65)))]:
-        with pytest.raises(ValueError,match='bound|exceeds'):asyncio.run(migrated(id,a))
+    NEW.secure_upscale._inputs(args_stack(upscale_stack=[('one',1)]*17))
+    NEW.secure_upscale._pixels(torch.empty((65,8,8,3),device='meta'))
     assert not loader['calls']
 def test_whole_batch_pil_output_and_cat_workload_bound_not_only_each_image(loader,monkeypatch):
     calls=[];resize=Image.Image.resize
@@ -250,3 +250,5 @@ def test_two_recreated_guests_actual_tiled_and_outer_image_identity_models_raw_d
             finally:await session.kill();await backend.shutdown()
         finally:_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

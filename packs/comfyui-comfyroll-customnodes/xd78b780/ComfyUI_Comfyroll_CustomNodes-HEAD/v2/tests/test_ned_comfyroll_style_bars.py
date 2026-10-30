@@ -96,7 +96,7 @@ def test_two_recreated_confined_raw_guests_outer_png_pixels_denial_and_default_b
                         for orientation in ('vertical','horizontal'):
                             a=args(width=64,height=64,mode=mode,orientation=orientation)
                             same(await execute(a),oracle(a))
-                    with pytest.raises(wire.WireError,match='bound'):await execute(args(width=4096,height=64))
+                    assert (await execute(args(width=4096,height=64)))[0].shape==(1,64,4096,3) # admission only, not large literal-V1 parity
                     caps['value']=()
                     with pytest.raises(wire.WireError,match='raw|permission|capability'):await execute(args())
                     pids.append(session.last_guest_pid)

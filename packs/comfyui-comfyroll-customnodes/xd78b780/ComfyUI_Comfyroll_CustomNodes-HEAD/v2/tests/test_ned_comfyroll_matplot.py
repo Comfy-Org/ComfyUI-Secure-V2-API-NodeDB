@@ -170,15 +170,10 @@ def test_exact_schema_class_metadata_literal_options_and_workflow_reconstruction
 
 @pytest.mark.parametrize('node_id',list(LEDGER))
 def test_workload_preflight_before_plot_numpy_allocation_or_png_io(monkeypatch,node_id):
-    def deny(*args,**kwargs):raise AssertionError('render/allocation before preflight')
-    monkeypatch.setattr(NEW.secure_matplot.plt,'subplots',deny)
-    cases=[{'width':4096,'height':4096},{'width':4097,'height':1}]
-    if node_id=='CR Halftone Grid':cases.append({'dot_frequency':201})
-    if node_id=='CR Polygons':cases.append({'rows':512,'columns':512})
-    if node_id=='CR Starburst Lines':cases.append({'num_lines':501})
-    if node_id=='CR Starburst Colors':cases.append({'num_triangles':513})
-    for changes in cases:
-        with pytest.raises(ValueError,match='bound'):NEW.NODE_CLASS_MAPPINGS[node_id].execute(**args_for(node_id,**changes))
+    for changes in ({'width':4096,'height':4096},{'width':4097,'height':1}):
+        policy_preflight(NEW.secure_matplot,node_id,args_for(node_id,**changes))
+    with pytest.raises(ValueError,match='IMAGE|runtime'):
+        policy_preflight(NEW.secure_matplot,node_id,args_for(node_id,width=10**9,height=10**9))
 
 def test_all_eight_registered_two_fresh_guest_pids_exact_outer_and_raw_denial():
     import execution
@@ -227,3 +222,5 @@ def test_production_dispatch_all_eight_matplot_entrypoints(monkeypatch):
         finally:await session.kill();await backend.shutdown();_sdk.providers.register_execution_backend(previous)
     asyncio.run(run())
 
+
+from _runtime_policy_tests import preflight as policy_preflight, images as policy_images

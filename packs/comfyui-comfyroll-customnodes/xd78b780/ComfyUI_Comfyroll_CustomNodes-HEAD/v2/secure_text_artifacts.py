@@ -10,8 +10,12 @@ import json
 import unicodedata
 from comfy_api.latest import io, sdk
 from .secure_schedules import _guard
+from .secure_storage import atomic_storage
+from . import secure_budget as budget
 
-MAX_RECORD_BYTES=65536
+# Deployed storage.py MAX_VALUE_BYTES; the backend separately owns aggregate
+# entry/count quotas. This is a KV protocol limit, not the IMAGE store budget.
+MAX_RECORD_BYTES=1024*1024
 MAX_COLLISIONS=256
 MAX_CONFLICTS=32
 
@@ -42,9 +46,11 @@ def _decode(value,identity):
 
 def _encode(identity,payload):
     if not isinstance(payload,str):raise ValueError('Text artifact requires UTF8 text')
+    if len(payload)>MAX_RECORD_BYTES or len(payload.encode('utf-8'))>MAX_RECORD_BYTES:
+        raise ValueError('Text artifact payload exceeds runtime KV value byte limit')
     label,name,extension=identity
     encoded=json.dumps({'v':1,'label':label,'name':name,'extension':extension,'payload':payload},ensure_ascii=False,separators=(',',':'),allow_nan=False)
-    if len(encoded.encode('utf-8'))>MAX_RECORD_BYTES:raise ValueError('Text artifact whole record exceeds 64KiB bound')
+    if len(encoded.encode('utf-8'))>MAX_RECORD_BYTES:raise ValueError('Text artifact whole record exceeds runtime KV value byte limit')
     return encoded
 
 def _managed_name(label,name,extension):
@@ -66,17 +72,18 @@ def _universal_newlines(payload):
     return payload.replace('\r\n','\n').replace('\r','\n')
 
 async def _save(label,name,extension,payload,kind):
+    storage=atomic_storage()
     _managed_name(label,name,extension);conflicts=0
     for index in range(MAX_COLLISIONS):
         chosen=name if index==0 else name+'_'+str(index) if kind=='text' else name+str(index+1)
         identity=_identity(label,chosen,extension);key=_key(identity);encoded=_encode(identity,payload)
         filename=_managed_name(label,chosen,extension)
         while True:
-            old=await sdk.ctx().storage.read(key)
+            old=await storage.read(key)
             if old['value'] is not None:
                 _decode(old['value'],identity);break
             if await sdk.ctx().assets.exists('output',filename):break
-            saved=await sdk.ctx().storage.compare_and_set(key,old['revision'],encoded)
+            saved=await storage.compare_and_set(key,old['revision'],encoded)
             if saved['updated']:
                 # Authoring is authoritative BEFORE publication. Do not roll back,
                 # silently skip a race, or retry after a possibly partial write.
@@ -96,7 +103,8 @@ async def _save(label,name,extension,payload,kind):
 async def _read(label,name,extension):
     identity=_identity(label,name,extension)
     if not label.startswith('input:'):
-        record=_decode((await sdk.ctx().storage.read(_key(identity)))['value'],identity)
+        storage=atomic_storage()
+        record=_decode((await storage.read(_key(identity)))['value'],identity)
         if record is not None:return _universal_newlines(record['payload'])
         # Only a true miss reaches managed INPUT; corruption/service failure raises.
         imported_label=label
@@ -105,13 +113,13 @@ async def _read(label,name,extension):
     filename=_managed_name(imported_label,name,extension)
     ref=await sdk.ctx().assets.resolve('input',filename)
     size=await sdk.ctx().assets.size(ref)
-    if type(size) is not int or not 0<=size<=MAX_RECORD_BYTES:
-        raise ValueError('Managed text artifact input size exceeds 64KiB bound')
-    data=await sdk.ctx().assets.read_range(ref,offset=0,length=size+1)
+    if type(size) is not int or size<0:raise ValueError('Managed text artifact size must be nonnegative')
+    budget.asset_bytes(size)
+    data=await sdk.ctx().assets.read_bytes(ref) if size else b''
     if not isinstance(data,bytes) or len(data)!=size or await sdk.ctx().assets.size(ref)!=size:
         raise ValueError('Managed text artifact changed size or complete read failed')
     payload=data.decode('utf-8')
-    _encode(identity,payload)  # Same whole-record workload bound, but NO import CAS/cache.
+    # No KV write/import/cache: the KV record ceiling does not govern this read.
     return _universal_newlines(payload)
 
 def _text_payload(text,extension):

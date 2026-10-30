@@ -1,4 +1,4 @@
-"""Render-local repeated-axis artist for the pinned Matplotlib3.11.1 Agg contract.
+"""Render-local repeated-axis artist with an inspected Agg feature contract.
 
 The source's virtual cubic shape and affine resampling footprint are preserved;
 only repeated RGBA storage is streamed. This does not prove a hard native heap
@@ -11,15 +11,12 @@ from matplotlib.image import AxesImage
 from matplotlib.backends.backend_agg import RendererAgg
 from matplotlib.transforms import Affine2D, Bbox, TransformedBbox
 from .secure_matplot import np, STYLES
-
-LIMIT = 128 * 1024 * 1024
-VERSION = "3.11.1"
-
+from . import secure_budget as budget
 
 def compatible(values):
     """Unsupported small workloads remain on the bounded literal source path."""
     return (
-        matplotlib.__version__ == VERSION
+        callable(getattr(mimage,"_resample",None))
         and matplotlib.rcParams["image.origin"] == "upper"
         and matplotlib.rcParams["image.interpolation"] == "auto"
         and matplotlib.rcParams["image.interpolation_stage"] == "auto"
@@ -53,8 +50,9 @@ native allocator or complete interpreter heap profile.
     strip_bytes = strip_samples * axis * 4 * 8
     pixels = width * height
     total = 2 * strip_bytes + pixels * 192 + axis * 128 + 8 * 1024 * 1024
-    if total > LIMIT:
-        raise ValueError("StyleBars simultaneous strip/result/renderer/PNG/output workload exceeds bound")
+    budget.canvas(1,height,width,3)
+    budget.check_bytes(strip_bytes,'StyleBars RGBA float64 strip')
+    budget.check_bytes(pixels*4*8,'StyleBars RGBA float64 result')
     return dict(width=width, height=height, axis=axis, repeated=repeated,
                 max_support=max_support, strip_bytes=strip_bytes,
                 output_bytes=pixels * 4 * 8, projected_bytes=total)
@@ -79,7 +77,7 @@ class _RepeatedAxisImage(AxesImage):
         self.set_extent(self.get_extent())
 
     def _contract(self):
-        if (matplotlib.__version__ != VERSION or self.origin != "upper"
+        if (self.origin != "upper"
                 or self.get_interpolation() != "auto"
                 or self.get_interpolation_stage() != "auto"
                 or self.get_resample() is not True or self.get_alpha() is not None

@@ -1,4 +1,5 @@
 """Pinned bounded CPU rendering; no installation, host routes or filesystem images."""
+from . import secure_budget as budget
 import io as buffers
 import threading
 import torch
@@ -14,25 +15,20 @@ _render_lock=threading.RLock()
 def _preflight(node_id,values):
     _guard(values)
     width=values['width'];height=values['height']
-    if type(width) is not int or type(height) is not int or abs(width)>4096 or abs(height)>4096:
-        raise ValueError('Matplotlib canvas axes exceed bound')
+    if type(width) is not int or type(height) is not int:
+        raise TypeError('Matplotlib canvas axes must be integers')
     pixels=max(0,width)*max(0,height)
-    # Includes renderer canvas, PNG conversion and Torch output, not just RGB bytes.
-    if pixels*24>32*1024*1024 or pixels*96>128*1024*1024:
-        raise ValueError('Matplotlib projected output/temporary workload exceeds bound')
-    for key,value in values.items():
-        if isinstance(value,str) and len(value.encode('utf-8'))>256:
-            raise ValueError('Matplotlib color/style text exceeds bound')
-    bounds={'dot_frequency':200,'bar_frequency':200,'grid_frequency':200,'step':200,
-            'rows':512,'columns':512,'num_lines':500,'num_triangles':512,
-            'line_width':512,'line_length':100,'center_x':4096,'center_y':4096,
-            'rotation':36000,'offset':20,'gradient_distance':2,'linear_transition':1,
-            'radial_center_x':1,'radial_center_y':1,'x_pos':1,'y_pos':1,'bbox_factor':2}
-    for key,limit in bounds.items():
-        if key in values and (type(values[key]) not in (int,float) or abs(values[key])>limit):
-            raise ValueError('Matplotlib '+key+' exceeds bound')
-    if node_id=='CR Polygons' and max(0,values['rows']+2)*max(0,values['columns']+2)>4096:
-        raise ValueError('Matplotlib projected polygon count exceeds bound')
+    output=budget.canvas(1,height,width,3)
+    # Agg's uint8 RGBA canvas and uint8/PIL -> float32 RGB conversion owners.
+    projection=budget.projection(0,[output],pixels*(4+3+12))
+    if node_id=='CR Halftone Grid':
+        count=max(0,values['dot_frequency'])**2
+        projection['mesh_bytes']=count*8*5
+    elif node_id=='CR Polygons':
+        # Polygon objects are retained by the axes; list backing scales with
+        # selected rows/columns. Their native heap peak still needs measurement.
+        budget.items(max(0,values['rows']+2)*max(0,values['columns']+2),label='polygon artists')
+    return projection
 
 color_mapping={'white': (255, 255, 255), 'black': (0, 0, 0), 'red': (255, 0, 0), 'green': (0, 255, 0), 'blue': (0, 0, 255), 'yellow': (255, 255, 0), 'cyan': (0, 255, 255), 'magenta': (255, 0, 255), 'orange': (255, 165, 0), 'purple': (128, 0, 128), 'pink': (255, 192, 203), 'brown': (165, 42, 42), 'gray': (128, 128, 128), 'lightgray': (211, 211, 211), 'darkgray': (169, 169, 169), 'olive': (128, 128, 0), 'lime': (0, 128, 0), 'teal': (0, 128, 128), 'navy': (0, 0, 128), 'maroon': (128, 0, 0), 'fuchsia': (255, 0, 128), 'aqua': (0, 255, 128), 'silver': (192, 192, 192), 'gold': (255, 215, 0), 'turquoise': (64, 224, 208), 'lavender': (230, 230, 250), 'violet': (238, 130, 238), 'coral': (255, 127, 80), 'indigo': (75, 0, 130)}
 COLORS=['custom', 'white', 'black', 'red', 'green', 'blue', 'yellow', 'cyan', 'magenta', 'orange', 'purple', 'pink', 'brown', 'gray', 'lightgray', 'darkgray', 'olive', 'lime', 'teal', 'navy', 'maroon', 'fuchsia', 'aqua', 'silver', 'gold', 'turquoise', 'lavender', 'violet', 'coral', 'indigo']

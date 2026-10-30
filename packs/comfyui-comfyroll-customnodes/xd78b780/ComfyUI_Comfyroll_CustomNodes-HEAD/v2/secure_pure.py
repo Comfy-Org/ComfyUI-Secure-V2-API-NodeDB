@@ -1,24 +1,19 @@
 """Comfyroll pack-side pure draft; full 199-node release remains pending."""
+from . import secure_budget as budget
 import csv
 import io as stdlib_io
 import math
 from comfy_api.latest import io
 
 def _guard(values):
-    for value in values.values():
-        if isinstance(value,str) and len(value.encode('utf-8')) > 262144:
-            raise ValueError('Comfyroll text input exceeds 256KiB')
-        if type(value) is int and value.bit_length() > 4096:
-            raise ValueError('Comfyroll scalar exceeds 4096 bits')
-    if 'blacklist_words' in values:
-        lines=values['blacklist_words'].count('\n')+1
-        if lines > 4096 or lines * len(values['text']) > 16777216:
-            raise ValueError('Comfyroll blacklist exceeds bounded parse workload')
+    budget.data(values)
 
 def _bounded_replace(value, old, new, count=-1):
     matches=value.count(old) if count < 0 else min(value.count(old),count)
-    if len(value.encode('utf-8')) + matches * max(0,len(new.encode('utf-8'))-len(old.encode('utf-8'))) > 262144:
-        raise ValueError('Comfyroll replacement exceeds 256KiB output')
+    # Four bytes per Unicode code point is a valid Python string width upper
+    # bound; no UTF8-size substitution for the in-memory result.
+    chars=len(value)+matches*max(0,len(new)-len(old))
+    budget.check_bytes(chars*4+80,'replacement text')
     return value.replace(old,new,count)
 
 def _output(value):
@@ -149,12 +144,8 @@ class CR_TextBlacklist(io.ComfyNode):
         _guard({'text': text, 'blacklist_words': blacklist_words, 'replacement_text': replacement_text})
         show_help = 'https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki/List-Nodes#cr-text-blacklist'
         text_out = text
-        remaining_work = 16777216
         for line in blacklist_words.split('\n'):
             if line.strip():
-                remaining_work -= len(text_out)
-                if remaining_work < 0:
-                    raise ValueError('Comfyroll blacklist exceeds bounded replacement workload')
                 text_out = _bounded_replace(text_out, line.strip(), replacement_text)
         return _output((text_out, show_help))
 

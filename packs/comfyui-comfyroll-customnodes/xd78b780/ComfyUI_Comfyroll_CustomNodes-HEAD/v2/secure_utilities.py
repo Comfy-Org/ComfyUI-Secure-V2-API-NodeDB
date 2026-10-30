@@ -1,4 +1,5 @@
 """Bounded workflow scalar helpers preserving pinned algorithms. No durable state."""
+from . import secure_budget as budget
 from comfy_api.latest import io
 from .secure_schedules import _guard, _output
 import re
@@ -11,25 +12,24 @@ def _preflight(node_id, values):
         text=values['binary_string']
         if isinstance(text,str) and type(values['loops']) is int:
             count=len(text.replace(' ', '').replace('\n', ''))*max(0,values['loops'])
-            if count>16384:raise ValueError('Bit schedule projected item workload exceeds bound')
+            budget.items(count,label='bit schedule rows')
             interval=values['interval']
-            if type(interval) is int and count and count*(len(str(abs(interval)*count))+4)>262144:
-                raise ValueError('Bit schedule projected text workload exceeds bound')
+            if type(interval) is int and count:budget.check_bytes(count*(len(str(abs(interval)*count))+4),'bit schedule text')
     if node_id == 'CR XY List':
         projected=0
         for key,prefix in (('list1','x_annotation_prepend'),('list2','y_annotation_prepend')):
             text=values[key]
             if isinstance(text,str):
-                if len(text.encode('utf-8'))>8192 or len(text)*(text.count(',')+1)>1048576:
-                    raise ValueError('XY regex workload exceeds bound')
+                budget.text(text)
+                # Regex CPU use belongs to the execution deadline, not byte accounting.
                 projected+=len(text.encode('utf-8'))+(text.count(',')+1)*(len(values[prefix].encode('utf-8'))+1)
-        if projected>262144:raise ValueError('XY projected annotation workload exceeds bound')
+        budget.check_bytes(projected,'XY annotations')
     if node_id == 'CR XY Interpolate':
         cols=values['x_columns'];rows=values['y_rows']
         if isinstance(cols,(int,float)) and isinstance(rows,(int,float)):
-            if abs(cols)>1024 or abs(rows)>1024:raise ValueError('XY annotation workload exceeds bound')
+            budget.items(max(0,int(cols))+max(0,int(rows)),label='XY annotation list')
             projected=max(0,cols)*(len(values['x_annotation_prepend'].encode('utf-8'))+128)+max(0,rows)*(len(values['y_annotation_prepend'].encode('utf-8'))+128)
-            if projected>262144:raise ValueError('XY projected annotation workload exceeds bound')
+            budget.check_bytes(projected,'XY annotation text')
 
 class CR_ImageSize(io.ComfyNode):
     SDK_REFS=True

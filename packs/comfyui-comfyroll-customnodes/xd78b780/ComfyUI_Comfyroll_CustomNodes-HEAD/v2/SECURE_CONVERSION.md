@@ -1,4 +1,30 @@
+R11 STAGING NOTE: Pack-local comfy-api.pyi/.d.ts remain unchanged by manager instruction. They advertise members absent on0cd9adec and await the canonical pair. The publication gate must check the real selected public SDK declaration. Existing text/list outputs above the1MiB JSON frame (including envelope) may fail late; this pre-existing transport gap is documented, not fixed here. Legacy text-artifact/IO broker and Guest suites are explicitly out of current-SDK tier scope; no synthetic provider success is qualification.
+
+R10 DRAFT: Current source is not released or whole-pack qualified. See DEFECT_REPAIR_STATUS_20261029.json and current disposition review; older notes below describe predecessor evidence. Native scratch is estimated, not store-capped. Only final published IMAGE geometry/actual dtype bytes use the Host store policy. Nondefault store/asset env propagation remains open. Stubs stay unchanged pending the canonical0cd9adec pair. No new Guest credit.
+
 <!-- secure-conversion-report-v1 -->
+
+## Current defect-repair draft (2026-10-29)
+
+The historical local recommendation below is superseded for the affected paths
+by `DEFECT_REPAIR_STATUS_20261029.json`. This candidate is in progress, targets
+guest SDK0cd9adec, and is not a whole-pack or deployed-Guest qualification.
+Allocation checks use actual dtype/output geometry and the runtime store policy;
+concurrent process peak is accounted separately. Actual pre-guest comparisons
+are retained in the repair lane and remain subject to strict intake.
+
+Atomic storage, system/managed font catalogues, full image-write options, and
+tiled/circular VAE decoding have explicit partial dispositions. Missing
+capabilities refuse clearly. No non-atomic writes, dropped overwrite/format
+options, arbitrary host font paths, or substituted tiled semantics are accepted.
+The Halftone unpack repair is an accepted V1-defect difference; its fixed-reference
+tests receive a separate label. Large StyleBars literal-V1 parity remains open.
+Only JERRY's rerender can close the original workflow failures.
+
+The following sections retain their attributed historical scope and are not a
+claim that all199 entrypoints work on the currently deployed or target runtime.
+
+
 ## Coordinator bounded local release review
 
 All 199 backend entrypoints are recommended as supported within the tested bounded Mac local scope, with zero rejected or unfinished local implementations. `LOCAL_RELEASE_REVIEW.json` is the current per-ID coordinator decision and supersedes the historical pending recommendations below for this scope. The older census, family ledgers and report sections are retained as attributed predecessor evidence. The combined Python declaration is regenerated from the current published API because model selectors now consume static_options; its earlier89347 snapshot omitted that constructor argument. The TypeScript declaration remains unchanged. Final combined regression and serial central intake are required before adding one whole pack to the count. There are no frontend extensions, private routes or JS-only nodes.
