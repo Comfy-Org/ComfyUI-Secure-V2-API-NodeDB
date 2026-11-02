@@ -283,3 +283,15 @@ No user-visible node or feature is refused. Only these techniques are:
 No model weights are committed. Users supply the Z-Image Turbo diffusion model, the Qwen3-4B text encoder and a
 VAE through the managed model catalogue (safetensors or GGUF as upstream). The pack ships only its own
 small images (README banner, icon, style sample thumbnails).
+
+## 2026-10-29 manifest integrity repair — UNRUN-IN-GUEST
+
+Thirteen manifest rows now record the existing classmethod validator signature exactly: args=[cls], kwargs=true. Validator implementations and all node/schema/permission declarations are unchanged. Core can use the intended signature instead of a signature-less proxy or rejecting the pack.
+
+This revision is a source-only correction. Historical evidence and status rows above are preserved; no new Guest, graph, model-load or browser execution was performed. Publication requires independent source review, both target-base static checkers, and exact canonical patch replays.
+
+## 2026-10-29 independent review correction R2 - UNRUN-IN-GUEST
+
+Independent review corrections and publication limitations are recorded below.
+
+Generator-defect workaround: the current discovery generator omits inherited hooks. Changed validation_inputs rows must be emitted by the real pinned packmanifest.encode_validation_inputs from genuine source classes in bounded isolated discovery, then match the inert gate and independent review. The bounded real-source encoder proof now passes: 43 declared validator rows across six packs, including the 16 changed signature rows, were emitted by pinned packmanifest4c6772a3 and all six resulting manifests are byte-identical. PROOF.json SHA256 ad7e5710761da87f89e0c2d45f1a317d383cff5462f28066ff27271ef734445e. Only this report was updated after that proof; node code and manifest bytes are unchanged. This is signature encoding, not full schema discovery or execution parity. Regenerate and byte-compare when the fixed canonical generator exists. Stubs pending canonical 0cd9adec pair; existing pyi/d.ts files are untouched. No new Guest, algorithm, graph, model or browser execution. Only Root publishes changed files, preserving Git modes; local replay bundle ZIPs are not publication artifacts.

@@ -618,3 +618,14 @@ unpublished collapsed-socket dependency on every host; the Reroute source and it
 ## Assets and weights
 
 No weights are committed. LoRAs, checkpoints, CLIP and embeddings come from the user's managed model catalogue.
+
+## 2026-10-30 C4-R1 reviewed menu policy - UNRUN-IN-GUEST
+
+The four draft models grants from the withdrawn menu-only policy are removed. Node code and manifest are byte-identical to corpus main. Names-only menus need no grant under packdb 7cc6d977 L403-412. Existing assets grants cover LoRA resolution; model.apply_lora does not require models in transport host 0427ec77 L535-540. No algorithm, schema, signature or runtime qualification changed.
+
+- `Context Big (rgthree)`: v2/py/secure_nodes.py _context_big:76 -> _context:60 -> _context_result:37, dictionary passthrough only.
+- `Lora Loader Stack (rgthree)`: v2/py/secure_nodes.py _lora_stack:353 -> assets.resolve:360 -> model.apply_lora:361; host535-540 validates parameters, no models require.
+- `Power Prompt (rgthree)`: v2/py/secure_nodes.py _power_prompt:468 -> _power_prompt_impl:443 -> _apply_lora:291 -> assets.resolve:301 / model.apply_lora:305; no guarded models operation.
+- `SDXL Power Prompt - Positive (rgthree)`: v2/py/secure_nodes.py _sdxl_positive:530 -> _apply_lora:291 -> assets.resolve:301 / model.apply_lora:305; no guarded models operation.
+
+Source-only policy reconciliation, not a new Guest/browser/model test. Stubs remain unchanged pending a qualified canonical pair. Root owns publication.

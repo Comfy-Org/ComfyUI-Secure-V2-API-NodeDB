@@ -6521,6 +6521,41 @@ async def _preview_bridge_latent(latent, vae_opt=None, **_kwargs):
 # Frozen surface registration and security declarations
 # ---------------------------------------------------------------------------
 
+
+async def _validation_asset_exists(value):
+    # Preserve the original annotation slicing, including its exact spacing.
+    # The existing public assets domain confines access to managed roots.
+    folder = "input"
+    for suffix, count, candidate in (("[output]", 9, "output"),
+                                      ("[input]", 8, "input"),
+                                      ("[temp]", 7, "temp")):
+        if value.endswith(suffix):
+            value, folder = value[:-count], candidate
+            break
+    try:
+        return await _ctx().assets.exists(folder, value)
+    except ValueError:
+        return False
+
+
+async def _validate_image_receiver(s, image, link_id, save_to_workflow, image_data, trigger_always):
+    # Original ImageReceiver.VALIDATE_INPUTS, using managed file existence.
+    if image != '#DATA' and not await _validation_asset_exists(image) or image.startswith("/") or ".." in image:
+        return "Invalid image file: {}".format(image)
+    return True
+
+
+async def _validate_latent_receiver(s, latent, link_id, trigger_always):
+    # Original LatentReceiver.VALIDATE_INPUTS, using managed file existence.
+    if not await _validation_asset_exists(latent) or latent.startswith("/") or ".." in latent:
+        return "Invalid latent file: {}".format(latent)
+    return True
+
+
+_image_receiver.validate_inputs = _validate_image_receiver
+_latent_receiver.validate_inputs = _validate_latent_receiver
+
+
 _HANDLERS: dict[str, tuple[Any, tuple[str, ...]]] = {
     node_id: (
         unsupported(

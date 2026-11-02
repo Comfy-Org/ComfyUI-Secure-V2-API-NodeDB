@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,44 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `429d0159ad429e64d2b3916e6e7be9c22d025c3c`.
@@ -35,6 +35,16 @@
 +operational classification and representative real-guest behavior are enforced
 +by `backend/tests/test_popular_pack_conversions.py`, including an explicit
 +`195 supported / 2 rejected` assertion.
++
++## 2026-10-30 validator repair and C4-R1 - UNRUN-IN-GUEST
++
++ImageReceiver and LatentReceiver restore their original named validators and receiver-inclusive signatures through managed assets.exists. Their existing assets authority is unchanged. Generator-defect workaround: real pinned packmanifest.encode_validation_inputs must encode genuine source classes; placeholder equality alone is insufficient. The bounded R3 proof confirms real overrides and mechanically derives CG fingerprint flags. This is metadata discovery only, not full schema or purpose execution.
++
++The draft ONNX models grant is removed under C4-R1. _onnx_detector_provider (1457-1461) calls _onnx_detector.recipe (48) only; it builds a recipe rather than loading a model. Bound packdb 7cc6d977 L403-412 supplies names without models. Other preexisting grants are not automatically removed by the heuristic excess-grant census.
++
++LatentReceiver / latent.remote remains **policy edit (reviewed)**: the available managed input-file catalogue is recursive and any-extension, broader than the original top-level .latent/.latent.png UI. Read authority and existing grants are unchanged. Incompatible selections can fail to load. Current webassets rejects kind=file refresh, though selected packdb can fill object_info. No matching deployment or original UI/file-error parity is claimed; managed empty/directory diagnostic differences remain unqualified.
++
++Manifest uses the original indent-1 format with only the five intended field changes against main, after dropping the withdrawn ONNX grant; no whole-file reindent. The proof preserves input manifest bytes after checking encoded values. Stubs remain unchanged pending a qualified canonical pair. Source-only SDK checks, exact canonical replays, independent review and actual Guest/graph/model/browser qualification remain distinct. Root alone publishes changed files with Git modes.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,456 +1,13 @@
@@ -36049,7 +36059,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,6864 @@
+@@ -0,0 +1,6899 @@
 +"""Secure Nodes 2.0 conversion for the pinned Impact Pack snapshot.
 +
 +The upstream pack combines ordinary value, mask, image, SEGS and pipe
@@ -42573,6 +42583,41 @@
 +# Frozen surface registration and security declarations
 +# ---------------------------------------------------------------------------
 +
++
++async def _validation_asset_exists(value):
++    # Preserve the original annotation slicing, including its exact spacing.
++    # The existing public assets domain confines access to managed roots.
++    folder = "input"
++    for suffix, count, candidate in (("[output]", 9, "output"),
++                                      ("[input]", 8, "input"),
++                                      ("[temp]", 7, "temp")):
++        if value.endswith(suffix):
++            value, folder = value[:-count], candidate
++            break
++    try:
++        return await _ctx().assets.exists(folder, value)
++    except ValueError:
++        return False
++
++
++async def _validate_image_receiver(s, image, link_id, save_to_workflow, image_data, trigger_always):
++    # Original ImageReceiver.VALIDATE_INPUTS, using managed file existence.
++    if image != '#DATA' and not await _validation_asset_exists(image) or image.startswith("/") or ".." in image:
++        return "Invalid image file: {}".format(image)
++    return True
++
++
++async def _validate_latent_receiver(s, latent, link_id, trigger_always):
++    # Original LatentReceiver.VALIDATE_INPUTS, using managed file existence.
++    if not await _validation_asset_exists(latent) or latent.startswith("/") or ".." in latent:
++        return "Invalid latent file: {}".format(latent)
++    return True
++
++
++_image_receiver.validate_inputs = _validate_image_receiver
++_latent_receiver.validate_inputs = _validate_latent_receiver
++
++
 +_HANDLERS: dict[str, tuple[Any, tuple[str, ...]]] = {
 +    node_id: (
 +        unsupported(
@@ -42916,7 +42961,7 @@
 +__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 --- /dev/null
 +++ b/v2/_secure_runtime.py
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,302 @@
 +"""Shared runtime helpers for the pinned Secure Nodes 2.0 conversion."""
 +from __future__ import annotations
 +
@@ -43047,6 +43092,10 @@
 +            output.id = f"output{index}"
 +            attrs["outputs"].append(output)
 +        next(item for item in attrs["inputs"] if item.id == "select").max = 100
++    if node_id == "LatentReceiver":
++        latent_input = next(item for item in attrs["inputs"] if item.id == "latent")
++        latent_input.remote = io.RemoteOptions(
++            route="/secure-nodes/assets/input?kind=file", refresh_button=True)
 +    return io.Schema(**attrs)
 +
 +
@@ -43180,6 +43229,10 @@
 +        "define_schema": classmethod(define_schema),
 +        "execute": classmethod(execute),
 +    }
++    handler_validation = getattr(handler, "validate_inputs", None)
++    if handler_validation is not None:
++        # Bind the exact receiver-inclusive callback signature.
++        attrs["validate_inputs"] = classmethod(handler_validation)
 +    if check_lazy_status is not None:
 +        attrs["check_lazy_status"] = classmethod(check_lazy)
 +    generated = type(
@@ -53389,7 +53442,7 @@
  Repository = "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,36210 @@
+@@ -0,0 +1,36240 @@
 +{
 + "format": "comfy-secure-nodes-v1",
 + "runtime": {
@@ -62757,7 +62810,7 @@
 +    "raw"
 +   ],
 +   "methods": {
-+    "validate_inputs": false,
++    "validate_inputs": true,
 +    "fingerprint_inputs": false,
 +    "check_lazy_status": false
 +   },
@@ -62917,6 +62970,17 @@
 +     }
 +    ],
 +    "hidden": []
++   },
++   "validation_inputs": {
++    "args": [
++     "s",
++     "image",
++     "link_id",
++     "save_to_workflow",
++     "image_data",
++     "trigger_always"
++    ],
++    "kwargs": false
 +   }
 +  },
 +  "ImageSender": {
@@ -75479,7 +75543,7 @@
 +    "raw"
 +   ],
 +   "methods": {
-+    "validate_inputs": false,
++    "validate_inputs": true,
 +    "fingerprint_inputs": false,
 +    "check_lazy_status": false
 +   },
@@ -75521,7 +75585,17 @@
 +       "optional": false,
 +       "options": [],
 +       "rawLink": null,
-+       "remote": null,
++       "remote": {
++        "$type": "remote-options",
++        "attrs": {
++         "control_after_refresh": "first",
++         "max_retries": null,
++         "refresh": null,
++         "refresh_button": true,
++         "route": "/secure-nodes/assets/input?kind=file",
++         "timeout": null
++        }
++       },
 +       "socketless": null,
 +       "tooltip": null,
 +       "upload": null,
@@ -75585,6 +75659,15 @@
 +     }
 +    ],
 +    "hidden": []
++   },
++   "validation_inputs": {
++    "args": [
++     "s",
++     "latent",
++     "link_id",
++     "trigger_always"
++    ],
++    "kwargs": false
 +   }
 +  },
 +  "LatentSender": {

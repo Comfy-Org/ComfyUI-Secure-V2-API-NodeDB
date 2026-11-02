@@ -128,6 +128,10 @@ def schema_for(node_id: str) -> io.Schema:
             output.id = f"output{index}"
             attrs["outputs"].append(output)
         next(item for item in attrs["inputs"] if item.id == "select").max = 100
+    if node_id == "LatentReceiver":
+        latent_input = next(item for item in attrs["inputs"] if item.id == "latent")
+        latent_input.remote = io.RemoteOptions(
+            route="/secure-nodes/assets/input?kind=file", refresh_button=True)
     return io.Schema(**attrs)
 
 
@@ -261,6 +265,10 @@ def bind_node(
         "define_schema": classmethod(define_schema),
         "execute": classmethod(execute),
     }
+    handler_validation = getattr(handler, "validate_inputs", None)
+    if handler_validation is not None:
+        # Bind the exact receiver-inclusive callback signature.
+        attrs["validate_inputs"] = classmethod(handler_validation)
     if check_lazy_status is not None:
         attrs["check_lazy_status"] = classmethod(check_lazy)
     generated = type(

@@ -171,6 +171,10 @@ def bind_node(
     handler_fingerprint = getattr(handler, "fingerprint_inputs", None)
     if handler_fingerprint is not None:
         attrs["fingerprint_inputs"] = classmethod(fingerprint)
+    handler_validation = getattr(handler, "validate_inputs", None)
+    if handler_validation is not None:
+        # Bind the exact receiver-inclusive callback signature.
+        attrs["validate_inputs"] = classmethod(handler_validation)
     if check_lazy_status is not None:
         attrs["check_lazy_status"] = classmethod(check_lazy)
     generated = type(f"{class_name}Secure_{suffix}", (io.ComfyNode,), attrs)

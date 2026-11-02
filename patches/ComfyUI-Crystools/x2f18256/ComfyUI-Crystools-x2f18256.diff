@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,50 @@
 +# Secure Nodes 2.0 conversion
 +
 +Pinned upstream commit: `2f18256c5b5063937106f29a8e0a7db3ae3869b7`
@@ -39,6 +39,18 @@
 +round-trip validation, syntax checks for every shipped JavaScript module, an
 +iframe-only frontend metadata-viewer harness, traversal rejection, and a real
 +guest execution census covering all 29 backend nodes.
++
++## 2026-10-29 validation/menu repair - UNRUN-IN-GUEST
++
++The image loader regains its original named validator and invalid-image message, using the existing assets domain for managed-file existence and original annotation slicing. Read JSON has no new validator: its current asset route is filled by host L1-r2, pending the exact deployment receipt. Native path diagnostics and directory-versus-file edge cases are not claimed equivalent to the confined assets provider. Image/JSON processing algorithms and schemas are unchanged.
++
++This revision is source-only. Historical test/status rows remain unchanged. Both target-base static checks, independent review and canonical pristine replays are separate from any actual Guest/graph/model/browser qualification; no new node algorithm was run.
++
++## 2026-10-29 independent review correction R2 - UNRUN-IN-GUEST
++
++Independent review corrections and publication limitations are recorded below.
++
++Generator-defect workaround: the current discovery generator omits inherited hooks. Changed validation_inputs rows must be emitted by the real pinned packmanifest.encode_validation_inputs from genuine source classes in bounded isolated discovery, then match the inert gate and independent review. The bounded real-source encoder proof now passes: 43 declared validator rows across six packs, including the 16 changed signature rows, were emitted by pinned packmanifest4c6772a3 and all six resulting manifests are byte-identical. PROOF.json SHA256 ad7e5710761da87f89e0c2d45f1a317d383cff5462f28066ff27271ef734445e. Only this report was updated after that proof; node code and manifest bytes are unchanged. This is signature encoding, not full schema discovery or execution parity. Regenerate and byte-compare when the fixed canonical generator exists. Stubs pending canonical 0cd9adec pair; existing pyi/d.ts files are untouched. No new Guest, algorithm, graph, model or browser execution. Only Root publishes changed files, preserving Git modes; local replay bundle ZIPs are not publication artifacts.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,108 +1,7 @@
@@ -3086,7 +3098,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,634 @@
+@@ -0,0 +1,661 @@
 +"""Secure Nodes 2.0 implementations for the pinned Crystools snapshot."""
 +from __future__ import annotations
 +
@@ -3638,6 +3650,33 @@
 +    return {"ui": {"text": [text]}, "result": (latent,)}
 +
 +
++
++async def _validation_asset_exists(value):
++    # Preserve the original annotation slicing, including its exact spacing.
++    # The existing public assets domain confines access to managed roots.
++    folder = "input"
++    for suffix, count, candidate in (("[output]", 9, "output"),
++                                      ("[input]", 8, "input"),
++                                      ("[temp]", 7, "temp")):
++        if value.endswith(suffix):
++            value, folder = value[:-count], candidate
++            break
++    try:
++        return await _ctx().assets.exists(folder, value)
++    except ValueError:
++        return False
++
++
++async def _validate_load_image(cls, image):
++    # Original CImageLoadWithMetadata.VALIDATE_INPUTS with managed existence.
++    if not await _validation_asset_exists(image):
++        return "Invalid image file: {}".format(image)
++    return True
++
++
++_load_image.validate_inputs = _validate_load_image
++
++
 +_HANDLERS: dict[str, tuple[Any, tuple[str, ...]]] = {}
 +
 +
@@ -3723,7 +3762,7 @@
 +__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 --- /dev/null
 +++ b/v2/_secure_runtime.py
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,194 @@
 +"""Runtime helpers for the pinned Crystools secure conversion."""
 +from __future__ import annotations
 +
@@ -3897,6 +3936,10 @@
 +    handler_fingerprint = getattr(handler, "fingerprint_inputs", None)
 +    if handler_fingerprint is not None:
 +        attrs["fingerprint_inputs"] = classmethod(fingerprint)
++    handler_validation = getattr(handler, "validate_inputs", None)
++    if handler_validation is not None:
++        # Bind the exact receiver-inclusive callback signature.
++        attrs["validate_inputs"] = classmethod(handler_validation)
 +    if check_lazy_status is not None:
 +        attrs["check_lazy_status"] = classmethod(check_lazy)
 +    generated = type(f"{class_name}Secure_{suffix}", (io.ComfyNode,), attrs)
@@ -8436,7 +8479,7 @@
 +# wheels and starts no hardware-monitoring process.
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,2939 @@
+@@ -0,0 +1,2946 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -9151,7 +9194,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": true,
-+        "validate_inputs": false
++        "validate_inputs": true
 +      },
 +      "module": "_secure_nodes",
 +      "permissions": [
@@ -9267,7 +9310,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "image"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "Metadata comparator [Crystools]": {
 +      "class": "CMetadataCompareSecure_d805bda5e7",

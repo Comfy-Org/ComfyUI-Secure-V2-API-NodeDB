@@ -549,6 +549,33 @@ async def _system_stats(latent, **_kwargs):
     return {"ui": {"text": [text]}, "result": (latent,)}
 
 
+
+async def _validation_asset_exists(value):
+    # Preserve the original annotation slicing, including its exact spacing.
+    # The existing public assets domain confines access to managed roots.
+    folder = "input"
+    for suffix, count, candidate in (("[output]", 9, "output"),
+                                      ("[input]", 8, "input"),
+                                      ("[temp]", 7, "temp")):
+        if value.endswith(suffix):
+            value, folder = value[:-count], candidate
+            break
+    try:
+        return await _ctx().assets.exists(folder, value)
+    except ValueError:
+        return False
+
+
+async def _validate_load_image(cls, image):
+    # Original CImageLoadWithMetadata.VALIDATE_INPUTS with managed existence.
+    if not await _validation_asset_exists(image):
+        return "Invalid image file: {}".format(image)
+    return True
+
+
+_load_image.validate_inputs = _validate_load_image
+
+
 _HANDLERS: dict[str, tuple[Any, tuple[str, ...]]] = {}
 
 
