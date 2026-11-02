@@ -629,3 +629,41 @@ The four draft models grants from the withdrawn menu-only policy are removed. No
 - `SDXL Power Prompt - Positive (rgthree)`: v2/py/secure_nodes.py _sdxl_positive:530 -> _apply_lora:291 -> assets.resolve:301 / model.apply_lora:305; no guarded models operation.
 
 Source-only policy reconciliation, not a new Guest/browser/model test. Stubs remain unchanged pending a qualified canonical pair. Root owns publication.
+
+## 2026-11-02 to-50% repair R1: frontend-only used types - UNRUN-IN-GUEST
+
+No served file changes. This revision adds frontend unit tests on host fakes and records two platform findings. Node code,
+`web/`, the manifest and the stubs are byte-identical to corpus main `665a0774`.
+
+- **Why nine used types counted as missing.** The corpus workflows use these types, all registered in `web/` by a
+  top-level `comfy.defs.define({execution: 'frontend'})`:
+  - Fast Muter, Fast Bypasser, Fast Actions Button, Label, Mute / Bypass Relay, Mute / Bypass Repeater, Node Collector,
+    Random Unmuter and Reroute;
+  - per-type call sites are in `FRONTEND-TYPES-EVIDENCE-R1.md` in the lane packet.
+
+  The catalogue cannot carry them:
+  - `secure-nodes.json` has no field for frontend-only types;
+  - a registry release must list exactly the manifest's `nodes`;
+  - the deployment's node-pack mapping is built from backend nodes only.
+
+  A declared frontend-type list is a platform ask (MIKE), not pack work.
+- **Super Power Lora Loader (rgthree)** exists only in the HenkDz/rgthree-comfy fork (`50fcbbf`). It is a separate pack
+  identity and is deferred.
+- **Tests** (`tests/test_rgthree_comfy_parity.py` runs `tests/frontend_used_types.test.mjs` in the lane gate):
+  - The served modules evaluate in one realm against a fake `/comfy/api/v2.js` modelled on the published API and the
+    guest's window stub.
+  - Each used type is defined once, as `'frontend'`, with the original's slots, and loads from saved data.
+  - The prompt build uses the host's unmodified `resolution.ts` (frontend 1.53.4) and compares the result with the
+    original's virtual-node walk.
+  - Fast Muter and Fast Bypasser modes are compared against the original's own mode-changer code over an 18-step
+    sequence. Repeater mode repeat and Random Unmuter's run window are also checked.
+  - A negative control perturbs the Fast Muter's off mode and must fail.
+  - Test-only tools (Node v25.9.0, `libatomic.so.1`, the host `resolution.ts`) come from the gate's deps mount and are not
+    part of this pack.
+- **Result (gate run r6):**
+  - 66 cases; 8 types EXACT.
+  - Reroute MISMATCH in 2 of 16 prompt fixtures: a Reroute fed by a BYPASSED node loses the input. The original passes
+    through the bypass.
+  - Cause: the host's resolution pass ends at a resolver-less backend node without applying its mode (`resolution.ts`
+    `follow()`). This is a host defect, filed with MIKE; no pack shim. The Reroute row stays converted, PARTIAL.
+- Unchanged: F01, F05, F06, F07 and F17 and the other rows above. Nothing here ran in a browser or a guest.
