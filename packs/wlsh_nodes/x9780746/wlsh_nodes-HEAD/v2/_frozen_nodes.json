@@ -1,0 +1,5230 @@
+{
+ "meta": {
+  "counts": {
+   "errors": 0,
+   "nodes": 39,
+   "v3": 0
+  },
+  "probes": {
+   "__probe_audio_encoders__.safetensors": "audio_encoders",
+   "__probe_background_removal__.safetensors": "background_removal",
+   "__probe_checkpoints__.safetensors": "checkpoints",
+   "__probe_classifiers__.safetensors": "classifiers",
+   "__probe_clip_vision__.safetensors": "clip_vision",
+   "__probe_controlnet__.safetensors": "controlnet",
+   "__probe_datasets__.safetensors": "datasets",
+   "__probe_detection__.safetensors": "detection",
+   "__probe_diffusers__folder": "diffusers",
+   "__probe_diffusion_models__.safetensors": "diffusion_models",
+   "__probe_embeddings__.safetensors": "embeddings",
+   "__probe_frame_interpolation__.safetensors": "frame_interpolation",
+   "__probe_geometry_estimation__.safetensors": "geometry_estimation",
+   "__probe_gligen__.safetensors": "gligen",
+   "__probe_hypernetworks__.safetensors": "hypernetworks",
+   "__probe_inpaint__.safetensors": "inpaint",
+   "__probe_latent_upscale_models__.safetensors": "latent_upscale_models",
+   "__probe_loras__.safetensors": "loras",
+   "__probe_model_patches__.safetensors": "model_patches",
+   "__probe_onnx__.onnx": "onnx",
+   "__probe_optical_flow__.safetensors": "optical_flow",
+   "__probe_photomaker__.safetensors": "photomaker",
+   "__probe_sams__.safetensors": "sams",
+   "__probe_semantic_segmentation__.safetensors": "semantic_segmentation",
+   "__probe_style_models__.safetensors": "style_models",
+   "__probe_text_encoders__.safetensors": "text_encoders",
+   "__probe_upscale_models__.safetensors": "upscale_models",
+   "__probe_vae__.safetensors": "vae",
+   "__probe_vae_approx__.safetensors": "vae_approx"
+  },
+  "source": "upstream wallish77/wlsh_nodes 97807467bf7ff4ea01d529fcd6e666758f34e3c1, frozen on the gate core",
+  "stubbed_imports_at_freeze": [
+   "piexif"
+  ]
+ },
+ "model_menus": {
+  "Checkpoint Loader w/Name (WLSH)": {
+   "ckpt_name": {
+    "folders": [
+     "checkpoints"
+    ],
+    "probe_positions": [
+     0
+    ],
+    "static": []
+   }
+  }
+ },
+ "nodes": {
+  "Build Filename String (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Build_Filename_String",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/text",
+    "FUNCTION": "build_filename",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "%time_%seed",
+               "info"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "SEED",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "filename"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "STRING"
+     ]
+    }
+   }
+  },
+  "CLIP +/- w/Text Unified (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_CLIP_Text_Unified",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/conditioning",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               ""
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               ""
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "clip",
+          {
+           "$tuple": [
+            "CLIP"
+           ]
+          }
+         ],
+         [
+          "conditioner",
+          {
+           "$tuple": [
+            [
+             "SD1.5",
+             "SDXL"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "positive",
+      "negative",
+      "positive_text",
+      "negative_text"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "CONDITIONING",
+      "CONDITIONING",
+      "STRING",
+      "STRING"
+     ]
+    }
+   }
+  },
+  "CLIP Positive-Negative (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_CLIP_Positive_Negative",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/conditioning",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "clip",
+          {
+           "$tuple": [
+            "CLIP"
+           ]
+          }
+         ],
+         [
+          "positive_text",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative_text",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "positive",
+      "negative"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "CONDITIONING",
+      "CONDITIONING"
+     ]
+    }
+   }
+  },
+  "CLIP Positive-Negative XL (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_CLIP_Positive_Negative_XL",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/conditioning",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "crop_w",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "crop_h",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "target_width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "target_height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive_g",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "POS_G"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive_l",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "POS_L"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative_g",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "NEG_G"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative_l",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "NEG_L"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "clip",
+          {
+           "$tuple": [
+            "CLIP"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "positive",
+      "negative"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "CONDITIONING",
+      "CONDITIONING"
+     ]
+    }
+   }
+  },
+  "CLIP Positive-Negative XL w/Text (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_CLIP_Text_Positive_Negative_XL",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/conditioning",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "crop_w",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "crop_h",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "target_width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "target_height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1024.0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               8192
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive_g",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "POS_G"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive_l",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "POS_L"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative_g",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "NEG_G"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative_l",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "default",
+               "NEG_L"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "clip",
+          {
+           "$tuple": [
+            "CLIP"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "positive",
+      "negative",
+      "positive_text",
+      "negative_text"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "CONDITIONING",
+      "CONDITIONING",
+      "STRING",
+      "STRING"
+     ]
+    }
+   }
+  },
+  "CLIP Positive-Negative w/Text (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_CLIP_Text_Positive_Negative",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/conditioning",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "clip",
+          {
+           "$tuple": [
+            "CLIP"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "positive",
+      "negative",
+      "positive_text",
+      "negative_text"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "CONDITIONING",
+      "CONDITIONING",
+      "STRING",
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Checkpoint Loader w/Name (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Checkpoint_Loader_Model_Name",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/loaders",
+    "FUNCTION": "load_checkpoint",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "ckpt_name",
+          {
+           "$tuple": [
+            [
+             "__probe_checkpoints__.safetensors"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "MODEL",
+      "CLIP",
+      "VAE",
+      "modelname"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "MODEL",
+      "CLIP",
+      "VAE",
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Empty Latent by Pixels (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Empty_Latent_Image_By_Pixels",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/latent",
+    "FUNCTION": "generate",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "aspect",
+          {
+           "$tuple": [
+            [
+             "1:1",
+             "5:4",
+             "4:3",
+             "3:2",
+             "16:10",
+             "16:9",
+             "19:9",
+             "21:9",
+             "43:18",
+             "2:1",
+             "3:1",
+             "4:1"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ],
+         [
+          "megapixels",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               1.0
+              ],
+              [
+               "min",
+               0.01
+              ],
+              [
+               "max",
+               16.0
+              ],
+              [
+               "step",
+               0.01
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "batch_size",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               64
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "latent",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Empty Latent by Ratio (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Empty_Latent_Image_By_Ratio",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/latent",
+    "FUNCTION": "generate",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "aspect",
+          {
+           "$tuple": [
+            [
+             "1:1",
+             "6:5",
+             "5:4",
+             "4:3",
+             "3:2",
+             "16:10",
+             "16:9",
+             "19:9",
+             "21:9",
+             "43:18",
+             "2:1",
+             "3:1",
+             "4:1"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ],
+         [
+          "shortside",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               64
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "step",
+               64
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "batch_size",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               64
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "latent",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Empty Latent by Size (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Empty_Latent_Image_By_Resolution",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/latent",
+    "FUNCTION": "generate",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               16
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "step",
+               8
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               16
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "step",
+               8
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "batch_size",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               4096
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "latent",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Generate Border Mask (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Generate_Edge_Mask",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/inpainting",
+    "FUNCTION": "gen_second_mask",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "image",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "left",
+             "right",
+             "up",
+             "down"
+            ]
+           ]
+          }
+         ],
+         [
+          "pixels",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               128
+              ],
+              [
+               "min",
+               32
+              ],
+              [
+               "max",
+               512
+              ],
+              [
+               "step",
+               32
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "overlap",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               64
+              ],
+              [
+               "min",
+               16
+              ],
+              [
+               "max",
+               256
+              ],
+              [
+               "step",
+               16
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE"
+     ]
+    }
+   }
+  },
+  "Grayscale Image (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Grayscale",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/image",
+    "FUNCTION": "make_grayscale",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "original",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "grayscale"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE"
+     ]
+    }
+   }
+  },
+  "Image Load with Metadata (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Read_Prompt",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": true,
+    "VALIDATE_INPUTS": true,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/image",
+    "FUNCTION": "get_image_data",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "verbose",
+          {
+           "$tuple": [
+            [
+             "true",
+             "false"
+            ]
+           ]
+          }
+         ],
+         [
+          "image",
+          {
+           "$tuple": [
+            [
+             "example.png"
+            ],
+            {
+             "$dict": [
+              [
+               "image_upload",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "image",
+      "positive",
+      "negative",
+      "seed",
+      "steps",
+      "cfg",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE",
+      "STRING",
+      "STRING",
+      "INT",
+      "INT",
+      "FLOAT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Image Save with Prompt (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Save_With_Prompt",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_files",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "images",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%time_%seed"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "extension",
+          {
+           "$tuple": [
+            [
+             "png",
+             "jpeg",
+             "tiff",
+             "gif"
+            ]
+           ]
+          }
+         ],
+         [
+          "quality",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               100
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               100
+              ],
+              [
+               "step",
+               1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "hidden",
+       {
+        "$dict": [
+         [
+          "prompt",
+          "PROMPT"
+         ],
+         [
+          "extra_pnginfo",
+          "EXTRA_PNGINFO"
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Image Save with Prompt File (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Save_With_File",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_files",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "images",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%time_%seed"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "extension",
+          {
+           "$tuple": [
+            [
+             "png",
+             "jpeg",
+             "tiff",
+             "gif"
+            ]
+           ]
+          }
+         ],
+         [
+          "quality",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               100
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               100
+              ],
+              [
+               "step",
+               1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "hidden",
+       {
+        "$dict": [
+         [
+          "prompt",
+          "PROMPT"
+         ],
+         [
+          "extra_pnginfo",
+          "EXTRA_PNGINFO"
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Image Save with Prompt/Info (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Save_With_Prompt_Info",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_files",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "images",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%time_%seed"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "extension",
+          {
+           "$tuple": [
+            [
+             "png",
+             "jpeg",
+             "tiff",
+             "gif"
+            ]
+           ]
+          }
+         ],
+         [
+          "quality",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               100
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               100
+              ],
+              [
+               "step",
+               1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "info",
+          {
+           "$tuple": [
+            "INFO"
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "hidden",
+       {
+        "$dict": [
+         [
+          "prompt",
+          "PROMPT"
+         ],
+         [
+          "extra_pnginfo",
+          "EXTRA_PNGINFO"
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Image Save with Prompt/Info File (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Save_With_File_Info",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_files",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "images",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%time_%seed"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "extension",
+          {
+           "$tuple": [
+            [
+             "png",
+             "jpeg",
+             "tiff",
+             "gif"
+            ]
+           ]
+          }
+         ],
+         [
+          "quality",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               100
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               100
+              ],
+              [
+               "step",
+               1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "info",
+          {
+           "$tuple": [
+            "INFO"
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "hidden",
+       {
+        "$dict": [
+         [
+          "prompt",
+          "PROMPT"
+         ],
+         [
+          "extra_pnginfo",
+          "EXTRA_PNGINFO"
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Image Scale By Factor (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Scale_By_Factor",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/upscaling",
+    "FUNCTION": "upscale",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "original",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "upscale_method",
+          {
+           "$tuple": [
+            [
+             "nearest-exact",
+             "bilinear",
+             "area"
+            ]
+           ]
+          }
+         ],
+         [
+          "factor",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               2.0
+              ],
+              [
+               "min",
+               0.1
+              ],
+              [
+               "max",
+               8.0
+              ],
+              [
+               "step",
+               0.1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE"
+     ]
+    }
+   }
+  },
+  "Image Scale by Shortside (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Image_Scale_By_Shortside",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/upscaling",
+    "FUNCTION": "upscale",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "original",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "upscale_method",
+          {
+           "$tuple": [
+            [
+             "nearest-exact",
+             "bilinear",
+             "area"
+            ]
+           ]
+          }
+         ],
+         [
+          "shortside",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               32
+              ],
+              [
+               "max",
+               4096
+              ],
+              [
+               "step",
+               32
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "IMAGE",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "KSamplerAdvanced (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_KSamplerAdvanced",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/sampling",
+    "FUNCTION": "sample",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "model",
+          {
+           "$tuple": [
+            "MODEL"
+           ]
+          }
+         ],
+         [
+          "add_noise",
+          {
+           "$tuple": [
+            [
+             "enable",
+             "disable"
+            ]
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "steps",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               20
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "cfg",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               8.0
+              ],
+              [
+               "min",
+               0.0
+              ],
+              [
+               "max",
+               100.0
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "sampler_name",
+          {
+           "$tuple": [
+            [
+             "euler",
+             "euler_cfg_pp",
+             "euler_ancestral",
+             "euler_ancestral_cfg_pp",
+             "heun",
+             "heunpp2",
+             "exp_heun_2_x0",
+             "exp_heun_2_x0_sde",
+             "dpm_2",
+             "dpm_2_ancestral",
+             "lms",
+             "dpm_fast",
+             "dpm_adaptive",
+             "dpmpp_2s_ancestral",
+             "dpmpp_2s_ancestral_cfg_pp",
+             "dpmpp_sde",
+             "dpmpp_sde_gpu",
+             "dpmpp_2m",
+             "dpmpp_2m_cfg_pp",
+             "dpmpp_2m_sde",
+             "dpmpp_2m_sde_gpu",
+             "dpmpp_2m_sde_heun",
+             "dpmpp_2m_sde_heun_gpu",
+             "dpmpp_3m_sde",
+             "dpmpp_3m_sde_gpu",
+             "ddpm",
+             "lcm",
+             "ipndm",
+             "ipndm_v",
+             "deis",
+             "cfgpp_ud10_ab",
+             "res_multistep",
+             "res_multistep_cfg_pp",
+             "res_multistep_ancestral",
+             "res_multistep_ancestral_cfg_pp",
+             "gradient_estimation",
+             "gradient_estimation_cfg_pp",
+             "er_sde",
+             "seeds_2",
+             "seeds_3",
+             "sa_solver",
+             "sa_solver_pece",
+             "ddim",
+             "uni_pc",
+             "uni_pc_bh2"
+            ]
+           ]
+          }
+         ],
+         [
+          "scheduler",
+          {
+           "$tuple": [
+            [
+             "simple",
+             "sgm_uniform",
+             "karras",
+             "exponential",
+             "ddim_uniform",
+             "beta",
+             "normal",
+             "linear_quadratic",
+             "kl_optimal"
+            ]
+           ]
+          }
+         ],
+         [
+          "positive",
+          {
+           "$tuple": [
+            "CONDITIONING"
+           ]
+          }
+         ],
+         [
+          "negative",
+          {
+           "$tuple": [
+            "CONDITIONING"
+           ]
+          }
+         ],
+         [
+          "latent_image",
+          {
+           "$tuple": [
+            "LATENT"
+           ]
+          }
+         ],
+         [
+          "start_at_step",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "end_at_step",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               10000
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "return_with_leftover_noise",
+          {
+           "$tuple": [
+            [
+             "disable",
+             "enable"
+            ]
+           ]
+          }
+         ],
+         [
+          "denoise",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               1.0
+              ],
+              [
+               "min",
+               0.0
+              ],
+              [
+               "max",
+               1.0
+              ],
+              [
+               "step",
+               0.01
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT",
+      "INFO"
+     ]
+    }
+   }
+  },
+  "Multiply Integer (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Int_Multiply",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "multiply",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "number",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               2
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "multiplier",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               2
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT"
+     ]
+    }
+   }
+  },
+  "Outpaint to Image (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Outpaint_To_Image",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/inpainting",
+    "FUNCTION": "outpaint",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "image",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "left",
+             "right",
+             "up",
+             "down"
+            ]
+           ]
+          }
+         ],
+         [
+          "pixels",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               128
+              ],
+              [
+               "min",
+               32
+              ],
+              [
+               "max",
+               512
+              ],
+              [
+               "step",
+               32
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "mask_padding",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               12
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               64
+              ],
+              [
+               "step",
+               4
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE",
+      "MASK"
+     ]
+    }
+   }
+  },
+  "Prompt Weight (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Prompt_Weight",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/text",
+    "FUNCTION": "add_weight",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "prompt",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "weight",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               1.0
+              ],
+              [
+               "min",
+               0.1
+              ],
+              [
+               "max",
+               5.0
+              ],
+              [
+               "step",
+               0.1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "prompt"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Quick Resolution Multiply (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Res_Multiply",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "multiply",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "width",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               16
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "height",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               16
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "multiplier",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               2
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Resolutions by Ratio (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Resolutions_by_Ratio",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "get_resolutions",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "aspect",
+          {
+           "$tuple": [
+            [
+             "1:1",
+             "6:5",
+             "5:4",
+             "4:3",
+             "3:2",
+             "16:10",
+             "16:9",
+             "21:9",
+             "43:18",
+             "2:1",
+             "3:1",
+             "4:1"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ],
+         [
+          "shortside",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               512
+              ],
+              [
+               "min",
+               64
+              ],
+              [
+               "max",
+               8192
+              ],
+              [
+               "step",
+               64
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "SDXL Quick Empty Latent (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_SDXL_Quick_Empty_Latent",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/latent",
+    "FUNCTION": "generate",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "resolution",
+          {
+           "$tuple": [
+            [
+             "1024x1024|1:1",
+             "1152x896|9:7",
+             "1216x832|19:13",
+             "1344x768|7:4",
+             "1536x640|12:5"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ],
+         [
+          "batch_size",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               1
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               64
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "latent",
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "SDXL Quick Image Scale (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_SDXL_Quick_Image_Scale",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/upscaling",
+    "FUNCTION": "upscale",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "original",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "upscale_method",
+          {
+           "$tuple": [
+            [
+             "nearest-exact",
+             "bilinear",
+             "area"
+            ]
+           ]
+          }
+         ],
+         [
+          "resolution",
+          {
+           "$tuple": [
+            [
+             "1024x1024|1:1",
+             "1152x896|9:7",
+             "1216x832|19:13",
+             "1344x768|7:4",
+             "1536x640|12:5"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ],
+         [
+          "crop",
+          {
+           "$tuple": [
+            [
+             "disabled",
+             "center"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE"
+     ]
+    }
+   }
+  },
+  "SDXL Resolutions (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_SDXL_Resolutions",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "get_resolutions",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "resolution",
+          {
+           "$tuple": [
+            [
+             "1024x1024|1:1",
+             "1152x896|9:7",
+             "1216x832|19:13",
+             "1344x768|7:4",
+             "1536x640|12:5"
+            ]
+           ]
+          }
+         ],
+         [
+          "direction",
+          {
+           "$tuple": [
+            [
+             "landscape",
+             "portrait"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "width",
+      "height"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "SDXL Steps (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_SDXL_Steps",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "set_steps",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "precondition",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               3
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "base",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               12
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "total",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               20
+              ],
+              [
+               "min",
+               1
+              ],
+              [
+               "max",
+               10000
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "pre",
+      "base",
+      "total"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT",
+      "INT",
+      "INT"
+     ]
+    }
+   }
+  },
+  "Save Positive Prompt(WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Save_Positive_Prompt_File",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_text_file",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "info"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Save Prompt (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Save_Prompt_File",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_text_file",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "info"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Save Prompt/Info (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Save_Prompt_File_Info",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/IO",
+    "FUNCTION": "save_text_file",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "filename",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "info"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "path",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "positive",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "negative",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "modelname",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ],
+              [
+               "multiline",
+               false
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "counter",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "time_format",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "%Y-%m-%d-%H%M%S"
+              ],
+              [
+               "multiline",
+               false
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "info",
+          {
+           "$tuple": [
+            "INFO"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "OUTPUT_NODE": true,
+    "RETURN_TYPES": {
+     "$tuple": []
+    }
+   }
+  },
+  "Seed and Int (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Seed_and_Int",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "seed_and_int",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT",
+      "SEED"
+     ]
+    }
+   }
+  },
+  "Seed to Number (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Seed_to_Number",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/number",
+    "FUNCTION": "number_to_seed",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "seed",
+          {
+           "$tuple": [
+            "SEED"
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "INT"
+     ]
+    }
+   }
+  },
+  "Simple Pattern Replace (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Simple_Pattern_Replace",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/text",
+    "FUNCTION": "replace_string",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "input_string",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "list_string",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ""
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "pattern",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               "$var"
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "delimiter",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "default",
+               ","
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "seed",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               0
+              ],
+              [
+               "min",
+               0
+              ],
+              [
+               "max",
+               18446744073709551615
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "string"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Simple String Combine (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_String_Append",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/text",
+    "FUNCTION": "concat_string",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "addition",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ],
+         [
+          "placement",
+          {
+           "$tuple": [
+            [
+             "after",
+             "before"
+            ]
+           ]
+          }
+         ],
+         [
+          "separator",
+          {
+           "$tuple": [
+            [
+             "comma",
+             "space",
+             "newline",
+             "none"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "optional",
+       {
+        "$dict": [
+         [
+          "input_string",
+          {
+           "$tuple": [
+            "STRING",
+            {
+             "$dict": [
+              [
+               "multiline",
+               true
+              ],
+              [
+               "forceInput",
+               true
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "combined"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Time String (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Time_String",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/text",
+    "FUNCTION": "get_time",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "style",
+          {
+           "$tuple": [
+            [
+             "%Y%m%d%H%M%S",
+             "%Y%m%d%H%M",
+             "%Y%m%d",
+             "%Y-%m-%d-%H%M%S",
+             "%Y-%m-%d-%H%M",
+             "%Y-%m-%d"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_NAMES": {
+     "$tuple": [
+      "time_format"
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "STRING"
+     ]
+    }
+   }
+  },
+  "Upscale by Factor with Model (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_Upscale_By_Factor_With_Model",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/upscaling",
+    "FUNCTION": "upscale",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "upscale_model",
+          {
+           "$tuple": [
+            "UPSCALE_MODEL"
+           ]
+          }
+         ],
+         [
+          "image",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "upscale_method",
+          {
+           "$tuple": [
+            [
+             "nearest-exact",
+             "bilinear",
+             "area"
+            ]
+           ]
+          }
+         ],
+         [
+          "factor",
+          {
+           "$tuple": [
+            "FLOAT",
+            {
+             "$dict": [
+              [
+               "default",
+               2.0
+              ],
+              [
+               "min",
+               0.1
+              ],
+              [
+               "max",
+               8.0
+              ],
+              [
+               "step",
+               0.1
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "IMAGE"
+     ]
+    }
+   }
+  },
+  "VAE Encode for Inpaint w/Padding (WLSH)": {
+   "api": "v1",
+   "class": "WLSH_VAE_Encode_For_Inpaint_Padding",
+   "display_name": null,
+   "methods": {
+    "IS_CHANGED": false,
+    "VALIDATE_INPUTS": false,
+    "check_lazy_status": false
+   },
+   "v1": {
+    "CATEGORY": "WLSH Nodes/inpainting",
+    "FUNCTION": "encode",
+    "INPUT_TYPES": {
+     "$dict": [
+      [
+       "required",
+       {
+        "$dict": [
+         [
+          "pixels",
+          {
+           "$tuple": [
+            "IMAGE"
+           ]
+          }
+         ],
+         [
+          "vae",
+          {
+           "$tuple": [
+            "VAE"
+           ]
+          }
+         ],
+         [
+          "mask",
+          {
+           "$tuple": [
+            "MASK"
+           ]
+          }
+         ],
+         [
+          "mask_padding",
+          {
+           "$tuple": [
+            "INT",
+            {
+             "$dict": [
+              [
+               "default",
+               24
+              ],
+              [
+               "min",
+               6
+              ],
+              [
+               "max",
+               128
+              ],
+              [
+               "step",
+               2
+              ]
+             ]
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    },
+    "RETURN_TYPES": {
+     "$tuple": [
+      "LATENT"
+     ]
+    }
+   }
+  }
+ }
+}
