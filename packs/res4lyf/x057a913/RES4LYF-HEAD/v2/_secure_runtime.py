@@ -1,7 +1,8 @@
 """Frozen-schema runtime for the RES4LYF Secure Nodes V2 pack.
 
 _frozen_nodes.json holds every node declaration of upstream RES4LYF 057a913e, frozen in the gate from the
-original package (tests/freeze_all.py) on ComfyUI core 6257422b:
+original package (tests/freeze_all.py) on ComfyUI core 6257422b, except the ids core registers itself
+(meta.core_owned, checked by tests/test_core_ids.py):
 - V1 nodes (INPUT_TYPES/RETURN_TYPES) become V3 schemas through ``v1_schema``.
 - The seven V3 nodes are rebuilt from their frozen Input/Output objects.
 ``tests/test_res4lyf_schemas.py`` checks both against the original's served node info.

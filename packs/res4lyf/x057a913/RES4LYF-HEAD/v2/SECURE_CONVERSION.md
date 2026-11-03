@@ -5,10 +5,18 @@ Upstream: `https://github.com/ClownsharkBatwing/RES4LYF`
 
 ## Census and terminal status
 
-- Every backend node id of the pinned package (300) is registered with its
-  original schema, frozen from the original (`_frozen_nodes.json`). The served
-  node info equals the original's (`tests/test_res4lyf_schemas.py`).
-- Converted (18 of 300):
+- The pinned package has 300 backend node ids. One of them,
+  `ConditioningMultiply`, is an id ComfyUI core registers itself
+  (`nodes.py:163` and `:2109` on core 6257422b, "Conditioning (Multiply)").
+  Core's loader skips any custom node id that core already has, for the class
+  and the display name alike (`nodes.py:2314-2322`). So with the original
+  installed, core's node serves that id and the original's never registers.
+  This pack leaves the id out as well, and core's node keeps serving it
+  (`tests/test_core_ids.py` checks this against core's full id set).
+- Every other id (299) is registered with its original schema, frozen from the
+  original (`_frozen_nodes.json`). The served node info equals the original's
+  (`tests/test_res4lyf_schemas.py`).
+- Converted (18 of the 299):
   - `ClownsharKSampler_Beta`, within the reduced envelope below, including the OPTIONS it can apply exactly;
   - the options nodes `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta`;
   - the text and size nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize` and `SetImageSizeWithScale`;
@@ -257,5 +265,10 @@ profile.
   Every node and both schedulers then run in a real guest that can import the
   profile's modules only from the mounted profile wheels: once with them
   (everything loads), once without them (only the mapped nodes fail).
+- `tests/test_core_ids.py`: loads core's own nodes (`nodes.py`,
+  `comfy_extras`, `comfy_api_nodes`) and checks that the manifest registers
+  none of their ids, and that every id the pack leaves to core
+  (`_frozen_nodes.json`, `meta.core_owned`) is one that core registers.
 - `tests/freeze_all.py` and `tests/freeze_clown.py` capture the frozen schemas
-  and lists from the original.
+  and lists from the original. The ids core registers itself are then left
+  out (`meta.core_owned`).

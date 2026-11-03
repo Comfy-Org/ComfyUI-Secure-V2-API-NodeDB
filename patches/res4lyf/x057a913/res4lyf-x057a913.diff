@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,274 @@
 +# Secure Nodes V2 conversion
 +
 +Pinned upstream commit: `057a913ed3c04cbfb756e1a3dbfc398a6bd4044f`
@@ -8,10 +8,18 @@
 +
 +## Census and terminal status
 +
-+- Every backend node id of the pinned package (300) is registered with its
-+  original schema, frozen from the original (`_frozen_nodes.json`). The served
-+  node info equals the original's (`tests/test_res4lyf_schemas.py`).
-+- Converted (18 of 300):
++- The pinned package has 300 backend node ids. One of them,
++  `ConditioningMultiply`, is an id ComfyUI core registers itself
++  (`nodes.py:163` and `:2109` on core 6257422b, "Conditioning (Multiply)").
++  Core's loader skips any custom node id that core already has, for the class
++  and the display name alike (`nodes.py:2314-2322`). So with the original
++  installed, core's node serves that id and the original's never registers.
++  This pack leaves the id out as well, and core's node keeps serving it
++  (`tests/test_core_ids.py` checks this against core's full id set).
++- Every other id (299) is registered with its original schema, frozen from the
++  original (`_frozen_nodes.json`). The served node info equals the original's
++  (`tests/test_res4lyf_schemas.py`).
++- Converted (18 of the 299):
 +  - `ClownsharKSampler_Beta`, within the reduced envelope below, including the OPTIONS it can apply exactly;
 +  - the options nodes `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta`;
 +  - the text and size nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize` and `SetImageSizeWithScale`;
@@ -260,11 +268,16 @@
 +  Every node and both schedulers then run in a real guest that can import the
 +  profile's modules only from the mounted profile wheels: once with them
 +  (everything loads), once without them (only the mapped nodes fail).
++- `tests/test_core_ids.py`: loads core's own nodes (`nodes.py`,
++  `comfy_extras`, `comfy_api_nodes`) and checks that the manifest registers
++  none of their ids, and that every id the pack leaves to core
++  (`_frozen_nodes.json`, `meta.core_owned`) is one that core registers.
 +- `tests/freeze_all.py` and `tests/freeze_clown.py` capture the frozen schemas
-+  and lists from the original.
++  and lists from the original. The ids core registers itself are then left
++  out (`meta.core_owned`).
 --- a/__init__.py
 +++ b/v2/__init__.py
-@@ -1,477 +1,42 @@
+@@ -1,477 +1,43 @@
 -import importlib
 -import os
 -
@@ -745,7 +758,8 @@
 +"""RES4LYF (ClownsharkBatwing/RES4LYF @ 057a913e): Secure Nodes V2.
 +
 +- Every node id the original registers is registered here with its original schema (_frozen_nodes.json), so
-+  saved workflows load unchanged.
++  saved workflows load unchanged. The exception is ConditioningMultiply: core registers that id itself, and core's
++  node serves it, as it does with the original installed (SECURE_CONVERSION.md).
 +- Converted:
 +  - ClownsharKSampler_Beta, a reduced exact port (clown.py), including the OPTIONS it can apply exactly;
 +  - the options nodes SharkOptions_Beta and ClownOptions_DetailBoost_Beta (options_nodes.py);
@@ -989,10 +1003,17 @@
 +}
 --- /dev/null
 +++ b/v2/_frozen_nodes.json
-@@ -0,0 +1,55883 @@
+@@ -0,0 +1,55824 @@
 +{
 + "meta": {
++  "core_owned": {
++   "ConditioningMultiply": "ComfyUI core registers this id itself (nodes.py:163 and :2109 on core 6257422b, display name \"Conditioning (Multiply)\"). Core's loader skips a custom node id core already has (nodes.py:2314-2322), so with the original installed core's node serves it and the original's never registers. Left out here."
++  },
 +  "counts": {
++   "v1": 292,
++   "v3": 7
++  },
++  "original_counts": {
 +   "v1": 293,
 +   "v3": 7
 +  },
@@ -27296,72 +27317,6 @@
 +       "optional",
 +       {
 +        "$dict": []
-+       }
-+      ]
-+     ]
-+    },
-+    "RETURN_NAMES": {
-+     "$tuple": [
-+      "conditioning"
-+     ]
-+    },
-+    "RETURN_TYPES": {
-+     "$tuple": [
-+      "CONDITIONING"
-+     ]
-+    }
-+   }
-+  },
-+  "ConditioningMultiply": {
-+   "api": "v1",
-+   "class": "ConditioningMultiply",
-+   "display_name": null,
-+   "v1": {
-+    "CATEGORY": "RES4LYF/conditioning",
-+    "FUNCTION": "main",
-+    "INPUT_TYPES": {
-+     "$dict": [
-+      [
-+       "required",
-+       {
-+        "$dict": [
-+         [
-+          "conditioning",
-+          {
-+           "$tuple": [
-+            "CONDITIONING"
-+           ]
-+          }
-+         ],
-+         [
-+          "multiplier",
-+          {
-+           "$tuple": [
-+            "FLOAT",
-+            {
-+             "$dict": [
-+              [
-+               "default",
-+               1.0
-+              ],
-+              [
-+               "min",
-+               -1000000000.0
-+              ],
-+              [
-+               "max",
-+               1000000000.0
-+              ],
-+              [
-+               "step",
-+               0.01
-+              ]
-+             ]
-+            }
-+           ]
-+          }
-+         ]
-+        ]
 +       }
 +      ]
 +     ]
@@ -56875,11 +56830,12 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_runtime.py
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,262 @@
 +"""Frozen-schema runtime for the RES4LYF Secure Nodes V2 pack.
 +
 +_frozen_nodes.json holds every node declaration of upstream RES4LYF 057a913e, frozen in the gate from the
-+original package (tests/freeze_all.py) on ComfyUI core 6257422b:
++original package (tests/freeze_all.py) on ComfyUI core 6257422b, except the ids core registers itself
++(meta.core_owned, checked by tests/test_core_ids.py):
 +- V1 nodes (INPUT_TYPES/RETURN_TYPES) become V3 schemas through ``v1_schema``.
 +- The seven V3 nodes are rebuilt from their frozen Input/Output objects.
 +``tests/test_res4lyf_schemas.py`` checks both against the original's served node info.
@@ -78468,7 +78424,7 @@
 +]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,61685 @@
+@@ -0,0 +1,61592 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -103858,99 +103814,6 @@
 +              "widget_type": null
 +            },
 +            "io_type": "INT",
-+            "kind": "standard"
-+          }
-+        ],
-+        "outputs": [
-+          {
-+            "attrs": {
-+              "display_name": "conditioning",
-+              "id": "_0_CONDITIONING_",
-+              "is_output_list": false,
-+              "tooltip": null
-+            },
-+            "io_type": "CONDITIONING",
-+            "kind": "standard"
-+          }
-+        ]
-+      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "conditioning"
-+        ],
-+        "kwargs": false
-+      }
-+    },
-+    "ConditioningMultiply": {
-+      "class": "Refused_ConditioningMultiply_e31cf1cb",
-+      "methods": {
-+        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
-+        "validate_inputs": true
-+      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
-+      "schema": {
-+        "attrs": {
-+          "accept_all_inputs": false,
-+          "category": "RES4LYF/conditioning",
-+          "description": "",
-+          "display_name": "ConditioningMultiply",
-+          "enable_expand": false,
-+          "essentials_category": null,
-+          "has_intermediate_output": false,
-+          "is_api_node": false,
-+          "is_deprecated": false,
-+          "is_dev_only": false,
-+          "is_experimental": false,
-+          "is_input_list": false,
-+          "is_output_node": false,
-+          "loop_boundary": null,
-+          "node_id": "ConditioningMultiply",
-+          "not_idempotent": false,
-+          "price_badge": null,
-+          "search_aliases": []
-+        },
-+        "hidden": [],
-+        "inputs": [
-+          {
-+            "attrs": {
-+              "advanced": null,
-+              "display_name": null,
-+              "extra_dict": {},
-+              "id": "conditioning",
-+              "lazy": null,
-+              "optional": false,
-+              "rawLink": null,
-+              "tooltip": null
-+            },
-+            "io_type": "CONDITIONING",
-+            "kind": "standard"
-+          },
-+          {
-+            "attrs": {
-+              "advanced": null,
-+              "default": 1.0,
-+              "display_mode": null,
-+              "display_name": null,
-+              "extra_dict": {},
-+              "force_input": null,
-+              "gradient_stops": null,
-+              "id": "multiplier",
-+              "lazy": null,
-+              "max": 1000000000.0,
-+              "min": -1000000000.0,
-+              "optional": false,
-+              "rawLink": null,
-+              "round": null,
-+              "socketless": null,
-+              "step": 0.01,
-+              "tooltip": null,
-+              "widget_type": null
-+            },
-+            "io_type": "FLOAT",
 +            "kind": "standard"
 +          }
 +        ],
@@ -140790,13 +140653,14 @@
 +]
 --- /dev/null
 +++ b/v2/tests/encode_manifest.py
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,127 @@
 +"""Regenerate v2/secure-nodes.json with the live encoder and prove the real loader accepts it (gate only).
 +
 +  encode_manifest.py --write    -> /results/secure-nodes.json (+ /results/encode.json)
 +  encode_manifest.py --check    -> also require v2/secure-nodes.json to be byte-identical to the regenerated bytes
-+The manifest registers every original id (converted or refused by name), the validate_inputs signature of
-+each node that has one, and the pack's scheduler providers (schedulers.py). test_res4lyf_schemas.py imports
++The manifest registers every frozen id, converted or refused by name. (The ids core registers itself are not
++frozen; see test_core_ids.py.) It also carries the validate_inputs signature of each node that has one, and the
++pack's scheduler providers (schedulers.py). test_res4lyf_schemas.py imports
 +``build`` and ``load_snapshot`` from here.
 +"""
 +import copy
@@ -141335,10 +141199,17 @@
 +    return list(missing)
 --- /dev/null
 +++ b/v2/tests/original_node_info.json
-@@ -0,0 +1,69900 @@
+@@ -0,0 +1,69791 @@
 +{
 + "meta": {
++  "core_owned": {
++   "ConditioningMultiply": "ComfyUI core registers this id itself (nodes.py:163 and :2109 on core 6257422b, display name \"Conditioning (Multiply)\"). Core's loader skips a custom node id core already has (nodes.py:2314-2322), so with the original installed core's node serves it and the original's never registers. Left out here."
++  },
 +  "counts": {
++   "v1": 292,
++   "v3": 7
++  },
++  "original_counts": {
 +   "v1": 293,
 +   "v3": 7
 +  },
@@ -170212,122 +170083,6 @@
 +    [
 +     "experimental",
 +     true
-+    ],
-+    [
-+     "search_aliases",
-+     []
-+    ]
-+   ]
-+  },
-+  "ConditioningMultiply": {
-+   "$dict": [
-+    [
-+     "input",
-+     {
-+      "$dict": [
-+       [
-+        "required",
-+        {
-+         "$dict": [
-+          [
-+           "conditioning",
-+           {
-+            "$tuple": [
-+             "CONDITIONING"
-+            ]
-+           }
-+          ],
-+          [
-+           "multiplier",
-+           {
-+            "$tuple": [
-+             "FLOAT",
-+             {
-+              "$dict": [
-+               [
-+                "default",
-+                1.0
-+               ],
-+               [
-+                "min",
-+                -1000000000.0
-+               ],
-+               [
-+                "max",
-+                1000000000.0
-+               ],
-+               [
-+                "step",
-+                0.01
-+               ]
-+              ]
-+             }
-+            ]
-+           }
-+          ]
-+         ]
-+        }
-+       ]
-+      ]
-+     }
-+    ],
-+    [
-+     "input_order",
-+     {
-+      "$dict": [
-+       [
-+        "required",
-+        [
-+         "conditioning",
-+         "multiplier"
-+        ]
-+       ]
-+      ]
-+     }
-+    ],
-+    [
-+     "output",
-+     [
-+      "CONDITIONING"
-+     ]
-+    ],
-+    [
-+     "output_is_list",
-+     [
-+      false
-+     ]
-+    ],
-+    [
-+     "output_name",
-+     {
-+      "$tuple": [
-+       "conditioning"
-+      ]
-+     }
-+    ],
-+    [
-+     "name",
-+     "ConditioningMultiply"
-+    ],
-+    [
-+     "display_name",
-+     "ConditioningMultiply"
-+    ],
-+    [
-+     "description",
-+     ""
-+    ],
-+    [
-+     "python_module",
-+     "nodes"
-+    ],
-+    [
-+     "category",
-+     "RES4LYF/conditioning"
-+    ],
-+    [
-+     "output_node",
-+     false
 +    ],
 +    [
 +     "search_aliases",
@@ -211517,6 +211272,106 @@
 +    except Exception:
 +        traceback.print_exc()
 +        sys.exit(1)
+--- /dev/null
++++ b/v2/tests/test_core_ids.py
+@@ -0,0 +1,97 @@
++"""Ids ComfyUI core registers itself (gate only).
++
++Core's loader takes the ids registered before custom nodes load (nodes.py, comfy_extras and comfy_api_nodes) as its
++ignore set, and skips any custom node id in it, for the class and the display name alike (nodes.py:2314-2322 and
++:2376 on core 6257422b). On V1 core's node therefore serves such an id and the original's never registers. This
++pack leaves those ids out (_frozen_nodes.json, meta.core_owned) and so registers none of them.
++
++Checks, against the gate core's full id set:
++  * no id in the committed manifest (v2/secure-nodes.json) or the frozen declarations is one core registers;
++  * every id in meta.core_owned is one core registers, and the pack registers none of them;
++  * the frozen declarations plus meta.core_owned are the original's ids (meta.original_counts);
++  * every core module that defines nodes loaded (else the id set would be incomplete).
++Writes /results/core-ids.json and exits 1 on any finding.
++Run: run_in_gate.sh <RES4LYF-HEAD with v2> <v2/tests> <out> test_core_ids.py
++"""
++import asyncio
++import json
++import os
++import sys
++import tempfile
++import types
++from pathlib import Path
++
++CORE = Path(os.environ.get("COMFY_CORE_ROOT", "/core"))
++for entry in (str(CORE), "/overlay"):
++    if entry not in sys.path:
++        sys.path.insert(0, entry)
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++import folder_paths  # noqa: E402
++import server  # noqa: E402
++from aiohttp import web  # noqa: E402
++from app.node_replace_manager import NodeReplaceManager  # noqa: E402
++
++# What core's extras touch at load: route tables, the node-replacement registry and the input folder.
++server.PromptServer.instance = types.SimpleNamespace(
++    routes=web.RouteTableDef(), supports={"custom_nodes_from_web"}, send_sync=lambda *a, **k: None,
++    client_id=None, last_node_id=None, node_replace_manager=NodeReplaceManager())
++folder_paths.set_input_directory(tempfile.mkdtemp(prefix="res4-core-ids-input-"))
++import nodes  # noqa: E402
++
++PACK = Path(os.environ.get("RES4_PACK", "/pack"))
++V2 = PACK / "v2"
++
++
++def main():
++    before = set(nodes.NODE_CLASS_MAPPINGS)
++    failed_extras = list(asyncio.run(nodes.init_builtin_extra_nodes()) or [])
++    after_extras = set(nodes.NODE_CLASS_MAPPINGS)
++    failed_api = list(asyncio.run(nodes.init_builtin_api_nodes()) or [])
++    core_ids = set(nodes.NODE_CLASS_MAPPINGS)
++
++    frozen_doc = json.loads((V2 / "_frozen_nodes.json").read_text())
++    info_meta = json.loads((V2 / "tests" / "original_node_info.json").read_text())["meta"]
++    frozen = set(frozen_doc["nodes"])
++    core_owned = frozen_doc["meta"].get("core_owned", {})
++    manifest = set(json.loads((V2 / "secure-nodes.json").read_text())["nodes"])
++    original_total = sum(frozen_doc["meta"]["original_counts"].values())
++
++    def owner(node_id):
++        if node_id in before:
++            return "nodes.py"
++        return "comfy_extras" if node_id in after_extras else "comfy_api_nodes"
++
++    findings = {
++        "manifest_ids_core_registers": sorted(manifest & core_ids),
++        "frozen_ids_core_registers": sorted(frozen & core_ids),
++        "core_owned_core_does_not_register": sorted(set(core_owned) - core_ids),
++        "core_owned_registered_by_pack": sorted(set(core_owned) & (manifest | frozen)),
++        "manifest_not_frozen": sorted(manifest ^ frozen),
++        "original_ids_unaccounted": original_total - len(frozen | set(core_owned)),
++        "fixture_meta_differs": info_meta != frozen_doc["meta"],
++        "core_modules_failed": failed_extras + failed_api,
++    }
++    ok = not any(findings.values())
++    doc = {
++        "passed": ok,
++        "core_ids": {"total": len(core_ids), "nodes.py": len(before), "comfy_extras": len(after_extras - before),
++                     "comfy_api_nodes": len(core_ids - after_extras)},
++        "pack": {"manifest": len(manifest), "frozen": len(frozen), "original": original_total},
++        "core_owned": {node_id: {"registered_by": owner(node_id) if node_id in core_ids else None,
++                                 "core_class": getattr(nodes.NODE_CLASS_MAPPINGS.get(node_id), "__name__", None),
++                                 "core_display_name": nodes.NODE_DISPLAY_NAME_MAPPINGS.get(node_id),
++                                 "note": note}
++                       for node_id, note in sorted(core_owned.items())},
++        "findings": findings,
++    }
++    out = Path(os.environ.get("RES4_RESULTS", "/results"))
++    out.mkdir(parents=True, exist_ok=True)
++    (out / "core-ids.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
++    print(json.dumps(doc, indent=1, sort_keys=True))
++    return 0 if ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
 --- /dev/null
 +++ b/v2/tests/test_production_load.py
 @@ -0,0 +1,301 @@

@@ -1,7 +1,8 @@
 """RES4LYF (ClownsharkBatwing/RES4LYF @ 057a913e): Secure Nodes V2.
 
 - Every node id the original registers is registered here with its original schema (_frozen_nodes.json), so
-  saved workflows load unchanged.
+  saved workflows load unchanged. The exception is ConditioningMultiply: core registers that id itself, and core's
+  node serves it, as it does with the original installed (SECURE_CONVERSION.md).
 - Converted:
   - ClownsharKSampler_Beta, a reduced exact port (clown.py), including the OPTIONS it can apply exactly;
   - the options nodes SharkOptions_Beta and ClownOptions_DetailBoost_Beta (options_nodes.py);
