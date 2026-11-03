@@ -1,10 +1,10 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,78 @@
 +# Secure Nodes V2 conversion: ComfyUI-SaveImageWithMetaData (nkchocoai)
 +
 +**Status: converted 2 of 2 declared nodes** (`SaveImageWithMetaData`, `CreateExtraMetaData`); 0 nodes refused.
-+`SaveImageWithMetaData` refuses five behaviours by name (`py/_v2_refusals.py`). **Minimum guest SDK base: 0cd9adec**
++`SaveImageWithMetaData` refuses six behaviours by name (`py/_v2_refusals.py`). **Minimum guest SDK base: 0cd9adec**
 +(comfy_api 0.37.0): it uses `graph.execution_metadata` and the image writer's `png_text` / `a1111_parameters`, which
 +base 0b86765f lacks.
 +
@@ -28,7 +28,7 @@
 +- Hidden `prompt` and `extra_pnginfo` are declared and read through the schema (`cls.hidden`).
 +
 +## Parity (tier 1, gate `run_in_gate.sh`, core 6257422b executor)
-+`tests/test_comfyui_saveimagewithmetadata_parity.py` runs 50 prompts through the real executor three times: the
++`tests/test_comfyui_saveimagewithmetadata_parity.py` runs 52 prompts through the real executor three times: the
 +unmodified original, the original plus a harness-only cache adapter (the reference), and V2. Each case declares its
 +expected outcome. The pinned original cannot capture on core 6257422b at all: `py/capture.py:19-27` passes the
 +executor's output cache to `execution.get_input_data`, which now calls `execution_list.get_cache()` (core
@@ -45,6 +45,8 @@
 +3. `%batch_num%` in the prefix: the original kept it literally; the writer would substitute it.
 +4. A prefix naming no file (empty, `.`, `..`): the original wrote `._00001_.png`; the writer rejects the name.
 +5. An embedding not at the embeddings root while the embeddings catalogue lists more than 4096 files.
++6. A backslash in the (formatted) prefix: on a Linux host the original kept it as part of the file name; the writer
++   treats it as a folder separator.
 +
 +Documented behaviour differences (each shown by a gate case):
 +6. Prefixes leaving the output folder: both raise `Exception("**** ERROR: Saving image outside the output folder is not
@@ -5359,7 +5361,7 @@
 +    return CatalogueEmbeddingTokenizer()
 --- /dev/null
 +++ b/v2/py/_v2_refusals.py
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,53 @@
 +"""Behaviours of the original that Secure Nodes V2 cannot reproduce exactly; each is refused
 +by name instead of being changed silently (SECURE_CONVERSION.md, "Known differences")."""
 +
@@ -5406,6 +5408,12 @@
 +    "and the embeddings catalogue lists more than 4096 files, so its subfolders cannot be searched "
 +    "the way the original searched them. Reference the embedding with its subfolder "
 +    "(embedding:subfolder/name)."
++)
++
++BACKSLASH = (
++    f"{PACK}/SaveImageWithMetaData: filename_prefix {{prefix!r}} contains a backslash. On a Linux host the original "
++    "kept it as part of the file name; the managed image writer treats it as a folder separator, so the file would "
++    "be written elsewhere. Use '/' for folders."
 +)
 --- a/py/capture.py
 +++ b/v2/py/capture.py
@@ -5568,7 +5576,7 @@
  from .. import hook
  from ..trace import Trace
 +from .._v2_capture import SAVE_LOCK, bind_loop, bind_snapshot, run_async
-+from .._v2_refusals import (BATCH_NUM, DOT_NAME, JPEG, OVERWRITE, OVERWRITE_BATCH,
++from .._v2_refusals import (BACKSLASH, BATCH_NUM, DOT_NAME, JPEG, OVERWRITE, OVERWRITE_BATCH,
 +                            SecureConversionRefusal)
  
  from ..defs.combo import SAMPLER_SELECTION_METHOD
@@ -5707,7 +5715,7 @@
  
      pattern_format = re.compile(r"(%[^%]+%)")
  
-@@ -90,84 +144,77 @@
+@@ -90,84 +144,79 @@
                  pnginfo_dict_src[k] = v.replace(",", "/")
  
          results = list()
@@ -5770,6 +5778,8 @@
 -            base_filename = filename
 +            if filename in ("", ".", ".."):
 +                raise SecureConversionRefusal(DOT_NAME.format(prefix=filename_prefix))
++            if "\\" in filename_prefix:
++                raise SecureConversionRefusal(BACKSLASH.format(prefix=filename_prefix))
 +            image = images.select(index)
 +            if file_format == "png":
 +                options = {"compress_level": self.compress_level, "png_text": metadata.as_png_text()}
@@ -5842,7 +5852,7 @@
  
          return {"ui": {"images": results}}
  
-@@ -260,30 +307,102 @@
+@@ -260,30 +309,102 @@
          return filename
  
  
@@ -5969,7 +5979,7 @@
          extra_metadata={},
          key1="",
          value1="",
-@@ -302,4 +421,4 @@
+@@ -302,4 +423,4 @@
                  key4: value4,
              }
          )
@@ -7223,7 +7233,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/test_comfyui_saveimagewithmetadata_parity.py
-@@ -0,0 +1,490 @@
+@@ -0,0 +1,492 @@
 +"""Tier-1 parity: nkchocoai ComfyUI-SaveImageWithMetaData (c9a87453) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate:
@@ -7421,6 +7431,8 @@
 +    case('escape-prefix', prefix='../escape/img', expect='known:escape'),
 +    case('batch-num-prefix', prefix='img_%batch_num%', expect='refusal'),
 +    case('empty-prefix', prefix='', expect='refusal'),
++    case('prefix-backslash', prefix='.\\CMYK\\image', expect='refusal'),
++    case('prefix-backslash-folder', prefix='renders\\img_%seed%', expect='refusal'),
 +    case('extra-metadata', extra=EXTRA),
 +    case('extra-metadata-chain', extra=EXTRA, extra2=EXTRA2),
 +    case('extra-metadata-default-a', extra=EXTRA_DEFAULT_A),

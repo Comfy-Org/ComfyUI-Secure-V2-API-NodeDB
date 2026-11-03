@@ -13,7 +13,7 @@ from ..capture import Capture
 from .. import hook
 from ..trace import Trace
 from .._v2_capture import SAVE_LOCK, bind_loop, bind_snapshot, run_async
-from .._v2_refusals import (BATCH_NUM, DOT_NAME, JPEG, OVERWRITE, OVERWRITE_BATCH,
+from .._v2_refusals import (BACKSLASH, BATCH_NUM, DOT_NAME, JPEG, OVERWRITE, OVERWRITE_BATCH,
                             SecureConversionRefusal)
 
 from ..defs.combo import SAMPLER_SELECTION_METHOD
@@ -178,6 +178,8 @@ class _Saver:
             )
             if filename in ("", ".", ".."):
                 raise SecureConversionRefusal(DOT_NAME.format(prefix=filename_prefix))
+            if "\\" in filename_prefix:
+                raise SecureConversionRefusal(BACKSLASH.format(prefix=filename_prefix))
             image = images.select(index)
             if file_format == "png":
                 options = {"compress_level": self.compress_level, "png_text": metadata.as_png_text()}

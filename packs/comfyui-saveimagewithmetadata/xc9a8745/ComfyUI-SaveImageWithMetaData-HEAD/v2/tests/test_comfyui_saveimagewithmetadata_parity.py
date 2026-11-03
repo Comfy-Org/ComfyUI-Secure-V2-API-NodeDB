@@ -195,6 +195,8 @@ CASES = [
     case('escape-prefix', prefix='../escape/img', expect='known:escape'),
     case('batch-num-prefix', prefix='img_%batch_num%', expect='refusal'),
     case('empty-prefix', prefix='', expect='refusal'),
+    case('prefix-backslash', prefix='.\\CMYK\\image', expect='refusal'),
+    case('prefix-backslash-folder', prefix='renders\\img_%seed%', expect='refusal'),
     case('extra-metadata', extra=EXTRA),
     case('extra-metadata-chain', extra=EXTRA, extra2=EXTRA2),
     case('extra-metadata-default-a', extra=EXTRA_DEFAULT_A),

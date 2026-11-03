@@ -45,3 +45,9 @@ EMBEDDINGS_CATALOGUE = (
     "the way the original searched them. Reference the embedding with its subfolder "
     "(embedding:subfolder/name)."
 )
+
+BACKSLASH = (
+    f"{PACK}/SaveImageWithMetaData: filename_prefix {{prefix!r}} contains a backslash. On a Linux host the original "
+    "kept it as part of the file name; the managed image writer treats it as a folder separator, so the file would "
+    "be written elsewhere. Use '/' for folders."
+)

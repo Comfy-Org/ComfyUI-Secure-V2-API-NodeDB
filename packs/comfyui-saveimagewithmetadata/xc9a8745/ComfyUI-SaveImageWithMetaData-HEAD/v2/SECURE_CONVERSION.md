@@ -1,7 +1,7 @@
 # Secure Nodes V2 conversion: ComfyUI-SaveImageWithMetaData (nkchocoai)
 
 **Status: converted 2 of 2 declared nodes** (`SaveImageWithMetaData`, `CreateExtraMetaData`); 0 nodes refused.
-`SaveImageWithMetaData` refuses five behaviours by name (`py/_v2_refusals.py`). **Minimum guest SDK base: 0cd9adec**
+`SaveImageWithMetaData` refuses six behaviours by name (`py/_v2_refusals.py`). **Minimum guest SDK base: 0cd9adec**
 (comfy_api 0.37.0): it uses `graph.execution_metadata` and the image writer's `png_text` / `a1111_parameters`, which
 base 0b86765f lacks.
 
@@ -25,7 +25,7 @@ Upstream: https://github.com/nkchocoai/ComfyUI-SaveImageWithMetaData @ `c9a87453
 - Hidden `prompt` and `extra_pnginfo` are declared and read through the schema (`cls.hidden`).
 
 ## Parity (tier 1, gate `run_in_gate.sh`, core 6257422b executor)
-`tests/test_comfyui_saveimagewithmetadata_parity.py` runs 50 prompts through the real executor three times: the
+`tests/test_comfyui_saveimagewithmetadata_parity.py` runs 52 prompts through the real executor three times: the
 unmodified original, the original plus a harness-only cache adapter (the reference), and V2. Each case declares its
 expected outcome. The pinned original cannot capture on core 6257422b at all: `py/capture.py:19-27` passes the
 executor's output cache to `execution.get_input_data`, which now calls `execution_list.get_cache()` (core
@@ -42,6 +42,8 @@ Named refusals (`SecureConversionRefusal`):
 3. `%batch_num%` in the prefix: the original kept it literally; the writer would substitute it.
 4. A prefix naming no file (empty, `.`, `..`): the original wrote `._00001_.png`; the writer rejects the name.
 5. An embedding not at the embeddings root while the embeddings catalogue lists more than 4096 files.
+6. A backslash in the (formatted) prefix: on a Linux host the original kept it as part of the file name; the writer
+   treats it as a folder separator.
 
 Documented behaviour differences (each shown by a gate case):
 6. Prefixes leaving the output folder: both raise `Exception("**** ERROR: Saving image outside the output folder is not
