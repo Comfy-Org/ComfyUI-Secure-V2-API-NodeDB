@@ -1,0 +1,9503 @@
+{
+ "source": "WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4, INPUT_TYPES() captured in the to-50% gate with the default configuration",
+ "nodes": {
+  "BLIP Model Loader": {
+   "class": "WAS_BLIP_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "blip_model": [
+      "STRING",
+      {
+       "default": "Salesforce/blip-image-captioning-base"
+      }
+     ],
+     "vqa_model_id": [
+      "STRING",
+      {
+       "default": "Salesforce/blip-vqa-base"
+      }
+     ],
+     "device": [
+      [
+       "cuda",
+       "cpu"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BLIP_MODEL"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "blip_model",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Blend Latents": {
+   "class": "WAS_Blend_Latents",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "latent_a": [
+      "LATENT"
+     ],
+     "latent_b": [
+      "LATENT"
+     ],
+     "operation": [
+      [
+       "add",
+       "multiply",
+       "divide",
+       "subtract",
+       "overlay",
+       "hard_light",
+       "soft_light",
+       "screen",
+       "linear_dodge",
+       "difference",
+       "exclusion",
+       "random"
+      ]
+     ],
+     "blend": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "CATEGORY": "WAS Suite/Latent",
+   "FUNCTION": "latent_blend",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Bus Node": {
+   "class": "WAS_Bus",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "bus": [
+      "BUS"
+     ],
+     "model": [
+      "MODEL"
+     ],
+     "clip": [
+      "CLIP"
+     ],
+     "vae": [
+      "VAE"
+     ],
+     "positive": [
+      "CONDITIONING"
+     ],
+     "negative": [
+      "CONDITIONING"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BUS",
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "CONDITIONING",
+    "CONDITIONING"
+   ],
+   "RETURN_NAMES": [
+    "bus",
+    "model",
+    "clip",
+    "vae",
+    "positive",
+    "negative"
+   ],
+   "CATEGORY": "WAS Suite/Utilities",
+   "FUNCTION": "bus_fn",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Cache Node": {
+   "class": "WAS_Cache",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "latent_suffix": [
+      "STRING",
+      {
+       "default": "83073100_cache",
+       "multiline": false
+      }
+     ],
+     "image_suffix": [
+      "STRING",
+      {
+       "default": "19195945_cache",
+       "multiline": false
+      }
+     ],
+     "conditioning_suffix": [
+      "STRING",
+      {
+       "default": "1845094_cache",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "output_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "latent": [
+      "LATENT"
+     ],
+     "image": [
+      "IMAGE"
+     ],
+     "conditioning": [
+      "CONDITIONING"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "latent_filename",
+    "image_filename",
+    "conditioning_filename"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "cache_input",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Checkpoint Loader": {
+   "class": "WAS_Checkpoint_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "config_name": [
+      [
+       "anything_v3.yaml",
+       "v1-inference.yaml",
+       "v1-inference_clip_skip_2.yaml",
+       "v1-inference_clip_skip_2_fp16.yaml",
+       "v1-inference_fp16.yaml",
+       "v1-inpainting-inference.yaml",
+       "v2-inference-v.yaml",
+       "v2-inference-v_fp32.yaml",
+       "v2-inference.yaml",
+       "v2-inference_fp32.yaml",
+       "v2-inpainting-inference.yaml"
+      ]
+     ],
+     "ckpt_name": [
+      []
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders/Advanced",
+   "FUNCTION": "load_checkpoint",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Checkpoint Loader (Simple)": {
+   "class": "WAS_Checkpoint_Loader_Simple",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "ckpt_name": [
+      []
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_checkpoint",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIPTextEncode (NSP)": {
+   "class": "WAS_NSP_CLIPTextEncoder",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mode": [
+      [
+       "Noodle Soup Prompts",
+       "Wildcards"
+      ]
+     ],
+     "noodle_key": [
+      "STRING",
+      {
+       "default": "__",
+       "multiline": false
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "text": [
+      "STRING",
+      {
+       "multiline": true
+      }
+     ],
+     "clip": [
+      "CLIP"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CONDITIONING",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "conditioning",
+    "parsed_text",
+    "raw_text"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Conditioning",
+   "FUNCTION": "nsp_encode",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIP Input Switch": {
+   "class": "WAS_CLIP_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "clip_a": [
+      "CLIP"
+     ],
+     "clip_b": [
+      "CLIP"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CLIP"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "clip_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIP Vision Input Switch": {
+   "class": "WAS_CLIP_Vision_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "clip_vision_a": [
+      "CLIP_VISION"
+     ],
+     "clip_vision_b": [
+      "CLIP_VISION"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CLIP_VISION"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "clip_vision_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Conditioning Input Switch": {
+   "class": "WAS_Conditioning_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "conditioning_a": [
+      "CONDITIONING"
+     ],
+     "conditioning_b": [
+      "CONDITIONING"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CONDITIONING"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "conditioning_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Constant Number": {
+   "class": "WAS_Constant_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_type": [
+      [
+       "integer",
+       "float",
+       "bool"
+      ]
+     ],
+     "number": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615,
+       "step": 0.01
+      }
+     ]
+    },
+    "optional": {
+     "number_as_text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "return_constant_number",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Create Grid Image": {
+   "class": "WAS_Image_Grid_Image",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/input/",
+       "multiline": false
+      }
+     ],
+     "pattern_glob": [
+      "STRING",
+      {
+       "default": "*",
+       "multiline": false
+      }
+     ],
+     "include_subfolders": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "border_width": [
+      "INT",
+      {
+       "default": 3,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "number_of_columns": [
+      "INT",
+      {
+       "default": 6,
+       "min": 1,
+       "max": 24,
+       "step": 1
+      }
+     ],
+     "max_cell_size": [
+      "INT",
+      {
+       "default": 256,
+       "min": 32,
+       "max": 1280,
+       "step": 1
+      }
+     ],
+     "border_red": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "border_green": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "border_blue": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "create_grid_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Create Grid Image from Batch": {
+   "class": "WAS_Image_Grid_Image_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "border_width": [
+      "INT",
+      {
+       "default": 3,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "number_of_columns": [
+      "INT",
+      {
+       "default": 6,
+       "min": 1,
+       "max": 24,
+       "step": 1
+      }
+     ],
+     "max_cell_size": [
+      "INT",
+      {
+       "default": 256,
+       "min": 32,
+       "max": 2048,
+       "step": 1
+      }
+     ],
+     "border_red": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "border_green": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "border_blue": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "smart_grid_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Create Morph Image": {
+   "class": "WAS_Image_Morph_GIF",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "transition_frames": [
+      "INT",
+      {
+       "default": 30,
+       "min": 2,
+       "max": 60,
+       "step": 1
+      }
+     ],
+     "still_image_delay_ms": [
+      "FLOAT",
+      {
+       "default": 2500.0,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "duration_ms": [
+      "FLOAT",
+      {
+       "default": 0.1,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "loops": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "max_size": [
+      "INT",
+      {
+       "default": 512,
+       "min": 128,
+       "max": 1280,
+       "step": 1
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output",
+       "multiline": false
+      }
+     ],
+     "filename": [
+      "STRING",
+      {
+       "default": "morph",
+       "multiline": false
+      }
+     ],
+     "filetype": [
+      [
+       "GIF",
+       "APNG"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "image_a_pass",
+    "image_b_pass",
+    "filepath_text",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/Animation",
+   "FUNCTION": "create_morph_gif",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Create Morph Image from Path": {
+   "class": "WAS_Image_Morph_GIF_By_Path",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "transition_frames": [
+      "INT",
+      {
+       "default": 30,
+       "min": 2,
+       "max": 60,
+       "step": 1
+      }
+     ],
+     "still_image_delay_ms": [
+      "FLOAT",
+      {
+       "default": 2500.0,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "duration_ms": [
+      "FLOAT",
+      {
+       "default": 0.1,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "loops": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "max_size": [
+      "INT",
+      {
+       "default": 512,
+       "min": 128,
+       "max": 1280,
+       "step": 1
+      }
+     ],
+     "input_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI",
+       "multiline": false
+      }
+     ],
+     "input_pattern": [
+      "STRING",
+      {
+       "default": "*",
+       "multiline": false
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output",
+       "multiline": false
+      }
+     ],
+     "filename": [
+      "STRING",
+      {
+       "default": "morph",
+       "multiline": false
+      }
+     ],
+     "filetype": [
+      [
+       "GIF",
+       "APNG"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "filepath_text",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/Animation",
+   "FUNCTION": "create_morph_gif",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Create Video from Path": {
+   "class": "WAS_Create_Video_From_Path",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "transition_frames": [
+      "INT",
+      {
+       "default": 30,
+       "min": 0,
+       "max": 120,
+       "step": 1
+      }
+     ],
+     "image_delay_sec": [
+      "FLOAT",
+      {
+       "default": 2.5,
+       "min": 0.01,
+       "max": 60000.0,
+       "step": 0.01
+      }
+     ],
+     "fps": [
+      "INT",
+      {
+       "default": 30,
+       "min": 1,
+       "max": 60.0,
+       "step": 1
+      }
+     ],
+     "max_size": [
+      "INT",
+      {
+       "default": 512,
+       "min": 128,
+       "max": 1920,
+       "step": 1
+      }
+     ],
+     "input_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/input",
+       "multiline": false
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output",
+       "multiline": false
+      }
+     ],
+     "filename": [
+      "STRING",
+      {
+       "default": "comfy_video",
+       "multiline": false
+      }
+     ],
+     "codec": [
+      [
+       "AVC1",
+       "FFV1",
+       "H264",
+       "MP4V"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "filepath_text",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/Animation",
+   "FUNCTION": "create_video_from_path",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIPSeg Masking": {
+   "class": "WAS_CLIPSeg",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "clipseg_model": [
+      "CLIPSEG_MODEL"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "MASK",
+    "MASK_IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "CLIPSeg_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIPSeg Model Loader": {
+   "class": "WAS_CLIPSeg_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model": [
+      "STRING",
+      {
+       "default": "CIDAS/clipseg-rd64-refined",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CLIPSEG_MODEL"
+   ],
+   "RETURN_NAMES": [
+    "clipseg_model"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "clipseg_model",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIPSeg Batch Masking": {
+   "class": "WAS_CLIPSeg_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "text_a": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_b": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "image_c": [
+      "IMAGE"
+     ],
+     "image_d": [
+      "IMAGE"
+     ],
+     "image_e": [
+      "IMAGE"
+     ],
+     "image_f": [
+      "IMAGE"
+     ],
+     "text_c": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_d": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_e": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_f": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "MASK",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGES_BATCH",
+    "MASKS_BATCH",
+    "MASK_IMAGES_BATCH"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "CLIPSeg_images",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Convert Masks to Images": {
+   "class": "WAS_Mask_To_Image",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGES"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "mask_to_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Control Net Model Input Switch": {
+   "class": "WAS_Control_Net_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "control_net_a": [
+      "CONTROL_NET"
+     ],
+     "control_net_b": [
+      "CONTROL_NET"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CONTROL_NET"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "control_net_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Debug Number to Console": {
+   "class": "WAS_Debug_Number_to_Console",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "Debug to Console",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "debug_to_console",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Dictionary to Console": {
+   "class": "WAS_Dictionary_To_Console",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary": [
+      "DICT"
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "Dictionary Output",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "DICT"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "text_to_console",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Diffusers Model Loader": {
+   "class": "WAS_Diffusers_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model_path": [
+      []
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders/Advanced",
+   "FUNCTION": "load_checkpoint",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Diffusers Hub Model Down-Loader": {
+   "class": "WAS_Diffusers_Hub_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "repo_id": [
+      "STRING",
+      {
+       "multiline": false
+      }
+     ],
+     "revision": [
+      "STRING",
+      {
+       "default": "None",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders/Advanced",
+   "FUNCTION": "load_hub_checkpoint",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Export API": {
+   "class": "WAS_Export_API",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "save_prompt_api": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output/",
+       "multiline": false
+      }
+     ],
+     "filename_prefix": [
+      "STRING",
+      {
+       "default": "ComfyUI_Prompt"
+      }
+     ],
+     "filename_delimiter": [
+      "STRING",
+      {
+       "default": "_"
+      }
+     ],
+     "filename_number_padding": [
+      "INT",
+      {
+       "default": 4,
+       "min": 2,
+       "max": 9,
+       "step": 1
+      }
+     ],
+     "parse_text_tokens": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    },
+    "hidden": {
+     "prompt": "PROMPT"
+    }
+   },
+   "RETURN_TYPES": [],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "export_api",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Latent Input Switch": {
+   "class": "WAS_Latent_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "latent_a": [
+      "LATENT"
+     ],
+     "latent_b": [
+      "LATENT"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "latent_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Load Cache": {
+   "class": "WAS_Load_Cache",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "latent_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "image_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "conditioning_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT",
+    "IMAGE",
+    "CONDITIONING"
+   ],
+   "RETURN_NAMES": [
+    "LATENT",
+    "IMAGE",
+    "CONDITIONING"
+   ],
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "load_cache",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic Boolean": {
+   "class": "WAS_Boolean",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean": [
+      "FLOAT",
+      {
+       "default": 1,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN",
+    "NUMBER",
+    "INT",
+    "FLOAT"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "return_boolean",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic Boolean Primitive": {
+   "class": "WAS_Boolean_Primitive",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic Comparison OR": {
+   "class": "WAS_Logical_OR",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean_a": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "boolean_b": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic Comparison AND": {
+   "class": "WAS_Logical_AND",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean_a": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "boolean_b": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic Comparison XOR": {
+   "class": "WAS_Logical_XOR",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean_a": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "boolean_b": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Logic NOT": {
+   "class": "WAS_Logical_NOT",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Lora Loader": {
+   "class": "WAS_Lora_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model": [
+      "MODEL"
+     ],
+     "clip": [
+      "CLIP"
+     ],
+     "lora_name": [
+      [
+       "None"
+      ]
+     ],
+     "strength_model": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -10.0,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ],
+     "strength_clip": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -10.0,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_lora",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Hex to HSL": {
+   "class": "WAS_Hex_to_HSL",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "hex_color": [
+      "STRING",
+      {
+       "default": "#FF0000"
+      }
+     ]
+    },
+    "optional": {
+     "include_alpha": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "INT",
+    "INT",
+    "INT",
+    "FLOAT",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "hue",
+    "saturation",
+    "lightness",
+    "alpha",
+    "hsl"
+   ],
+   "CATEGORY": "WAS Suite/Utilities",
+   "FUNCTION": "hex_to_hsl",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "HSL to Hex": {
+   "class": "WAS_HSL_to_Hex",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "hsl_color": [
+      "STRING",
+      {
+       "default": "hsl(0, 100%, 50%)"
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "hex_color"
+   ],
+   "CATEGORY": "WAS Suite/Utilities",
+   "FUNCTION": "hsl_to_hex",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image SSAO (Ambient Occlusion)": {
+   "class": "WAS_Image_Ambient_Occlusion",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "depth_images": [
+      "IMAGE"
+     ],
+     "strength": [
+      "FLOAT",
+      {
+       "min": 0.0,
+       "max": 5.0,
+       "default": 1.0,
+       "step": 0.01
+      }
+     ],
+     "radius": [
+      "FLOAT",
+      {
+       "min": 0.01,
+       "max": 1024,
+       "default": 30,
+       "step": 0.01
+      }
+     ],
+     "ao_blur": [
+      "FLOAT",
+      {
+       "min": 0.01,
+       "max": 1024,
+       "default": 2.5,
+       "step": 0.01
+      }
+     ],
+     "specular_threshold": [
+      "INT",
+      {
+       "min": 0,
+       "max": 255,
+       "default": 25,
+       "step": 1
+      }
+     ],
+     "enable_specular_masking": [
+      [
+       "True",
+       "False"
+      ]
+     ],
+     "tile_size": [
+      "INT",
+      {
+       "min": 1,
+       "max": 512,
+       "default": 1,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "composited_images",
+    "ssao_images",
+    "specular_mask_images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "ambient_occlusion",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image SSDO (Direct Occlusion)": {
+   "class": "WAS_Image_Direct_Occlusion",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "depth_images": [
+      "IMAGE"
+     ],
+     "strength": [
+      "FLOAT",
+      {
+       "min": 0.0,
+       "max": 5.0,
+       "default": 1.0,
+       "step": 0.01
+      }
+     ],
+     "radius": [
+      "FLOAT",
+      {
+       "min": 0.01,
+       "max": 1024,
+       "default": 30,
+       "step": 0.01
+      }
+     ],
+     "specular_threshold": [
+      "INT",
+      {
+       "min": 0,
+       "max": 255,
+       "default": 128,
+       "step": 1
+      }
+     ],
+     "colored_occlusion": [
+      [
+       "True",
+       "False"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE",
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "composited_images",
+    "ssdo_images",
+    "ssdo_image_masks",
+    "light_source_image_masks"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "direct_occlusion",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Analyze": {
+   "class": "WAS_Image_Analyze",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "Black White Levels",
+       "RGB Levels"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Analyze",
+   "FUNCTION": "image_analyze",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Aspect Ratio": {
+   "class": "WAS_Image_Aspect_Ratio",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "image": [
+      "IMAGE"
+     ],
+     "width": [
+      "NUMBER"
+     ],
+     "height": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "NUMBER",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "aspect_number",
+    "aspect_float",
+    "is_landscape_bool",
+    "aspect_ratio_common",
+    "aspect_type"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "aspect",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Batch": {
+   "class": "WAS_Image_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "images_a": [
+      "IMAGE"
+     ],
+     "images_b": [
+      "IMAGE"
+     ],
+     "images_c": [
+      "IMAGE"
+     ],
+     "images_d": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_batch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Blank": {
+   "class": "WAS_Image_Blank",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 4096,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 4096,
+       "step": 1
+      }
+     ],
+     "red": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "green": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "blue": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "blank_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Blend by Mask": {
+   "class": "WAS_Image_Blend_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "mask": [
+      "IMAGE"
+     ],
+     "blend_percentage": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_blend_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Blend": {
+   "class": "WAS_Image_Blend",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "blend_percentage": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_blend",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Blending Mode": {
+   "class": "WAS_Image_Blending_Mode",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "add",
+       "color",
+       "color_burn",
+       "color_dodge",
+       "darken",
+       "difference",
+       "exclusion",
+       "hard_light",
+       "hue",
+       "lighten",
+       "multiply",
+       "overlay",
+       "screen",
+       "soft_light"
+      ]
+     ],
+     "blend_percentage": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_blending_mode",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Bloom Filter": {
+   "class": "WAS_Image_Bloom_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "radius": [
+      "FLOAT",
+      {
+       "default": 10,
+       "min": 0.0,
+       "max": 1024,
+       "step": 0.1
+      }
+     ],
+     "intensity": [
+      "FLOAT",
+      {
+       "default": 1,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_bloom",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Canny Filter": {
+   "class": "WAS_Canny_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "enable_threshold": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "threshold_low": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "threshold_high": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "canny_filter",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Chromatic Aberration": {
+   "class": "WAS_Image_Chromatic_Aberration",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "red_offset": [
+      "INT",
+      {
+       "default": 2,
+       "min": -255,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "green_offset": [
+      "INT",
+      {
+       "default": -1,
+       "min": -255,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "blue_offset": [
+      "INT",
+      {
+       "default": 1,
+       "min": -255,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "intensity": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "fade_radius": [
+      "INT",
+      {
+       "default": 12,
+       "min": 0,
+       "max": 1024,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_chromatic_aberration",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Color Palette": {
+   "class": "WAS_Image_Color_Palette",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "colors": [
+      "INT",
+      {
+       "default": 16,
+       "min": 8,
+       "max": 256,
+       "step": 1
+      }
+     ],
+     "mode": [
+      [
+       "Chart",
+       "back_to_back"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "LIST"
+   ],
+   "RETURN_NAMES": [
+    "image",
+    "color_palettes"
+   ],
+   "CATEGORY": "WAS Suite/Image/Analyze",
+   "FUNCTION": "image_generate_palette",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Crop Face": {
+   "class": "WAS_Image_Crop_Face",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "crop_padding_factor": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 2.0,
+       "step": 0.01
+      }
+     ],
+     "cascade_xml": [
+      [
+       "lbpcascade_animeface.xml",
+       "haarcascade_frontalface_default.xml",
+       "haarcascade_frontalface_alt.xml",
+       "haarcascade_frontalface_alt2.xml",
+       "haarcascade_frontalface_alt_tree.xml",
+       "haarcascade_profileface.xml",
+       "haarcascade_upperbody.xml",
+       "haarcascade_eye.xml"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "CROP_DATA"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_crop_face",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Crop Location": {
+   "class": "WAS_Image_Crop_Location",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "top": [
+      "INT",
+      {
+       "default": 0,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "left": [
+      "INT",
+      {
+       "default": 0,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "right": [
+      "INT",
+      {
+       "default": 256,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "bottom": [
+      "INT",
+      {
+       "default": 256,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "CROP_DATA"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_crop_location",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Crop Square Location": {
+   "class": "WAS_Image_Crop_Square_Location",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "x": [
+      "INT",
+      {
+       "default": 0,
+       "max": 24576,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "y": [
+      "INT",
+      {
+       "default": 0,
+       "max": 24576,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "size": [
+      "INT",
+      {
+       "default": 256,
+       "max": 4096,
+       "min": 5,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "CROP_DATA"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_crop_location",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Displacement Warp": {
+   "class": "WAS_Image_Displacement_Warp",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "displacement_maps": [
+      "IMAGE"
+     ],
+     "amplitude": [
+      "FLOAT",
+      {
+       "default": 25.0,
+       "min": -4096,
+       "max": 4096,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "displace_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Lucy Sharpen": {
+   "class": "WAS_Lucy_Sharpen",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "iterations": [
+      "INT",
+      {
+       "default": 2,
+       "min": 1,
+       "max": 12,
+       "step": 1
+      }
+     ],
+     "kernel_size": [
+      "INT",
+      {
+       "default": 3,
+       "min": 1,
+       "max": 16,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "sharpen",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Paste Face": {
+   "class": "WAS_Image_Paste_Face_Crop",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "crop_image": [
+      "IMAGE"
+     ],
+     "crop_data": [
+      "CROP_DATA"
+     ],
+     "crop_blending": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "crop_sharpening": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 3,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGE",
+    "MASK_IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_paste_face",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Paste Crop": {
+   "class": "WAS_Image_Paste_Crop",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "crop_image": [
+      "IMAGE"
+     ],
+     "crop_data": [
+      "CROP_DATA"
+     ],
+     "crop_blending": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "crop_sharpening": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 3,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGE",
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_paste_crop",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Paste Crop by Location": {
+   "class": "WAS_Image_Paste_Crop_Location",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "crop_image": [
+      "IMAGE"
+     ],
+     "top": [
+      "INT",
+      {
+       "default": 0,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "left": [
+      "INT",
+      {
+       "default": 0,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "right": [
+      "INT",
+      {
+       "default": 256,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "bottom": [
+      "INT",
+      {
+       "default": 256,
+       "max": 10000000,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "crop_blending": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "crop_sharpening": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 3,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGE",
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_paste_crop_location",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Pixelate": {
+   "class": "WAS_Image_Pixelate",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "pixelation_size": [
+      "FLOAT",
+      {
+       "default": 164,
+       "min": 16,
+       "max": 480,
+       "step": 1
+      }
+     ],
+     "num_colors": [
+      "FLOAT",
+      {
+       "default": 16,
+       "min": 2,
+       "max": 256,
+       "step": 1
+      }
+     ],
+     "init_mode": [
+      [
+       "k-means++",
+       "random",
+       "none"
+      ]
+     ],
+     "max_iterations": [
+      "FLOAT",
+      {
+       "default": 100,
+       "min": 1,
+       "max": 256,
+       "step": 1
+      }
+     ],
+     "dither": [
+      [
+       "False",
+       "True"
+      ]
+     ],
+     "dither_mode": [
+      [
+       "FloydSteinberg",
+       "Ordered"
+      ]
+     ]
+    },
+    "optional": {
+     "color_palettes": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ],
+     "color_palette_mode": [
+      [
+       "Brightness",
+       "BrightnessAndTonal",
+       "Linear",
+       "Tonal"
+      ]
+     ],
+     "reverse_palette": [
+      [
+       "False",
+       "True"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_pixelate",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Power Noise": {
+   "class": "WAS_Image_Power_Noise",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "frequency": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "max": 10.0,
+       "min": 0.0,
+       "step": 0.01
+      }
+     ],
+     "attenuation": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "max": 10.0,
+       "min": 0.0,
+       "step": 0.01
+      }
+     ],
+     "noise_type": [
+      [
+       "grey",
+       "white",
+       "pink",
+       "blue",
+       "green",
+       "mix"
+      ]
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate/Noise",
+   "FUNCTION": "power_noise",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Dragan Photography Filter": {
+   "class": "WAS_Dragon_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "saturation": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 16.0,
+       "step": 0.01
+      }
+     ],
+     "contrast": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 16.0,
+       "step": 0.01
+      }
+     ],
+     "brightness": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 16.0,
+       "step": 0.01
+      }
+     ],
+     "sharpness": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 6.0,
+       "step": 0.01
+      }
+     ],
+     "highpass_radius": [
+      "FLOAT",
+      {
+       "default": 6.0,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.01
+      }
+     ],
+     "highpass_samples": [
+      "INT",
+      {
+       "default": 1,
+       "min": 0,
+       "max": 6.0,
+       "step": 1
+      }
+     ],
+     "highpass_strength": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 3.0,
+       "step": 0.01
+      }
+     ],
+     "colorize": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "apply_dragan_filter",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Edge Detection Filter": {
+   "class": "WAS_Image_Edge",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "normal",
+       "laplacian"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_edges",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Film Grain": {
+   "class": "WAS_Film_Grain",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "density": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "intensity": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "highlights": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.01,
+       "max": 255.0,
+       "step": 0.01
+      }
+     ],
+     "supersample_factor": [
+      "INT",
+      {
+       "default": 4,
+       "min": 1,
+       "max": 8,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "film_grain",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Filter Adjustments": {
+   "class": "WAS_Image_Filters",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "brightness": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": -1.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "contrast": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -1.0,
+       "max": 2.0,
+       "step": 0.01
+      }
+     ],
+     "saturation": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 5.0,
+       "step": 0.01
+      }
+     ],
+     "sharpness": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -5.0,
+       "max": 5.0,
+       "step": 0.01
+      }
+     ],
+     "blur": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 16,
+       "step": 1
+      }
+     ],
+     "gaussian_blur": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 1024.0,
+       "step": 0.1
+      }
+     ],
+     "edge_enhance": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "detail_enhance": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_filters",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Flip": {
+   "class": "WAS_Image_Flip",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "horizontal",
+       "vertical"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_flip",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Gradient Map": {
+   "class": "WAS_Image_Gradient_Map",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "gradient_image": [
+      "IMAGE"
+     ],
+     "flip_left_right": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_gradient_map",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Generate Gradient": {
+   "class": "WAS_Image_Generate_Gradient",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "direction": [
+      [
+       "horizontal",
+       "vertical"
+      ]
+     ],
+     "tolerance": [
+      "INT",
+      {
+       "default": 0,
+       "max": 255,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "gradient_stops": [
+      "STRING",
+      {
+       "default": "0:255,0,0\n25:255,255,255\n50:0,255,0\n75:0,0,255",
+       "multiline": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate",
+   "FUNCTION": "image_gradient",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image High Pass Filter": {
+   "class": "WAS_Image_High_Pass_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "radius": [
+      "INT",
+      {
+       "default": 10,
+       "min": 1,
+       "max": 500,
+       "step": 1
+      }
+     ],
+     "strength": [
+      "FLOAT",
+      {
+       "default": 1.5,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "color_output": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "neutral_background": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "high_pass",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image History Loader": {
+   "class": "WAS_Image_History",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      [
+       "No History"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "image",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/History",
+   "FUNCTION": "image_history",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Input Switch": {
+   "class": "WAS_Image_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "image_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Levels Adjustment": {
+   "class": "WAS_Image_Levels",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "black_level": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "mid_level": [
+      "FLOAT",
+      {
+       "default": 127.5,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "white_level": [
+      "FLOAT",
+      {
+       "default": 255,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Adjustment",
+   "FUNCTION": "apply_image_levels",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Load": {
+   "class": "WAS_Load_Image",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/input/example.png",
+       "multiline": false
+      }
+     ],
+     "RGBA": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    },
+    "optional": {
+     "filename_text_extension": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "MASK",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "image",
+    "mask",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "load_image",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Median Filter": {
+   "class": "WAS_Image_Median_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "diameter": [
+      "INT",
+      {
+       "default": 2.0,
+       "min": 0.1,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "sigma_color": [
+      "FLOAT",
+      {
+       "default": 10.0,
+       "min": -255.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "sigma_space": [
+      "FLOAT",
+      {
+       "default": 10.0,
+       "min": -255.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "apply_median_filter",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Mix RGB Channels": {
+   "class": "WAS_Image_RGB_Merge",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "red_channel": [
+      "IMAGE"
+     ],
+     "green_channel": [
+      "IMAGE"
+     ],
+     "blue_channel": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "merge_channels",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Monitor Effects Filter": {
+   "class": "WAS_Image_Monitor_Distortion_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "Digital Distortion",
+       "Signal Distortion",
+       "TV Distortion"
+      ]
+     ],
+     "amplitude": [
+      "INT",
+      {
+       "default": 5,
+       "min": 1,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "offset": [
+      "INT",
+      {
+       "default": 10,
+       "min": 1,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_monitor_filters",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Nova Filter": {
+   "class": "WAS_Image_Nova_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "amplitude": [
+      "FLOAT",
+      {
+       "default": 0.1,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.001
+      }
+     ],
+     "frequency": [
+      "FLOAT",
+      {
+       "default": 3.14,
+       "min": 0.0,
+       "max": 100.0,
+       "step": 0.001
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "nova_sine",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Padding": {
+   "class": "WAS_Image_Padding",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "feathering": [
+      "INT",
+      {
+       "default": 120,
+       "min": 0,
+       "max": 2048,
+       "step": 1
+      }
+     ],
+     "feather_second_pass": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "left_padding": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "right_padding": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "top_padding": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "bottom_padding": [
+      "INT",
+      {
+       "default": 512,
+       "min": 8,
+       "max": 48000,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGE",
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_padding",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Perlin Noise": {
+   "class": "WAS_Image_Perlin_Noise",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "max": 2048,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "max": 2048,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "scale": [
+      "INT",
+      {
+       "default": 100,
+       "max": 2048,
+       "min": 2,
+       "step": 1
+      }
+     ],
+     "octaves": [
+      "INT",
+      {
+       "default": 4,
+       "max": 8,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "persistence": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "max": 100.0,
+       "min": 0.01,
+       "step": 0.01
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate/Noise",
+   "FUNCTION": "perlin_noise",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Rembg (Remove Background)": {
+   "class": "WAS_Remove_Rembg",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "transparency": [
+      "BOOLEAN",
+      {
+       "default": true
+      }
+     ],
+     "model": [
+      [
+       "u2net",
+       "u2netp",
+       "u2net_human_seg",
+       "silueta",
+       "isnet-general-use",
+       "isnet-anime"
+      ]
+     ],
+     "post_processing": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "only_mask": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "alpha_matting": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ],
+     "alpha_matting_foreground_threshold": [
+      "INT",
+      {
+       "default": 240,
+       "min": 0,
+       "max": 255
+      }
+     ],
+     "alpha_matting_background_threshold": [
+      "INT",
+      {
+       "default": 10,
+       "min": 0,
+       "max": 255
+      }
+     ],
+     "alpha_matting_erode_size": [
+      "INT",
+      {
+       "default": 10,
+       "min": 0,
+       "max": 255
+      }
+     ],
+     "background_color": [
+      [
+       "none",
+       "black",
+       "white",
+       "magenta",
+       "chroma green",
+       "chroma blue"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/AI",
+   "FUNCTION": "image_rembg",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Perlin Power Fractal": {
+   "class": "WAS_Image_Perlin_Power_Fractal",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "max": 8192,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "max": 8192,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "scale": [
+      "INT",
+      {
+       "default": 100,
+       "max": 2048,
+       "min": 2,
+       "step": 1
+      }
+     ],
+     "octaves": [
+      "INT",
+      {
+       "default": 4,
+       "max": 8,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "persistence": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "max": 100.0,
+       "min": 0.01,
+       "step": 0.01
+      }
+     ],
+     "lacunarity": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "max": 100.0,
+       "min": 0.01,
+       "step": 0.01
+      }
+     ],
+     "exponent": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "max": 100.0,
+       "min": 0.01,
+       "step": 0.01
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate/Noise",
+   "FUNCTION": "perlin_power_fractal",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Remove Background (Alpha)": {
+   "class": "WAS_Remove_Background",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "background",
+       "foreground"
+      ]
+     ],
+     "threshold": [
+      "INT",
+      {
+       "default": 127,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "threshold_tolerance": [
+      "INT",
+      {
+       "default": 2,
+       "min": 1,
+       "max": 24,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_remove_background",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Remove Color": {
+   "class": "WAS_Image_Remove_Color",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "target_red": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "target_green": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "target_blue": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "replace_red": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "replace_green": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "replace_blue": [
+      "INT",
+      {
+       "default": 255,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "clip_threshold": [
+      "INT",
+      {
+       "default": 10,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_remove_color",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Resize": {
+   "class": "WAS_Image_Rescale",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "rescale",
+       "resize"
+      ]
+     ],
+     "supersample": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "resampling": [
+      [
+       "lanczos",
+       "nearest",
+       "bilinear",
+       "bicubic"
+      ]
+     ],
+     "rescale_factor": [
+      "FLOAT",
+      {
+       "default": 2,
+       "min": 0.01,
+       "max": 16.0,
+       "step": 0.01
+      }
+     ],
+     "resize_width": [
+      "INT",
+      {
+       "default": 1024,
+       "min": 1,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "resize_height": [
+      "INT",
+      {
+       "default": 1536,
+       "min": 1,
+       "max": 48000,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_rescale",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Rotate": {
+   "class": "WAS_Image_Rotate",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "transpose",
+       "internal"
+      ]
+     ],
+     "rotation": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 360,
+       "step": 90
+      }
+     ],
+     "sampler": [
+      [
+       "nearest",
+       "bilinear",
+       "bicubic"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_rotate",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Rotate Hue": {
+   "class": "WAS_Image_Rotate_Hue",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "hue_shift": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.001
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Adjustment",
+   "FUNCTION": "rotate_hue",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Send HTTP": {
+   "class": "WAS_Image_Send_HTTP",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "url": [
+      "STRING",
+      {
+       "default": "example.com"
+      }
+     ],
+     "method_type": [
+      [
+       "post",
+       "put",
+       "patch"
+      ],
+      {
+       "default": "post"
+      }
+     ],
+     "request_field_name": [
+      "STRING",
+      {
+       "default": "image"
+      }
+     ]
+    },
+    "optional": {
+     "additional_request_headers": [
+      "DICT"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "INT",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "status_code",
+    "result_text"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "was_send_images_http",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Save": {
+   "class": "WAS_Image_Save",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "[time(%Y-%m-%d)]",
+       "multiline": false
+      }
+     ],
+     "filename_prefix": [
+      "STRING",
+      {
+       "default": "ComfyUI"
+      }
+     ],
+     "filename_delimiter": [
+      "STRING",
+      {
+       "default": "_"
+      }
+     ],
+     "filename_number_padding": [
+      "INT",
+      {
+       "default": 4,
+       "min": 1,
+       "max": 9,
+       "step": 1
+      }
+     ],
+     "filename_number_start": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "extension": [
+      [
+       "png",
+       "jpg",
+       "jpeg",
+       "gif",
+       "tiff",
+       "webp",
+       "bmp"
+      ]
+     ],
+     "dpi": [
+      "INT",
+      {
+       "default": 300,
+       "min": 1,
+       "max": 2400,
+       "step": 1
+      }
+     ],
+     "quality": [
+      "INT",
+      {
+       "default": 100,
+       "min": 1,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "optimize_image": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "lossless_webp": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "overwrite_mode": [
+      [
+       "false",
+       "prefix_as_filename"
+      ]
+     ],
+     "show_history": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "show_history_by_prefix": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "embed_workflow": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "show_previews": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    },
+    "hidden": {
+     "prompt": "PROMPT",
+     "extra_pnginfo": "EXTRA_PNGINFO"
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "images",
+    "files"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "was_save_images",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Seamless Texture": {
+   "class": "WAS_Image_Make_Seamless",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "blending": [
+      "FLOAT",
+      {
+       "default": 0.4,
+       "max": 1.0,
+       "min": 0.0,
+       "step": 0.01
+      }
+     ],
+     "tiled": [
+      [
+       "true",
+       "false"
+      ]
+     ],
+     "tiles": [
+      "INT",
+      {
+       "default": 2,
+       "max": 6,
+       "min": 2,
+       "step": 2
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "make_seamless",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Select Channel": {
+   "class": "WAS_Image_Select_Channel",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "channel": [
+      [
+       "red",
+       "green",
+       "blue"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "select_channel",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Select Color": {
+   "class": "WAS_Image_Select_Color",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "red": [
+      "INT",
+      {
+       "default": 255.0,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "green": [
+      "INT",
+      {
+       "default": 255.0,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "blue": [
+      "INT",
+      {
+       "default": 255.0,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "variance": [
+      "INT",
+      {
+       "default": 10,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "select_color",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Shadows and Highlights": {
+   "class": "WAS_Shadow_And_Highlight_Adjustment",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "shadow_threshold": [
+      "FLOAT",
+      {
+       "default": 75,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "shadow_factor": [
+      "FLOAT",
+      {
+       "default": 1.5,
+       "min": -12.0,
+       "max": 12.0,
+       "step": 0.1
+      }
+     ],
+     "shadow_smoothing": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": -255.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "highlight_threshold": [
+      "FLOAT",
+      {
+       "default": 175,
+       "min": 0.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "highlight_factor": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": -12.0,
+       "max": 12.0,
+       "step": 0.1
+      }
+     ],
+     "highlight_smoothing": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": -255.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ],
+     "simplify_isolation": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -255.0,
+       "max": 255.0,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image",
+    "shadow_map",
+    "highlight_map"
+   ],
+   "CATEGORY": "WAS Suite/Image/Adjustment",
+   "FUNCTION": "apply_shadow_and_highlight",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Size to Number": {
+   "class": "WAS_Image_Size_To_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "NUMBER",
+    "FLOAT",
+    "FLOAT",
+    "INT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "width_num",
+    "height_num",
+    "width_float",
+    "height_float",
+    "width_int",
+    "height_int"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "image_width_height",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Stitch": {
+   "class": "WAS_Image_Stitch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_a": [
+      "IMAGE"
+     ],
+     "image_b": [
+      "IMAGE"
+     ],
+     "stitch": [
+      [
+       "top",
+       "left",
+       "bottom",
+       "right"
+      ]
+     ],
+     "feathering": [
+      "INT",
+      {
+       "default": 50,
+       "min": 0,
+       "max": 2048,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_stitching",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Style Filter": {
+   "class": "WAS_Image_Style_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "style": [
+      [
+       "1977",
+       "aden",
+       "brannan",
+       "brooklyn",
+       "clarendon",
+       "earlybird",
+       "fairy tale",
+       "gingham",
+       "hudson",
+       "inkwell",
+       "kelvin",
+       "lark",
+       "lofi",
+       "maven",
+       "mayfair",
+       "moon",
+       "nashville",
+       "perpetua",
+       "reyes",
+       "rise",
+       "slumber",
+       "stinson",
+       "toaster",
+       "valencia",
+       "walden",
+       "willow",
+       "xpro2"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "image_style_filter",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Threshold": {
+   "class": "WAS_Image_Threshold",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "threshold": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "image_threshold",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Tiled": {
+   "class": "WAS_Image_Tile_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "num_tiles": [
+      "INT",
+      {
+       "default": 4,
+       "max": 64,
+       "min": 2,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "IMAGES"
+   ],
+   "CATEGORY": "WAS Suite/Image/Process",
+   "FUNCTION": "tile_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Transpose": {
+   "class": "WAS_Image_Transpose",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "image_overlay": [
+      "IMAGE"
+     ],
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "min": -48000,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "min": -48000,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "X": [
+      "INT",
+      {
+       "default": 0,
+       "min": -48000,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "Y": [
+      "INT",
+      {
+       "default": 0,
+       "min": -48000,
+       "max": 48000,
+       "step": 1
+      }
+     ],
+     "rotation": [
+      "INT",
+      {
+       "default": 0,
+       "min": -360,
+       "max": 360,
+       "step": 1
+      }
+     ],
+     "feathering": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 4096,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Transform",
+   "FUNCTION": "image_transpose",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image fDOF Filter": {
+   "class": "WAS_Image_fDOF",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "depth": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "mock",
+       "gaussian",
+       "box"
+      ]
+     ],
+     "radius": [
+      "INT",
+      {
+       "default": 8,
+       "min": 1,
+       "max": 128,
+       "step": 1
+      }
+     ],
+     "samples": [
+      "INT",
+      {
+       "default": 1,
+       "min": 1,
+       "max": 3,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Filter",
+   "FUNCTION": "fdof_composite",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image to Latent Mask": {
+   "class": "WAS_Image_To_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "channel": [
+      [
+       "alpha",
+       "red",
+       "green",
+       "blue"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "image_to_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image to Noise": {
+   "class": "WAS_Image_To_Noise",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "num_colors": [
+      "INT",
+      {
+       "default": 16,
+       "max": 256,
+       "min": 2,
+       "step": 2
+      }
+     ],
+     "black_mix": [
+      "INT",
+      {
+       "default": 0,
+       "max": 20,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "gaussian_mix": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "max": 1024,
+       "min": 0,
+       "step": 0.1
+      }
+     ],
+     "brightness": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "max": 2.0,
+       "min": 0.0,
+       "step": 0.01
+      }
+     ],
+     "output_mode": [
+      [
+       "batch",
+       "list"
+      ]
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate/Noise",
+   "FUNCTION": "image_to_noise",
+   "OUTPUT_IS_LIST": [
+    false
+   ],
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image to Seed": {
+   "class": "WAS_Image_To_Seed",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Image/Analyze",
+   "FUNCTION": "image_to_seed",
+   "OUTPUT_IS_LIST": [
+    true
+   ],
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Images to RGB": {
+   "class": "WAS_Images_To_RGB",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_to_rgb",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Images to Linear": {
+   "class": "WAS_Images_To_Linear",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image",
+   "FUNCTION": "image_to_linear",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Integer place counter": {
+   "class": "WAS_Integer_Place_Counter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "int_input": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 10000000,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "INT_PLACES"
+   ],
+   "CATEGORY": "WAS Suite/Integer",
+   "FUNCTION": "count_places",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Voronoi Noise Filter": {
+   "class": "WAS_Image_Voronoi_Noise_Filter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "width": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 512,
+       "max": 4096,
+       "min": 64,
+       "step": 1
+      }
+     ],
+     "density": [
+      "INT",
+      {
+       "default": 50,
+       "max": 256,
+       "min": 10,
+       "step": 2
+      }
+     ],
+     "modulator": [
+      "INT",
+      {
+       "default": 0,
+       "max": 8,
+       "min": 0,
+       "step": 1
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    },
+    "optional": {
+     "flat": [
+      [
+       "False",
+       "True"
+      ]
+     ],
+     "RGB_output": [
+      [
+       "True",
+       "False"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "image"
+   ],
+   "CATEGORY": "WAS Suite/Image/Generate/Noise",
+   "FUNCTION": "voronoi_noise_filter",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "KSampler (WAS)": {
+   "class": "WAS_KSampler",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model": [
+      "MODEL"
+     ],
+     "seed": [
+      "SEED"
+     ],
+     "steps": [
+      "INT",
+      {
+       "default": 20,
+       "min": 1,
+       "max": 10000
+      }
+     ],
+     "cfg": [
+      "FLOAT",
+      {
+       "default": 8.0,
+       "min": 0.0,
+       "max": 100.0
+      }
+     ],
+     "sampler_name": [
+      [
+       "euler",
+       "euler_cfg_pp",
+       "euler_ancestral",
+       "euler_ancestral_cfg_pp",
+       "heun",
+       "heunpp2",
+       "exp_heun_2_x0",
+       "exp_heun_2_x0_sde",
+       "dpm_2",
+       "dpm_2_ancestral",
+       "lms",
+       "dpm_fast",
+       "dpm_adaptive",
+       "dpmpp_2s_ancestral",
+       "dpmpp_2s_ancestral_cfg_pp",
+       "dpmpp_sde",
+       "dpmpp_sde_gpu",
+       "dpmpp_2m",
+       "dpmpp_2m_cfg_pp",
+       "dpmpp_2m_sde",
+       "dpmpp_2m_sde_gpu",
+       "dpmpp_2m_sde_heun",
+       "dpmpp_2m_sde_heun_gpu",
+       "dpmpp_3m_sde",
+       "dpmpp_3m_sde_gpu",
+       "ddpm",
+       "lcm",
+       "ipndm",
+       "ipndm_v",
+       "deis",
+       "cfgpp_ud10_ab",
+       "res_multistep",
+       "res_multistep_cfg_pp",
+       "res_multistep_ancestral",
+       "res_multistep_ancestral_cfg_pp",
+       "gradient_estimation",
+       "gradient_estimation_cfg_pp",
+       "er_sde",
+       "seeds_2",
+       "seeds_3",
+       "sa_solver",
+       "sa_solver_pece",
+       "ddim",
+       "uni_pc",
+       "uni_pc_bh2"
+      ]
+     ],
+     "scheduler": [
+      [
+       "simple",
+       "sgm_uniform",
+       "karras",
+       "exponential",
+       "ddim_uniform",
+       "beta",
+       "normal",
+       "linear_quadratic",
+       "kl_optimal"
+      ]
+     ],
+     "positive": [
+      "CONDITIONING"
+     ],
+     "negative": [
+      "CONDITIONING"
+     ],
+     "latent_image": [
+      "LATENT"
+     ],
+     "denoise": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "CATEGORY": "WAS Suite/Sampling",
+   "FUNCTION": "sample",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "KSampler Cycle": {
+   "class": "WAS_KSampler_Cycle",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model": [
+      "MODEL"
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "steps": [
+      "INT",
+      {
+       "default": 20,
+       "min": 1,
+       "max": 10000
+      }
+     ],
+     "cfg": [
+      "FLOAT",
+      {
+       "default": 8.0,
+       "min": 0.0,
+       "max": 100.0
+      }
+     ],
+     "sampler_name": [
+      [
+       "euler",
+       "euler_cfg_pp",
+       "euler_ancestral",
+       "euler_ancestral_cfg_pp",
+       "heun",
+       "heunpp2",
+       "exp_heun_2_x0",
+       "exp_heun_2_x0_sde",
+       "dpm_2",
+       "dpm_2_ancestral",
+       "lms",
+       "dpm_fast",
+       "dpm_adaptive",
+       "dpmpp_2s_ancestral",
+       "dpmpp_2s_ancestral_cfg_pp",
+       "dpmpp_sde",
+       "dpmpp_sde_gpu",
+       "dpmpp_2m",
+       "dpmpp_2m_cfg_pp",
+       "dpmpp_2m_sde",
+       "dpmpp_2m_sde_gpu",
+       "dpmpp_2m_sde_heun",
+       "dpmpp_2m_sde_heun_gpu",
+       "dpmpp_3m_sde",
+       "dpmpp_3m_sde_gpu",
+       "ddpm",
+       "lcm",
+       "ipndm",
+       "ipndm_v",
+       "deis",
+       "cfgpp_ud10_ab",
+       "res_multistep",
+       "res_multistep_cfg_pp",
+       "res_multistep_ancestral",
+       "res_multistep_ancestral_cfg_pp",
+       "gradient_estimation",
+       "gradient_estimation_cfg_pp",
+       "er_sde",
+       "seeds_2",
+       "seeds_3",
+       "sa_solver",
+       "sa_solver_pece",
+       "ddim",
+       "uni_pc",
+       "uni_pc_bh2"
+      ]
+     ],
+     "scheduler": [
+      [
+       "simple",
+       "sgm_uniform",
+       "karras",
+       "exponential",
+       "ddim_uniform",
+       "beta",
+       "normal",
+       "linear_quadratic",
+       "kl_optimal"
+      ]
+     ],
+     "positive": [
+      "CONDITIONING"
+     ],
+     "negative": [
+      "CONDITIONING"
+     ],
+     "latent_image": [
+      "LATENT"
+     ],
+     "tiled_vae": [
+      [
+       "disable",
+       "enable"
+      ]
+     ],
+     "latent_upscale": [
+      [
+       "disable",
+       "nearest-exact",
+       "bilinear",
+       "area",
+       "bicubic",
+       "bislerp"
+      ]
+     ],
+     "upscale_factor": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "min": 0.1,
+       "max": 8.0,
+       "step": 0.1
+      }
+     ],
+     "upscale_cycles": [
+      "INT",
+      {
+       "default": 2,
+       "min": 2,
+       "max": 12,
+       "step": 1
+      }
+     ],
+     "starting_denoise": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "cycle_denoise": [
+      "FLOAT",
+      {
+       "default": 0.5,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "scale_denoise": [
+      [
+       "enable",
+       "disable"
+      ]
+     ],
+     "scale_sampling": [
+      [
+       "bilinear",
+       "bicubic",
+       "nearest",
+       "lanczos"
+      ]
+     ],
+     "vae": [
+      "VAE"
+     ]
+    },
+    "optional": {
+     "secondary_model": [
+      "MODEL"
+     ],
+     "secondary_start_cycle": [
+      "INT",
+      {
+       "default": 2,
+       "min": 2,
+       "max": 16,
+       "step": 1
+      }
+     ],
+     "upscale_model": [
+      "UPSCALE_MODEL"
+     ],
+     "processor_model": [
+      "UPSCALE_MODEL"
+     ],
+     "pos_additive": [
+      "CONDITIONING"
+     ],
+     "neg_additive": [
+      "CONDITIONING"
+     ],
+     "pos_add_mode": [
+      [
+       "increment",
+       "decrement"
+      ]
+     ],
+     "pos_add_strength": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "pos_add_strength_scaling": [
+      [
+       "enable",
+       "disable"
+      ]
+     ],
+     "pos_add_strength_cutoff": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "min": 0.01,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ],
+     "neg_add_mode": [
+      [
+       "increment",
+       "decrement"
+      ]
+     ],
+     "neg_add_strength": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "neg_add_strength_scaling": [
+      [
+       "enable",
+       "disable"
+      ]
+     ],
+     "neg_add_strength_cutoff": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "min": 0.01,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ],
+     "sharpen_strength": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ],
+     "sharpen_radius": [
+      "INT",
+      {
+       "default": 2,
+       "min": 1,
+       "max": 12,
+       "step": 1
+      }
+     ],
+     "steps_scaling": [
+      [
+       "enable",
+       "disable"
+      ]
+     ],
+     "steps_control": [
+      [
+       "decrement",
+       "increment"
+      ]
+     ],
+     "steps_scaling_value": [
+      "INT",
+      {
+       "default": 10,
+       "min": 1,
+       "max": 20,
+       "step": 1
+      }
+     ],
+     "steps_cutoff": [
+      "INT",
+      {
+       "default": 20,
+       "min": 4,
+       "max": 1000,
+       "step": 1
+      }
+     ],
+     "denoise_cutoff": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.01,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "RETURN_NAMES": [
+    "latent(s)"
+   ],
+   "CATEGORY": "WAS Suite/Sampling",
+   "FUNCTION": "sample",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Latent Batch": {
+   "class": "WAS_Latent_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "latent_a": [
+      "LATENT"
+     ],
+     "latent_b": [
+      "LATENT"
+     ],
+     "latent_c": [
+      "LATENT"
+     ],
+     "latent_d": [
+      "LATENT"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "RETURN_NAMES": [
+    "latent"
+   ],
+   "CATEGORY": "WAS Suite/Latent",
+   "FUNCTION": "latent_batch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Latent Noise Injection": {
+   "class": "WAS_Latent_Noise",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "samples": [
+      "LATENT"
+     ],
+     "noise_std": [
+      "FLOAT",
+      {
+       "default": 0.1,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "CATEGORY": "WAS Suite/Latent/Generate",
+   "FUNCTION": "inject_noise",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Latent Size to Number": {
+   "class": "WAS_Latent_Size_To_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "samples": [
+      "LATENT"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "NUMBER",
+    "FLOAT",
+    "FLOAT",
+    "INT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "tensor_w_num",
+    "tensor_h_num",
+    "tensor_w_float",
+    "tensor_h_float",
+    "tensor_w_int",
+    "tensor_h_int"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "latent_width_height",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Latent Upscale by Factor (WAS)": {
+   "class": "WAS_Latent_Upscale",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "samples": [
+      "LATENT"
+     ],
+     "mode": [
+      [
+       "area",
+       "bicubic",
+       "bilinear",
+       "nearest"
+      ]
+     ],
+     "factor": [
+      "FLOAT",
+      {
+       "default": 2.0,
+       "min": 0.1,
+       "max": 8.0,
+       "step": 0.01
+      }
+     ],
+     "align": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "CATEGORY": "WAS Suite/Latent/Transform",
+   "FUNCTION": "latent_upscale",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Load Image Batch": {
+   "class": "WAS_Load_Image_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mode": [
+      [
+       "single_image",
+       "incremental_image",
+       "random"
+      ]
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "index": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 150000,
+       "step": 1
+      }
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "Batch 001",
+       "multiline": false
+      }
+     ],
+     "path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "pattern": [
+      "STRING",
+      {
+       "default": "*",
+       "multiline": false
+      }
+     ],
+     "allow_RGBA_output": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    },
+    "optional": {
+     "filename_text_extension": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "image",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "load_batch_images",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Load Text File": {
+   "class": "WAS_Text_Load_From_File",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "file_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "dictionary_name": [
+      "STRING",
+      {
+       "default": "[filename]",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "DICT"
+   ],
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "load_file",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Load Lora": {
+   "class": "WAS_Lora_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model": [
+      "MODEL"
+     ],
+     "clip": [
+      "CLIP"
+     ],
+     "lora_name": [
+      [
+       "None"
+      ]
+     ],
+     "strength_model": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -10.0,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ],
+     "strength_clip": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": -10.0,
+       "max": 10.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_lora",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Lora Input Switch": {
+   "class": "WAS_Lora_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model_a": [
+      "MODEL"
+     ],
+     "clip_a": [
+      "CLIP"
+     ],
+     "model_b": [
+      "MODEL"
+     ],
+     "clip_b": [
+      "CLIP"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "lora_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Masks Add": {
+   "class": "WAS_Mask_Add",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks_a": [
+      "MASK"
+     ],
+     "masks_b": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "add_masks",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Masks Subtract": {
+   "class": "WAS_Mask_Subtract",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks_a": [
+      "MASK"
+     ],
+     "masks_b": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "subtract_masks",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Arbitrary Region": {
+   "class": "WAS_Mask_Arbitrary_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "size": [
+      "INT",
+      {
+       "default": 256,
+       "min": 1,
+       "max": 4096,
+       "step": 1
+      }
+     ],
+     "threshold": [
+      "INT",
+      {
+       "default": 128,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "arbitrary_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Batch to Mask": {
+   "class": "WAS_Mask_Batch_to_Single_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "batch_number": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 64,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "mask_batch_to_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Batch": {
+   "class": "WAS_Mask_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "optional": {
+     "masks_a": [
+      "MASK"
+     ],
+     "masks_b": [
+      "MASK"
+     ],
+     "masks_c": [
+      "MASK"
+     ],
+     "masks_d": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "masks"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "mask_batch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Ceiling Region": {
+   "class": "WAS_Mask_Ceiling_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "ceiling_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Crop Dominant Region": {
+   "class": "WAS_Mask_Crop_Dominant_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "padding": [
+      "INT",
+      {
+       "default": 24,
+       "min": 0,
+       "max": 4096,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "crop_dominant_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Crop Minority Region": {
+   "class": "WAS_Mask_Crop_Minority_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "padding": [
+      "INT",
+      {
+       "default": 24,
+       "min": 0,
+       "max": 4096,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "crop_minority_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Crop Region": {
+   "class": "WAS_Mask_Crop_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mask": [
+      "MASK"
+     ],
+     "padding": [
+      "INT",
+      {
+       "default": 24,
+       "min": 0,
+       "max": 4096,
+       "step": 1
+      }
+     ],
+     "region_type": [
+      [
+       "dominant",
+       "minority"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK",
+    "CROP_DATA",
+    "INT",
+    "INT",
+    "INT",
+    "INT",
+    "INT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "cropped_mask",
+    "crop_data",
+    "top_int",
+    "left_int",
+    "right_int",
+    "bottom_int",
+    "width_int",
+    "height_int"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "mask_crop_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Paste Region": {
+   "class": "WAS_Mask_Paste_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mask": [
+      "MASK"
+     ],
+     "crop_mask": [
+      "MASK"
+     ],
+     "crop_data": [
+      "CROP_DATA"
+     ],
+     "crop_blending": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ],
+     "crop_sharpening": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 3,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK",
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "RESULT_MASK",
+    "CROP_MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "mask_paste_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Dilate Region": {
+   "class": "WAS_Mask_Dilate_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "iterations": [
+      "INT",
+      {
+       "default": 5,
+       "min": 1,
+       "max": 64,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "dilate_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Dominant Region": {
+   "class": "WAS_Mask_Dominant_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "threshold": [
+      "INT",
+      {
+       "default": 128,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "dominant_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Erode Region": {
+   "class": "WAS_Mask_Erode_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "iterations": [
+      "INT",
+      {
+       "default": 5,
+       "min": 1,
+       "max": 64,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "erode_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Fill Holes": {
+   "class": "WAS_Mask_Fill_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "fill_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Floor Region": {
+   "class": "WAS_Mask_Floor_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "floor_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Gaussian Region": {
+   "class": "WAS_Mask_Gaussian_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "radius": [
+      "FLOAT",
+      {
+       "default": 5.0,
+       "min": 0.0,
+       "max": 1024,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "gaussian_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Invert": {
+   "class": "WAS_Mask_Invert",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "add_masks",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Minority Region": {
+   "class": "WAS_Mask_Minority_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "threshold": [
+      "INT",
+      {
+       "default": 128,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "minority_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Rect Area": {
+   "class": "WAS_Mask_Rect_Area",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "x": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "y": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "width": [
+      "INT",
+      {
+       "default": 50,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 50,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "blur_radius": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    },
+    "hidden": {
+     "extra_pnginfo": "EXTRA_PNGINFO",
+     "unique_id": "UNIQUE_ID"
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "rect_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Rect Area (Advanced)": {
+   "class": "WAS_Mask_Rect_Area_Advanced",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "x": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "y": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "width": [
+      "INT",
+      {
+       "default": 256,
+       "min": 0,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "height": [
+      "INT",
+      {
+       "default": 256,
+       "min": 0,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "image_width": [
+      "INT",
+      {
+       "default": 512,
+       "min": 64,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "image_height": [
+      "INT",
+      {
+       "default": 512,
+       "min": 64,
+       "max": 4096,
+       "step": 64
+      }
+     ],
+     "blur_radius": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    },
+    "hidden": {
+     "extra_pnginfo": "EXTRA_PNGINFO",
+     "unique_id": "UNIQUE_ID"
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "rect_mask_adv",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Smooth Region": {
+   "class": "WAS_Mask_Smooth_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "sigma": [
+      "FLOAT",
+      {
+       "default": 5.0,
+       "min": 0.0,
+       "max": 128.0,
+       "step": 0.1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "smooth_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Mask Threshold Region": {
+   "class": "WAS_Mask_Threshold_Region",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ],
+     "black_threshold": [
+      "INT",
+      {
+       "default": 75,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "white_threshold": [
+      "INT",
+      {
+       "default": 175,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "RETURN_NAMES": [
+    "MASKS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "threshold_region",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Masks Combine Regions": {
+   "class": "WAS_Mask_Combine",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mask_a": [
+      "MASK"
+     ],
+     "mask_b": [
+      "MASK"
+     ]
+    },
+    "optional": {
+     "mask_c": [
+      "MASK"
+     ],
+     "mask_d": [
+      "MASK"
+     ],
+     "mask_e": [
+      "MASK"
+     ],
+     "mask_f": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "combine_masks",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Masks Combine Batch": {
+   "class": "WAS_Mask_Combine_Batch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "masks": [
+      "MASK"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "combine_masks",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "MiDaS Model Loader": {
+   "class": "MiDaS_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "midas_model": [
+      [
+       "DPT_Large",
+       "DPT_Hybrid"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MIDAS_MODEL"
+   ],
+   "RETURN_NAMES": [
+    "midas_model"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_midas_model",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "MiDaS Depth Approximation": {
+   "class": "MiDaS_Depth_Approx",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "use_cpu": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "midas_type": [
+      [
+       "DPT_Large",
+       "DPT_Hybrid"
+      ]
+     ],
+     "invert_depth": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    },
+    "optional": {
+     "midas_model": [
+      "MIDAS_MODEL"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "images"
+   ],
+   "CATEGORY": "WAS Suite/Image/AI",
+   "FUNCTION": "midas_approx",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "MiDaS Mask Image": {
+   "class": "MiDaS_Background_Foreground_Removal",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "use_cpu": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "midas_model": [
+      [
+       "DPT_Large",
+       "DPT_Hybrid",
+       "DPT_Small"
+      ]
+     ],
+     "remove": [
+      [
+       "background",
+       "foregroud"
+      ]
+     ],
+     "threshold": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "threshold_low": [
+      "FLOAT",
+      {
+       "default": 10,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "threshold_mid": [
+      "FLOAT",
+      {
+       "default": 200,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "threshold_high": [
+      "FLOAT",
+      {
+       "default": 210,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "smoothing": [
+      "FLOAT",
+      {
+       "default": 0.25,
+       "min": 0.0,
+       "max": 16.0,
+       "step": 0.01
+      }
+     ],
+     "background_red": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "background_green": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ],
+     "background_blue": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 255,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE"
+   ],
+   "RETURN_NAMES": [
+    "RESULT",
+    "DEPTH"
+   ],
+   "CATEGORY": "WAS Suite/Image/AI",
+   "FUNCTION": "midas_remove",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Model Input Switch": {
+   "class": "WAS_Model_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model_a": [
+      "MODEL"
+     ],
+     "model_b": [
+      "MODEL"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "model_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number Counter": {
+   "class": "WAS_Number_Counter",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_type": [
+      [
+       "integer",
+       "float"
+      ]
+     ],
+     "mode": [
+      [
+       "increment",
+       "decrement",
+       "increment_to_stop",
+       "decrement_to_stop",
+       "reset_after_stop"
+      ]
+     ],
+     "start": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615,
+       "step": 0.01
+      }
+     ],
+     "stop": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615,
+       "step": 0.01
+      }
+     ],
+     "step": [
+      "FLOAT",
+      {
+       "default": 1,
+       "min": 0,
+       "max": 99999,
+       "step": 0.01
+      }
+     ]
+    },
+    "optional": {
+     "reset_bool": [
+      "NUMBER"
+     ]
+    },
+    "hidden": {
+     "unique_id": "UNIQUE_ID"
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "number",
+    "float",
+    "int"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "increment_number",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number Operation": {
+   "class": "WAS_Number_Operation",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_a": [
+      "NUMBER"
+     ],
+     "number_b": [
+      "NUMBER"
+     ],
+     "operation": [
+      [
+       "addition",
+       "subtraction",
+       "division",
+       "floor division",
+       "multiplication",
+       "exponentiation",
+       "modulus",
+       "greater-than",
+       "greater-than or equals",
+       "less-than",
+       "less-than or equals",
+       "equals",
+       "does not equal"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "math_operations",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number to Float": {
+   "class": "WAS_Number_To_Float",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "FLOAT"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "number_to_float",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number Input Switch": {
+   "class": "WAS_Number_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_a": [
+      "NUMBER"
+     ],
+     "number_b": [
+      "NUMBER"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "number_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number Input Condition": {
+   "class": "WAS_Number_Input_Condition",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_a": [
+      "NUMBER"
+     ],
+     "number_b": [
+      "NUMBER"
+     ],
+     "return_boolean": [
+      [
+       "false",
+       "true"
+      ]
+     ],
+     "comparison": [
+      [
+       "and",
+       "or",
+       "greater-than",
+       "greater-than or equals",
+       "less-than",
+       "less-than or equals",
+       "equals",
+       "does not equal",
+       "divisible by",
+       "if A odd",
+       "if A even",
+       "if A prime",
+       "factor of"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "number_input_condition",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number Multiple Of": {
+   "class": "WAS_Number_Multiple_Of",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ],
+     "multiple": [
+      "INT",
+      {
+       "default": 8,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number/Functions",
+   "FUNCTION": "number_multiple_of",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number PI": {
+   "class": "WAS_Number_PI",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {}
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "number_pi",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number to Int": {
+   "class": "WAS_Number_To_Int",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "number_to_int",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number to Seed": {
+   "class": "WAS_Number_To_Seed",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "SEED"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "number_to_seed",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number to String": {
+   "class": "WAS_Number_To_String",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "number_to_string",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Number to Text": {
+   "class": "WAS_Number_To_Text",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number": [
+      "NUMBER"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Number/Operations",
+   "FUNCTION": "number_to_text",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Boolean To Text": {
+   "class": "WAS_Boolean_To_Text",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "boolean": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "do",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Prompt Styles Selector": {
+   "class": "WAS_Prompt_Styles_Selector",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "style": [
+      [
+       "None"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "positive_string",
+    "negative_string"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "load_style",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Prompt Multiple Styles Selector": {
+   "class": "WAS_Prompt_Multiple_Styles_Selector",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "style1": [
+      [
+       "None"
+      ]
+     ],
+     "style2": [
+      [
+       "None"
+      ]
+     ],
+     "style3": [
+      [
+       "None"
+      ]
+     ],
+     "style4": [
+      [
+       "None"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "positive_string",
+    "negative_string"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "load_style",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Random Number": {
+   "class": "WAS_Random_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "number_type": [
+      [
+       "integer",
+       "float",
+       "bool"
+      ]
+     ],
+     "minimum": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615
+      }
+     ],
+     "maximum": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "return_randm_number",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Save Text File": {
+   "class": "WAS_Text_Save",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output/[time(%Y-%m-%d)]",
+       "multiline": false
+      }
+     ],
+     "filename_prefix": [
+      "STRING",
+      {
+       "default": "ComfyUI"
+      }
+     ],
+     "filename_delimiter": [
+      "STRING",
+      {
+       "default": "_"
+      }
+     ],
+     "filename_number_padding": [
+      "INT",
+      {
+       "default": 4,
+       "min": 0,
+       "max": 9,
+       "step": 1
+      }
+     ]
+    },
+    "optional": {
+     "file_extension": [
+      "STRING",
+      {
+       "default": ".txt"
+      }
+     ],
+     "encoding": [
+      "STRING",
+      {
+       "default": "utf-8"
+      }
+     ],
+     "filename_suffix": [
+      "STRING",
+      {
+       "default": ""
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/IO",
+   "FUNCTION": "save_text_file",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Seed": {
+   "class": "WAS_Seed",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "SEED",
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "seed",
+    "number",
+    "float",
+    "int"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "seed",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Tensor Batch to Image": {
+   "class": "WAS_Tensor_Batch_to_Image",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images_batch": [
+      "IMAGE"
+     ],
+     "batch_image_number": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 64,
+       "step": 1
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Latent/Transform",
+   "FUNCTION": "tensor_batch_to_image",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "BLIP Analyze Image": {
+   "class": "WAS_BLIP_Analyze_Image",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "images": [
+      "IMAGE"
+     ],
+     "mode": [
+      [
+       "caption",
+       "interrogate"
+      ]
+     ],
+     "question": [
+      "STRING",
+      {
+       "default": "What does the background consist of?",
+       "multiline": true,
+       "dynamicPrompts": false
+      }
+     ],
+     "blip_model": [
+      "BLIP_MODEL"
+     ]
+    },
+    "optional": {
+     "min_length": [
+      "INT",
+      {
+       "min": 1,
+       "max": 1024,
+       "default": 24
+      }
+     ],
+     "max_length": [
+      "INT",
+      {
+       "min": 2,
+       "max": 1024,
+       "default": 64
+      }
+     ],
+     "num_beams": [
+      "INT",
+      {
+       "min": 1,
+       "max": 12,
+       "default": 5
+      }
+     ],
+     "no_repeat_ngram_size": [
+      "INT",
+      {
+       "min": 1,
+       "max": 12,
+       "default": 3
+      }
+     ],
+     "early_stopping": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "FULL_CAPTIONS",
+    "CAPTIONS"
+   ],
+   "CATEGORY": "WAS Suite/Text/AI",
+   "FUNCTION": "blip_caption_image",
+   "OUTPUT_IS_LIST": [
+    false,
+    true
+   ],
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "SAM Model Loader": {
+   "class": "WAS_SAM_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model_size": [
+      [
+       "ViT-H",
+       "ViT-L",
+       "ViT-B"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "SAM_MODEL"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "sam_load_model",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "SAM Parameters": {
+   "class": "WAS_SAM_Parameters",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "points": [
+      "STRING",
+      {
+       "default": "[128, 128]; [0, 0]",
+       "multiline": false
+      }
+     ],
+     "labels": [
+      "STRING",
+      {
+       "default": "[1, 0]",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "SAM_PARAMETERS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "sam_parameters",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "SAM Parameters Combine": {
+   "class": "WAS_SAM_Combine_Parameters",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "sam_parameters_a": [
+      "SAM_PARAMETERS"
+     ],
+     "sam_parameters_b": [
+      "SAM_PARAMETERS"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "SAM_PARAMETERS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "sam_combine_parameters",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "SAM Image Mask": {
+   "class": "WAS_SAM_Image_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "sam_model": [
+      "SAM_MODEL"
+     ],
+     "sam_parameters": [
+      "SAM_PARAMETERS"
+     ],
+     "image": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "MASK"
+   ],
+   "CATEGORY": "WAS Suite/Image/Masking",
+   "FUNCTION": "sam_image_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Samples Passthrough (Stat System)": {
+   "class": "WAS_Samples_Passthrough_Stat_System",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "samples": [
+      "LATENT"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LATENT"
+   ],
+   "RETURN_NAMES": [
+    "samples"
+   ],
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "stat_system",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "String to Text": {
+   "class": "WAS_String_To_Text",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "string": [
+      "STRING",
+      {}
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "string_to_text",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Bounds": {
+   "class": "WAS_Image_Bounds",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE_BOUNDS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "image_bounds",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Inset Image Bounds": {
+   "class": "WAS_Inset_Image_Bounds",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_bounds": [
+      "IMAGE_BOUNDS"
+     ],
+     "inset_left": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "inset_right": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "inset_top": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "inset_bottom": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE_BOUNDS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "inset_image_bounds",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Bounded Image Blend": {
+   "class": "WAS_Bounded_Image_Blend",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "target": [
+      "IMAGE"
+     ],
+     "target_bounds": [
+      "IMAGE_BOUNDS"
+     ],
+     "source": [
+      "IMAGE"
+     ],
+     "blend_factor": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      }
+     ],
+     "feathering": [
+      "INT",
+      {
+       "default": 16,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "bounded_image_blend",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Bounded Image Blend with Mask": {
+   "class": "WAS_Bounded_Image_Blend_With_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "target": [
+      "IMAGE"
+     ],
+     "target_mask": [
+      "MASK"
+     ],
+     "target_bounds": [
+      "IMAGE_BOUNDS"
+     ],
+     "source": [
+      "IMAGE"
+     ],
+     "blend_factor": [
+      "FLOAT",
+      {
+       "default": 1.0,
+       "min": 0.0,
+       "max": 1.0
+      }
+     ],
+     "feathering": [
+      "INT",
+      {
+       "default": 16,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "bounded_image_blend_with_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Bounded Image Crop": {
+   "class": "WAS_Bounded_Image_Crop",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "image_bounds": [
+      "IMAGE_BOUNDS"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "bounded_image_crop",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Bounded Image Crop with Mask": {
+   "class": "WAS_Bounded_Image_Crop_With_Mask",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "mask": [
+      "MASK"
+     ],
+     "padding_left": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "padding_right": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "padding_top": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "padding_bottom": [
+      "INT",
+      {
+       "default": 64,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    },
+    "optional": {
+     "return_list": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "IMAGE_BOUNDS"
+   ],
+   "CATEGORY": "WAS Suite/Image/Bound",
+   "FUNCTION": "bounded_image_crop_with_mask",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Image Bounds to Console": {
+   "class": "WAS_Image_Bounds_to_Console",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image_bounds": [
+      "IMAGE_BOUNDS"
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "Debug to Console",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE_BOUNDS"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "debug_to_console",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary Update": {
+   "class": "WAS_Dictionary_Update",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary_a": [
+      "DICT"
+     ],
+     "dictionary_b": [
+      "DICT"
+     ]
+    },
+    "optional": {
+     "dictionary_c": [
+      "DICT"
+     ],
+     "dictionary_d": [
+      "DICT"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "DICT"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_update",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary Get": {
+   "class": "WAS_Dictionary_Get",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary": [
+      "DICT"
+     ],
+     "key": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "default_value": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_get",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary Convert": {
+   "class": "WAS_Dictionary_Convert",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary_text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "DICT"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_convert",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary New": {
+   "class": "WAS_Dictionary_New",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "key_1": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "value_1": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "key_2": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "value_2": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "key_3": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "value_3": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "key_4": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "value_4": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "key_5": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "value_5": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "DICT"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_new",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary Keys": {
+   "class": "WAS_Dictionary_Keys",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary": [
+      "DICT"
+     ]
+    },
+    "optional": {}
+   },
+   "RETURN_TYPES": [
+    "LIST"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_keys",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Dictionary To Text": {
+   "class": "WAS_Dictionary_to_Text",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "dictionary": [
+      "DICT"
+     ]
+    },
+    "optional": {}
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "dictionary_to_text",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Add Tokens": {
+   "class": "WAS_Text_Add_Tokens",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "tokens": [
+      "STRING",
+      {
+       "default": "[hello]: world",
+       "multiline": true
+      }
+     ],
+     "print_current_tokens": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Text/Tokens",
+   "FUNCTION": "text_add_tokens",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Add Token by Input": {
+   "class": "WAS_Text_Add_Token_Input",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "token_name": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "token_value": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "print_current_tokens": [
+      [
+       "false",
+       "true"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Text/Tokens",
+   "FUNCTION": "text_add_token",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Compare": {
+   "class": "WAS_Text_Compare",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text_a": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_b": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "mode": [
+      [
+       "similarity",
+       "difference"
+      ]
+     ],
+     "tolerance": [
+      "FLOAT",
+      {
+       "default": 0.0,
+       "min": 0.0,
+       "max": 1.0,
+       "step": 0.01
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING",
+    "BOOLEAN",
+    "NUMBER",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "TEXT_A_PASS",
+    "TEXT_B_PASS",
+    "BOOLEAN",
+    "SCORE_NUMBER",
+    "COMPARISON_TEXT"
+   ],
+   "CATEGORY": "WAS Suite/Text/Search",
+   "FUNCTION": "text_compare",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Concatenate": {
+   "class": "WAS_Text_Concatenate",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "delimiter": [
+      "STRING",
+      {
+       "default": ", "
+      }
+     ],
+     "clean_whitespace": [
+      [
+       "true",
+       "false"
+      ]
+     ]
+    },
+    "optional": {
+     "text_a": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_b": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_c": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_d": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_concatenate",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text File History Loader": {
+   "class": "WAS_Text_File_History",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "file": [
+      [
+       "No History"
+      ]
+     ],
+     "dictionary_name": [
+      "STRING",
+      {
+       "default": "[filename]",
+       "multiline": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "DICT"
+   ],
+   "CATEGORY": "WAS Suite/History",
+   "FUNCTION": "text_file_history",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Find and Replace by Dictionary": {
+   "class": "WAS_Search_and_Replace_Dictionary",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "dictionary": [
+      "DICT"
+     ],
+     "replacement_key": [
+      "STRING",
+      {
+       "default": "__",
+       "multiline": false
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 1,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Search",
+   "FUNCTION": "text_search_and_replace_dict",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Find and Replace Input": {
+   "class": "WAS_Search_and_Replace_Input",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "find": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "replace": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "result_text",
+    "replacement_count_number",
+    "replacement_count_float",
+    "replacement_count_int"
+   ],
+   "CATEGORY": "WAS Suite/Text/Search",
+   "FUNCTION": "text_search_and_replace",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Find and Replace": {
+   "class": "WAS_Search_and_Replace",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "find": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "replace": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "RETURN_NAMES": [
+    "result_text",
+    "replacement_count_number",
+    "replacement_count_float",
+    "replacement_count_int"
+   ],
+   "CATEGORY": "WAS Suite/Text/Search",
+   "FUNCTION": "text_search_and_replace",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Find": {
+   "class": "WAS_Find",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "substring": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "pattern": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "RETURN_NAMES": [
+    "found"
+   ],
+   "CATEGORY": "WAS Suite/Text/Search",
+   "FUNCTION": "execute",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Input Switch": {
+   "class": "WAS_Text_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text_a": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_b": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "text_input_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text List": {
+   "class": "WAS_Text_List",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "text_a": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_b": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_c": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_d": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_e": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_f": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_g": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LIST"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_as_list",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text List Concatenate": {
+   "class": "WAS_Text_List_Concatenate",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {},
+    "optional": {
+     "list_a": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ],
+     "list_b": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ],
+     "list_c": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ],
+     "list_d": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "LIST"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_concatenate_list",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text List to Text": {
+   "class": "WAS_Text_List_to_Text",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "delimiter": [
+      "STRING",
+      {
+       "default": ", "
+      }
+     ],
+     "text_list": [
+      "LIST",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_list_to_text",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Load Line From File": {
+   "class": "WAS_Text_Load_Line_From_File",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "file_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "dictionary_name": [
+      "STRING",
+      {
+       "default": "[filename]",
+       "multiline": false
+      }
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "TextBatch",
+       "multiline": false
+      }
+     ],
+     "mode": [
+      [
+       "automatic",
+       "index"
+      ]
+     ],
+     "index": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "step": 1
+      }
+     ]
+    },
+    "optional": {
+     "multiline_text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "DICT"
+   ],
+   "RETURN_NAMES": [
+    "line_text",
+    "dictionary"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "load_file",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Multiline": {
+   "class": "WAS_Text_Multiline",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": true,
+       "dynamicPrompts": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_multiline",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Multiline (Code Compatible)": {
+   "class": "WAS_Text_Multiline_Raw",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": true,
+       "dynamicPrompts": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_multiline",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Parse A1111 Embeddings": {
+   "class": "WAS_Text_Parse_Embeddings_By_Name",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Parse",
+   "FUNCTION": "text_parse_embeddings",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Parse Noodle Soup Prompts": {
+   "class": "WAS_Text_Parse_NSP",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "mode": [
+      [
+       "Noodle Soup Prompts",
+       "Wildcards"
+      ]
+     ],
+     "noodle_key": [
+      "STRING",
+      {
+       "default": "__",
+       "multiline": false
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ],
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Text/Parse",
+   "FUNCTION": "text_parse_nsp",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Parse Tokens": {
+   "class": "WAS_Text_Parse_Tokens",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Tokens",
+   "FUNCTION": "text_parse_tokens",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Random Line": {
+   "class": "WAS_Text_Random_Line",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_random_line",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Random Prompt": {
+   "class": "WAS_Text_Random_Prompt",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "search_seed": [
+      "STRING",
+      {
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "random_prompt",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text String": {
+   "class": "WAS_Text_String",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "text_b": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_c": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "text_d": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "TEXT",
+    "TEXT_B",
+    "TEXT_C",
+    "TEXT_D"
+   ],
+   "CATEGORY": "WAS Suite/Text",
+   "FUNCTION": "text_string",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Contains": {
+   "class": "WAS_Text_Contains",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "sub_text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ]
+    },
+    "optional": {
+     "case_insensitive": [
+      "BOOLEAN",
+      {
+       "default": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "BOOLEAN"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "text_contains",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Shuffle": {
+   "class": "WAS_Text_Shuffle",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "separator": [
+      "STRING",
+      {
+       "default": ",",
+       "multiline": false
+      }
+     ],
+     "seed": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 18446744073709551615
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "shuffle",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text Sort": {
+   "class": "WAS_Text_Sort",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "separator": [
+      "STRING",
+      {
+       "default": ", ",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "sort",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text to Conditioning": {
+   "class": "WAS_Text_to_Conditioning",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "clip": [
+      "CLIP"
+     ],
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "CONDITIONING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "text_to_conditioning",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text to Console": {
+   "class": "WAS_Text_to_Console",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "label": [
+      "STRING",
+      {
+       "default": "Text Output",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "OUTPUT_NODE": true,
+   "CATEGORY": "WAS Suite/Debug",
+   "FUNCTION": "text_to_console",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text to Number": {
+   "class": "WAS_Text_To_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "text_to_number",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text to String": {
+   "class": "WAS_Text_To_String",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "text_to_string",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Text String Truncate": {
+   "class": "WAS_Text_String_Truncate",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "text": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "truncate_by": [
+      [
+       "characters",
+       "words"
+      ]
+     ],
+     "truncate_from": [
+      [
+       "end",
+       "beginning"
+      ]
+     ],
+     "truncate_to": [
+      "INT",
+      {
+       "default": 10,
+       "min": -99999999,
+       "max": 99999999,
+       "step": 1
+      }
+     ]
+    },
+    "optional": {
+     "text_b": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_c": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ],
+     "text_d": [
+      "STRING",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "STRING",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "TEXT",
+    "TEXT_B",
+    "TEXT_C",
+    "TEXT_D"
+   ],
+   "CATEGORY": "WAS Suite/Text/Operations",
+   "FUNCTION": "truncate_string",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "True Random.org Number Generator": {
+   "class": "WAS_True_Random_Number",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "api_key": [
+      "STRING",
+      {
+       "default": "00000000-0000-0000-0000-000000000000",
+       "multiline": false
+      }
+     ],
+     "minimum": [
+      "FLOAT",
+      {
+       "default": 0,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615
+      }
+     ],
+     "maximum": [
+      "FLOAT",
+      {
+       "default": 10000000,
+       "min": -18446744073709551615,
+       "max": 18446744073709551615
+      }
+     ],
+     "mode": [
+      [
+       "random",
+       "fixed"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "NUMBER",
+    "FLOAT",
+    "INT"
+   ],
+   "CATEGORY": "WAS Suite/Number",
+   "FUNCTION": "return_true_randm_number",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "unCLIP Checkpoint Loader": {
+   "class": "WAS_unCLIP_Checkpoint_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "ckpt_name": [
+      []
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "CLIP_VISION",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "MODEL",
+    "CLIP",
+    "VAE",
+    "CLIP_VISION",
+    "NAME_STRING"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_checkpoint",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Upscale Model Loader": {
+   "class": "WAS_Upscale_Model_Loader",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "model_name": [
+      []
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "UPSCALE_MODEL",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "UPSCALE_MODEL",
+    "MODEL_NAME_TEXT"
+   ],
+   "CATEGORY": "WAS Suite/Loaders",
+   "FUNCTION": "load_model",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Upscale Model Switch": {
+   "class": "WAS_Upscale_Model_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "upscale_model_a": [
+      "UPSCALE_MODEL"
+     ],
+     "upscale_model_b": [
+      "UPSCALE_MODEL"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "UPSCALE_MODEL"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "upscale_model_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Write to GIF": {
+   "class": "WAS_Image_Morph_GIF_Writer",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "transition_frames": [
+      "INT",
+      {
+       "default": 30,
+       "min": 2,
+       "max": 60,
+       "step": 1
+      }
+     ],
+     "image_delay_ms": [
+      "FLOAT",
+      {
+       "default": 2500.0,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "duration_ms": [
+      "FLOAT",
+      {
+       "default": 0.1,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "loops": [
+      "INT",
+      {
+       "default": 0,
+       "min": 0,
+       "max": 100,
+       "step": 1
+      }
+     ],
+     "max_size": [
+      "INT",
+      {
+       "default": 512,
+       "min": 128,
+       "max": 1280,
+       "step": 1
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "filename": [
+      "STRING",
+      {
+       "default": "morph_writer",
+       "multiline": false
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "image_pass",
+    "filepath_text",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/Animation/Writer",
+   "FUNCTION": "write_to_morph_gif",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Write to Video": {
+   "class": "WAS_Video_Writer",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "transition_frames": [
+      "INT",
+      {
+       "default": 30,
+       "min": 0,
+       "max": 120,
+       "step": 1
+      }
+     ],
+     "image_delay_sec": [
+      "FLOAT",
+      {
+       "default": 2.5,
+       "min": 0.1,
+       "max": 60000.0,
+       "step": 0.1
+      }
+     ],
+     "fps": [
+      "INT",
+      {
+       "default": 30,
+       "min": 1,
+       "max": 60.0,
+       "step": 1
+      }
+     ],
+     "max_size": [
+      "INT",
+      {
+       "default": 512,
+       "min": 128,
+       "max": 1920,
+       "step": 1
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/output",
+       "multiline": false
+      }
+     ],
+     "filename": [
+      "STRING",
+      {
+       "default": "comfy_writer",
+       "multiline": false
+      }
+     ],
+     "codec": [
+      [
+       "AVC1",
+       "FFV1",
+       "H264",
+       "MP4V"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE",
+    "STRING",
+    "STRING"
+   ],
+   "RETURN_NAMES": [
+    "IMAGE_PASS",
+    "filepath_text",
+    "filename_text"
+   ],
+   "CATEGORY": "WAS Suite/Animation/Writer",
+   "FUNCTION": "write_video",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "VAE Input Switch": {
+   "class": "WAS_VAE_Input_Switch",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "vae_a": [
+      "VAE"
+     ],
+     "vae_b": [
+      "VAE"
+     ],
+     "boolean": [
+      "BOOLEAN",
+      {
+       "forceInput": true
+      }
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "VAE"
+   ],
+   "CATEGORY": "WAS Suite/Logic",
+   "FUNCTION": "vae_switch",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  },
+  "Video Dump Frames": {
+   "class": "WAS_Video_Frame_Dump",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "video_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/input/MyVideo.mp4",
+       "multiline": false
+      }
+     ],
+     "output_path": [
+      "STRING",
+      {
+       "default": "./ComfyUI/input/MyVideo",
+       "multiline": false
+      }
+     ],
+     "prefix": [
+      "STRING",
+      {
+       "default": "frame_",
+       "multiline": false
+      }
+     ],
+     "filenumber_digits": [
+      "INT",
+      {
+       "default": 4,
+       "min": -1,
+       "max": 8,
+       "step": 1
+      }
+     ],
+     "extension": [
+      [
+       "png",
+       "jpg",
+       "gif",
+       "tiff"
+      ]
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "STRING",
+    "NUMBER"
+   ],
+   "RETURN_NAMES": [
+    "output_path",
+    "processed_count"
+   ],
+   "CATEGORY": "WAS Suite/Animation",
+   "FUNCTION": "dump_video_frames",
+   "has_IS_CHANGED": true,
+   "has_VALIDATE_INPUTS": false
+  },
+  "CLIPSEG2": {
+   "class": "CLIPSeg2",
+   "module": "WAS_Node_Suite",
+   "input_types": {
+    "required": {
+     "image": [
+      "IMAGE"
+     ],
+     "text": [
+      "STRING",
+      {
+       "default": "",
+       "multiline": false
+      }
+     ],
+     "use_cuda": [
+      "BOOLEAN",
+      {
+       "default": false
+      }
+     ]
+    },
+    "optional": {
+     "clipseg_model": [
+      "CLIPSEG_MODEL"
+     ]
+    }
+   },
+   "RETURN_TYPES": [
+    "IMAGE"
+   ],
+   "CATEGORY": "image/transformation",
+   "FUNCTION": "apply_transform",
+   "has_IS_CHANGED": false,
+   "has_VALIDATE_INPUTS": false
+  }
+ }
+}

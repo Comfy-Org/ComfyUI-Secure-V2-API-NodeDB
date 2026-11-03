@@ -1,0 +1,55 @@
+"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
+
+PACK = "was-ns"
+
+
+class SecureConversionRefusal(RuntimeError):
+    """A behaviour of the original that the Secure Nodes V2 conversion refuses by name."""
+
+
+def not_converted(node_id):
+    return f"{PACK}/{node_id} is not yet converted to Secure Nodes V2"
+
+
+HOST_TOKEN = (
+    f"{PACK}: the text uses the token {{token}}, which the original filled with information about the host "
+    "machine (host name, user name or CUDA device). A Secure Nodes V2 node cannot read it. Remove the token."
+)
+
+IMAGE_SAVE_JPEG = (
+    f"{PACK}/Image Save: extension {{ext!r}} is not supported on Secure Nodes V2. The original encodes JPEG with "
+    "Pillow's default chroma subsampling and a DPI header; the managed image writer encodes JPEG with 4:4:4 "
+    "subsampling, so the image would differ. Use png, webp, gif, tiff or bmp."
+)
+
+IMAGE_SAVE_WEBP_EMBED = (
+    f"{PACK}/Image Save: extension 'webp' with embed_workflow 'true' is not supported on Secure Nodes V2. The "
+    "original writes the prompt and workflow into EXIF tags 0x010F and 0x010E; the managed image writer cannot write "
+    "those tags. Set embed_workflow to 'false', or use png."
+)
+
+IMAGE_SAVE_HISTORY = (
+    f"{PACK}/Image Save: show_history 'true' is not supported on Secure Nodes V2. The original lists earlier images "
+    "from a history database it keeps in its pack folder; a V2 node has no such database. Set show_history to 'false'."
+)
+
+IMAGE_SAVE_PATH = (
+    f"{PACK}/Image Save: output_path {{path!r}} is not a folder inside the output folder. The original also wrote to "
+    "absolute paths anywhere on the host (and, on a Linux host, kept backslashes as name characters); Secure Nodes V2 "
+    "writes only inside the output folder. Use a relative output_path with '/' separators."
+)
+
+IMAGE_SAVE_PREFIX = (
+    f"{PACK}/Image Save: filename_prefix {{prefix!r}} contains a path separator. The original joined it to the "
+    "folder as is; the managed image writer would create folders from it. Put folders in output_path."
+)
+
+IMAGE_SAVE_OVERWRITE = (
+    f"{PACK}/Image Save: the image would replace the existing file {{name!r}}. The original overwrote it; the "
+    "managed image writer never overwrites an output file. Change filename_prefix or overwrite_mode."
+)
+
+IMAGE_SAVE_LISTING = (
+    f"{PACK}/Image Save: output folder {{path!r}} holds more names than the asset catalogue lists at once (4096), so "
+    "the next file number cannot be computed the way the original computed it."
+)
