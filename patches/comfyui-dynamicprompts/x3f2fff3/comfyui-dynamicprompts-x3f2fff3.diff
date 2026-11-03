@@ -1,0 +1,1828 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,72 @@
++# Secure Nodes V2 conversion: comfyui-dynamicprompts
++
++- Upstream: adieyal/comfyui-dynamicprompts at `3f2fff32358cf39e21b8b440ca87eac9a8e2bade` (version 0.2.1).
++- Library: dynamicprompts 0.30.2, the version upstream's requirements.txt pins, with pyparsing 3.3.3
++  and PyYAML 6.0.3. A pack dependency profile serves them to the guest (pyproject.toml), and Jinja2
++  comes from the guest base.
++- The pristine tree and v2/ omit upstream media and example workflows (images/, example_workflows/).
++
++## Nodes
++| Node id | Display name | V2 |
++|---|---|---|
++| DPRandomGenerator | Random Prompts | converted |
++| DPCombinatorialGenerator | Combinatorial Prompts | converted |
++| DPJinja | Jinja2 Templates | converted |
++| DPOutput | OutputString | converted; it fails exactly as upstream does (below) |
++| DPMagicPrompt | Magic Prompt | refused by name |
++| DPFeelingLucky | I'm Feeling Lucky | refused by name |
++
++All six keep their original inputs, options, outputs, categories and display names.
++
++## How it runs
++- The node modules in `nodes/` are byte-identical copies. The V2 classes in `_secure_dp.py` call them.
++- `nodes/__init__.py` imports nothing. The original imported all six node modules there, and
++  `magicprompt.py` imports transformers at module import.
++- Random Prompts and Combinatorial Prompts keep one original instance per workflow node id and node
++  type, for the life of the pack's guest process. That is the per-node state Core keeps for a V1 node.
++  The iterator, the current template and the wildcard tree carry over between runs. A seed above 0
++  reseeds the library's shared random generator before each run, as before.
++- Wildcards: the original read ComfyUI/wildcards from the host file system, or the pack's own
++  wildcards folder when that one was missing. V2 reads the `dynamicprompts_wildcards` asset kind
++  through the SDK when a node instance is created. The library then builds its wildcard tree from
++  those files with its own code, so all its rules apply unchanged:
++  - .txt, .json and .yaml files are read, and directories starting with "." are skipped;
++  - comment and blank lines are dropped;
++  - weights and JSON/YAML structure are honoured.
++- DPJinja makes a new instance per run, as the original's state-free node allows.
++- DPOutput upstream always fails: its method takes `string`, but its input is named `text`. V2 calls the
++  same method the same way, so it fails with the same TypeError.
++
++## Refused
++Both refusals show at queue time (`validate_inputs`) and in `execute`:
++- DPMagicPrompt: "comfyui-dynamicprompts/DPMagicPrompt is not yet converted to Secure Nodes V2: it
++  rewrites prompts with a GPT-2 text-generation model, which this pack's guest does not have"
++- DPFeelingLucky: "comfyui-dynamicprompts/DPFeelingLucky is not yet converted to Secure Nodes V2: it
++  fetches prompts from an online search service at run time, and a Secure Nodes V2 guest has no network"
++
++## Known differences
++1. **No wildcard asset kind.** A run that samples a wildcard fails with `WildcardsUnavailableError`,
++   which names the kind, when the host has no `dynamicprompts_wildcards` asset kind or its listing
++   fails (the SDK lists at most 4096 names). Runs that sample no wildcard are unaffected.
++2. **When files are read.** V2 reads the wildcard files when a node instance is created. The original
++   read them at the first wildcard it sampled, so only the original sees a change made in between.
++3. **Instance lifetime.** Core drops a V1 node's instance when a prompt runs without that node, but v2
++   keeps it until the pack's guest process ends. So after such a prompt, the original restarts the
++   node's combinatorial sequence and re-reads wildcards, while v2 continues. A guest restart resets
++   every node, like a server restart.
++4. **Wildcard name collisions.** When two files give the same wildcard name (for example colors.txt
++   and a colors.json list), the later file wins in both. The original's order is the host file
++   system's directory order; v2's is sorted.
++5. **Frontend file and installer.** `web-extensions/dp.js` is not served. install.py copied it into
++   ComfyUI's web/extensions to redefine a PROMPT widget type that no node in this pack uses, and
++   install.py is never run.
++6. **Shared random streams.** Unseeded draws are random in both, from different streams: Jinja's
++   choice/random/randint use the guest's own `random` module, and the guest has its own copy of the
++   library's shared generator.
++
++DPJinja renders with a non-sandboxed Jinja2 environment, as upstream does. In V2 that rendering
++happens inside the guest.
++
++## Parity
++`tests/test_dynamicprompts_parity.py` runs in the lane gate with the pinned wheels. It compares the
++original pack under Core with these classes, run by run, over synthetic wildcard fixtures.
+--- a/__init__.py
++++ b/v2/__init__.py
+@@ -1,5 +1,23 @@
+-from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
++"""comfyui-dynamicprompts, Secure Nodes V2 entry (pin 3f2fff32358c, version 0.2.1).
++
++The original __init__ imports nodes/__init__.py, which imports all six node modules. A guest cannot
++import magicprompt.py, because it imports transformers at module import. This entry registers all six
++node ids from _secure_dp.py: four run the original classes, and two refuse by name.
++"""
++from comfy_api.latest import ComfyExtension
++
++from ._secure_dp import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+ 
+ __version__ = "0.2.1"
+ 
+-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
++
++class DynamicPromptsSecureExtension(ComfyExtension):
++    async def get_node_list(self):
++        return list(NODE_CLASS_MAPPINGS.values())
++
++
++async def comfy_entrypoint():
++    return DynamicPromptsSecureExtension()
++
++
++__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "comfy_entrypoint"]
+--- /dev/null
++++ b/v2/_secure_dp.py
+@@ -0,0 +1,350 @@
++"""Secure Nodes V2 classes for comfyui-dynamicprompts (pin 3f2fff32358c).
++
++All six node ids keep their original inputs, options, outputs, categories and display names.
++
++Converted. These run the original classes from nodes/, which are byte-identical copies.
++  - DPRandomGenerator and DPCombinatorialGenerator. Core keeps one instance of a V1 node class per
++    workflow node id, and these nodes keep their sampling state on that instance: the prompt
++    iterator, the current template and the wildcard tree. So the guest keeps one original instance
++    per (node id, node type) for the life of the pack's guest process. The runtime does the same for
++    legacy classes (comfy_secure_nodes/guest/adapter.py, _LEGACY_INSTANCES). get_prompt runs
++    unchanged, including its reseeding of the library's shared DEFAULT_RANDOM.
++    Boundary edit: the original read its wildcard folder from the host file system (ComfyUI/wildcards,
++    else the pack's own wildcards folder). Here the files come from the "dynamicprompts_wildcards"
++    asset kind, read through the SDK when the instance is created. The library builds its tree from
++    them with its own rules (_WildcardFolder below).
++  - DPJinja: a new original instance per run. The original keeps no state between runs.
++  - DPOutput: calls the original method the way Core calls it. Upstream this always fails, because
++    the method takes `string` but the input is named `text`. It fails the same way here.
++Refused by name, at queue time (validate_inputs) and in execute:
++  - DPMagicPrompt: it needs a GPT-2 text-generation model.
++  - DPFeelingLucky: it fetches prompts from an online service at run time.
++"""
++import hashlib
++import io as _stdio
++from pathlib import PurePosixPath
++
++from comfy_api.latest import io, sdk
++
++from .nodes import combinatorial as _combinatorial
++from .nodes import generator as _generator
++from .nodes import jinja as _jinja
++from .nodes import output_node as _output_node
++from .nodes import random as _random
++from .nodes import sampler as _sampler
++
++PACK = "comfyui-dynamicprompts"
++WILDCARD_KIND = "dynamicprompts_wildcards"
++# dynamicprompts/wildcards/tree/build.py: its folder walk reads these suffixes (case-sensitive) and
++# skips directories whose names start with ".".
++_WILDCARD_SUFFIXES = (".txt", ".json", ".yaml")
++
++
++class NotConvertedError(RuntimeError):
++    """A registered node that refuses to run in Secure Nodes V2."""
++
++
++class WildcardsUnavailableError(Exception):
++    """A template sampled a wildcard, but the host's wildcard files could not be listed.
++
++    Not a RuntimeError: nodes/sampler.py restarts its iterator on RuntimeError.
++    """
++
++
++def _refusal(node_id, reason):
++    return f"{PACK}/{node_id} is not yet converted to Secure Nodes V2: {reason}"
++
++
++MAGIC_PROMPT_REFUSAL = _refusal(
++    "DPMagicPrompt", "it rewrites prompts with a GPT-2 text-generation model, which this pack's guest does not have")
++FEELING_LUCKY_REFUSAL = _refusal(
++    "DPFeelingLucky", "it fetches prompts from an online search service at run time, and a Secure Nodes V2 guest has "
++    "no network")
++
++
++def _sampler_schema(node_id, display_name):
++    # nodes/sampler.py DPAbstractSamplerNode: INPUT_TYPES, RETURN_TYPES and CATEGORY.
++    return io.Schema(
++        node_id=node_id,
++        display_name=display_name,
++        category="Dynamic Prompts",
++        inputs=[
++            io.String.Input("text", multiline=True, dynamic_prompts=False),
++            io.Int.Input("seed", default=0, display_mode=io.NumberDisplay.number),
++            io.Combo.Input("autorefresh", options=["Yes", "No"], default="No"),
++        ],
++        outputs=[io.String.Output()],
++    )
++
++
++# ---------------------------------------------------------------- wildcards, read through the SDK
++class _WildcardFile(PurePosixPath):
++    """A wildcard file as the library uses it: pure path operations for its name and suffix, and
++    open() / read_text() over the bytes read through the SDK (the original opened the host file)."""
++
++    def __init__(self, *segments, content=None):
++        super().__init__(*segments)
++        self._content = content
++
++    def open(self, mode="r", buffering=-1, encoding=None, errors=None, newline=None):
++        if mode != "r" or self._content is None:
++            raise OSError(f"{self} is not a readable wildcard file")
++        return _stdio.TextIOWrapper(_stdio.BytesIO(self._content), encoding=encoding, errors=errors, newline=newline)
++
++    def read_text(self, encoding=None, errors=None, newline=None):
++        with self.open(encoding=encoding, errors=errors, newline=newline) as handle:
++            return handle.read()
++
++
++def _walk_order(names):
++    """The listed files the library's folder walk would read, in os.walk order over sorted entries.
++
++    build_tree_from_path visits a directory's files, then its subdirectories, and skips directories
++    whose names start with "."; a later file wins when two files give one wildcard name.
++    """
++    tree = {}
++    for name in names:
++        parts = name.split("/")
++        if any(part.startswith(".") for part in parts[:-1]):
++            continue
++        if PurePosixPath(parts[-1]).suffix not in _WILDCARD_SUFFIXES:
++            continue
++        node = tree
++        for part in parts[:-1]:
++            node = node.setdefault(("dir", part), {})
++        node[("file", parts[-1])] = name
++    order = []
++
++    def walk(node):
++        order.extend(node[key] for key in sorted(k for k in node if k[0] == "file"))
++        for key in sorted(k for k in node if k[0] == "dir"):
++            walk(node[key])
++
++    walk(tree)
++    return order
++
++
++class _WildcardFolder:
++    """The library's view of the wildcard folder. It is built at the first wildcard an instance
++    samples, the moment the original's WildcardManager walked ComfyUI/wildcards
++    (dynamicprompts/wildcards/tree/build.py build_tree_from_path). Each file goes through the
++    library's own _get_wildcard_collections_from_path, which applies the same names, suffixes and
++    text, JSON and YAML parsing as before."""
++
++    def __init__(self, node_type, files=None, problem=None):
++        self._node_type = node_type
++        self._files = files
++        self._problem = problem
++
++    def items(self):  # called by dynamicprompts.wildcards.tree.build.build_tree_from_root_map
++        if self._problem is not None:
++            raise WildcardsUnavailableError(
++                f"{PACK}/{self._node_type}: this template samples a wildcard, but the host's {WILDCARD_KIND} "
++                f"asset kind cannot be listed ({self._problem}). The original read wildcard files from the host "
++                "file system, which a Secure Nodes V2 guest cannot do.")
++        from dynamicprompts.wildcards.tree.build import _get_wildcard_collections_from_path
++        from dynamicprompts.wildcards.tree.tree import WildcardTree
++
++        root = _WildcardFile(WILDCARD_KIND)
++        path_to_file = {}
++        for name, content in self._files.items():
++            path_to_file.update(_get_wildcard_collections_from_path(
++                file_path=_WildcardFile(WILDCARD_KIND, *name.split("/"), content=content), root_path=root))
++        return dict(WildcardTree.from_map(path_to_file).map).items()
++
++
++# Instances created while the folder holds the same files share one manager. Each manager's tree
++# depends only on those files, so sharing is not observable, and the guest keeps one copy of them.
++_SHARED_FOLDER = {"key": None, "manager": None}
++
++
++async def _wildcard_manager(node_type):
++    """The wildcard manager for a new instance (nodes/sampler.py __init__ makes one per instance)."""
++    from dynamicprompts.wildcards import WildcardManager
++
++    assets = sdk.ctx().assets
++    try:
++        names = await assets.list(WILDCARD_KIND, recursive=True)
++    except PermissionError:
++        raise
++    except Exception as exc:  # the host has no such kind, or the listing exceeds its name limit
++        return WildcardManager(root_map={"": [_WildcardFolder(node_type, problem=f"{type(exc).__name__}: {exc}")]})
++    files = {}
++    for name in _walk_order(names):
++        files[name] = await assets.read_bytes(await assets.resolve(WILDCARD_KIND, name))
++    key = tuple((name, hashlib.sha256(content).hexdigest()) for name, content in files.items())
++    if _SHARED_FOLDER["key"] != key:
++        _SHARED_FOLDER.update(key=key, manager=WildcardManager(root_map={"": [_WildcardFolder(node_type, files=files)]}))
++    return _SHARED_FOLDER["manager"]
++
++
++# ---------------------------------------------------------------- per-node instances
++def _no_host_wildcard_folder(self):
++    return None  # the host file system lookup; _sampler_instance sets the wildcard manager instead
++
++
++def _guest_class(original):
++    # A subclass of the original V1 class (not of a V3 node) with the same name, so any message that
++    # names the instance's class reads as before.
++    return type(original.__name__, (original,), {"_find_wildcards_folder": _no_host_wildcard_folder,
++                                                  "__qualname__": original.__qualname__})
++
++
++_GUEST_CLASSES = {
++    "DPRandomGenerator": _guest_class(_random.DPRandomGenerator),
++    "DPCombinatorialGenerator": _guest_class(_combinatorial.DPCombinatorialGenerator),
++}
++_INSTANCES = {}  # (node id, node type) -> original instance, as Core's object cache keys them
++
++
++async def _sampler_instance(node_type):
++    key = (await sdk.ctx().graph.current_node_id(), node_type)
++    instance = _INSTANCES.get(key)
++    if instance is None:
++        instance = _GUEST_CLASSES[node_type]()
++        instance._wildcard_manager = await _wildcard_manager(node_type)
++        _INSTANCES[key] = instance
++    return instance
++
++
++# ---------------------------------------------------------------- converted nodes
++class DPRandomGenerator(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("assets", "graph")
++
++    @classmethod
++    def define_schema(cls):
++        return _sampler_schema("DPRandomGenerator", "Random Prompts")
++
++    @classmethod
++    def fingerprint_inputs(cls, text=None, seed=None, autorefresh=None):
++        return _sampler.DPAbstractSamplerNode.IS_CHANGED(text, seed, autorefresh)
++
++    @classmethod
++    async def execute(cls, text, seed, autorefresh):
++        instance = await _sampler_instance("DPRandomGenerator")
++        return io.NodeOutput(*instance.get_prompt(text, seed, autorefresh))
++
++
++class DPCombinatorialGenerator(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("assets", "graph")
++
++    @classmethod
++    def define_schema(cls):
++        return _sampler_schema("DPCombinatorialGenerator", "Combinatorial Prompts")
++
++    @classmethod
++    def fingerprint_inputs(cls, text=None, seed=None, autorefresh=None):
++        return _sampler.DPAbstractSamplerNode.IS_CHANGED(text, seed, autorefresh)
++
++    @classmethod
++    async def execute(cls, text, seed, autorefresh):
++        instance = await _sampler_instance("DPCombinatorialGenerator")
++        return io.NodeOutput(*instance.get_prompt(text, seed, autorefresh))
++
++
++class DPJinja(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        # nodes/generator.py DPGeneratorNode: INPUT_TYPES, RETURN_TYPES and CATEGORY.
++        return io.Schema(
++            node_id="DPJinja",
++            display_name="Jinja2 Templates",
++            category="Dynamic Prompts",
++            inputs=[
++                io.String.Input("text", multiline=True),
++                io.Combo.Input("autorefresh", options=["Yes", "No"]),
++            ],
++            outputs=[io.String.Output()],
++        )
++
++    @classmethod
++    def fingerprint_inputs(cls, text=None, autorefresh=None):
++        return _generator.DPGeneratorNode.IS_CHANGED(text, autorefresh)
++
++    @classmethod
++    async def execute(cls, text, autorefresh):
++        return io.NodeOutput(*_jinja.DPJinja().get_prompt(text, autorefresh))
++
++
++class DPOutput(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        # nodes/output_node.py OutputString: one STRING input with no options, no outputs, an output node.
++        return io.Schema(
++            node_id="DPOutput",
++            display_name="OutputString",
++            category="utils",
++            inputs=[io.String.Input("text", multiline=None)],
++            outputs=[],
++            is_output_node=True,
++        )
++
++    @classmethod
++    async def execute(cls, text):
++        # Core calls a V1 node's FUNCTION with its inputs as keywords: output_string(text=...).
++        return _output_node.OutputString().output_string(text=text)
++
++
++# ---------------------------------------------------------------- refused nodes
++class DPMagicPrompt(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return _sampler_schema("DPMagicPrompt", "Magic Prompt")
++
++    @classmethod
++    def validate_inputs(cls, text=None, seed=None, autorefresh=None):
++        # Naming the inputs makes Core show this refusal at queue time instead of checking them.
++        return MAGIC_PROMPT_REFUSAL
++
++    @classmethod
++    async def execute(cls, text=None, seed=None, autorefresh=None):
++        raise NotConvertedError(MAGIC_PROMPT_REFUSAL)
++
++
++class DPFeelingLucky(io.ComfyNode):
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return _sampler_schema("DPFeelingLucky", "I'm Feeling Lucky")
++
++    @classmethod
++    def validate_inputs(cls, text=None, seed=None, autorefresh=None):
++        # Naming the inputs makes Core show this refusal at queue time instead of checking them.
++        return FEELING_LUCKY_REFUSAL
++
++    @classmethod
++    async def execute(cls, text=None, seed=None, autorefresh=None):
++        raise NotConvertedError(FEELING_LUCKY_REFUSAL)
++
++
++# Same ids, order and display names as the original nodes/__init__.py.
++NODE_CLASS_MAPPINGS = {
++    "DPRandomGenerator": DPRandomGenerator,
++    "DPCombinatorialGenerator": DPCombinatorialGenerator,
++    "DPFeelingLucky": DPFeelingLucky,
++    "DPJinja": DPJinja,
++    "DPMagicPrompt": DPMagicPrompt,
++    "DPOutput": DPOutput,
++}
++
++NODE_DISPLAY_NAME_MAPPINGS = {
++    "DPRandomGenerator": "Random Prompts",
++    "DPCombinatorialGenerator": "Combinatorial Prompts",
++    "DPFeelingLucky": "I'm Feeling Lucky",
++    "DPJinja": "Jinja2 Templates",
++    "DPMagicPrompt": "Magic Prompt",
++    "DPOutput": "OutputString",
++}
+--- a/nodes/__init__.py
++++ b/v2/nodes/__init__.py
+@@ -1,27 +1,4 @@
+-from .combinatorial import DPCombinatorialGenerator
+-from .feeling_lucky import DPFeelingLucky
+-from .jinja import DPJinja
+-from .magicprompt import DPMagicPrompt
+-from .output_node import OutputString
+-from .random import DPRandomGenerator
+-
+-NODE_CLASS_MAPPINGS = {
+-    "DPRandomGenerator": DPRandomGenerator,
+-    "DPCombinatorialGenerator": DPCombinatorialGenerator,
+-    "DPFeelingLucky": DPFeelingLucky,
+-    "DPJinja": DPJinja,
+-    "DPMagicPrompt": DPMagicPrompt,
+-    "DPOutput": OutputString,
+-}
+-
+-# A dictionary that contains the friendly/humanly readable titles for the nodes
+-NODE_DISPLAY_NAME_MAPPINGS = {
+-    "DPRandomGenerator": "Random Prompts",
+-    "DPCombinatorialGenerator": "Combinatorial Prompts",
+-    "DPFeelingLucky": "I'm Feeling Lucky",
+-    "DPJinja": "Jinja2 Templates",
+-    "DPMagicPrompt": "Magic Prompt",
+-    "DPOutput": "OutputString",
+-}
+-
+-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
++# Secure Nodes V2: the original imported all six node modules here and built the node mappings.
++# A guest cannot import magicprompt.py, because it imports transformers at module import. So this
++# package init imports nothing. The secure entry (../_secure_dp.py) imports the node modules it runs
++# and defines the same node ids and display names.
+--- a/pyproject.toml
++++ b/v2/pyproject.toml
+@@ -1,8 +1,16 @@
+ [project]
+ name = "ComfyUI - Dynamic Prompts"
+ version = "0.2.1"
++requires-python = ">=3.13,<3.14"
++# Secure Nodes V2: exact pins, served to the guest by a pack dependency profile. The original
++# required dynamicprompts[attentiongrabber,magicprompt]~=0.30.2 and its requirements.txt pins
++# dynamicprompts==0.30.2. The two extras are dropped: no node in this pack uses the attention
++# grabber, and DPMagicPrompt is refused. PyYAML is pinned because the library reads .yaml wildcard
++# files with it, and a ComfyUI host always has it.
+ dependencies = [
+-    "dynamicprompts[attentiongrabber,magicprompt]~=0.30.2",
++    "dynamicprompts==0.30.2",
++    "pyparsing==3.3.3",
++    "pyyaml==6.0.3",
+ ]
+ 
+ [tool.ruff]
+--- /dev/null
++++ b/v2/secure-nodes.json
+@@ -0,0 +1,684 @@
++{
++  "format": "comfy-secure-nodes-v1",
++  "nodes": {
++    "DPCombinatorialGenerator": {
++      "class": "DPCombinatorialGenerator",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": true,
++        "validate_inputs": false
++      },
++      "module": "_secure_dp",
++      "permissions": [
++        "assets",
++        "graph"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "Dynamic Prompts",
++          "description": "",
++          "display_name": "Combinatorial Prompts",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "DPCombinatorialGenerator",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": false,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": {
++                "$type": "enum",
++                "enum": "NumberDisplay",
++                "name": "number"
++              },
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": null,
++              "min": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": "No",
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "autorefresh",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "Yes",
++                "No"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": null,
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "DPFeelingLucky": {
++      "class": "DPFeelingLucky",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": true
++      },
++      "module": "_secure_dp",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "Dynamic Prompts",
++          "description": "",
++          "display_name": "I'm Feeling Lucky",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "DPFeelingLucky",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": false,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": {
++                "$type": "enum",
++                "enum": "NumberDisplay",
++                "name": "number"
++              },
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": null,
++              "min": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": "No",
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "autorefresh",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "Yes",
++                "No"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": null,
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "text",
++          "seed",
++          "autorefresh"
++        ],
++        "kwargs": false
++      }
++    },
++    "DPJinja": {
++      "class": "DPJinja",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": true,
++        "validate_inputs": false
++      },
++      "module": "_secure_dp",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "Dynamic Prompts",
++          "description": "",
++          "display_name": "Jinja2 Templates",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "DPJinja",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "autorefresh",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "Yes",
++                "No"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": null,
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    },
++    "DPMagicPrompt": {
++      "class": "DPMagicPrompt",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": true
++      },
++      "module": "_secure_dp",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "Dynamic Prompts",
++          "description": "",
++          "display_name": "Magic Prompt",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "DPMagicPrompt",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": false,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": {
++                "$type": "enum",
++                "enum": "NumberDisplay",
++                "name": "number"
++              },
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": null,
++              "min": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": "No",
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "autorefresh",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "Yes",
++                "No"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": null,
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "text",
++          "seed",
++          "autorefresh"
++        ],
++        "kwargs": false
++      }
++    },
++    "DPOutput": {
++      "class": "DPOutput",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": false,
++        "validate_inputs": false
++      },
++      "module": "_secure_dp",
++      "permissions": [],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "utils",
++          "description": "",
++          "display_name": "OutputString",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": true,
++          "loop_boundary": null,
++          "node_id": "DPOutput",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [
++          "prompt",
++          "extra_pnginfo"
++        ],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": null,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ],
++        "outputs": []
++      },
++      "sdk_refs": true
++    },
++    "DPRandomGenerator": {
++      "class": "DPRandomGenerator",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": true,
++        "validate_inputs": false
++      },
++      "module": "_secure_dp",
++      "permissions": [
++        "assets",
++        "graph"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "Dynamic Prompts",
++          "description": "",
++          "display_name": "Random Prompts",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": false,
++          "loop_boundary": null,
++          "node_id": "DPRandomGenerator",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": null,
++              "display_name": null,
++              "dynamic_prompts": false,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "text",
++              "lazy": null,
++              "multiline": true,
++              "optional": false,
++              "placeholder": null,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": {
++                "$type": "enum",
++                "enum": "NumberDisplay",
++                "name": "number"
++              },
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": null,
++              "min": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": "No",
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "autorefresh",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "Yes",
++                "No"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": null,
++              "id": "_0_STRING_",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "STRING",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    }
++  },
++  "runtime": {
++    "python": {
++      "requires": ">=3.13,<3.14",
++      "resolved": "3.13"
++    }
++  }
++}
+--- /dev/null
++++ b/v2/tests/test_dynamicprompts_parity.py
+@@ -0,0 +1,628 @@
++"""comfyui-dynamicprompts to-50% conversion (pin 3f2fff32358c): tier-1 parity in the lane gate.
++
++DEPS=<the unpacked dynamicprompts 0.30.2, pyparsing 3.3.3 and pyyaml 6.0.3 wheels> \
++run_in_gate.sh <pack root with v2/> <v2/tests> <results> test_dynamicprompts_parity.py [generate-manifest]
++
++  generate-manifest  write /results/secure-nodes.json from the v2 classes with the real encoder
++                     (comfy_secure_nodes.packmanifest, /overlay).
++  (default)          parity:
++    R  runs. A scenario is a sequence of node runs (node type, node id, inputs) over a synthetic
++       wildcard folder. The original and v2 sides each run every scenario in their own subprocess,
++       and seed the library's shared DEFAULT_RANDOM and Python's random module with the same values
++       at the start of each scenario.
++         original  the pristine pack (a /tmp copy) under Core. folder_paths.base_path is a folder whose
++                   wildcards/ holds the fixtures. There is one instance per (node id, node type), as
++                   Core's object cache keeps them, and each run calls FUNCTION with the inputs as
++                   keywords.
++         v2        the v2 classes with a fake SDK context. graph.current_node_id answers the run's node
++                   id. assets lists the same fixture folder with Core's folder_paths.get_filename_list,
++                   as the host lists an asset kind, and reads the same bytes.
++       Outcomes compare as returned strings, or as exception type and message.
++    F  fingerprint_inputs equals the original IS_CHANGED (NaN equals NaN).
++    D  designed differences. DPMagicPrompt and DPFeelingLucky refuse by name. With no wildcard asset
++       kind, a run that samples a wildcard raises WildcardsUnavailableError, and every other run still
++       equals the original's run over an empty wildcard folder.
++    W  _walk_order on a crafted listing.
++    S  object_info of all six nodes: Core's own V1 node_info (server.py) for the originals, against the
++       v2 classes, after the representational normalization in canon_spec / info_diff.
++    M  v2/secure-nodes.json equals the real encoder's output for the v2 classes.
++    N  negative control: one perturbed v2 outcome must be caught.
++"""
++import ast
++import asyncio
++import copy
++import glob
++import importlib.util
++import json
++import math
++import os
++import random
++import shutil
++import signal
++import subprocess
++import sys
++import textwrap
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++PACK = "/pack"
++V2 = "/pack/v2"
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++# The pinned dependency wheels first, then the guest SDK (comfy_api 0.37.0), then Core for the original
++# pack's host imports and the harness, then the overlay for the encoder.
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++
++PACK_ID = "comfyui-dynamicprompts"
++PIN = "3f2fff32358cf39e21b8b440ca87eac9a8e2bade"
++KIND = "dynamicprompts_wildcards"
++LIST_MAX = 4096  # the host's assets.list limit (transport/host.py ASSET_LIST_MAX)
++SAMPLERS = ("DPRandomGenerator", "DPCombinatorialGenerator")
++
++# ---------------------------------------------------------------- synthetic fixtures
++FIXTURES = {
++    "empty": {},
++    "full": {
++        "colors.txt": b"red\ngreen\nblue\n# a comment\n\n  yellow  \n",
++        "animals/mammals.txt": b"cat\ndog\nhorse\ncat\n",
++        "animals/birds.txt": b"crow\r\nrobin\r\nowl\r\n",
++        "animals/sea/fish.txt": b"cod\ntuna\n",
++        "styles/painters.txt": b"{monet|manet}\n__colors__ abstract\n",
++        "chain.txt": b"__animals/mammals__ and __colors__\n",
++        "weights.json": json.dumps({
++            "weighted": ["2::heavy", "1::light", "0.5::feather", "plain", "x::bad"],
++            "nested": {"deep": ["x", "y"]},
++            "objs": [{"text": "alpha", "weight": 3}, {"content": "beta"}, {"text": ""}, 7],
++        }).encode(),
++        "pantry/stuff.yaml": b"fruit:\n  - apple\n  - 3::banana\nveg:\n  green:\n    - kale\n    - pea\n",
++        "flat.json": b'["one", "two", 3, "three"]',
++        "latin1.txt": b"caf\xe9\nna\xefve\nplain\n",
++        "latin1.json": b'["caf\xe9"]',
++        "unicode.txt": "café\nnaïve\n日本\n".encode(),
++        "bom.txt": b"\xef\xbb\xbfbom1\nbom2\n",
++        "cr.txt": b"m1\rm2\rm3",
++        "empty.txt": b"",
++        "bad.json": b"{not json",
++        "bad.yaml": b"a: [unclosed\n",
++        ".hidden/secret.txt": b"nope\n",
++        ".dotfile.txt": b"dotvalue\n",
++        "readme.md": b"ignored\n",
++        "UPPER.TXT": b"ignored\n",
++        "deep/a/b/c/leaf.txt": b"leaf1\nleaf2\n",
++        "glob/one.txt": b"g1\n",
++        "glob/two.txt": b"g2\n",
++        "spaces in name.txt": b"s1\ns2\n",
++    },
++}
++
++TEMPLATES = [
++    "a photo of a cat",
++    "{red|green|blue} {cat|dog}",
++    "{0.1::rare|0.9::common|plain}",
++    "{2$$a|b|c|d}",
++    "{1-3$$ and $$a|b|c|d}",
++    "{3$$a|b}",
++    "{0$$a|b}",
++    "{a {x|y}|b {p|q|r}}",
++    "{@one|two|three}",
++    "{~one|two|three} fixed",
++    "a {b|} c",
++    "unicode {ü|ö} 日本",
++    "${animal={cat|dog|bird}} ${animal} and ${animal}",
++    "${animal=!{cat|dog|bird}} ${animal} and ${animal}",
++    "__colors__",
++    "__animals/*__",
++    "__animals/mammals__ with __animals/birds__",
++    "__animals/sea/fish__ {x|y}",
++    "__styles/painters__",
++    "__chain__",
++    "__weighted__",
++    "__nested/deep__ __objs__",
++    "__pantry/fruit__ __pantry/veg/green__",
++    "__flat__ __bad__ __UPPER__ __readme__",
++    "__latin1__ __unicode__",
++    "__bom__ __cr__",
++    "__empty__ __missing__",
++    "__leaf__",
++    "__glob/*__",
++    "__secret__ __.dotfile__",
++    "__spaces in name__",
++    "{2$$__colors__}",
++    "{2$$ and $$__animals/*__}",
++    "{a|__colors__}",
++    "",
++    "   ",
++    "{a|b",
++    "{a|b}}",
++]
++
++JINJA = [
++    "{{ 1 + 2 }}",
++    "{% for x in ['a', 'b'] %}{{ x }} {% endfor %}",
++    "{{ choice('a', 'b', 'c') }} {{ choice('x', 'y') }}",
++    "{{ weighted_choice(('a', 1), ('b', 3)) }}",
++    "{{ random() }}",
++    "{{ randint(1, 100) }}",
++    "{{ permutations(['a', 'b', 'c'], 2) }}",
++    "{{ permutations(['a', 'b', 'c'], 1, 2) }}",
++    "{{ all_combinations('{a|b} {c|d}') }}",
++    "{{ wildcard('colors') }}",
++    "{% prompt %}first {{ choice('p', 'q') }}{% endprompt %}{% prompt %}second{% endprompt %}",
++    "{{ missing_var }}",
++    "{{ x",
++    "{% for %}",
++    "plain text",
++    "",
++    "{{ random_sample('{only}') }}",
++    "{{ 'x' * 3 }}",
++    "{% set v = choice('m', 'n') %}{{ v }}{{ v }}",
++]
++
++
++def run(node_type, node_id, **inputs):
++    return [node_type, node_id, inputs]
++
++
++def scenarios():
++    out = []
++
++    def add(name, steps, fixtures="full", kind=True, designed=None):
++        out.append({"name": name, "fixtures": fixtures, "kind": kind, "designed": designed,
++                    "rng": 1000 + len(out), "steps": steps})
++
++    seeds = [5, 5, 0, 7, 0, 123456789012, -3]
++    for node_type in SAMPLERS:
++        for index, text in enumerate(TEMPLATES):
++            add(f"{node_type} seeded t{index}", [run(node_type, "7", text=text, seed=s, autorefresh="No") for s in seeds])
++            add(f"{node_type} unseeded t{index}", [run(node_type, "7", text=text, seed=0, autorefresh="Yes") for _ in range(8)])
++            if "__" in text:
++                add(f"{node_type} empty folder t{index}", [run(node_type, "7", text=text, seed=s, autorefresh="No") for s in seeds[:4]],
++                    fixtures="empty")
++        # quirks of the original, kept as they are
++        add(f"{node_type} parse error after a template", [run(node_type, "3", text=t, seed=s, autorefresh="No") for t, s in
++                                                         (("{a|b|c}", 0), ("{a|b", 0), ("{a|b", 4), ("{c|d}", 0), ("{c|d}", 0))])
++        add(f"{node_type} parse error first", [run(node_type, "3", text="{a|b", seed=s, autorefresh="No") for s in (0, 2, 0)])
++        add(f"{node_type} empty text between", [run(node_type, "3", text=t, seed=0, autorefresh="No") for t in
++                                                ("{a|b|c}", "", "   ", "{a|b|c}", "{a|b|c}")])
++        add(f"{node_type} text changes", [run(node_type, "3", text=t, seed=0, autorefresh="No") for t in
++                                          ["{a|b|c} __colors__"] * 3 + ["{x|y} {1|2}"] * 3 + ["{a|b|c} __colors__"] * 2])
++        add(f"{node_type} exhaustion", [run(node_type, "3", text="{a|b|c}", seed=0, autorefresh="No") for _ in range(7)])
++    add("combinatorial long", [run("DPCombinatorialGenerator", "8", text="{a|b|c} {1|2|3|4} {x|y|z|w|v}", seed=0,
++                                   autorefresh="No") for _ in range(70)])
++    steps = []
++    for k in range(6):
++        steps.append(run("DPRandomGenerator", "1", text="{red|green|blue} __colors__ {@x|y|z}", seed=11, autorefresh="No"))
++        steps.append(run("DPRandomGenerator", "2", text="{red|green|blue} __colors__ {@x|y|z}", seed=0, autorefresh="No"))
++        steps.append(run("DPCombinatorialGenerator", "3", text="{a|b|c} __animals/mammals__ {~p|q}", seed=0, autorefresh="No"))
++        steps.append(run("DPJinja", "4", text="{{ choice('a', 'b', 'c') }}", autorefresh="No"))
++    add("interleaved nodes share the library RNG", steps)
++    add("one node id, two node types", [run(t, "5", text="{a|b|c|d} {x|y}", seed=s, autorefresh="No")
++                                        for t, s in [(SAMPLERS[0], 0), (SAMPLERS[1], 0)] * 4])
++    for index, text in enumerate(JINJA):
++        add(f"DPJinja j{index}", [run("DPJinja", "9", text=text, autorefresh=a) for a in ("No", "Yes", "No")])
++    add("DPOutput", [run("DPOutput", "6", text=t) for t in ("hello", "")])
++    # D: no wildcard asset kind on the host. The original's closest state is an empty wildcard folder.
++    for node_type in SAMPLERS:
++        for index, text in enumerate(TEMPLATES):
++            add(f"{node_type} no kind t{index}", [run(node_type, "7", text=text, seed=s, autorefresh="No") for s in seeds[:4]],
++                fixtures="empty", kind=False, designed="wildcards-unavailable")
++    return out
++
++
++FINGERPRINT_CASES = [
++    run(SAMPLERS[0], "1", text="x", seed=1, autorefresh="No"),
++    run(SAMPLERS[0], "1", text="", seed=0, autorefresh="Yes"),
++    run(SAMPLERS[1], "1", text="{a|b}", seed=3, autorefresh="No"),
++    run("DPJinja", "1", text="{{ 1 }}", autorefresh="Yes"),
++    run("DPJinja", "1", text="{{ 1 }}", autorefresh="No"),
++]
++
++
++# ---------------------------------------------------------------- helpers
++STEP_SECONDS = 5
++
++
++class StepTimeout(BaseException):
++    """A run that has not returned after STEP_SECONDS. A BaseException, so that no `except Exception`
++    inside the library can swallow it and keep looping."""
++
++
++def _alarm(_signum, _frame):
++    raise StepTimeout(f"no result within {STEP_SECONDS} s")
++
++
++def outcome(fn):
++    signal.alarm(STEP_SECONDS)
++    try:
++        value = fn()
++    except StepTimeout as exc:
++        return ["timeout", type(exc).__name__, str(exc)]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++    finally:
++        signal.alarm(0)
++    return ["value", [v if isinstance(v, (str, int, float, bool, type(None))) else repr(v) for v in value]]
++
++
++def same(a, b):
++    return a == b
++
++
++def json_safe(value):
++    if isinstance(value, float) and math.isnan(value):
++        return "NaN"
++    return value
++
++
++def write_folder(root, files):
++    os.makedirs(root, exist_ok=True)
++    for name, data in files.items():
++        path = os.path.join(root, *name.split("/"))
++        os.makedirs(os.path.dirname(path), exist_ok=True)
++        with open(path, "wb") as handle:
++            handle.write(data)
++    return root
++
++
++def core_node_info(mappings, display):
++    """Core's own node_info (server.py), run for the given mappings."""
++    from comfy_api.internal import _ComfyNodeInternal
++
++    source = open("/core/server.py", encoding="utf-8").read()
++    lines = source.splitlines(keepends=True)
++    found = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.FunctionDef) and n.name == "node_info"]
++    assert len(found) == 1, "server.py must define one node_info"
++    segment = textwrap.dedent("".join(lines[found[0].lineno - 1:found[0].end_lineno]))
++    namespace = {"nodes": types.SimpleNamespace(NODE_CLASS_MAPPINGS=mappings, NODE_DISPLAY_NAME_MAPPINGS=display),
++                 "_ComfyNodeInternal": _ComfyNodeInternal}
++    exec(compile(segment, f"/core/server.py:{found[0].lineno}", "exec"), namespace)
++    return {name: json.loads(json.dumps(namespace["node_info"](name), default=list)) for name in mappings}, \
++        f"server.py L{found[0].lineno}-{found[0].end_lineno}"
++
++
++def side_setup():
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import folder_paths
++    return folder_paths
++
++
++# ---------------------------------------------------------------- one side, in its own process
++def run_side(side, scenario_path, out_path):
++    signal.signal(signal.SIGALRM, _alarm)
++    folder_paths = side_setup()
++    from dynamicprompts.constants import DEFAULT_RANDOM
++
++    plan = json.load(open(scenario_path, encoding="utf-8"))
++    folders = {name: write_folder(f"/tmp/{side}-fixtures/{name}/wildcards", files_) for name, files_ in
++               {k: v for k, v in FIXTURES.items()}.items()}
++    record = {"side": side, "scenarios": [], "fingerprints": [], "extra": {}}
++    if side == "original":
++        root = "/tmp/orig/comfyui_dynamicprompts_original"
++        shutil.copytree(PACK, root, ignore=shutil.ignore_patterns(".git", "v2", "__pycache__"))
++        spec = importlib.util.spec_from_file_location("_dp_original", os.path.join(root, "__init__.py"),
++                                                      submodule_search_locations=[root])
++        package = importlib.util.module_from_spec(spec)
++        sys.modules["_dp_original"] = package
++        spec.loader.exec_module(package)
++        classes = package.NODE_CLASS_MAPPINGS
++        for scenario in plan:
++            folder_paths.base_path = os.path.dirname(folders[scenario["fixtures"]])
++            DEFAULT_RANDOM.seed(scenario["rng"])
++            random.seed(scenario["rng"] + 1)
++            instances = {}
++            results = []
++            for node_type, node_id, inputs in scenario["steps"]:
++                def call():
++                    key = (node_id, node_type)
++                    if key not in instances:
++                        instances[key] = classes[node_type]()
++                    obj = instances[key]
++                    return getattr(obj, obj.FUNCTION)(**inputs)
++                results.append(outcome(call))
++            record["scenarios"].append(results)
++        for node_type, _node_id, inputs in FINGERPRINT_CASES:
++            record["fingerprints"].append(json_safe(classes[node_type].IS_CHANGED(**inputs)))
++        record["extra"]["node_info"], record["extra"]["node_info_source"] = core_node_info(classes, package.NODE_DISPLAY_NAME_MAPPINGS)
++        record["extra"]["has_fingerprint"] = {k: hasattr(v, "IS_CHANGED") for k, v in classes.items()}
++    else:
++        spec = importlib.util.spec_from_file_location("_dp_v2", os.path.join(V2, "__init__.py"), submodule_search_locations=[V2])
++        package = importlib.util.module_from_spec(spec)
++        sys.modules["_dp_v2"] = package
++        spec.loader.exec_module(package)
++        secure = sys.modules["_dp_v2._secure_dp"]
++        classes = package.NODE_CLASS_MAPPINGS
++
++        class FakeGraph:
++            node_id = None
++
++            async def current_node_id(self):
++                return self.node_id
++
++        class FakeAssets:
++            async def list(self, folder, prefix="", recursive=True):
++                assert folder == KIND and prefix == "" and recursive is True
++                # As the in-process SDK's AssetsDomain.list does for a catalogue folder (_sdk.py).
++                names = sorted(str(name).replace("\\", "/") for name in folder_paths.get_filename_list(folder))
++                if len(names) > LIST_MAX:
++                    raise ValueError(f"asset catalogue exceeds {LIST_MAX} names")
++                return names
++
++            async def resolve(self, folder, name):
++                assert folder == KIND
++                for base in folder_paths.get_folder_paths(folder):
++                    path = os.path.join(base, name)
++                    if os.path.isfile(path):
++                        return ("asset", path)
++                raise FileNotFoundError(f"no {folder} asset named {name!r}")
++
++            async def read_bytes(self, ref):
++                with open(ref[1], "rb") as handle:
++                    return handle.read()
++
++        context = types.SimpleNamespace(graph=FakeGraph(), assets=FakeAssets())
++        secure.sdk = types.SimpleNamespace(ctx=lambda: context)
++        for scenario in plan:
++            folder_paths.filename_list_cache.clear()
++            if scenario["kind"]:
++                folder_paths.folder_names_and_paths[KIND] = ([folders[scenario["fixtures"]]], set())
++            else:
++                folder_paths.folder_names_and_paths.pop(KIND, None)
++            secure._INSTANCES.clear()
++            secure._SHARED_FOLDER.update(key=None, manager=None)
++            DEFAULT_RANDOM.seed(scenario["rng"])
++            random.seed(scenario["rng"] + 1)
++            results = []
++            for node_type, node_id, inputs in scenario["steps"]:
++                def call():
++                    context.graph.node_id = node_id
++                    return asyncio.run(classes[node_type].execute(**inputs)).result
++                results.append(outcome(call))
++            record["scenarios"].append(results)
++        for node_type, _node_id, inputs in FINGERPRINT_CASES:
++            record["fingerprints"].append(json_safe(classes[node_type].fingerprint_inputs(**inputs)))
++        record["extra"]["node_info"], record["extra"]["node_info_source"] = core_node_info(classes, package.NODE_DISPLAY_NAME_MAPPINGS)
++        record["extra"]["has_fingerprint"] = {k: "fingerprint_inputs" in v.__dict__ for k, v in classes.items()}
++        refusals = {}
++        for node_id, expected in (("DPMagicPrompt", secure.MAGIC_PROMPT_REFUSAL), ("DPFeelingLucky", secure.FEELING_LUCKY_REFUSAL)):
++            cls = classes[node_id]
++            refusals[node_id] = {
++                "validate_inputs": cls.validate_inputs(text="x", seed=1, autorefresh="No"),
++                "execute": outcome(lambda: asyncio.run(cls.execute(text="x", seed=1, autorefresh="No"))),
++                "expected": expected,
++            }
++        record["extra"]["refusals"] = refusals
++        listing = ["b.txt", "a/z.txt", "a.txt", ".h/x.txt", "c.md", "a/.d/y.txt", "B.TXT", "a/b/c.json", "a/m.yaml",
++                   ".t.txt", "z/.txt"]
++        record["extra"]["walk_order"] = {"listing": listing, "got": secure._walk_order(listing),
++                                         "expected": [".t.txt", "a.txt", "b.txt", "a/m.yaml", "a/z.txt", "a/b/c.json"]}
++    import dynamicprompts
++    import jinja2
++    import pyparsing
++    import yaml
++    record["extra"]["environment"] = {
++        "python": sys.version.split()[0],
++        "dynamicprompts": [importlib.metadata.version("dynamicprompts"), dynamicprompts.__file__],
++        "pyparsing": [pyparsing.__version__, pyparsing.__file__],
++        "pyyaml": [yaml.__version__, yaml.__file__],
++        "jinja2": [jinja2.__version__, jinja2.__file__],
++    }
++    with open(out_path, "w", encoding="utf-8") as handle:
++        json.dump(record, handle, ensure_ascii=False)
++    return 0
++
++
++# ---------------------------------------------------------------- comparisons in the parent
++def canon_spec(spec):
++    """A V1 list-of-options combo and a V3 COMBO with "options" are the same frontend input, and
++    multiselect False is the V3 default."""
++    kind = spec[0]
++    options = dict(spec[1]) if len(spec) > 1 else {}
++    if isinstance(kind, list):
++        options["options"] = kind
++        kind = "COMBO"
++    if kind == "COMBO" and options.get("multiselect") is False:
++        del options["multiselect"]
++    return [kind, options]
++
++
++MISSING = "<missing>"
++
++
++def defaultish(value):
++    return value in (MISSING, None, False, [], "") or (isinstance(value, list) and all(v is None for v in value))
++
++
++V3_OUTPUT_HIDDEN = {"prompt": ["PROMPT"], "extra_pnginfo": ["EXTRA_PNGINFO"]}
++
++
++def info_diff(v1, v3):
++    """Differences between the original's and v2's object_info. Returns (allowed, substantive)."""
++    allowed, substantive = {}, {}
++    v1, v3 = copy.deepcopy(v1), copy.deepcopy(v3)
++    if v3.get("output_node") and v3.get("input", {}).get("hidden") == V3_OUTPUT_HIDDEN and "hidden" not in v1.get("input", {}):
++        # V3 gives every output node these two hidden inputs (no widget, filled by Core).
++        del v3["input"]["hidden"]
++        v3.get("input_order", {}).pop("hidden", None)
++        allowed["hidden"] = "V3 adds hidden prompt and extra_pnginfo to output nodes"
++    for key in sorted(set(v1) | set(v3)):
++        a, b = v1.get(key, MISSING), v3.get(key, MISSING)
++        if key == "input":
++            ca = {s: {n: canon_spec(x) for n, x in a.get(s, {}).items()} for s in ("required", "optional", "hidden")}
++            cb = {s: {n: canon_spec(x) for n, x in b.get(s, {}).items()} for s in ("required", "optional", "hidden")}
++            if ca != cb:
++                substantive[key] = [a, b]
++            elif a != b:
++                allowed[key] = "list-of-options combo vs COMBO with options (same input)"
++            continue
++        if a == b:
++            continue
++        if key == "python_module":
++            allowed[key] = [a, b]
++        elif defaultish(a) and defaultish(b):
++            allowed[key] = [a, b]
++        else:
++            substantive[key] = [a, b]
++    return allowed, substantive
++
++
++def manifest_text(package):
++    from comfy_secure_nodes.packmanifest import FORMAT, encode_schema, encode_validation_inputs
++    from comfy_secure_nodes.packruntime import manifest_declaration
++    nodes = {}
++    for node_id, cls in package.NODE_CLASS_MAPPINGS.items():
++        row = {
++            "class": cls.__name__,
++            "methods": {name: name in cls.__dict__ for name in ("check_lazy_status", "fingerprint_inputs", "validate_inputs")},
++            "module": cls.__module__.removeprefix("_dp_v2."),
++            "permissions": list(cls.SDK_PERMISSIONS),
++            "schema": encode_schema(copy.deepcopy(cls.GET_SCHEMA())),
++            "sdk_refs": cls.SDK_REFS is True,
++        }
++        if "validate_inputs" in cls.__dict__:
++            row["validation_inputs"] = encode_validation_inputs(cls)
++        nodes[node_id] = row
++    manifest = {"format": FORMAT, "nodes": nodes, "runtime": manifest_declaration(V2)}
++    return json.dumps(manifest, indent=2, sort_keys=True) + "\n"
++
++
++def load_v2_here():
++    side_setup()
++    spec = importlib.util.spec_from_file_location("_dp_v2", os.path.join(V2, "__init__.py"), submodule_search_locations=[V2])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["_dp_v2"] = package
++    spec.loader.exec_module(package)
++    return package
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        return run_side(*argv[1:4])
++    package = load_v2_here()
++    text = manifest_text(package)
++    if argv[:1] == ["generate-manifest"]:
++        with open(os.path.join(RESULTS, "secure-nodes.json"), "w", encoding="utf-8", newline="\n") as handle:
++            handle.write(text)
++        print(f"wrote {RESULTS}/secure-nodes.json ({len(package.NODE_CLASS_MAPPINGS)} nodes)")
++        return 0
++
++    plan = scenarios()
++    with open("/tmp/scenarios.json", "w", encoding="utf-8") as handle:
++        json.dump(plan, handle, ensure_ascii=False)
++    sides = {}
++    for side in ("original", "v2"):
++        out = f"/tmp/out-{side}.json"
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w", encoding="utf-8") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/scenarios.json", out],
++                                  stdout=log, stderr=subprocess.STDOUT, timeout=1800)
++        if proc.returncode != 0:
++            print(f"side {side} failed with {proc.returncode}; see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(out, encoding="utf-8"))
++        shutil.copyfile(out, os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++
++    by_node = {}
++    hangs = set()
++    mismatches = []
++    designed = {"wildcards-unavailable": {"steps": 0, "refused": 0, "equal": 0, "bad": 0, "original_hangs": 0}}
++    expected_unavailable = {t: f"{PACK_ID}/{t}: this template samples a wildcard, but the host's {KIND} asset kind cannot be "
++                               f"listed (KeyError: '{KIND}'). The original read wildcard files from the host file system, "
++                               "which a Secure Nodes V2 guest cannot do." for t in SAMPLERS}
++    for scenario, want_steps, got_steps in zip(plan, original["scenarios"], v2["scenarios"]):
++        for index, ((node_type, node_id, inputs), want, got) in enumerate(zip(scenario["steps"], want_steps, got_steps)):
++            if scenario["designed"] == "wildcards-unavailable":
++                d = designed["wildcards-unavailable"]
++                d["steps"] += 1
++                if want[0] == "timeout":
++                    # The library loops forever on this run over an empty folder (it does the same in the
++                    # empty-folder scenarios above, on both sides); v2 refused earlier, so the states differ.
++                    d["original_hangs"] += 1
++                elif same(want, got):
++                    d["equal"] += 1
++                elif got == ["error", "WildcardsUnavailableError", expected_unavailable[node_type]] and "__" in inputs["text"]:
++                    d["refused"] += 1
++                else:
++                    d["bad"] += 1
++                    mismatches.append({"scenario": scenario["name"], "step": index, "inputs": inputs, "original": want, "v2": got})
++                continue
++            r = by_node.setdefault(node_type, {"cases": 0, "mismatches": 0, "values": 0, "errors": 0, "timeouts": 0})
++            r["cases"] += 1
++            r[{"value": "values", "error": "errors", "timeout": "timeouts"}[want[0]]] += 1
++            if want[0] == "timeout" and same(want, got):
++                hangs.add((node_type, inputs.get("text"), scenario["fixtures"]))
++            if not same(want, got):
++                r["mismatches"] += 1
++                mismatches.append({"scenario": scenario["name"], "step": index, "inputs": inputs, "original": want, "v2": got})
++
++    fingerprints_ok = original["fingerprints"] == v2["fingerprints"]
++    has_fp = {k: [original["extra"]["has_fingerprint"][k], v2["extra"]["has_fingerprint"][k]] for k in package.NODE_CLASS_MAPPINGS}
++    refusals = v2["extra"]["refusals"]
++    refusals_ok = all(r["validate_inputs"] == r["expected"] and r["execute"] == ["error", "NotConvertedError", r["expected"]]
++                      for r in refusals.values())
++    walk = v2["extra"]["walk_order"]
++    walk_ok = walk["got"] == walk["expected"]
++    schema = {}
++    for node_id in package.NODE_CLASS_MAPPINGS:
++        allowed, substantive = info_diff(original["extra"]["node_info"][node_id], v2["extra"]["node_info"][node_id])
++        schema[node_id] = {"equal_after_normalization": not substantive, "allowed": allowed, "substantive": substantive}
++    schema_ok = all(s["equal_after_normalization"] for s in schema.values())
++    with open(os.path.join(V2, "secure-nodes.json"), encoding="utf-8") as handle:
++        manifest_equal = handle.read() == text
++
++    probe = next((m for m in [(s, w, g) for s, ws, gs in zip(plan, original["scenarios"], v2["scenarios"])
++                              if not s["designed"] for w, g in zip(ws, gs) if w[0] == "value" and w == g]), None)
++    perturbed = copy.deepcopy(probe[2])
++    perturbed[1][0] = perturbed[1][0] + " "
++    negative_red = not same(probe[1], perturbed)
++
++    nodes = {}
++    for node_type in ("DPRandomGenerator", "DPCombinatorialGenerator", "DPJinja", "DPOutput"):
++        r = by_node.get(node_type, {"cases": 0, "mismatches": 0, "values": 0, "errors": 0, "timeouts": 0})
++        nodes[node_type] = {"verdict": "EXACT" if r["cases"] and not r["mismatches"] else "MISMATCH", **r}
++    for node_type in ("DPMagicPrompt", "DPFeelingLucky"):
++        nodes[node_type] = {"verdict": "REFUSED-AS-DESIGNED" if refusals_ok else "MISMATCH", **refusals[node_type]}
++    d = designed["wildcards-unavailable"]
++    designed_ok = d["bad"] == 0 and d["refused"] > 0 and d["equal"] > 0
++    ok = all(n["verdict"] in ("EXACT", "REFUSED-AS-DESIGNED") for n in nodes.values()) and fingerprints_ok and walk_ok \
++        and schema_ok and manifest_equal and designed_ok
++    parity = {
++        "pack": PACK_ID, "pin": PIN, "status": "PASS" if ok else "FAIL",
++        "nodes": nodes,
++        "scenarios": len(plan),
++        "runs_that_hang_in_both": [{"node": n, "text": t, "fixtures": f} for n, t, f in sorted(hangs)],
++        "fingerprints":{"equal": fingerprints_ok, "original": original["fingerprints"], "v2": v2["fingerprints"],
++                         "declared": has_fp},
++        "designed_differences": {"wildcards_unavailable": {**d, "ok": designed_ok}},
++        "walk_order": {**walk, "ok": walk_ok},
++        "object_info": {"core_node_info": original["extra"]["node_info_source"], "nodes": schema, "ok": schema_ok},
++        "manifest_equals_real_encoder": manifest_equal,
++        "negative_control": {"perturbation": "one v2 value with a trailing space", "turned_red": negative_red},
++        "environment": {"original": original["extra"]["environment"], "v2": v2["extra"]["environment"],
++                        "guest_sdk_base": BASE},
++    }
++    with open(os.path.join(RESULTS, "parity.json"), "w", encoding="utf-8") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True, ensure_ascii=False)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w", encoding="utf-8") as handle:
++        json.dump(mismatches[:200], handle, indent=1, ensure_ascii=False)
++        handle.write("\n")
++    summary = {k: parity[k] for k in ("status", "scenarios", "manifest_equals_real_encoder", "negative_control")}
++    summary["nodes"] = {k: {x: v[x] for x in ("verdict", "cases", "mismatches") if x in v} for k, v in nodes.items()}
++    summary["fingerprints_equal"] = fingerprints_ok
++    summary["designed"] = parity["designed_differences"]
++    summary["walk_order_ok"] = walk_ok
++    summary["object_info_ok"] = schema_ok
++    summary["mismatch_count"] = len(mismatches)
++    print(json.dumps(summary, indent=1, ensure_ascii=False))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    import importlib.metadata  # noqa: F401  (used by run_side)
++    sys.exit(main(sys.argv[1:]))
