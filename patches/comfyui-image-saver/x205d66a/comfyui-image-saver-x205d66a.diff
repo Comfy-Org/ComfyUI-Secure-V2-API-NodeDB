@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,144 @@
 +# Secure Nodes V2 conversion
 +
 +Pinned upstream commit: `205d66a9d8035e3ad2ba6c61b7ebf7871664e472`  
@@ -123,6 +123,28 @@
 +refused controls), and every selector choice returned by a real guest.
 +`tests/encode_manifest.py` regenerates `secure-nodes.json` with the live
 +encoder and loads it with the real loader.
++
++## Repair round r2: the A1111 parameters text, as the original writes it
++
++Image Saver and Image Saver Simple now write the A1111 parameters text unchanged, through the platform's
++`a1111_parameters` option:
++- PNG: a plain `parameters` text chunk (`saver/saver.py:12-13`).
++- WebP/JPEG: an EXIF UserComment (`saver/saver.py:36-44`).
++
++Previously the text went through `extra_metadata`, which stores values JSON-encoded. The PNG chunk then read
++`"quiet harbor…\nNegative prompt: …"`, with quotes and escaped newlines, instead of the text itself.
++
++PNGs are now saved at PIL's default zlib level (6) unless `optimize_png` is set, and WebP/JPEG with `optimize=True`,
++as `saver.py:22-24` does. With `embed_workflow` off, a PNG is byte-for-byte the original's.
++
++Known differences:
++- With `embed_workflow` on, the original writes `parameters`, then the workflow, then `prompt`, as compact JSON. The
++  platform writes `prompt` and the workflow (ComfyUI's default JSON spacing) and then `parameters`. The guest does
++  not receive the prompt or workflow, so it cannot rebuild the original's chunks. The pixels and the `parameters` text
++  are the same.
++- JPEG is always written with 4:4:4 chroma subsampling. The platform has no subsampling option; the original uses
++  Pillow's default.
++- WebP/JPEG EXIF is written by the platform rather than by piexif, so its byte layout differs from the original's.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,47 +1,13 @@
@@ -6329,7 +6351,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,1363 @@
+@@ -0,0 +1,1364 @@
 +"""Secure Nodes V2 implementations for the pinned Image Saver pack.
 +
 +Filename templates, collision numbering, metadata formatting, Civitai matching,
@@ -6966,16 +6988,17 @@
 +            if combined_folder else name
 +            for name in filenames
 +        ],
-+        compress_level=4,
++        # saver/saver.py:9-24: PNG is saved with PIL's default zlib level (6) unless optimize_png; WebP/JPEG with
++        # optimize=True.
++        compress_level=6,
 +        save_metadata=bool(embed_workflow),
-+        extra_metadata=(
-+            {"parameters": metadata["a111_params"]}
-+            if metadata["a111_params"] else None
-+        ),
++        # The original writes the A1111 text as it is: a PNG "parameters" text chunk (saver.py:12-13), an EXIF
++        # UserComment for WebP/JPEG (saver.py:36-44). extra_metadata would store it JSON-encoded.
++        a1111_parameters=metadata["a111_params"] or None,
 +        image_format=extension,
 +        quality=int(quality_jpeg_or_webp),
 +        lossless=bool(lossless_webp),
-+        optimize=bool(optimize_png),
++        optimize=bool(optimize_png) if extension == "png" else True,
 +    )
 +    records = list(display.get("images", []))
 +    if save_workflow_as_json:
@@ -19285,6 +19308,431 @@
 +if __name__ == "__main__":
 +    sys.exit(main())
 --- /dev/null
++++ b/v2/tests/saver_parity_worker.py
+@@ -0,0 +1,422 @@
++"""One side of the comfyui-image-saver repair-round parity run (to-50% gate container only).
++
++argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
++
++Every case's prompt runs through ComfyUI's real PromptExecutor (core 6257422b at /core, the engine_commit of the
++live V2 deployment) with the pack loaded as a custom node: the pristine pack copied to
++<OUT>/nodes-root/custom_nodes/ComfyUI-Image-Saver (with /deps, pinned wheels, on sys.path), or /pack/v2 read-only.
++
++Harness facts, both sides:
++  * server.PromptServer.instance is a stand-in: an original pack may register HTTP routes and on-prompt handlers at
++    import. Routes and handlers are recorded, never served; send_sync is recorded.
++  * Test-only nodes (AMY*) produce inputs and probe outputs; core's PreviewAny, ImageBatch, SaveImage and
++    EmptyLatentImage are the real ones.
++V2 side only:
++  * The live runtime runs V2 nodes out of process: each result and UI crosses the guest wire, whose encoder refuses
++    anything but refs, JSON scalars and containers (overlay comfy_secure_nodes/transport/wire.py encode()). The
++    in-process SDK of core never encodes, so the harness runs that same encode() (loaded read-only from the overlay
++    mount) on every V2 node's results and UI before core resolves them (_sdk.unwrap_outputs). A value the live
++    wire refuses fails here with the live error.
++"""
++import asyncio
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import shutil
++import sys
++import types
++
++SIDE, CASES, OUT, FIXTURES = sys.argv[1:5]
++OUT = Path(OUT)
++sys.path[:0] = ['/core']
++if SIDE == 'original' and os.path.isdir('/deps'):
++    sys.path.append('/deps')
++sys.argv = ['main.py', '--cpu']
++
++import comfy.options  # noqa: E402
++comfy.options.enable_args_parsing()
++import torch  # noqa: E402
++torch.set_num_threads(1)
++import folder_paths  # noqa: E402
++
++for name, setter in (('output', folder_paths.set_output_directory), ('temp', folder_paths.set_temp_directory),
++                     ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
++    (OUT / name).mkdir(parents=True, exist_ok=True)
++    setter(str(OUT / name))
++for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
++                  ('upscale_models', {'.safetensors'}), ('controlnet', {'.safetensors'}),
++                  ('easy_wildcards', {'.txt', '.yaml', '.yml', '.json'})):
++    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
++CWD = OUT / 'cwd'
++CWD.mkdir(parents=True, exist_ok=True)
++os.chdir(CWD)
++
++# ---- PromptServer stand-in (the original registers routes and an on-prompt handler at import)
++from aiohttp import web  # noqa: E402
++import server  # noqa: E402
++
++SENT = []
++
++
++class StubPromptServer:
++    def __init__(self):
++        self.routes = web.RouteTableDef()
++        self.client_id = None
++        self.last_node_id = None
++        self.on_prompt_handlers = []
++        self.supports = []
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++    def add_on_prompt_handler(self, handler):
++        self.on_prompt_handlers.append(handler)
++
++    def __getattr__(self, name):  # anything else the pack touches at import
++        raise AttributeError(f'harness PromptServer stand-in has no {name}')
++
++
++server.PromptServer.instance = StubPromptServer()
++
++import nodes as core_nodes  # noqa: E402
++import execution  # noqa: E402
++from comfy_extras.nodes_preview_any import PreviewAny  # noqa: E402
++
++core_nodes.NODE_CLASS_MAPPINGS['PreviewAny'] = PreviewAny
++
++
++# ---- test-only nodes
++def _summary(value, depth=0):
++    """Deterministic, comparable description of any value a node returns."""
++    if hasattr(value, 'patch_records'):  # LoRA stand-ins: every patch core's loader added, and attachments
++        return {'object': type(value).__name__, 'patches': _summary(value.patch_records, depth + 1),
++                'attachments': _summary(value.attachments, depth + 1)}
++    if hasattr(value, 'weights') and type(value).__module__.startswith('comfy.weight_adapter'):
++        return {'adapter': type(value).__name__, 'weights': _summary(list(value.weights), depth + 1)}
++    if isinstance(value, torch.Tensor):
++        data = value.detach().contiguous().cpu()
++        return {'tensor': list(data.shape), 'dtype': str(data.dtype),
++                'sha256': hashlib.sha256(data.numpy().tobytes()).hexdigest()}
++    if isinstance(value, dict):
++        return {'dict': {str(k): _summary(v, depth + 1) for k, v in value.items()}}
++    if isinstance(value, (list, tuple)):
++        return {type(value).__name__: [_summary(v, depth + 1) for v in value]}
++    if isinstance(value, (str, int, float, bool)) or value is None:
++        return {type(value).__name__: value}
++    return {'object': type(value).__name__}
++
++
++def _standin(name, run, input_types, return_types, output_node=False, output_is_list=None, input_is_list=False):
++    attrs = {'INPUT_TYPES': classmethod(lambda cls: input_types()), 'RETURN_TYPES': return_types,
++             'FUNCTION': 'run', 'CATEGORY': 'amy-test', 'run': run, 'OUTPUT_NODE': output_node,
++             'INPUT_IS_LIST': input_is_list}
++    if output_is_list is not None:
++        attrs['OUTPUT_IS_LIST'] = output_is_list
++    return type(f'AMYStandin_{name}', (), attrs)
++
++
++def _image(width, height, batch, seed, channels=3):
++    generator = torch.Generator().manual_seed(seed)
++    return torch.rand((batch, height, width, channels), generator=generator, dtype=torch.float32)
++
++
++def _probe(self, label, value=None, after=None):
++    items = value if isinstance(value, list) else [value]
++    return {'ui': {'probe': [json.dumps({'label': label[0] if isinstance(label, list) else label,
++                                         'items': [_summary(item) for item in items]}, sort_keys=True)]}}
++
++
++class StandinModel:
++    """Weightless MODEL: the SDK recognises a ModelPatcher by model_options + load_device."""
++    def __init__(self):
++        self.model_options = {}
++        self.load_device = 'cpu'
++
++
++class StandinCLIP:
++    """Weightless CLIP: the SDK recognises a CLIP by tokenize/encode_from_tokens."""
++    def tokenize(self, text):
++        return {}
++
++
++class StandinVAE:
++    """Weightless VAE: the SDK recognises a VAE by encode + decode. encode() is a deterministic, shape- and
++    pixel-sensitive stand-in (8x8 mean pool of the RGB channels plus their channel mean), so a different crop,
++    channel count or pixel value shows up in the latent."""
++    def encode(self, pixels):
++        x = pixels.movedim(-1, 1).float()
++        pooled = torch.nn.functional.avg_pool2d(x, 8)
++        return torch.cat([pooled, pooled.mean(dim=1, keepdim=True)], dim=1)
++
++    def decode(self, samples):
++        return samples
++
++
++# ---- LoRA stand-ins: core's comfy.sd.load_lora_for_models runs for real on both sides; the MODEL and CLIP record
++# every patch it adds (keys, strengths, adapter weights) and every attachment, so a different LoRA, strength or order
++# shows up in the probe.
++import comfy.lora  # noqa: E402
++
++LORA_KEY_MAPS = {
++    'unet': {'lora_unet_input_blocks_0_0': 'diffusion_model.input_blocks.0.0.weight',
++             'lora_unet_middle_block_1_proj_in': 'diffusion_model.middle_block.1.proj_in.weight'},
++    'clip': {'lora_te_text_model_encoder_layers_0_mlp_fc1': 'clip_l.transformer.text_model.encoder.layers.0.mlp.fc1.weight'},
++}
++
++
++class _LoraRecorder:
++    def _init_records(self, records=None, attachments=None):
++        self.patch_records = list(records or [])
++        self.attachments = dict(attachments or {})
++
++    def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
++        self.patch_records.append({'keys': sorted(patches), 'strength_patch': strength_patch,
++                                   'strength_model': strength_model, 'patches': dict(sorted(patches.items()))})
++        return list(patches)
++
++    def set_attachments(self, key, value):
++        self.attachments[key] = value
++
++
++class LoraModel(_LoraRecorder):
++    """A MODEL as LoRA loaders use it (model_options + load_device make it a ModelPatcher to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['unet'])
++        self.model_options = {}
++        self.load_device = 'cpu'
++        self._init_records(records, attachments)
++
++    def clone(self):
++        return LoraModel(self.patch_records, self.attachments)
++
++
++class _LoraClipPatcher:
++    def __init__(self, owner):
++        self.owner = owner
++        self.forced_hooks = None
++
++    def set_attachments(self, key, value):
++        self.owner.attachments[key] = value
++
++
++class LoraClip(_LoraRecorder):
++    """A CLIP as LoRA loaders use it (tokenize makes it a CLIP to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.cond_stage_model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['clip'])
++        self.patcher = _LoraClipPatcher(self)
++        self._init_records(records, attachments)
++
++    def tokenize(self, text, **kwargs):
++        return {}
++
++    def clone(self):
++        return LoraClip(self.patch_records, self.attachments)
++
++
++def _key_map_unet(model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(model, 'amy_lora_keys', {}))
++    return key_map
++
++
++def _key_map_clip(cond_stage_model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(cond_stage_model, 'amy_lora_keys', {}))
++    return key_map
++
++
++comfy.lora.model_lora_keys_unet = _key_map_unet
++comfy.lora.model_lora_keys_clip = _key_map_clip
++
++
++def _cond(seed):
++    generator = torch.Generator().manual_seed(seed)
++    return [[torch.rand((1, 4, 8), generator=generator), {'pooled_output': torch.rand((1, 8), generator=generator)}]]
++
++
++ANY = '*'
++STANDINS = {
++    'AMYLoraModelClip': _standin('AMYLoraModelClip', lambda self: (LoraModel(), LoraClip()), lambda: {'required': {}},
++                                 ('MODEL', 'CLIP')),
++    'AMYTestModel': _standin('AMYTestModel', lambda self: (StandinModel(),), lambda: {'required': {}}, ('MODEL',)),
++    'AMYTestClip': _standin('AMYTestClip', lambda self: (StandinCLIP(),), lambda: {'required': {}}, ('CLIP',)),
++    'AMYTestVAE': _standin('AMYTestVAE', lambda self: (StandinVAE(),), lambda: {'required': {}}, ('VAE',)),
++    'AMYTestCond': _standin('AMYTestCond', lambda self, seed: (_cond(seed),),
++                            lambda: {'required': {'seed': ('INT', {'default': 0})}}, ('CONDITIONING',)),
++    'AMYTestString': _standin('AMYTestString', lambda self, text: (text,),
++                              lambda: {'required': {'text': ('STRING', {'default': '', 'multiline': True})}},
++                              ('STRING',)),
++    'AMYTestJSON': _standin('AMYTestJSON', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': 'null', 'multiline': True})}},
++                            (ANY,)),
++    'AMYTestList': _standin('AMYTestList', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': '[]', 'multiline': True})}},
++                            (ANY,), output_is_list=(True,)),
++    'AMYTestImage': _standin('AMYTestImage', lambda self, width, height, batch, seed, after=None:
++                             (_image(width, height, batch, seed),),
++                             lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                   'batch': ('INT', {'default': 1}), 'seed': ('INT', {'default': 0})},
++                                      'optional': {'after': (ANY,)}},
++                             ('IMAGE',)),
++    'AMYTestImageList': _standin('AMYTestImageList', lambda self, count, seed:
++                                 ([_image(8 + i, 6, 1, seed + i) for i in range(count)],),
++                                 lambda: {'required': {'count': ('INT', {'default': 3}), 'seed': ('INT', {'default': 0})}},
++                                 ('IMAGE',), output_is_list=(True,)),
++    'AMYTestMask': _standin('AMYTestMask', lambda self, width, height, batch, seed:
++                            (_image(width, height, batch, seed)[..., 0],),
++                            lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                  'batch': ('INT', {'default': 2}), 'seed': ('INT', {'default': 0})}},
++                            ('MASK',)),
++    'AMYProbe': _standin('AMYProbe', _probe,
++                         lambda: {'required': {'label': ('STRING', {'default': ''})},
++                                  'optional': {'value': (ANY,), 'after': (ANY,)}},
++                         (), output_node=True, input_is_list=True),
++}
++core_nodes.NODE_CLASS_MAPPINGS.update(STANDINS)
++
++# ---- the live guest wire, V2 side
++WIRE = None
++if SIDE == 'v2':
++    from comfy_api.latest import _sdk as comfy_sdk
++    spec = importlib.util.spec_from_file_location('amy_overlay_wire',
++                                                  '/overlay/comfy_secure_nodes/transport/wire.py')
++    WIRE = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(WIRE)
++    _unwrap_outputs = comfy_sdk.unwrap_outputs
++
++    async def unwrap_outputs_across_wire(resolver, node_output):
++        if getattr(node_output, 'result', None):
++            WIRE.encode(list(node_output.result), preserve_tuples=True)
++        if getattr(node_output, 'ui', None) is not None:
++            WIRE.encode(node_output.ui, preserve_tuples=True)
++        return await _unwrap_outputs(resolver, node_output)
++
++    comfy_sdk.unwrap_outputs = unwrap_outputs_across_wire
++
++# ---- load the pack under test
++if SIDE == 'original':
++    pack_dir = OUT / 'nodes-root' / 'custom_nodes' / 'ComfyUI-Image-Saver'
++    shutil.copytree('/pack', pack_dir, ignore=shutil.ignore_patterns('v2'))
++    pack_path = str(pack_dir)
++else:
++    pack_path = '/pack/v2'
++LOAD_ERROR = None
++try:
++    loaded = asyncio.run(core_nodes.load_custom_node(pack_path, ignore=set(), module_parent='custom_nodes'))
++except Exception as error:  # recorded, never hidden
++    loaded, LOAD_ERROR = False, f'{type(error).__name__}: {error}'
++
++# ---- the live host's catalogue menus, V2 side
++# The live host builds each V2 node's schema from the manifest and then fills its model and input menus with the
++# host catalogue (overlay comfy_secure_nodes/packdb.py: define_schema -> _core_model_menu_choices ->
++# _core_input_menu_choices); frozen model combos can be empty sentinel lists until then. The in-process
++# loader skips that host step, so the harness applies the overlay's own two functions to every V2 node's schema.
++HOST_MENUS = None
++if SIDE == 'v2' and loaded:
++    sys.path.insert(0, '/overlay')
++    try:
++        from comfy_secure_nodes import packdb as overlay_packdb
++    except Exception as error:  # recorded, never hidden
++        HOST_MENUS = f'unavailable: {type(error).__name__}: {error}'
++    else:
++        wrapped = 0
++        for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
++            if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
++                continue
++            base = cls.__dict__['define_schema'].__func__
++
++            def define_schema(klass, _base=base):
++                schema = _base(klass)
++                schema = overlay_packdb._core_model_menu_choices(schema, klass.SDK_PERMISSIONS)
++                return overlay_packdb._core_input_menu_choices(schema, klass.SDK_PERMISSIONS)
++
++            cls.define_schema = classmethod(define_schema)
++            wrapped += 1
++        HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
++
++
++class Server:
++    def __init__(self):
++        self.client_id = None
++        self.last_node_id = None
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++
++def describe_file(path):
++    data = path.read_bytes()
++    root = OUT / ('temp' if (OUT / 'temp') in path.parents else 'output')
++    row = {'path': f'{root.name}/{path.relative_to(root)}', 'sha256': hashlib.sha256(data).hexdigest(),
++           'bytes': len(data)}
++    if path.suffix.lower() in ('.png', '.webp', '.jpg', '.jpeg'):
++        from PIL import Image
++        import numpy as np
++        with Image.open(path) as im:
++            row.update({'size': list(im.size), 'mode': im.mode, 'format': im.format,
++                        'pixels_sha256': hashlib.sha256(np.asarray(im.convert('RGBA')).tobytes()).hexdigest()})
++            if im.format == 'PNG':
++                row['text'] = dict(getattr(im, 'text', {}) or {})
++                row['text_order'] = list(row['text'])
++            else:  # the A1111 text an image saver puts in EXIF UserComment (tag 0x9286 in the Exif IFD)
++                comment = im.getexif().get_ifd(0x8769).get(0x9286)
++                row['user_comment'] = None if comment is None else bytes(comment).hex()
++    return row
++
++
++def run_case(case):
++    result = {'name': case['name'], 'runs': []}
++    for index in range(case.get('runs', 1)):
++        torch.manual_seed(20261102)
++        prompt = json.loads(json.dumps(case['prompt']))
++        prompt_id = f"{case['name']}-{index}"
++        before = {p for root in ('output', 'temp') for p in (OUT / root).rglob('*') if p.is_file()}
++        SENT.clear()
++        valid = asyncio.run(execution.validate_prompt(prompt_id, prompt, None))
++        if not valid[0]:
++            result['runs'].append({'validation_error': json.loads(json.dumps(valid[1], default=str)),
++                                   'node_errors': json.loads(json.dumps(valid[3], default=str))})
++            continue
++        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
++                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
++        extra = {'extra_pnginfo': case['extra_pnginfo']} if case.get('extra_pnginfo') else {}
++        executor.execute(prompt, prompt_id, json.loads(json.dumps(extra)), valid[2])
++        errors = []
++        for event, data in executor.status_messages:
++            if event == 'execution_error':
++                errors.append({'node_id': data.get('node_id'), 'node_type': data.get('node_type'),
++                               'exception_type': data.get('exception_type'),
++                               'exception_message': data.get('exception_message'),
++                               'traceback_tail': ''.join(data.get('traceback') or [])[-1500:]})
++        history = getattr(executor, 'history_result', None) or {}
++        files = sorted((p for root in ('output', 'temp') for p in (OUT / root).rglob('*')
++                        if p.is_file() and p not in before), key=str)
++        result['runs'].append({'success': bool(executor.success), 'errors': errors,
++                               'ui': json.loads(json.dumps(history.get('outputs', {}), default=str)),
++                               'files': [describe_file(p) for p in files],
++                               'sent': [row for row in SENT if row[0] not in ('progress', 'executing')]})
++    return result
++
++
++def main():
++    cases = json.loads(Path(CASES).read_text())
++    report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
++              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
++              'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
++              'routes': len(server.PromptServer.instance.routes), 'cases': []}
++    if loaded:
++        for case in cases:
++            try:
++                report['cases'].append(run_case(case))
++            except Exception as error:  # a harness failure is recorded, never hidden
++                import traceback
++                report['cases'].append({'name': case['name'], 'harness_error': f'{type(error).__name__}: {error}',
++                                        'traceback': traceback.format_exc()[-3000:]})
++    (OUT / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
++
++
++main()
+--- /dev/null
 +++ b/v2/tests/test_combo_outputs.py
 @@ -0,0 +1,419 @@
 +"""Tier-1 COMBO-output parity: comfyui-image-saver ORIGINAL vs V2 (CPU, no weights, synthetic fixtures).
@@ -19706,3 +20154,209 @@
 +
 +if __name__ == "__main__":
 +    sys.exit(asyncio.run(main()))
+--- /dev/null
++++ b/v2/tests/test_image_saver_repair_parity.py
+@@ -0,0 +1,203 @@
++"""Tier-1 parity for comfyui-image-saver repair rounds: the pristine pack (205d66a9) vs the repaired V2 conversion.
++
++Run in the to-50% gate (DEPS = the pinned piexif wheel, original side only):
++  run_in_gate.sh <pack root> <v2/tests> <results> test_image_saver_repair_parity.py [ROUND] [CASE-FILTER]
++
++Two workers execute the same prompts through ComfyUI's real executor (saver_parity_worker.py); the V2 worker runs the
++live guest-wire encoder on every V2 node's results and UI. Saved files are compared byte for byte (sha256), and also
++by decoded pixels, PNG text chunks (with their order) and the EXIF UserComment of WebP/JPEG.
++  EXACT               identical UI, returned values and files
++  KNOWN-DIFFERENCE    as SECURE_CONVERSION.md documents (embedded workflow chunk order/format; WebP EXIF layout)
++Cases use synthetic inputs only; download_civitai_data is off (no network in the gate).
++"""
++import copy
++import json
++from pathlib import Path
++import subprocess
++import sys
++
++TESTS = Path(__file__).resolve().parent
++RESULTS = Path('/results')
++WORK = Path('/tmp/amy-saver-parity')
++ROUNDS = ['r2']
++ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
++FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
++WORKFLOW = {'last_node_id': 21, 'nodes': [{'id': 21, 'type': 'Image Saver Simple', 'widgets_values': []}],
++            'links': [], 'version': 0.4}
++
++
++def n(node_id, class_type, **inputs):
++    return {node_id: {'class_type': class_type, 'inputs': inputs}}
++
++
++def g(*parts):
++    out = {}
++    for part in parts:
++        out.update(part)
++    return out
++
++
++def case(name, prompt, expect='outputs', extra_pnginfo=None, note=''):
++    return {'name': name, 'prompt': prompt, 'expect': expect, 'extra_pnginfo': extra_pnginfo, 'note': note}
++
++
++def image(node_id='2', seed=3, width=96, height=80):
++    return n(node_id, 'AMYTestImage', width=width, height=height, batch=1, seed=seed)
++
++
++def metadata(node_id='20', seed=20261102, **options):
++    inputs = dict(additional_hashes='', cfg=2.25, clip_skip=0, custom='fidelity_probe', denoise=0.35,
++                  download_civitai_data=False, easy_remix=False, height=80, modelname='', negative='blur',
++                  positive='quiet harbor in daylight', sampler_name='euler', scheduler_name='normal', seed_value=seed,
++                  steps=2, width=96)
++    inputs.update(options)
++    return n(node_id, 'Image Saver Metadata', **inputs)
++
++
++def simple(node_id='21', metadata_node='20', **options):
++    inputs = dict(counter=0, embed_workflow=False, extension='png', filename='metadata_primary_seed', images=['2', 0],
++                  lossless_webp=True, optimize_png=False, path='fidelity/run', quality_jpeg_or_webp=100,
++                  save_workflow_as_json=False, show_preview=True)
++    inputs.update(options)
++    if metadata_node is not None:
++        inputs['metadata'] = [metadata_node, 0]
++    return n(node_id, 'Image Saver Simple', **inputs)
++
++
++def preview(source, node_id):
++    return n(node_id, 'PreviewAny', source=source)
++
++
++R2_CASES = [
++    case('simple-png-seed-pair', g(image(), metadata(), simple(),
++                                   metadata('baseline_metadata', seed=20261103),
++                                   simple('baseline_writer', 'baseline_metadata', filename='metadata_control_seed'),
++                                   preview(['21', 1], 'saved_params_probe'), preview(['20', 2], 'metadata_probe'),
++                                   preview(['baseline_writer', 1], 'baseline_params')),
++         note='live A/B defect: the PNG parameters chunk held the JSON-encoded string'),
++    case('simple-png-optimize', g(image(seed=4), metadata(), simple(optimize_png=True))),
++    case('simple-png-no-metadata', g(image(seed=5), simple(metadata_node=None, filename='plain'))),
++    case('simple-png-multiline-unicode', g(image(seed=6), metadata(positive='a "quoted"\nline two — café 中文',
++                                                                   negative='x\ty'), simple())),
++    case('simple-png-embed-workflow', g(image(seed=7), metadata(), simple(embed_workflow=True)),
++         expect='known:embedded-chunks', extra_pnginfo={'workflow': WORKFLOW}),
++    case('simple-webp-lossless', g(image(seed=8), metadata(), simple(extension='webp')), expect='known:exif-layout'),
++    case('saver-full-png', g(image(seed=9), n('30', 'Image Saver', images=['2', 0], filename='full_%seed', path='full',
++                                              extension='png', steps=2, cfg=2.25, modelname='', sampler_name='euler',
++                                              scheduler_name='normal', positive='quiet harbor', negative='blur',
++                                              seed_value=11, width=96, height=80, lossless_webp=True,
++                                              quality_jpeg_or_webp=100, optimize_png=False, counter=0, denoise=0.35,
++                                              clip_skip=0, time_format='%Y-%m-%d-%H%M%S', save_workflow_as_json=False,
++                                              embed_workflow=False, additional_hashes='', download_civitai_data=False,
++                                              easy_remix=False, show_preview=True, custom=''),
++                             preview(['30', 1], 'full_params'))),
++]
++CASES_BY_ROUND = {'r2': R2_CASES}
++CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
++if FILTER:
++    CASES = [c for c in CASES if FILTER in c['name']]
++
++
++def run_side(side):
++    out = WORK / side
++    out.mkdir(parents=True, exist_ok=True)
++    cmd = [sys.executable, '-I', '-B', str(TESTS / 'saver_parity_worker.py'), side, str(WORK / 'cases.json'),
++           str(out), str(WORK / 'fixtures')]
++    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3000)
++    (RESULTS / f'worker-{side}.log').write_text(proc.stdout[-20000:] + '\n--- stderr ---\n' + proc.stderr[-40000:])
++    if proc.returncode != 0 or not (out / 'report.json').exists():
++        raise RuntimeError(f'{side} worker failed rc={proc.returncode}: {proc.stderr[-3000:]}')
++    (RESULTS / f'worker-{side}.json').write_bytes((out / 'report.json').read_bytes())
++    report = json.loads((out / 'report.json').read_text())
++    if not report['loaded']:
++        raise RuntimeError(f'{side}: pack did not load: {report["load_error"]}')
++    return report
++
++
++def errors_of(run):
++    return [(e['exception_type'].rsplit('.', 1)[-1], e['exception_message']) for e in run.get('errors', [])]
++
++
++KEYS = ('path', 'sha256', 'pixels_sha256', 'size', 'mode', 'format', 'text', 'text_order', 'user_comment')
++
++
++def comparable(run):
++    ui = {node_id: copy.deepcopy(node_ui) for node_id, node_ui in sorted(run.get('ui', {}).items())}
++    files = [{k: f.get(k) for k in KEYS} for f in run['files']]
++    return {'ui': ui, 'files': files}
++
++
++def compare(spec, orig, conv):
++    name, expect = spec['name'], spec['expect']
++    row = {'case': name, 'expect': expect}
++    if spec.get('note'):
++        row['note'] = spec['note']
++    if 'harness_error' in orig or 'harness_error' in conv:
++        return {**row, 'verdict': 'HARNESS-ERROR', 'original': orig.get('harness_error'), 'v2': conv.get('harness_error')}
++    run_o, run_c = orig['runs'][-1], conv['runs'][-1]
++    if 'validation_error' in run_o or 'validation_error' in run_c:
++        return {**row, 'verdict': 'MISMATCH', 'validation': [run_o.get('node_errors'), run_c.get('node_errors')]}
++    err_o, err_c = errors_of(run_o), errors_of(run_c)
++    if err_o or err_c:
++        return {**row, 'verdict': 'MISMATCH', 'errors': [err_o, err_c]}
++    co, cc = comparable(run_o), comparable(run_c)
++    if not co['files']:
++        return {**row, 'verdict': 'MISMATCH', 'notes': 'the original saved nothing'}
++    if expect.startswith('known:'):
++        same_ui = co['ui'] == cc['ui']
++        pairs = list(zip(co['files'], cc['files']))
++        same_files = len(co['files']) == len(cc['files']) and all(
++            a['path'] == b['path'] and a['pixels_sha256'] == b['pixels_sha256'] and a['size'] == b['size']
++            for a, b in pairs)
++        if expect == 'known:embedded-chunks':
++            detail = all(set(a['text']) == set(b['text']) and a['text'].get('parameters') == b['text'].get('parameters')
++                         and json.loads(a['text']['workflow']) == json.loads(b['text']['workflow'])
++                         and json.loads(a['text']['prompt']) == json.loads(b['text']['prompt']) for a, b in pairs)
++            notes = [{'order': [a['text_order'], b['text_order']]} for a, b in pairs]
++        else:
++            detail = all(a['user_comment'] == b['user_comment'] and a['user_comment'] is not None for a, b in pairs)
++            notes = [{'bytes_equal': a['sha256'] == b['sha256']} for a, b in pairs]
++        ok = same_ui and same_files and detail
++        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH', 'notes': notes,
++                **({} if ok else {'original': co, 'v2': cc})}
++    if co != cc:
++        return {**row, 'verdict': 'MISMATCH', 'original': co, 'v2': cc}
++    return {**row, 'verdict': 'EXACT', 'observed': co}
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (WORK / 'fixtures').mkdir(parents=True, exist_ok=True)
++    (WORK / 'cases.json').write_text(json.dumps(CASES, indent=1))
++    original = run_side('original')
++    converted = run_side('v2')
++    by_o = {c['name']: c for c in original['cases']}
++    by_c = {c['name']: c for c in converted['cases']}
++    rows = [compare(spec, by_o[spec['name']], by_c[spec['name']]) for spec in CASES]
++    counts = {}
++    for row in rows:
++        counts[row['verdict']] = counts.get(row['verdict'], 0) + 1
++    control = {'verdict': 'NOT-RUN'}
++    if next((r for r in rows if r['case'] == 'simple-png-seed-pair' and r['verdict'] == 'EXACT'), None):
++        spec = next(s for s in CASES if s['name'] == 'simple-png-seed-pair')
++        tampered = copy.deepcopy(by_c['simple-png-seed-pair'])
++        first = tampered['runs'][-1]['files'][0]
++        first['text']['parameters'] = json.dumps(first['text']['parameters'])  # the defect this round fixes
++        control = compare(spec, by_o['simple-png-seed-pair'], tampered)
++    report = {'pack': 'comfyui-image-saver', 'round': ROUND, 'rounds_run': ROUNDS[:ROUNDS.index(ROUND) + 1],
++              'pin': '205d66a9d8035e3ad2ba6c61b7ebf7871664e472', 'host_menus_v2': converted.get('host_menus'),
++              'harness': 'ComfyUI core at /core (PromptExecutor, classic cache) on both sides; V2 results and UI '
++                         'encoded with the live overlay transport/wire.py; live host catalogue menus on V2 schemas',
++              'counts': counts, 'cases': rows,
++              'negative_control': {'case': 'simple-png-seed-pair', 'verdict_after_tamper': control['verdict'],
++                                   'turned_red': control['verdict'] == 'MISMATCH'}}
++    (RESULTS / 'parity.json').write_text(json.dumps(report, indent=2) + '\n')
++    print(json.dumps({'counts': counts, 'negative_control': report['negative_control'],
++                      'not_green': [{k: r.get(k) for k in ('case', 'verdict', 'errors', 'validation', 'notes', 'original', 'v2')}
++                                    for r in rows if r['verdict'] not in ('EXACT', 'KNOWN-DIFFERENCE')]},
++                     indent=1)[:15000])
++    ok = set(counts) <= {'EXACT', 'KNOWN-DIFFERENCE'} and control['verdict'] in ('MISMATCH', 'NOT-RUN')
++    sys.exit(0 if ok else 1)
++
++
++main()

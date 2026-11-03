@@ -120,3 +120,25 @@ Core's prompt validation with selector links into KSampler (including
 refused controls), and every selector choice returned by a real guest.
 `tests/encode_manifest.py` regenerates `secure-nodes.json` with the live
 encoder and loads it with the real loader.
+
+## Repair round r2: the A1111 parameters text, as the original writes it
+
+Image Saver and Image Saver Simple now write the A1111 parameters text unchanged, through the platform's
+`a1111_parameters` option:
+- PNG: a plain `parameters` text chunk (`saver/saver.py:12-13`).
+- WebP/JPEG: an EXIF UserComment (`saver/saver.py:36-44`).
+
+Previously the text went through `extra_metadata`, which stores values JSON-encoded. The PNG chunk then read
+`"quiet harbor…\nNegative prompt: …"`, with quotes and escaped newlines, instead of the text itself.
+
+PNGs are now saved at PIL's default zlib level (6) unless `optimize_png` is set, and WebP/JPEG with `optimize=True`,
+as `saver.py:22-24` does. With `embed_workflow` off, a PNG is byte-for-byte the original's.
+
+Known differences:
+- With `embed_workflow` on, the original writes `parameters`, then the workflow, then `prompt`, as compact JSON. The
+  platform writes `prompt` and the workflow (ComfyUI's default JSON spacing) and then `parameters`. The guest does
+  not receive the prompt or workflow, so it cannot rebuild the original's chunks. The pixels and the `parameters` text
+  are the same.
+- JPEG is always written with 4:4:4 chroma subsampling. The platform has no subsampling option; the original uses
+  Pillow's default.
+- WebP/JPEG EXIF is written by the platform rather than by piexif, so its byte layout differs from the original's.

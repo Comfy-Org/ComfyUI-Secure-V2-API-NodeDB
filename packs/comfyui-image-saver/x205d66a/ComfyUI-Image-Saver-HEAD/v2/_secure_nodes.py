@@ -634,16 +634,17 @@ async def _save_images(
             if combined_folder else name
             for name in filenames
         ],
-        compress_level=4,
+        # saver/saver.py:9-24: PNG is saved with PIL's default zlib level (6) unless optimize_png; WebP/JPEG with
+        # optimize=True.
+        compress_level=6,
         save_metadata=bool(embed_workflow),
-        extra_metadata=(
-            {"parameters": metadata["a111_params"]}
-            if metadata["a111_params"] else None
-        ),
+        # The original writes the A1111 text as it is: a PNG "parameters" text chunk (saver.py:12-13), an EXIF
+        # UserComment for WebP/JPEG (saver.py:36-44). extra_metadata would store it JSON-encoded.
+        a1111_parameters=metadata["a111_params"] or None,
         image_format=extension,
         quality=int(quality_jpeg_or_webp),
         lossless=bool(lossless_webp),
-        optimize=bool(optimize_png),
+        optimize=bool(optimize_png) if extension == "png" else True,
     )
     records = list(display.get("images", []))
     if save_workflow_as_json:
