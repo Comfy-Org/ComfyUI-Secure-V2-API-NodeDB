@@ -1,3 +1,34 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,28 @@
++# Secure conversion notes
++
++Pinned upstream commit: `4579b7d6076b2870998a08f5d37883fbc8261ff2`. The sealed node schemas and permissions are in `secure-nodes.json`.
++
++## Repair round r1: SCRIPT values in the original's shapes
++
++These nodes now put the original's tuples in the SCRIPT dict. Before this round they wrote dicts with named keys.
++- Noise Control Script: `script["noise"] = (rng_source, cfg_denoiser, add_seed_noise, seed, weight)`
++  (`efficiency_nodes.py:4047-4050`).
++- Tiled Upscaler Script: `script["tile"] = (upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise,
++  tile_controlnet, strength)` (`efficiency_nodes.py:4233-4240`). With strategy "none" the incoming script passes
++  through unchanged, as in the original; it is None when nothing is connected.
++- XY Plot: `{"xyplot": (X_type, X_value, Y_type, Y_value, grid_spacing, Y_label_orientation, cache_models,
++  xyplot_as_output_image, my_unique_id, dependencies)}` (`efficiency_nodes.py:2369-2455`).
++  - `cache_models` keeps the widget's "True"/"False".
++  - Only X values are cleaned for Checkpoint/VAE plots: the original's Y branch repeats the X condition.
++  - "XY_Capsule" inputs pass the same-type check, as in the original.
++
++The samplers turn these tuples back into the fields their sampling code uses (`_script_noise`, `_script_tile`,
++`_script_xyplot`), so sampling itself is unchanged by this round.
++
++Known differences:
++- The ControlNet slot of a "tile" tuple, when used, holds the platform's ControlNet handle instead of the loaded model
++  object.
++- The HighRes-Fix Script entry keeps its named-key form. The original's tuple holds a Python class and loaded models,
++  which have no portable value.
++- The original's script nodes add their entry to the incoming dict in place. V2 adds it to a copy, so an earlier node's
++  output does not change afterwards.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,18 +1,14 @@
@@ -28661,7 +28692,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,3221 @@
+@@ -0,0 +1,3234 @@
 +"""Secure Nodes 2.0 implementations for Efficiency Nodes' pinned surface.
 +
 +The original pack mixes workflow data helpers with global monkey patches,
@@ -29372,15 +29403,46 @@
 +    return positive, negative
 +
 +
++def _script_noise(value):
++    """A "noise" SCRIPT entry as the sampler code reads it. The node emits the original's tuple
++    (rng_source, cfg_denoiser, add_seed_noise, seed, weight) (efficiency_nodes.py:4049)."""
++    if value is None or isinstance(value, dict):
++        return value
++    rng_source, cfg_denoiser, add_seed_noise, seed, weight = value
++    return {"rng_source": str(rng_source), "cfg_denoiser": bool(cfg_denoiser),
++            "add_seed_noise": bool(add_seed_noise), "seed": int(seed), "weight": float(weight)}
++
++
++def _script_tile(value):
++    """A "tile" SCRIPT entry as the sampler code reads it. The node emits the original's tuple
++    (upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, tile_controlnet, strength)
++    (efficiency_nodes.py:4239)."""
++    if value is None or isinstance(value, dict):
++        return value
++    upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, tile_controlnet, strength = value
++    return {"upscale_by": float(upscale_by), "tile_size": int(tile_size), "strategy": str(tiling_strategy),
++            "steps": int(tiling_steps), "seed": int(seed), "denoise": float(denoise),
++            "control_net": tile_controlnet, "strength": float(strength)}
++
++
++def _script_xyplot(value):
++    """An "xyplot" SCRIPT entry as the XY sampler reads it. The node emits the original's tuple (X_type, X_value,
++    Y_type, Y_value, grid_spacing, Y_label_orientation, cache_models, xyplot_as_output_image, my_unique_id,
++    dependencies) (efficiency_nodes.py:2452-2453), cache_models being the widget's "True"/"False"."""
++    if value is None or isinstance(value, dict):
++        return value
++    (x_type, x_values, y_type, y_values, grid_spacing, y_label_orientation, cache_models, plot_as_output,
++     node_id, dependencies) = value
++    return {"x_type": x_type, "x_values": x_values, "y_type": y_type, "y_values": y_values,
++            "grid_spacing": int(grid_spacing), "y_label_orientation": str(y_label_orientation),
++            "cache_models": cache_models == "True", "plot_as_output": bool(plot_as_output),
++            "node_id": node_id, "dependencies": dependencies}
++
++
 +def _noise_script(rng_source, cfg_denoiser, add_seed_noise, seed, weight, script=None):
++    """Noise Control Script as the original (efficiency_nodes.py:4047-4050)."""
 +    output = _script_copy(script)
-+    output["noise"] = {
-+        "rng_source": str(rng_source),
-+        "cfg_denoiser": bool(cfg_denoiser),
-+        "add_seed_noise": bool(add_seed_noise),
-+        "seed": int(seed),
-+        "weight": float(weight),
-+    }
++    output["noise"] = (rng_source, cfg_denoiser, add_seed_noise, seed, weight)
 +    return (output,)
 +
 +
@@ -29475,22 +29537,15 @@
 +    strength,
 +    script=None,
 +):
-+    output = _script_copy(script)
++    """Tiled Upscaler Script as the original (efficiency_nodes.py:4233-4240): with strategy "none" the incoming script
++    passes through unchanged (None when nothing is connected)."""
 +    if tiling_strategy != "none":
++        script = _script_copy(script)
 +        control_net = None
 +        if use_controlnet:
 +            control_net = await _ctx().models.load_controlnet(_safe_asset_name(tile_controlnet))
-+        output["tile"] = {
-+            "upscale_by": float(upscale_by),
-+            "tile_size": int(tile_size),
-+            "strategy": str(tiling_strategy),
-+            "steps": int(tiling_steps),
-+            "seed": int(seed),
-+            "denoise": float(denoise),
-+            "control_net": control_net,
-+            "strength": float(strength),
-+        }
-+    return (output,)
++        script["tile"] = (upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, control_net, strength)
++    return (script,)
 +
 +
 +# ---------------------------------------------------------------------------
@@ -30051,9 +30106,10 @@
 +    my_unique_id=None,
 +    **_kwargs,
 +):
++    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple."""
 +    x_type, x_values = X if X is not None else ("Nothing", [""])
 +    y_type, y_values = Y if Y is not None else ("Nothing", [""])
-+    if x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
++    if x_type != "XY_Capsule" and x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
 +        return (None,)
 +    dependency_types = {
 +        "Checkpoint", "Refiner", "LoRA", "LoRA Stacks", "LoRA Batch", "LoRA Wt",
@@ -30080,26 +30136,14 @@
 +    if y_type == "Scheduler" and x_type != "Sampler":
 +        y_values = [(value, None) for value in y_values]
 +    if x_type == "Checkpoint" and y_type == "VAE":
++        # The original's matching elif (Y_type == "VAE" and X_type == "Checkpoint") repeats this condition, so
++        # Y values are never cleaned.
 +        x_values = [(value[0], value[1], None) for value in x_values]
-+    elif y_type == "Checkpoint" and x_type == "VAE":
-+        y_values = [(value[0], value[1], None) for value in y_values]
 +    if XY_flip == "True":
 +        x_type, y_type, x_values, y_values = y_type, x_type, y_values, x_values
-+    output = {
-+        "xyplot": {
-+            "x_type": x_type,
-+            "x_values": x_values,
-+            "y_type": y_type,
-+            "y_values": y_values,
-+            "grid_spacing": int(grid_spacing),
-+            "y_label_orientation": str(Y_label_orientation),
-+            "cache_models": cache_models == "True",
-+            "plot_as_output": ksampler_output_image == "Plot",
-+            "node_id": my_unique_id,
-+            "dependencies": dependencies,
-+        }
-+    }
-+    return (output,)
++    xyplot_as_output_image = ksampler_output_image == "Plot"
++    return ({"xyplot": (x_type, x_values, y_type, y_values, grid_spacing, Y_label_orientation, cache_models,
++                        xyplot_as_output_image, my_unique_id, dependencies)},)
 +
 +
 +# Loader and sampler handlers are defined below, after their shared utilities.
@@ -30940,7 +30984,7 @@
 +                )
 +                image = None
 +
-+    tile = (script or {}).get("tile")
++    tile = _script_tile((script or {}).get("tile"))
 +    if tile:
 +        image = image or await (
 +            vae.decode_tiled(latent, tile_size=320)
@@ -31295,7 +31339,7 @@
 +            return_with_leftover_noise=return_with_leftover_noise,
 +            sdxl_tuple=sdxl_tuple,
 +        )
-+    noise_recipe = (script or {}).get("noise")
++    noise_recipe = _script_noise((script or {}).get("noise"))
 +    if sampler_type == "sdxl":
 +        base_model, _clip, base_positive, base_negative, refiner_model, _rclip, refiner_positive, refiner_negative = sdxl_tuple
 +        switch = int(steps) if int(end_at_step) == -1 else int(end_at_step)
@@ -31681,7 +31725,7 @@
 +    return_with_leftover_noise,
 +    sdxl_tuple,
 +):
-+    recipe = script["xyplot"]
++    recipe = _script_xyplot(script["xyplot"])
 +    dependencies = recipe.get("dependencies")
 +    base_state = _dependency_state(
 +        dependencies, model=model, positive=positive, negative=negative,
@@ -31713,7 +31757,7 @@
 +            if rebuild:
 +                await _rebuild_variant_state(state, sampler_type)
 +            cell_latent = await sdk.LatentRef.from_value(copy.deepcopy(initial))
-+            noise_recipe = script.get("noise")
++            noise_recipe = _script_noise(script.get("noise"))
 +            if sampler_type == "sdxl":
 +                switch = int(params["steps"]) if int(params["end_step"] or -1) == -1 else int(params["end_step"])
 +                sampled = await _sample_once(
@@ -72481,3 +72525,655 @@
 +  },
 +  "web_directory": "js"
 +}
+--- /dev/null
++++ b/v2/tests/eff_parity_worker.py
+@@ -0,0 +1,416 @@
++"""One side of the efficiency-nodes-comfyui repair-round parity run (to-50% gate container only).
++
++argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
++
++Every case's prompt runs through ComfyUI's real PromptExecutor (core 6257422b at /core, the engine_commit of the
++live V2 deployment) with the pack loaded as a custom node: the pristine pack copied to
++<OUT>/nodes-root/custom_nodes/efficiency-nodes-comfyui, or /pack/v2 read-only.
++
++Harness facts, both sides:
++  * server.PromptServer.instance is a stand-in: an original pack may register HTTP routes and on-prompt handlers at
++    import. Routes and handlers are recorded, never served; send_sync is recorded.
++  * Test-only nodes (AMY*) produce inputs and probe outputs; core's PreviewAny, ImageBatch, SaveImage and
++    EmptyLatentImage are the real ones.
++V2 side only:
++  * The live runtime runs V2 nodes out of process: each result and UI crosses the guest wire, whose encoder refuses
++    anything but refs, JSON scalars and containers (overlay comfy_secure_nodes/transport/wire.py encode()). The
++    in-process SDK of core never encodes, so the harness runs that same encode() (loaded read-only from the overlay
++    mount) on every V2 node's results and UI before core resolves them (_sdk.unwrap_outputs). A value the live
++    wire refuses fails here with the live error.
++"""
++import asyncio
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import shutil
++import sys
++import types
++
++SIDE, CASES, OUT, FIXTURES = sys.argv[1:5]
++OUT = Path(OUT)
++sys.path[:0] = ['/core']
++if SIDE == 'original' and os.path.isdir('/deps'):
++    sys.path.append('/deps')
++sys.argv = ['main.py', '--cpu']
++
++import comfy.options  # noqa: E402
++comfy.options.enable_args_parsing()
++import torch  # noqa: E402
++torch.set_num_threads(1)
++import folder_paths  # noqa: E402
++
++for name, setter in (('output', folder_paths.set_output_directory), ('temp', folder_paths.set_temp_directory),
++                     ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
++    (OUT / name).mkdir(parents=True, exist_ok=True)
++    setter(str(OUT / name))
++for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
++                  ('upscale_models', {'.safetensors'}), ('controlnet', {'.safetensors'}),
++                  ('easy_wildcards', {'.txt', '.yaml', '.yml', '.json'})):
++    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
++CWD = OUT / 'cwd'
++CWD.mkdir(parents=True, exist_ok=True)
++os.chdir(CWD)
++
++# ---- PromptServer stand-in (the original registers routes and an on-prompt handler at import)
++from aiohttp import web  # noqa: E402
++import server  # noqa: E402
++
++SENT = []
++
++
++class StubPromptServer:
++    def __init__(self):
++        self.routes = web.RouteTableDef()
++        self.client_id = None
++        self.last_node_id = None
++        self.on_prompt_handlers = []
++        self.supports = []
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++    def add_on_prompt_handler(self, handler):
++        self.on_prompt_handlers.append(handler)
++
++    def __getattr__(self, name):  # anything else the pack touches at import
++        raise AttributeError(f'harness PromptServer stand-in has no {name}')
++
++
++server.PromptServer.instance = StubPromptServer()
++
++import nodes as core_nodes  # noqa: E402
++import execution  # noqa: E402
++from comfy_extras.nodes_preview_any import PreviewAny  # noqa: E402
++
++core_nodes.NODE_CLASS_MAPPINGS['PreviewAny'] = PreviewAny
++
++
++# ---- test-only nodes
++def _summary(value, depth=0):
++    """Deterministic, comparable description of any value a node returns."""
++    if hasattr(value, 'patch_records'):  # LoRA stand-ins: every patch core's loader added, and attachments
++        return {'object': type(value).__name__, 'patches': _summary(value.patch_records, depth + 1),
++                'attachments': _summary(value.attachments, depth + 1)}
++    if hasattr(value, 'weights') and type(value).__module__.startswith('comfy.weight_adapter'):
++        return {'adapter': type(value).__name__, 'weights': _summary(list(value.weights), depth + 1)}
++    if isinstance(value, torch.Tensor):
++        data = value.detach().contiguous().cpu()
++        return {'tensor': list(data.shape), 'dtype': str(data.dtype),
++                'sha256': hashlib.sha256(data.numpy().tobytes()).hexdigest()}
++    if isinstance(value, dict):
++        return {'dict': {str(k): _summary(v, depth + 1) for k, v in value.items()}}
++    if isinstance(value, (list, tuple)):
++        return {type(value).__name__: [_summary(v, depth + 1) for v in value]}
++    if isinstance(value, (str, int, float, bool)) or value is None:
++        return {type(value).__name__: value}
++    return {'object': type(value).__name__}
++
++
++def _standin(name, run, input_types, return_types, output_node=False, output_is_list=None, input_is_list=False):
++    attrs = {'INPUT_TYPES': classmethod(lambda cls: input_types()), 'RETURN_TYPES': return_types,
++             'FUNCTION': 'run', 'CATEGORY': 'amy-test', 'run': run, 'OUTPUT_NODE': output_node,
++             'INPUT_IS_LIST': input_is_list}
++    if output_is_list is not None:
++        attrs['OUTPUT_IS_LIST'] = output_is_list
++    return type(f'AMYStandin_{name}', (), attrs)
++
++
++def _image(width, height, batch, seed, channels=3):
++    generator = torch.Generator().manual_seed(seed)
++    return torch.rand((batch, height, width, channels), generator=generator, dtype=torch.float32)
++
++
++def _probe(self, label, value=None, after=None):
++    items = value if isinstance(value, list) else [value]
++    return {'ui': {'probe': [json.dumps({'label': label[0] if isinstance(label, list) else label,
++                                         'items': [_summary(item) for item in items]}, sort_keys=True)]}}
++
++
++class StandinModel:
++    """Weightless MODEL: the SDK recognises a ModelPatcher by model_options + load_device."""
++    def __init__(self):
++        self.model_options = {}
++        self.load_device = 'cpu'
++
++
++class StandinCLIP:
++    """Weightless CLIP: the SDK recognises a CLIP by tokenize/encode_from_tokens."""
++    def tokenize(self, text):
++        return {}
++
++
++class StandinVAE:
++    """Weightless VAE: the SDK recognises a VAE by encode + decode. encode() is a deterministic, shape- and
++    pixel-sensitive stand-in (8x8 mean pool of the RGB channels plus their channel mean), so a different crop,
++    channel count or pixel value shows up in the latent."""
++    def encode(self, pixels):
++        x = pixels.movedim(-1, 1).float()
++        pooled = torch.nn.functional.avg_pool2d(x, 8)
++        return torch.cat([pooled, pooled.mean(dim=1, keepdim=True)], dim=1)
++
++    def decode(self, samples):
++        return samples
++
++
++# ---- LoRA stand-ins: core's comfy.sd.load_lora_for_models runs for real on both sides; the MODEL and CLIP record
++# every patch it adds (keys, strengths, adapter weights) and every attachment, so a different LoRA, strength or order
++# shows up in the probe.
++import comfy.lora  # noqa: E402
++
++LORA_KEY_MAPS = {
++    'unet': {'lora_unet_input_blocks_0_0': 'diffusion_model.input_blocks.0.0.weight',
++             'lora_unet_middle_block_1_proj_in': 'diffusion_model.middle_block.1.proj_in.weight'},
++    'clip': {'lora_te_text_model_encoder_layers_0_mlp_fc1': 'clip_l.transformer.text_model.encoder.layers.0.mlp.fc1.weight'},
++}
++
++
++class _LoraRecorder:
++    def _init_records(self, records=None, attachments=None):
++        self.patch_records = list(records or [])
++        self.attachments = dict(attachments or {})
++
++    def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
++        self.patch_records.append({'keys': sorted(patches), 'strength_patch': strength_patch,
++                                   'strength_model': strength_model, 'patches': dict(sorted(patches.items()))})
++        return list(patches)
++
++    def set_attachments(self, key, value):
++        self.attachments[key] = value
++
++
++class LoraModel(_LoraRecorder):
++    """A MODEL as LoRA loaders use it (model_options + load_device make it a ModelPatcher to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['unet'])
++        self.model_options = {}
++        self.load_device = 'cpu'
++        self._init_records(records, attachments)
++
++    def clone(self):
++        return LoraModel(self.patch_records, self.attachments)
++
++
++class _LoraClipPatcher:
++    def __init__(self, owner):
++        self.owner = owner
++        self.forced_hooks = None
++
++    def set_attachments(self, key, value):
++        self.owner.attachments[key] = value
++
++
++class LoraClip(_LoraRecorder):
++    """A CLIP as LoRA loaders use it (tokenize makes it a CLIP to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.cond_stage_model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['clip'])
++        self.patcher = _LoraClipPatcher(self)
++        self._init_records(records, attachments)
++
++    def tokenize(self, text, **kwargs):
++        return {}
++
++    def clone(self):
++        return LoraClip(self.patch_records, self.attachments)
++
++
++def _key_map_unet(model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(model, 'amy_lora_keys', {}))
++    return key_map
++
++
++def _key_map_clip(cond_stage_model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(cond_stage_model, 'amy_lora_keys', {}))
++    return key_map
++
++
++comfy.lora.model_lora_keys_unet = _key_map_unet
++comfy.lora.model_lora_keys_clip = _key_map_clip
++
++
++def _cond(seed):
++    generator = torch.Generator().manual_seed(seed)
++    return [[torch.rand((1, 4, 8), generator=generator), {'pooled_output': torch.rand((1, 8), generator=generator)}]]
++
++
++ANY = '*'
++STANDINS = {
++    'AMYLoraModelClip': _standin('AMYLoraModelClip', lambda self: (LoraModel(), LoraClip()), lambda: {'required': {}},
++                                 ('MODEL', 'CLIP')),
++    'AMYTestModel': _standin('AMYTestModel', lambda self: (StandinModel(),), lambda: {'required': {}}, ('MODEL',)),
++    'AMYTestClip': _standin('AMYTestClip', lambda self: (StandinCLIP(),), lambda: {'required': {}}, ('CLIP',)),
++    'AMYTestVAE': _standin('AMYTestVAE', lambda self: (StandinVAE(),), lambda: {'required': {}}, ('VAE',)),
++    'AMYTestCond': _standin('AMYTestCond', lambda self, seed: (_cond(seed),),
++                            lambda: {'required': {'seed': ('INT', {'default': 0})}}, ('CONDITIONING',)),
++    'AMYTestString': _standin('AMYTestString', lambda self, text: (text,),
++                              lambda: {'required': {'text': ('STRING', {'default': '', 'multiline': True})}},
++                              ('STRING',)),
++    'AMYTestJSON': _standin('AMYTestJSON', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': 'null', 'multiline': True})}},
++                            (ANY,)),
++    'AMYTestList': _standin('AMYTestList', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': '[]', 'multiline': True})}},
++                            (ANY,), output_is_list=(True,)),
++    'AMYTestImage': _standin('AMYTestImage', lambda self, width, height, batch, seed, after=None:
++                             (_image(width, height, batch, seed),),
++                             lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                   'batch': ('INT', {'default': 1}), 'seed': ('INT', {'default': 0})},
++                                      'optional': {'after': (ANY,)}},
++                             ('IMAGE',)),
++    'AMYTestImageList': _standin('AMYTestImageList', lambda self, count, seed:
++                                 ([_image(8 + i, 6, 1, seed + i) for i in range(count)],),
++                                 lambda: {'required': {'count': ('INT', {'default': 3}), 'seed': ('INT', {'default': 0})}},
++                                 ('IMAGE',), output_is_list=(True,)),
++    'AMYTestMask': _standin('AMYTestMask', lambda self, width, height, batch, seed:
++                            (_image(width, height, batch, seed)[..., 0],),
++                            lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                  'batch': ('INT', {'default': 2}), 'seed': ('INT', {'default': 0})}},
++                            ('MASK',)),
++    'AMYProbe': _standin('AMYProbe', _probe,
++                         lambda: {'required': {'label': ('STRING', {'default': ''})},
++                                  'optional': {'value': (ANY,), 'after': (ANY,)}},
++                         (), output_node=True, input_is_list=True),
++}
++core_nodes.NODE_CLASS_MAPPINGS.update(STANDINS)
++
++# ---- the live guest wire, V2 side
++WIRE = None
++if SIDE == 'v2':
++    from comfy_api.latest import _sdk as comfy_sdk
++    spec = importlib.util.spec_from_file_location('amy_overlay_wire',
++                                                  '/overlay/comfy_secure_nodes/transport/wire.py')
++    WIRE = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(WIRE)
++    _unwrap_outputs = comfy_sdk.unwrap_outputs
++
++    async def unwrap_outputs_across_wire(resolver, node_output):
++        if getattr(node_output, 'result', None):
++            WIRE.encode(list(node_output.result), preserve_tuples=True)
++        if getattr(node_output, 'ui', None) is not None:
++            WIRE.encode(node_output.ui, preserve_tuples=True)
++        return await _unwrap_outputs(resolver, node_output)
++
++    comfy_sdk.unwrap_outputs = unwrap_outputs_across_wire
++
++# ---- load the pack under test
++if SIDE == 'original':
++    pack_dir = OUT / 'nodes-root' / 'custom_nodes' / 'efficiency-nodes-comfyui'
++    shutil.copytree('/pack', pack_dir, ignore=shutil.ignore_patterns('v2'))
++    pack_path = str(pack_dir)
++else:
++    pack_path = '/pack/v2'
++LOAD_ERROR = None
++try:
++    loaded = asyncio.run(core_nodes.load_custom_node(pack_path, ignore=set(), module_parent='custom_nodes'))
++except Exception as error:  # recorded, never hidden
++    loaded, LOAD_ERROR = False, f'{type(error).__name__}: {error}'
++
++# ---- the live host's catalogue menus, V2 side
++# The live host builds each V2 node's schema from the manifest and then fills its model and input menus with the
++# host catalogue (overlay comfy_secure_nodes/packdb.py: define_schema -> _core_model_menu_choices ->
++# _core_input_menu_choices); frozen model combos can be empty sentinel lists until then. The in-process
++# loader skips that host step, so the harness applies the overlay's own two functions to every V2 node's schema.
++HOST_MENUS = None
++if SIDE == 'v2' and loaded:
++    sys.path.insert(0, '/overlay')
++    try:
++        from comfy_secure_nodes import packdb as overlay_packdb
++    except Exception as error:  # recorded, never hidden
++        HOST_MENUS = f'unavailable: {type(error).__name__}: {error}'
++    else:
++        wrapped = 0
++        for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
++            if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
++                continue
++            base = cls.__dict__['define_schema'].__func__
++
++            def define_schema(klass, _base=base):
++                schema = _base(klass)
++                schema = overlay_packdb._core_model_menu_choices(schema, klass.SDK_PERMISSIONS)
++                return overlay_packdb._core_input_menu_choices(schema, klass.SDK_PERMISSIONS)
++
++            cls.define_schema = classmethod(define_schema)
++            wrapped += 1
++        HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
++
++
++class Server:
++    def __init__(self):
++        self.client_id = None
++        self.last_node_id = None
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++
++def describe_file(path):
++    data = path.read_bytes()
++    root = OUT / ('temp' if (OUT / 'temp') in path.parents else 'output')
++    row = {'path': f'{root.name}/{path.relative_to(root)}', 'sha256': hashlib.sha256(data).hexdigest(),
++           'bytes': len(data)}
++    if path.suffix.lower() == '.png':
++        from PIL import Image
++        import numpy as np
++        with Image.open(path) as im:
++            row.update({'size': list(im.size), 'mode': im.mode, 'text': dict(getattr(im, 'text', {}) or {}),
++                        'pixels_sha256': hashlib.sha256(np.asarray(im.convert('RGBA')).tobytes()).hexdigest()})
++    return row
++
++
++def run_case(case):
++    result = {'name': case['name'], 'runs': []}
++    for index in range(case.get('runs', 1)):
++        torch.manual_seed(20261102)
++        prompt = json.loads(json.dumps(case['prompt']))
++        prompt_id = f"{case['name']}-{index}"
++        before = {p for root in ('output', 'temp') for p in (OUT / root).rglob('*') if p.is_file()}
++        SENT.clear()
++        valid = asyncio.run(execution.validate_prompt(prompt_id, prompt, None))
++        if not valid[0]:
++            result['runs'].append({'validation_error': json.loads(json.dumps(valid[1], default=str)),
++                                   'node_errors': json.loads(json.dumps(valid[3], default=str))})
++            continue
++        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
++                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
++        extra = {'extra_pnginfo': case['extra_pnginfo']} if case.get('extra_pnginfo') else {}
++        executor.execute(prompt, prompt_id, json.loads(json.dumps(extra)), valid[2])
++        errors = []
++        for event, data in executor.status_messages:
++            if event == 'execution_error':
++                errors.append({'node_id': data.get('node_id'), 'node_type': data.get('node_type'),
++                               'exception_type': data.get('exception_type'),
++                               'exception_message': data.get('exception_message'),
++                               'traceback_tail': ''.join(data.get('traceback') or [])[-1500:]})
++        history = getattr(executor, 'history_result', None) or {}
++        files = sorted((p for root in ('output', 'temp') for p in (OUT / root).rglob('*')
++                        if p.is_file() and p not in before), key=str)
++        result['runs'].append({'success': bool(executor.success), 'errors': errors,
++                               'ui': json.loads(json.dumps(history.get('outputs', {}), default=str)),
++                               'files': [describe_file(p) for p in files],
++                               'sent': [row for row in SENT if row[0] not in ('progress', 'executing')]})
++    return result
++
++
++def main():
++    cases = json.loads(Path(CASES).read_text())
++    report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
++              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
++              'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
++              'routes': len(server.PromptServer.instance.routes), 'cases': []}
++    if loaded:
++        for case in cases:
++            try:
++                report['cases'].append(run_case(case))
++            except Exception as error:  # a harness failure is recorded, never hidden
++                import traceback
++                report['cases'].append({'name': case['name'], 'harness_error': f'{type(error).__name__}: {error}',
++                                        'traceback': traceback.format_exc()[-3000:]})
++    (OUT / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
++
++
++main()
+--- /dev/null
++++ b/v2/tests/test_efficiency_repair_parity.py
+@@ -0,0 +1,230 @@
++"""Tier-1 parity for efficiency-nodes-comfyui repair rounds: the pristine pack (4579b7d6) vs the repaired V2 conversion.
++
++Run in the to-50% gate:
++  run_in_gate.sh <pack root> <v2/tests> <results> test_efficiency_repair_parity.py [ROUND] [CASE-FILTER]
++
++Two workers execute the same prompts through ComfyUI's real executor (eff_parity_worker.py); the V2 worker runs the
++live guest-wire encoder on every V2 node's results and UI, and applies the live host's catalogue menus. Each case
++declares its expected outcome (EXACT, ERROR-PARITY, KNOWN-DIFFERENCE). A V2-only check then confirms that the
++samplers' normalisers turn each SCRIPT tuple back into exactly the fields their sampling code reads.
++Cases use synthetic inputs only; no upstream media, workflows or model files.
++"""
++import copy
++import json
++from pathlib import Path
++import subprocess
++import sys
++
++TESTS = Path(__file__).resolve().parent
++RESULTS = Path('/results')
++WORK = Path('/tmp/amy-eff-parity')
++ROUNDS = ['r1']
++ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
++FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
++CONTROLNET = 'amy-cn.safetensors'
++
++
++def n(node_id, class_type, **inputs):
++    return {node_id: {'class_type': class_type, 'inputs': inputs}}
++
++
++def g(*parts):
++    out = {}
++    for part in parts:
++        out.update(part)
++    return out
++
++
++def case(name, prompt, expect='outputs', note=''):
++    return {'name': name, 'prompt': prompt, 'expect': expect, 'extra_pnginfo': None, 'note': note}
++
++
++def preview(source, node_id='99'):
++    return n(node_id, 'PreviewAny', source=source)
++
++
++def noise(node_id='1', rng='gpu', cfg_denoiser=False, add_seed_noise=False, seed=0, weight=0.015, script=None):
++    inputs = dict(rng_source=rng, cfg_denoiser=cfg_denoiser, add_seed_noise=add_seed_noise, seed=seed, weight=weight)
++    if script is not None:
++        inputs['script'] = script
++    return n(node_id, 'Noise Control Script', **inputs)
++
++
++def tile(node_id='2', strategy='simple', script=None, **options):
++    inputs = dict(upscale_by=1.5, tile_size=256, tiling_strategy=strategy, tiling_steps=2, seed=20261102, denoise=0.35,
++                  use_controlnet=False, tile_controlnet=CONTROLNET, strength=1.0)
++    inputs.update(options)
++    if script is not None:
++        inputs['script'] = script
++    return n(node_id, 'Tiled Upscaler Script', **inputs)
++
++
++def xyplot(x=None, y=None, node_id='plot', **options):
++    inputs = dict(grid_spacing=4, XY_flip='False', Y_label_orientation='Horizontal', cache_models='True',
++                  ksampler_output_image='Images')
++    inputs.update(options)
++    if x is not None:
++        inputs['X'] = x
++    if y is not None:
++        inputs['Y'] = y
++    return n(node_id, 'XY Plot', **inputs)
++
++
++SEEDS = n('x', 'XY Input: Seeds++ Batch', batch_count=2)
++CFG = n('y', 'XY Input: CFG Scale', batch_count=2, first_cfg=6.0, last_cfg=8.0)
++STEPS = n('s', 'XY Input: Steps', target_parameter='steps', batch_count=3, first_step=10, last_step=20,
++          first_start_step=0, last_start_step=10, first_end_step=10, last_end_step=20, first_refine_step=10,
++          last_refine_step=20)
++
++R1_CASES = [
++    case('noise-gpu', g(noise(), preview(['1', 0])), note='live A/B defect: the SCRIPT value was a dict with named keys'),
++    case('noise-cpu', g(noise(rng='cpu'), preview(['1', 0]))),
++    case('noise-flags', g(noise(rng='nv', cfg_denoiser=True, add_seed_noise=True, seed=123, weight=0.5),
++                          preview(['1', 0]))),
++    case('tile-simple', g(tile(), preview(['2', 0]))),
++    case('tile-random-strict', g(tile(strategy='random strict', upscale_by=2.0, tile_size=512, tiling_steps=7,
++                                      seed=5, denoise=0.6, strength=0.5), preview(['2', 0]))),
++    case('tile-none-unconnected', g(tile(strategy='none'), preview(['2', 0]))),
++    case('tile-none-passthrough', g(noise(), tile(strategy='none', script=['1', 0]), preview(['2', 0]))),
++    case('noise-then-tile', g(noise(), tile(script=['1', 0]), preview(['2', 0]))),
++    case('tile-then-noise', g(tile(), noise(node_id='3', script=['2', 0]), preview(['3', 0]))),
++    case('xyplot-seeds-cfg', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0]), preview(['plot', 0])),
++         note='live A/B defect: the xyplot value was a dict with named keys'),
++    case('xyplot-flip-plot', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0], XY_flip='True', ksampler_output_image='Plot',
++                                                  cache_models='False', grid_spacing=0, Y_label_orientation='Vertical'),
++                               preview(['plot', 0]))),
++    case('xyplot-steps-x-only', g(STEPS, xyplot(['s', 0]), preview(['plot', 0]))),
++    case('xyplot-unconnected', g(xyplot(), preview(['plot', 0]))),
++    case('xyplot-same-type', g(SEEDS, n('x2', 'XY Input: Seeds++ Batch', batch_count=3), xyplot(['x', 0], ['x2', 0]),
++                               preview(['plot', 0]))),
++]
++CASES_BY_ROUND = {'r1': R1_CASES}
++CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
++if FILTER:
++    CASES = [c for c in CASES if FILTER in c['name']]
++
++UNIT_CHECK = r'''
++import asyncio, importlib.util, json, sys
++sys.path[:0] = ["/core"]
++sys.argv = ["unit", "--cpu"]
++import comfy.options
++comfy.options.enable_args_parsing()
++spec = importlib.util.spec_from_file_location("_amy_eff_v2", "/pack/v2/__init__.py", submodule_search_locations=["/pack/v2"])
++package = importlib.util.module_from_spec(spec); sys.modules["_amy_eff_v2"] = package; spec.loader.exec_module(package)
++nodes = sys.modules["_amy_eff_v2._secure_nodes"]
++checks = {}
++# the fields the samplers read before this round (the old producers' dicts), from the new tuples
++checks["noise"] = nodes._script_noise(("gpu", True, False, 7, 0.25)) == {
++    "rng_source": "gpu", "cfg_denoiser": True, "add_seed_noise": False, "seed": 7, "weight": 0.25}
++checks["tile"] = nodes._script_tile((1.5, 256, "simple", 2, 20261102, 0.35, None, 1.0)) == {
++    "upscale_by": 1.5, "tile_size": 256, "strategy": "simple", "steps": 2, "seed": 20261102, "denoise": 0.35,
++    "control_net": None, "strength": 1.0}
++checks["xyplot"] = nodes._script_xyplot(("Seeds++ Batch", [0, 1], "CFG Scale", [6.0, 8.0], 4, "Horizontal", "True",
++                                         False, "plot", None)) == {
++    "x_type": "Seeds++ Batch", "x_values": [0, 1], "y_type": "CFG Scale", "y_values": [6.0, 8.0], "grid_spacing": 4,
++    "y_label_orientation": "Horizontal", "cache_models": True, "plot_as_output": False, "node_id": "plot",
++    "dependencies": None}
++checks["xyplot-cache-false"] = nodes._script_xyplot(("A", [""], "B", [""], 0, "Vertical", "False", True, "1", None))["cache_models"] is False
++checks["dict-passthrough"] = nodes._script_noise({"rng_source": "cpu"}) == {"rng_source": "cpu"} and nodes._script_tile(None) is None
++print(json.dumps(checks))
++'''
++
++
++def run_side(side):
++    out = WORK / side
++    out.mkdir(parents=True, exist_ok=True)
++    cmd = [sys.executable, '-I', '-B', str(TESTS / 'eff_parity_worker.py'), side, str(WORK / 'cases.json'),
++           str(out), str(WORK / 'fixtures')]
++    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3000)
++    (RESULTS / f'worker-{side}.log').write_text(proc.stdout[-20000:] + '\n--- stderr ---\n' + proc.stderr[-40000:])
++    if proc.returncode != 0 or not (out / 'report.json').exists():
++        raise RuntimeError(f'{side} worker failed rc={proc.returncode}: {proc.stderr[-3000:]}')
++    (RESULTS / f'worker-{side}.json').write_bytes((out / 'report.json').read_bytes())
++    report = json.loads((out / 'report.json').read_text())
++    if not report['loaded']:
++        raise RuntimeError(f'{side}: pack did not load: {report["load_error"]}')
++    return report
++
++
++def errors_of(run):
++    return [(e['exception_type'].rsplit('.', 1)[-1], e['exception_message']) for e in run.get('errors', [])]
++
++
++def comparable(run):
++    ui = {}
++    for node_id, node_ui in sorted(run.get('ui', {}).items()):
++        value = copy.deepcopy(node_ui)
++        if 'probe' in value:
++            value['probe'] = [json.loads(item) for item in value['probe']]
++        ui[node_id] = value
++    files = [{k: f.get(k) for k in ('path', 'sha256', 'pixels_sha256', 'size', 'mode', 'text')} for f in run['files']]
++    return {'ui': ui, 'files': files}
++
++
++def compare(spec, orig, conv):
++    name, expect = spec['name'], spec['expect']
++    row = {'case': name, 'expect': expect}
++    if spec.get('note'):
++        row['note'] = spec['note']
++    if 'harness_error' in orig or 'harness_error' in conv:
++        return {**row, 'verdict': 'HARNESS-ERROR', 'original': orig.get('harness_error'), 'v2': conv.get('harness_error')}
++    run_o, run_c = orig['runs'][-1], conv['runs'][-1]
++    if 'validation_error' in run_o or 'validation_error' in run_c:
++        return {**row, 'verdict': 'MISMATCH', 'validation': [run_o.get('node_errors'), run_c.get('node_errors')]}
++    err_o, err_c = errors_of(run_o), errors_of(run_c)
++    if expect == 'error':
++        ok = bool(err_o) and err_o == err_c
++        return {**row, 'verdict': 'ERROR-PARITY' if ok else 'MISMATCH', 'errors': [err_o, err_c]}
++    if err_o or err_c:
++        return {**row, 'verdict': 'MISMATCH', 'errors': [err_o, err_c]}
++    co, cc = comparable(run_o), comparable(run_c)
++    if not co['ui'] and not co['files']:
++        return {**row, 'verdict': 'MISMATCH', 'notes': 'nothing observable on the original side'}
++    if co != cc:
++        return {**row, 'verdict': 'MISMATCH', 'original': co, 'v2': cc}
++    return {**row, 'verdict': 'EXACT', 'observed': co}
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (WORK / 'fixtures' / 'controlnet').mkdir(parents=True, exist_ok=True)
++    (WORK / 'fixtures' / 'controlnet' / CONTROLNET).write_bytes(b'AMY-FIXTURE-NOT-LOADED')  # menu entry only
++    (WORK / 'cases.json').write_text(json.dumps(CASES, indent=1))
++    original = run_side('original')
++    converted = run_side('v2')
++    by_o = {c['name']: c for c in original['cases']}
++    by_c = {c['name']: c for c in converted['cases']}
++    rows = [compare(spec, by_o[spec['name']], by_c[spec['name']]) for spec in CASES]
++    counts = {}
++    for row in rows:
++        counts[row['verdict']] = counts.get(row['verdict'], 0) + 1
++    unit = subprocess.run([sys.executable, '-I', '-B', '-c', UNIT_CHECK], capture_output=True, text=True, timeout=600)
++    try:
++        unit_checks = json.loads(unit.stdout.strip().splitlines()[-1])
++    except (ValueError, IndexError):
++        unit_checks = {'error': unit.stderr[-2000:]}
++    control = {'verdict': 'NOT-RUN'}
++    if next((r for r in rows if r['case'] == 'noise-gpu' and r['verdict'] == 'EXACT'), None):
++        spec = next(s for s in CASES if s['name'] == 'noise-gpu')
++        tampered = copy.deepcopy(by_c['noise-gpu'])
++        tampered['runs'][-1]['ui']['99']['text'][0] = tampered['runs'][-1]['ui']['99']['text'][0].replace('0.015', '0.016')
++        control = compare(spec, by_o['noise-gpu'], tampered)
++    report = {'pack': 'efficiency-nodes-comfyui', 'round': ROUND, 'rounds_run': ROUNDS[:ROUNDS.index(ROUND) + 1],
++              'pin': '4579b7d6076b2870998a08f5d37883fbc8261ff2', 'host_menus_v2': converted.get('host_menus'),
++              'harness': 'ComfyUI core at /core (PromptExecutor, classic cache) on both sides; V2 results and UI '
++                         'encoded with the live overlay transport/wire.py; live host catalogue menus on V2 schemas',
++              'counts': counts, 'cases': rows, 'v2_normaliser_checks': unit_checks,
++              'negative_control': {'case': 'noise-gpu', 'verdict_after_tamper': control['verdict'],
++                                   'turned_red': control['verdict'] == 'MISMATCH'}}
++    (RESULTS / 'parity.json').write_text(json.dumps(report, indent=2) + '\n')
++    print(json.dumps({'counts': counts, 'negative_control': report['negative_control'],
++                      'v2_normaliser_checks': unit_checks,
++                      'not_green': [{k: r.get(k) for k in ('case', 'verdict', 'errors', 'original', 'v2')} for r in rows
++                                    if r['verdict'] not in ('EXACT', 'ERROR-PARITY', 'KNOWN-DIFFERENCE')]},
++                     indent=1)[:12000])
++    ok = (set(counts) <= {'EXACT', 'ERROR-PARITY', 'KNOWN-DIFFERENCE'} and control['verdict'] in ('MISMATCH', 'NOT-RUN')
++          and unit_checks and all(v is True for v in unit_checks.values()))
++    sys.exit(0 if ok else 1)
++
++
++main()

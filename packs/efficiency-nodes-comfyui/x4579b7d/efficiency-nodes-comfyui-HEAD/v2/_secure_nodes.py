@@ -708,15 +708,46 @@ async def _apply_controlnet_stack(positive, negative, cnet_stack=None, **_kwargs
     return positive, negative
 
 
+def _script_noise(value):
+    """A "noise" SCRIPT entry as the sampler code reads it. The node emits the original's tuple
+    (rng_source, cfg_denoiser, add_seed_noise, seed, weight) (efficiency_nodes.py:4049)."""
+    if value is None or isinstance(value, dict):
+        return value
+    rng_source, cfg_denoiser, add_seed_noise, seed, weight = value
+    return {"rng_source": str(rng_source), "cfg_denoiser": bool(cfg_denoiser),
+            "add_seed_noise": bool(add_seed_noise), "seed": int(seed), "weight": float(weight)}
+
+
+def _script_tile(value):
+    """A "tile" SCRIPT entry as the sampler code reads it. The node emits the original's tuple
+    (upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, tile_controlnet, strength)
+    (efficiency_nodes.py:4239)."""
+    if value is None or isinstance(value, dict):
+        return value
+    upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, tile_controlnet, strength = value
+    return {"upscale_by": float(upscale_by), "tile_size": int(tile_size), "strategy": str(tiling_strategy),
+            "steps": int(tiling_steps), "seed": int(seed), "denoise": float(denoise),
+            "control_net": tile_controlnet, "strength": float(strength)}
+
+
+def _script_xyplot(value):
+    """An "xyplot" SCRIPT entry as the XY sampler reads it. The node emits the original's tuple (X_type, X_value,
+    Y_type, Y_value, grid_spacing, Y_label_orientation, cache_models, xyplot_as_output_image, my_unique_id,
+    dependencies) (efficiency_nodes.py:2452-2453), cache_models being the widget's "True"/"False"."""
+    if value is None or isinstance(value, dict):
+        return value
+    (x_type, x_values, y_type, y_values, grid_spacing, y_label_orientation, cache_models, plot_as_output,
+     node_id, dependencies) = value
+    return {"x_type": x_type, "x_values": x_values, "y_type": y_type, "y_values": y_values,
+            "grid_spacing": int(grid_spacing), "y_label_orientation": str(y_label_orientation),
+            "cache_models": cache_models == "True", "plot_as_output": bool(plot_as_output),
+            "node_id": node_id, "dependencies": dependencies}
+
+
 def _noise_script(rng_source, cfg_denoiser, add_seed_noise, seed, weight, script=None):
+    """Noise Control Script as the original (efficiency_nodes.py:4047-4050)."""
     output = _script_copy(script)
-    output["noise"] = {
-        "rng_source": str(rng_source),
-        "cfg_denoiser": bool(cfg_denoiser),
-        "add_seed_noise": bool(add_seed_noise),
-        "seed": int(seed),
-        "weight": float(weight),
-    }
+    output["noise"] = (rng_source, cfg_denoiser, add_seed_noise, seed, weight)
     return (output,)
 
 
@@ -811,22 +842,15 @@ async def _tile_script(
     strength,
     script=None,
 ):
-    output = _script_copy(script)
+    """Tiled Upscaler Script as the original (efficiency_nodes.py:4233-4240): with strategy "none" the incoming script
+    passes through unchanged (None when nothing is connected)."""
     if tiling_strategy != "none":
+        script = _script_copy(script)
         control_net = None
         if use_controlnet:
             control_net = await _ctx().models.load_controlnet(_safe_asset_name(tile_controlnet))
-        output["tile"] = {
-            "upscale_by": float(upscale_by),
-            "tile_size": int(tile_size),
-            "strategy": str(tiling_strategy),
-            "steps": int(tiling_steps),
-            "seed": int(seed),
-            "denoise": float(denoise),
-            "control_net": control_net,
-            "strength": float(strength),
-        }
-    return (output,)
+        script["tile"] = (upscale_by, tile_size, tiling_strategy, tiling_steps, seed, denoise, control_net, strength)
+    return (script,)
 
 
 # ---------------------------------------------------------------------------
@@ -1387,9 +1411,10 @@ def _xy_plot(
     my_unique_id=None,
     **_kwargs,
 ):
+    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple."""
     x_type, x_values = X if X is not None else ("Nothing", [""])
     y_type, y_values = Y if Y is not None else ("Nothing", [""])
-    if x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
+    if x_type != "XY_Capsule" and x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
         return (None,)
     dependency_types = {
         "Checkpoint", "Refiner", "LoRA", "LoRA Stacks", "LoRA Batch", "LoRA Wt",
@@ -1416,26 +1441,14 @@ def _xy_plot(
     if y_type == "Scheduler" and x_type != "Sampler":
         y_values = [(value, None) for value in y_values]
     if x_type == "Checkpoint" and y_type == "VAE":
+        # The original's matching elif (Y_type == "VAE" and X_type == "Checkpoint") repeats this condition, so
+        # Y values are never cleaned.
         x_values = [(value[0], value[1], None) for value in x_values]
-    elif y_type == "Checkpoint" and x_type == "VAE":
-        y_values = [(value[0], value[1], None) for value in y_values]
     if XY_flip == "True":
         x_type, y_type, x_values, y_values = y_type, x_type, y_values, x_values
-    output = {
-        "xyplot": {
-            "x_type": x_type,
-            "x_values": x_values,
-            "y_type": y_type,
-            "y_values": y_values,
-            "grid_spacing": int(grid_spacing),
-            "y_label_orientation": str(Y_label_orientation),
-            "cache_models": cache_models == "True",
-            "plot_as_output": ksampler_output_image == "Plot",
-            "node_id": my_unique_id,
-            "dependencies": dependencies,
-        }
-    }
-    return (output,)
+    xyplot_as_output_image = ksampler_output_image == "Plot"
+    return ({"xyplot": (x_type, x_values, y_type, y_values, grid_spacing, Y_label_orientation, cache_models,
+                        xyplot_as_output_image, my_unique_id, dependencies)},)
 
 
 # Loader and sampler handlers are defined below, after their shared utilities.
@@ -2276,7 +2289,7 @@ async def _post_scripts(
                 )
                 image = None
 
-    tile = (script or {}).get("tile")
+    tile = _script_tile((script or {}).get("tile"))
     if tile:
         image = image or await (
             vae.decode_tiled(latent, tile_size=320)
@@ -2631,7 +2644,7 @@ async def _sampler_common(
             return_with_leftover_noise=return_with_leftover_noise,
             sdxl_tuple=sdxl_tuple,
         )
-    noise_recipe = (script or {}).get("noise")
+    noise_recipe = _script_noise((script or {}).get("noise"))
     if sampler_type == "sdxl":
         base_model, _clip, base_positive, base_negative, refiner_model, _rclip, refiner_positive, refiner_negative = sdxl_tuple
         switch = int(steps) if int(end_at_step) == -1 else int(end_at_step)
@@ -3017,7 +3030,7 @@ async def _sample_xy_plot(
     return_with_leftover_noise,
     sdxl_tuple,
 ):
-    recipe = script["xyplot"]
+    recipe = _script_xyplot(script["xyplot"])
     dependencies = recipe.get("dependencies")
     base_state = _dependency_state(
         dependencies, model=model, positive=positive, negative=negative,
@@ -3049,7 +3062,7 @@ async def _sample_xy_plot(
             if rebuild:
                 await _rebuild_variant_state(state, sampler_type)
             cell_latent = await sdk.LatentRef.from_value(copy.deepcopy(initial))
-            noise_recipe = script.get("noise")
+            noise_recipe = _script_noise(script.get("noise"))
             if sampler_type == "sdxl":
                 switch = int(params["steps"]) if int(params["end_step"] or -1) == -1 else int(params["end_step"])
                 sampled = await _sample_once(
