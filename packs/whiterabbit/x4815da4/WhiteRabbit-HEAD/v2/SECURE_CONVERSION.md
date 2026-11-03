@@ -69,3 +69,16 @@ for the adapted ComfyUI-Frame-Interpolation architecture.
   when the prompt is validated. A missing file gets core's "Value not in list" text.
 - **Dependency profile.** `runtime.dependencies.profile_sha256` is the one the reference deployment
   resolved for `torchlanc==1.1.1`.
+
+## RIFE checkpoints: the two pickle menu entries load their registered SafeTensors conversions (repair NED r2)
+- The RIFE menus keep upstream's four names. `rife47.pth` and `rife49.pth` are pickles, which the engine's asset
+  guard does not load. Each is now declared as its registered SafeTensors conversion (`rife47.safetensors`,
+  `rife49.safetensors`: tensor-equal state dicts under the same tensor names), so selecting either name loads the
+  same tensors through the same brokered asset path. `rife_v4.25.safetensors` and `rife_v4.26.safetensors` are
+  unchanged.
+- The menu names are bound to their declarations explicitly (`_RIFE_BY_NAME`); a name is never inferred from a file
+  name. The architecture is still chosen from the menu name, as before.
+- `secure-nodes.json`: in the four RIFE rows, the two `required_weights` entries change accordingly; nothing else in
+  the manifest changes.
+- `tests/test_rife_converted_weights.py` checks the declarations, the menu binding, the manifest rows against the
+  real encoder, and the load path (with stand-in tensors: the request, the asset and the strict state-dict load).

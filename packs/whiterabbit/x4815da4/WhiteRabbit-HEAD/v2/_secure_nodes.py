@@ -43,20 +43,25 @@ from .whiterabbit.runtime.watermark_composite import WatermarkCompositor
 from .whiterabbit.services.rife import RifeService
 
 
+# The menus' two pickle checkpoints (rife47.pth, rife49.pth) are declared as their registered SafeTensors
+# conversions: tensor-equal state dicts under the same tensor names, loaded through the same asset path.
+# PLACEHOLDER hosting: a test-runtime registry copy, pending the production hosting decision.
+_CONVERTED_REPO = "gerald-test-local/frame-interpolation-converted"  # PLACEHOLDER: test runtime only
+_CONVERTED_REVISION = "0ded1dfec262aa44342e4d437ff2522fbb9f626c"     # PLACEHOLDER
 _RIFE_47 = sdk.HuggingFaceWeight(
-    repo_id="dci05049/rife47.pth",
-    filename="rife47.pth",
+    repo_id=_CONVERTED_REPO,
+    filename="rife47.safetensors",
     folder="frame_interpolation",
-    revision="40100cdd99f12af05f1e3630f8de32208d741fbc",
-    sha256="6a8a825ab2750558bdd20dcced386fd82b7222c7ba58c11d3b611d9c44f1be63",
+    revision=_CONVERTED_REVISION,
+    sha256="e9066087e39b287445fe1575d3ad83e331b3f97c98a208f1131c26d67b9cdc80",
     on_demand=True,
 )
 _RIFE_49 = sdk.HuggingFaceWeight(
-    repo_id="VMTamashii/rife49",
-    filename="rife49.pth",
+    repo_id=_CONVERTED_REPO,
+    filename="rife49.safetensors",
     folder="frame_interpolation",
-    revision="6213b4f9df15a06c7883ad6c9362c44a44ba2fa4",
-    sha256="e55fd00f3cc184e3c65961f4bb827a9da022e78eed36b055242c0ac30000d533",
+    revision=_CONVERTED_REVISION,
+    sha256="ee9d43496be4a7e77da40b0aaee3f68e1ee94c51f74b4a09d612836430fa36d9",
     on_demand=True,
 )
 _RIFE_425 = sdk.HuggingFaceWeight(
@@ -76,7 +81,13 @@ _RIFE_426 = sdk.HuggingFaceWeight(
     on_demand=True,
 )
 _RIFE_WEIGHTS = (_RIFE_47, _RIFE_49, _RIFE_425, _RIFE_426)
-_RIFE_BY_NAME = {item.filename.rsplit("/", 1)[-1]: item for item in _RIFE_WEIGHTS}
+# Each menu name is bound explicitly to its declaration; a name is never inferred from a file name.
+_RIFE_BY_NAME = {
+    "rife47.pth": _RIFE_47,
+    "rife49.pth": _RIFE_49,
+    "rife_v4.25.safetensors": _RIFE_425,
+    "rife_v4.26.safetensors": _RIFE_426,
+}
 _RIFE_CACHE: dict[str, LoadedRifeModel] = {}
 
 
