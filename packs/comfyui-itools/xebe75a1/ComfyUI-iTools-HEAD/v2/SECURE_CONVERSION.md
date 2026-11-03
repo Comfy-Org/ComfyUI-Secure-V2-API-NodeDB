@@ -82,3 +82,13 @@ Rejected: none. Pending API gaps: none.
   - the "not found" message is the original's.
 - **Template menu.** The node declares the original's validator for `template_name`. A template from a file
   other than `basic.yaml` is therefore accepted, as in the original. The file menu is still checked.
+
+## Dependency profile (NED profile r1): pyyaml 6.0.3
+- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not
+  Core's requirements. Base 0cd9adec has no pyyaml.
+- `nodes.py` imports `yaml` when it loads, so without a profile no row of this pack loads.
+- `pyproject.toml` pins `pyyaml==6.0.3` for the pack's profile (cp313 manylinux wheel, PyPI sha256
+  0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6).
+- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.
+- `tests/test_itools_yaml_profile.py` hides every yaml except the pinned one under /deps. Without it every row
+  fails to load; with it every row loads, and the Prompt Styler equals the original in a real guest.
