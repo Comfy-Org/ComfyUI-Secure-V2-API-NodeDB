@@ -1,14 +1,14 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,98 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 45 of the 220 registered node ids are converted. The other 175 are registered with their real schemas and refuse
++Status: 62 of the 220 registered node ids are converted. The other 158 are registered with their real schemas and refuse
 +with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-+so core never calls its validate_inputs), when it runs. The original declares one more id,
++so core never calls its validate_inputs), when it runs. Image Lucy Sharpen refuses with its own message (Known differences). The original declares one more id,
 +`CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 +(WAS_Node_Suite.py:14662-14720). It is not registered here.
 +
@@ -23,6 +23,10 @@
 +- Round 3: Image Size to Number, Latent Size to Number, Create Grid Image from Batch, Image Batch, Images to RGB,
 +  Tensor Batch to Image, Convert Masks to Images, Masks Combine Batch, Image to Seed and Image Blank. Their tensors
 +  reach the guest as raw values and leave as raw values.
++- Round 4: Image Blend, Image Bloom Filter, Image Bounds, Image Chromatic Aberration, Image Crop Location, Image
++  Levels Adjustment, Image Paste Crop, Image Resize, Image Rotate, Image Select Color, Bounded
++  Image Blend with Mask, Bounded Image Crop with Mask, Masks Subtract, Text Find and Replace Input, Bus Node, Blend
++  Latents and Image Film Grain.
 +
 +## How the conversion is built
 +
@@ -83,6 +87,13 @@
 +  chosen one unchanged, as the original returned the chosen object.
 +- Masks Combine Batch: the original's `__init__` only builds the pack's filter toolbox (WAS_Tools_Class,
 +  WAS_Node_Suite.py:1022-2456), which `combine_masks` never uses. V2 creates the instance without it.
++- Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
++  the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
++  outputs are equal only when both processes start from the same RNG state.
++- Image Lucy Sharpen is refused by name at validation. The original sharpens with scipy.signal.convolve2d, and
++  this pack's guest runtime does not provide scipy yet. It returns once it does.
++- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
++  conditioning counts as present even if it is an empty list.
 +- Schemas of refused nodes come from the default configuration:
 +  - the style menus (no styles.json) and the history loaders (no history database);
 +  - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on
@@ -5059,7 +5070,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28780 @@
+@@ -0,0 +1,28678 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -5406,7 +5417,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -5531,13 +5542,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Boolean To Text": {
 +      "class": "WAS_V2_Boolean_To_Text_7dd28b0a",
@@ -5746,7 +5751,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -5879,13 +5884,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Bounded Image Crop": {
 +      "class": "WAS_V2_Bounded_Image_Crop_afce9904",
@@ -5974,7 +5973,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -6141,20 +6140,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Bus Node": {
 +      "class": "WAS_V2_Bus_Node_5e9a80aa",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -6329,13 +6322,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": true
 +    },
 +    "CLIP Input Switch": {
 +      "class": "WAS_V2_CLIP_Input_Switch_f3a55833",
@@ -10481,7 +10468,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -10569,13 +10556,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Blend by Mask": {
 +      "class": "WAS_V2_Image_Blend_by_Mask_dc3a65cc",
@@ -10837,7 +10818,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -10930,20 +10911,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Bounds": {
 +      "class": "WAS_V2_Image_Bounds_61d28e76",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -10998,13 +10973,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Bounds to Console": {
 +      "class": "WAS_V2_Image_Bounds_to_Console_ccff706a",
@@ -11232,7 +11201,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -11382,13 +11351,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Color Palette": {
 +      "class": "WAS_V2_Image_Color_Palette_962b68a7",
@@ -11649,7 +11612,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -11790,13 +11753,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Crop Square Location": {
 +      "class": "WAS_V2_Image_Crop_Square_Location_470b5fa5",
@@ -12362,7 +12319,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -12493,13 +12450,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Filter Adjustments": {
 +      "class": "WAS_V2_Image_Filter_Adjustments_c5e5a9d0",
@@ -13437,7 +13388,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -13549,13 +13500,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Load": {
 +      "class": "WAS_V2_Image_Load_30b05bc2",
@@ -14474,7 +14419,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -14605,13 +14550,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Paste Crop by Location": {
 +      "class": "WAS_V2_Image_Paste_Crop_by_Location_b9c46cab",
@@ -16380,7 +16319,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -16575,20 +16514,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Rotate": {
 +      "class": "WAS_V2_Image_Rotate_38727a01",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -16717,13 +16650,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Rotate Hue": {
 +      "class": "WAS_V2_Image_Rotate_Hue_2174f6bf",
@@ -17898,7 +17825,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -18029,13 +17956,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Send HTTP": {
 +      "class": "WAS_V2_Image_Send_HTTP_5ffb42bc",
@@ -25679,7 +25600,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -25748,13 +25669,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "MiDaS Depth Approximation": {
 +      "class": "WAS_V2_MiDaS_Depth_Approximation_14754355",
@@ -30382,8 +30297,8 @@
 +      "class": "WAS_V2_Text_Find_and_Replace_Input_d2000eed",
 +      "methods": {
 +        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "fingerprint_inputs": true,
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -30502,13 +30417,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Text Find and Replace by Dictionary": {
 +      "class": "WAS_V2_Text_Find_and_Replace_by_Dictionary_3e638c13",
@@ -33842,7 +33751,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/bare_load_check.py
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,76 @@
 +"""Production-style bare load of every secure-nodes.json row (gate container only; run by the parity test).
 +
 +The secure runtime mounts v2/ as a bare namespace package (its __init__.py is NOT executed), imports
@@ -33898,8 +33807,10 @@
 +# Values mode (a row without sdk_refs): the guest materializes tensor and value refs and refuses any other handle
 +# (comfy_secure_nodes/guest/adapter.py materialize). A converted node without sdk_refs may therefore take only value,
 +# tensor, latent and conditioning inputs.
++# WAS's own data sockets cross as data too: IMAGE_BOUNDS (lists of numbers, or of 0-dim tensors that the host wraps
++# leaf by leaf and the guest materializes) and CROP_DATA (tuples of ints).
 +VALUES_SAFE = {"STRING", "INT", "FLOAT", "BOOLEAN", "COMBO", "NUMBER", "SEED", "LIST", "IMAGE", "MASK", "LATENT",
-+               "CONDITIONING", "*"}
++               "CONDITIONING", "IMAGE_BOUNDS", "CROP_DATA", "*"}
 +nodes_module = importlib.import_module(f"{NAME}.was_v2.nodes")
 +values_mode_issues = {}
 +for node_id in nodes_module.CONVERTED_IDS:
@@ -33983,7 +33894,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,671 @@
+@@ -0,0 +1,767 @@
 +"""Tier-1 parity: WAS Node Suite fork (44de7058) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -34378,6 +34289,95 @@
 +                               probe(image=['11', 0]))),
 +]
 +
++# ---- phase B batch 3 (r4): image, mask, latent and bus nodes
++BLEND_OPS = ['add', 'multiply', 'divide', 'subtract', 'overlay', 'hard_light', 'soft_light', 'screen', 'linear_dodge',
++             'difference', 'exclusion', 'random']
++
++CASES += [
++    case('image-blend', g(image(seed=1), test_image('5', seed=2),
++                          node('11', 'Image Blend', image_a=['2', 0], image_b=['5', 0], blend_percentage=0.3),
++                          probe(image=['11', 0]))),
++    case('image-bloom', g(image(width=32, height=24, seed=3),
++                          node('11', 'Image Bloom Filter', image=['2', 0], radius=4.5, intensity=0.7),
++                          probe(image=['11', 0]))),
++    case('image-bounds', g(image(width=20, height=10), node('11', 'Image Bounds', image=['2', 0]),
++                           probe(files=['11', 0]))),
++    case('image-chromatic-aberration', g(image(width=32, height=24, seed=4),
++                                         node('11', 'Image Chromatic Aberration', image=['2', 0], red_offset=3,
++                                              green_offset=-2, blue_offset=1, intensity=0.6, fade_radius=8),
++                                         probe(image=['11', 0]))),
++    case('image-crop-location-and-paste', g(image(width=40, height=32, seed=5),
++                                            node('11', 'Image Crop Location', image=['2', 0], top=4, left=6, right=30,
++                                                 bottom=24),
++                                            node('12', 'Image Paste Crop', image=['2', 0], crop_image=['11', 0],
++                                                 crop_data=['11', 1], crop_blending=0.25, crop_sharpening=1),
++                                            probe(image=['12', 0], files=['11', 1]), probe_at('98', image=['12', 1]))),
++    case('image-levels', g(image(seed=6), node('11', 'Image Levels Adjustment', image=['2', 0], black_level=20.0,
++                                               mid_level=110.0, white_level=230.0),
++                           probe(image=['11', 0]))),
++] + [
++    case(f'image-resize-{mode}-{res}', g(image(width=20, height=12, seed=7),
++                                         node('11', 'Image Resize', image=['2', 0], mode=mode, supersample=ss,
++                                              resampling=res, rescale_factor=1.5, resize_width=26, resize_height=18),
++                                         probe(image=['11', 0])))
++    for mode, ss, res in (('rescale', 'true', 'lanczos'), ('rescale', 'false', 'nearest'),
++                          ('resize', 'false', 'bilinear'), ('resize', 'true', 'bicubic'))
++] + [
++    case(f'image-rotate-{mode}-{rotation}', g(image(width=20, height=12, seed=8),
++                                              node('11', 'Image Rotate', images=['2', 0], mode=mode, rotation=rotation,
++                                                   sampler=sampler),
++                                              probe(image=['11', 0])))
++    for mode, rotation, sampler in (('transpose', 90, 'nearest'), ('internal', 270, 'bilinear'),
++                                    ('transpose', 180, 'bicubic'))
++] + [
++    case('image-select-color', g(image(seed=9), node('11', 'Image Select Color', image=['2', 0], red=200, green=100,
++                                                     blue=50, variance=80),
++                                 probe(image=['11', 0]))),
++    # Refused by name until the guest runtime provides scipy (the original uses scipy.signal.convolve2d).
++    case('image-lucy-sharpen-needs-scipy', g(image(width=24, height=16, seed=10),
++                                             node('11', 'Image Lucy Sharpen', images=['2', 0], iterations=2,
++                                                  kernel_size=3),
++                                             probe(image=['11', 0])),
++         expect='refused-named:scipy.signal.convolve2d from scipy'),
++    case('bounded-crop-and-blend', g(image(width=40, height=32, seed=11), mask_from(),
++                                     node('11', 'Bounded Image Crop with Mask', image=['30', 0], mask=['30', 1],
++                                          padding_left=2, padding_right=3, padding_top=1, padding_bottom=0),
++                                     node('12', 'Image Levels Adjustment', image=['11', 0], black_level=10.0,
++                                          mid_level=127.5, white_level=240.0),
++                                     node('13', 'Bounded Image Blend with Mask', target=['30', 0], target_mask=['30', 1],
++                                          target_bounds=['11', 1], source=['12', 0], blend_factor=0.8, feathering=4),
++                                     probe(image=['13', 0], files=['11', 1]), probe_at('98', image=['11', 0]))),
++    case('masks-subtract', g(image(seed=12), mask_from(),
++                             node('31', 'ImagePadForOutpaint', image=['2', 0], left=0, top=8, right=8, bottom=0,
++                                  feathering=0),
++                             node('11', 'Masks Subtract', masks_a=['31', 1], masks_b=['30', 1]),
++                             probe(files=['11', 0]))),
++    case('text-find-replace-input', g(text('10', 'a cat and a cat'), text('13', 'cat'), text('14', 'dog'),
++                                      node('11', 'Text Find and Replace Input', text=['10', 0], find=['13', 0],
++                                           replace=['14', 0]),
++                                      probe(**outs('11', text=0, number=1, number_float=2, number_int=3))), runs=2),
++    case('bus-node', g(ckpt(), text('10', 'x'), node('15', 'Text to Conditioning', clip=['1', 1], text=['10', 0]),
++                       node('11', 'Bus Node', model=['1', 0], clip=['1', 1], vae=['1', 2], positive=['15', 0]),
++                       node('12', 'Load Lora', model=['1', 0], clip=['1', 1], lora_name='test-lora.safetensors',
++                            strength_model=0.5, strength_clip=0.5),
++                       node('13', 'Bus Node', bus=['11', 0], model=['12', 0]),
++                       probe(model=['13', 1], clip=['13', 2], conditioning=['13', 4], files=['13', 3]))),
++    case('bus-node-missing-model-error', g(ckpt(), node('11', 'Bus Node', clip=['1', 1], vae=['1', 2]),
++                                           probe(clip=['11', 2])), expect='error'),
++] + [
++    case(f'blend-latents-{op}', g(node('20', 'EmptyLatentImage', width=64, height=64, batch_size=1),
++                                  node('21', 'Latent Noise Injection', samples=['20', 0], noise_std=0.5),
++                                  node('11', 'Blend Latents', latent_a=['21', 0], latent_b=['20', 0], operation=op,
++                                       blend=0.35),
++                                  probe(latent=['11', 0])))
++    for op in BLEND_OPS
++] + [
++    case('image-film-grain', g(image(width=24, height=16, seed=13),
++                               node('11', 'Image Film Grain', image=['2', 0], density=0.3, intensity=0.5,
++                                    highlights=1.1, supersample_factor=2),
++                               probe(image=['11', 0]))),
++]
++
 +
 +def run_side(side):
 +    out = WORK / side
@@ -34454,6 +34454,12 @@
 +        text = json.dumps([r.get('node_errors') for r in validation_c])
 +        ok = not validation_o and all(r.get('success') for r in runs_o) and validation_c \
 +            and 'is not yet converted to Secure Nodes V2' in text
++        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
++                'v2_validation': text[:400]}
++    if expect.startswith('refused-named:'):
++        phrase = expect.split(':', 1)[1]
++        text = json.dumps([r.get('node_errors') for r in validation_c])
++        ok = not validation_o and all(r.get('success') for r in runs_o) and bool(validation_c) and phrase in text
 +        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
 +                'v2_validation': text[:400]}
 +    if validation_o or validation_c:
@@ -34637,6 +34643,7 @@
 +                         'stand-ins recording every LoRA patch; frozen clocks; torch seeded before every prompt',
 +              'counts': counts, 'cases': rows, 'schema_counts': schema_counts,
 +              'schemas': {k: v for k, v in schemas.items() if v != 'EXACT'}, 'schema_ids': sorted(schemas),
++              'values_mode_boundary_checked': converted.get('values_mode_boundary_checked'),
 +              'bare_load': {'ok': bare_ok, 'rows': bare.get('rows'), 'loaded': bare.get('ok'),
 +                            'failures': bare.get('failures'), 'root_init_executed': bare.get('root_init_executed'),
 +                            'converted': bare.get('converted'), 'values_mode_issues': bare.get('values_mode_issues'),
@@ -34657,7 +34664,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/was_parity_worker.py
-@@ -0,0 +1,360 @@
+@@ -0,0 +1,410 @@
 +"""One side of the WAS Node Suite parity run (gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -34675,6 +34682,7 @@
 +import json
 +import os
 +from pathlib import Path
++import random
 +import shutil
 +import struct
 +import sys
@@ -34885,6 +34893,53 @@
 +PACK_MODULE = sys.modules[pack_path.replace('.', '_x_')]
 +PACK_IDS = sorted(PACK_MODULE.NODE_CLASS_MAPPINGS)
 +
++# ---- the guest's values-mode output boundary (V2 side only)
++# In production a node without SDK_REFS runs in values mode, and the guest wraps its outputs by declared type
++# (comfy_secure_nodes/guest/fixr1_compat.py wrap_output):
++#   - a declared MASK array must be a bounded B,H,W (or B,1,H,W) mask;
++#   - a declared IMAGE of rank 3 becomes one-channel BHWC;
++#   - anything else that is not plain data gets _ref_type_for's handle, and an IMAGE handle must pass the canonical
++#     IMAGE validator.
++# The in-process executor never crosses that boundary, so every converted values-mode node's outputs are checked here
++# with the same functions. A failure surfaces as that node's error.
++BOUNDARY_CHECKED = []
++if SIDE == 'v2':
++    import importlib
++    sys.path.insert(0, '/overlay')
++    from comfy_api.latest import _sdk as SDK
++    FIX = importlib.import_module('comfy_secure_nodes.guest.fixr1_compat')
++
++    def _check_output(value, declared):
++        if isinstance(value, SDK.Ref) or SDK._is_plain_data(value):
++            return
++        if declared == 'MASK' and FIX._is_array(value):
++            FIX._mask_from_value(SDK, value)
++            return
++        if declared == 'IMAGE' and FIX._is_array(value) and len(value.shape) == 3:
++            FIX._image_from_bhw(SDK, value)
++            return
++        _ref_cls, kind = SDK._ref_type_for(value)
++        if kind == 'IMAGE':
++            SDK._image_from_value(value)
++
++    def _guard(cls):
++        original = cls.execute
++        declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
++
++        def checked(c, **kwargs):
++            result = original(**kwargs)
++            for index, value in enumerate(list(getattr(result, 'result', None) or [])):
++                _check_output(value, declared[index] if index < len(declared) else '')
++            return result
++        cls.execute = classmethod(checked)
++
++    _nodes_module = sys.modules[PACK_MODULE.__name__ + '.was_v2.nodes']
++    for _node_id in _nodes_module.CONVERTED_IDS:
++        _cls = core_nodes.NODE_CLASS_MAPPINGS[_node_id]
++        if not getattr(_cls, 'SDK_REFS', False):
++            _guard(_cls)
++            BOUNDARY_CHECKED.append(_node_id)
++
 +
 +def schema_of(node_id):
 +    cls = core_nodes.NODE_CLASS_MAPPINGS[node_id]
@@ -34985,6 +35040,7 @@
 +                                   'node_errors': json.loads(json.dumps(valid[3], default=str))})
 +            continue
 +        torch.manual_seed(20261102)
++        random.seed(20261102)
 +        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
 +                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
 +        extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
@@ -35006,6 +35062,7 @@
 +def main():
 +    cases = json.loads(Path(CASES).read_text())
 +    report = {'side': SIDE, 'loaded': bool(loaded), 'pack_path': pack_path, 'output_dir': str(OUTPUT),
++              'values_mode_boundary_checked': BOUNDARY_CHECKED,
 +              'pack_ids': PACK_IDS, 'schemas': {node_id: schema_of(node_id) for node_id in PACK_IDS}, 'cases': []}
 +    for case in cases:
 +        try:
@@ -35024,7 +35081,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,373 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35043,8 +35100,8 @@
 +
 +from . import originals
 +from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, SecureConversionRefusal,
-+                       not_converted)
++                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY,
++                       SecureConversionRefusal, not_converted)
 +from .schema_v3 import ROWS, build_schema
 +from .tokens import TextTokens
 +
@@ -35099,12 +35156,34 @@
 +    "Masks Combine Batch": ("WAS_Mask_Combine_Batch", "combine_masks"),
 +    "Image to Seed": ("WAS_Image_To_Seed", "image_to_seed"),
 +    "Image Blank": ("WAS_Image_Blank", "blank_image"),
++    # phase B batch 3 (r4)
++    "Image Blend": ("WAS_Image_Blend", "image_blend"),
++    "Image Bloom Filter": ("WAS_Image_Bloom_Filter", "image_bloom"),
++    "Image Bounds": ("WAS_Image_Bounds", "image_bounds"),
++    "Image Chromatic Aberration": ("WAS_Image_Chromatic_Aberration", "image_chromatic_aberration"),
++    "Image Crop Location": ("WAS_Image_Crop_Location", "image_crop_location"),
++    "Image Levels Adjustment": ("WAS_Image_Levels", "apply_image_levels"),
++    "Image Paste Crop": ("WAS_Image_Paste_Crop", "image_paste_crop"),
++    "Image Resize": ("WAS_Image_Rescale", "image_rescale"),
++    "Image Rotate": ("WAS_Image_Rotate", "image_rotate"),
++    "Image Select Color": ("WAS_Image_Select_Color", "select_color"),
++    "Bounded Image Blend with Mask": ("WAS_Bounded_Image_Blend_With_Mask", "bounded_image_blend_with_mask"),
++    "Bounded Image Crop with Mask": ("WAS_Bounded_Image_Crop_With_Mask", "bounded_image_crop_with_mask"),
++    "Masks Subtract": ("WAS_Mask_Subtract", "subtract_masks"),
++    "Text Find and Replace Input": ("WAS_Search_and_Replace_Input", "text_search_and_replace"),
++    "Bus Node": ("WAS_Bus", "bus_fn"),
++    "Blend Latents": ("WAS_Blend_Latents", "latent_blend"),
++    "Image Film Grain": ("WAS_Film_Grain", "film_grain"),
 +}
 +# WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 +# toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
 +_SKIP_INIT = {"Masks Combine Batch"}
++# Refused by name until the pack's guest runtime provides their dependency (SECURE_CONVERSION.md).
++_NAMED_REFUSALS = {
++    "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
++}
 +# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
-+_ALWAYS_CHANGED = {"Text Parse Tokens"}
++_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input"}
 +
 +
 +def _pure_execute(class_name, function, construct=True):
@@ -35319,7 +35398,7 @@
 +# Switches between engine objects: they take handles (SDK_REFS) and return the chosen one unchanged, as the original
 +# returned the chosen object. Without handles the guest would have to materialize a MODEL, CLIP or VAE.
 +_PASS_THROUGH_REFS = {"Latent Input Switch", "Lora Input Switch", "VAE Input Switch", "Model Input Switch",
-+                      "Conditioning Input Switch"}
++                      "Conditioning Input Switch", "Bus Node"}
 +
 +_CONVERTED = {}
 +for _node_id, (_class_name, _function) in _PURE.items():
@@ -35359,7 +35438,7 @@
 +    if node_id in _CONVERTED:
 +        attrs.update(spec)
 +    else:
-+        message = not_converted(node_id)
++        message = _NAMED_REFUSALS.get(node_id) or not_converted(node_id)
 +
 +        def validate_inputs(cls, **kwargs):
 +            return message
@@ -35378,12 +35457,14 @@
 +CONVERTED_IDS = sorted(_CONVERTED)
 --- /dev/null
 +++ b/v2/was_v2/originals.py
-@@ -0,0 +1,1670 @@
+@@ -0,0 +1,2711 @@
 +"""Functions and node classes copied verbatim from WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4.
 +
 +The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
-+it byte for byte. The module-level names they use are bound here: TEXT_TYPE and is_force_input with the original's
-+default configuration (WAS_Node_Suite.py:309-319), TextTokens from tokens.py (the original's class, for a guest).
++it byte for byte against the file read as text (the pinned file has CRLF line endings; this module uses LF).
++The module-level names they use are bound here:
++TEXT_TYPE and is_force_input with the original's default configuration (WAS_Node_Suite.py:309-319), TextTokens from
++tokens.py (the original's class, for a guest).
 +"""
 +import hashlib
 +import math
@@ -35392,7 +35473,7 @@
 +
 +import numpy as np
 +import torch
-+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
++from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 +
 +from .tokens import TextTokens
 +
@@ -37049,9 +37130,1048 @@
 +                          color=(red, green, blue))
 +
 +        return (pil2tensor(blank), )
++
++
++# --- WAS_Node_Suite.py:4226-4260
++class WAS_Image_Blend:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image_a": ("IMAGE",),
++                "image_b": ("IMAGE",),
++                "blend_percentage": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    RETURN_NAMES = ("image",)
++    FUNCTION = "image_blend"
++
++    CATEGORY = "WAS Suite/Image"
++
++    def image_blend(self, image_a, image_b, blend_percentage):
++
++        # Convert images to PIL
++        img_a = tensor2pil(image_a)
++        img_b = tensor2pil(image_b)
++
++        # Blend image
++        blend_mask = Image.new(mode="L", size=img_a.size,
++                               color=(round(blend_percentage * 255)))
++        blend_mask = ImageOps.invert(blend_mask)
++        img_result = Image.composite(img_a, img_b, blend_mask)
++
++        del img_a, img_b, blend_mask
++
++        return (pil2tensor(img_result), )
++
++
++# --- WAS_Node_Suite.py:5769-5813
++class WAS_Image_Bloom_Filter:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "radius": ("FLOAT", {"default": 10, "min": 0.0, "max": 1024, "step": 0.1}),
++                "intensity": ("FLOAT", {"default": 1, "min": 0.0, "max": 1.0, "step": 0.1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "image_bloom"
++
++    CATEGORY = "WAS Suite/Image/Filter"
++
++    def image_bloom(self, image, radius=0.5, intensity=1.0):
++        return (pil2tensor(self.apply_bloom_filter(tensor2pil(image), radius, intensity)), )
++
++    def apply_bloom_filter(self, input_image, radius, bloom_factor):
++        # Apply a blur filter to the input image
++        blurred_image = input_image.filter(
++            ImageFilter.GaussianBlur(radius=radius))
++
++        # Subtract the blurred image from the input image to create a high-pass filter
++        high_pass_filter = ImageChops.subtract(input_image, blurred_image)
++
++        # Create a blurred version of the bloom filter
++        bloom_filter = high_pass_filter.filter(
++            ImageFilter.GaussianBlur(radius=radius*2))
++
++        # Adjust brightness and levels of bloom filter
++        bloom_filter = ImageEnhance.Brightness(bloom_filter).enhance(2.0)
++
++        # Multiply the bloom image with the bloom factor
++        bloom_filter = ImageChops.multiply(bloom_filter, Image.new('RGB', input_image.size, (int(
++            255 * bloom_factor), int(255 * bloom_factor), int(255 * bloom_factor))))
++
++        # Multiply the bloom filter with the original image using the bloom factor
++        blended_image = ImageChops.screen(input_image, bloom_filter)
++
++        return blended_image
++
++
++# --- WAS_Node_Suite.py:12111-12132
++class WAS_Image_Bounds:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(self):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++            }
++        }
++
++    RETURN_TYPES = ("IMAGE_BOUNDS",)
++    FUNCTION = "image_bounds"
++
++    CATEGORY = "WAS Suite/Image/Bound"
++
++    def image_bounds(self, image):
++        # Ensure we are working with batches
++        image = image.unsqueeze(0) if image.dim() == 3 else image
++
++        return([(0, img.shape[0]-1 , 0, img.shape[1]-1) for img in image],)
++
++
++# --- WAS_Node_Suite.py:5670-5764
++class WAS_Image_Chromatic_Aberration:
++
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "red_offset": ("INT", {"default": 2, "min": -255, "max": 255, "step": 1}),
++                "green_offset": ("INT", {"default": -1, "min": -255, "max": 255, "step": 1}),
++                "blue_offset": ("INT", {"default": 1, "min": -255, "max": 255, "step": 1}),
++                "intensity": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
++                "fade_radius": ("INT", {"default": 12, "min": 0, "max": 1024, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "image_chromatic_aberration"
++
++    CATEGORY = "WAS Suite/Image/Filter"
++
++    def image_chromatic_aberration(self, image, red_offset=4, green_offset=2, blue_offset=0, intensity=1, fade_radius=12):
++        return (pil2tensor(self.apply_chromatic_aberration(tensor2pil(image), red_offset, green_offset, blue_offset, intensity, fade_radius)), )
++
++    def apply_chromatic_aberration(self, img, r_offset, g_offset, b_offset, intensity, fade_radius):
++
++        def lingrad(size, direction, white_ratio):
++            image = Image.new('RGB', size)
++            draw = ImageDraw.Draw(image)
++            if direction == 'vertical':
++                black_end = size[1] - white_ratio
++                range_start = 0
++                range_end = size[1]
++                range_step = 1
++                for y in range(range_start, range_end, range_step):
++                    color_ratio = y / size[1]
++                    if y <= black_end:
++                        color = (0, 0, 0)
++                    else:
++                        color_value = int(((y - black_end) / (size[1] - black_end)) * 255)
++                        color = (color_value, color_value, color_value)
++                    draw.line([(0, y), (size[0], y)], fill=color)
++            elif direction == 'horizontal':
++                black_end = size[0] - white_ratio
++                range_start = 0
++                range_end = size[0]
++                range_step = 1
++                for x in range(range_start, range_end, range_step):
++                    color_ratio = x / size[0]
++                    if x <= black_end:
++                        color = (0, 0, 0)
++                    else:
++                        color_value = int(((x - black_end) / (size[0] - black_end)) * 255)
++                        color = (color_value, color_value, color_value)
++                    draw.line([(x, 0), (x, size[1])], fill=color)
++
++            return image.convert("L")
++
++        def create_fade_mask(size, fade_radius):
++            mask = Image.new("L", size, 255)
++
++            left = ImageOps.invert(lingrad(size, 'horizontal', int(fade_radius * 2)))
++            right = left.copy().transpose(Image.FLIP_LEFT_RIGHT)
++            top = ImageOps.invert(lingrad(size, 'vertical', int(fade_radius *2)))
++            bottom = top.copy().transpose(Image.FLIP_TOP_BOTTOM)
++
++            # Multiply masks with the original mask image
++            mask = ImageChops.multiply(mask, left)
++            mask = ImageChops.multiply(mask, right)
++            mask = ImageChops.multiply(mask, top)
++            mask = ImageChops.multiply(mask, bottom)
++            mask = ImageChops.multiply(mask, mask)
++
++            return mask
++
++        # split the channels of the image
++        r, g, b = img.split()
++
++        # apply the offset to each channel
++        r_offset_img = ImageChops.offset(r, r_offset, 0)
++        g_offset_img = ImageChops.offset(g, 0, g_offset)
++        b_offset_img = ImageChops.offset(b, 0, b_offset)
++
++        # merge the channels with the offsets
++        merged = Image.merge("RGB", (r_offset_img, g_offset_img, b_offset_img))
++
++        # create fade masks for blending
++        fade_mask = create_fade_mask(img.size, fade_radius)
++
++        # merge the blended channels back into an RGB image
++        result = Image.composite(merged, img, fade_mask).convert("RGB")
++
++        return result
++
++
++# --- WAS_Node_Suite.py:3386-3428
++class WAS_Image_Crop_Location:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "top": ("INT", {"default":0, "max": 10000000, "min":0, "step":1}),
++                "left": ("INT", {"default":0, "max": 10000000, "min":0, "step":1}),
++                "right": ("INT", {"default":256, "max": 10000000, "min":0, "step":1}),
++                "bottom": ("INT", {"default":256, "max": 10000000, "min":0, "step":1}),
++            }
++        }
++
++    RETURN_TYPES = ("IMAGE", "CROP_DATA")
++    FUNCTION = "image_crop_location"
++
++    CATEGORY = "WAS Suite/Image/Process"
++
++    def image_crop_location(self, image, top=0, left=0, right=256, bottom=256):
++        image = tensor2pil(image)
++        img_width, img_height = image.size
++
++        # Calculate the final coordinates for cropping
++        crop_top = max(top, 0)
++        crop_left = max(left, 0)
++        crop_bottom = min(bottom, img_height)
++        crop_right = min(right, img_width)
++
++        # Ensure that the cropping region has non-zero width and height
++        crop_width = crop_right - crop_left
++        crop_height = crop_bottom - crop_top
++        if crop_width <= 0 or crop_height <= 0:
++            raise ValueError("Invalid crop dimensions. Please check the values for top, left, right, and bottom.")
++
++        # Crop the image and resize
++        crop = image.crop((crop_left, crop_top, crop_right, crop_bottom))
++        crop_data = (crop.size, (crop_left, crop_top, crop_right, crop_bottom))
++        crop = crop.resize((((crop.size[0] // 8) * 8), ((crop.size[1] // 8) * 8)))
++
++        return (pil2tensor(crop), crop_data)
++
++
++# --- WAS_Node_Suite.py:6229-6287
++class WAS_Image_Levels:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "black_level": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 255.0, "step": 0.1}),
++                "mid_level": ("FLOAT", {"default": 127.5, "min": 0.0, "max": 255.0, "step": 0.1}),
++                "white_level": ("FLOAT", {"default": 255, "min": 0.0, "max": 255.0, "step": 0.1}),
++            }
++        }
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "apply_image_levels"
++
++    CATEGORY = "WAS Suite/Image/Adjustment"
++
++    def apply_image_levels(self, image, black_level, mid_level, white_level):
++
++        # Convert image to PIL
++        tensor_images = []
++        for img in image:
++            img = tensor2pil(img)
++            levels = self.AdjustLevels(black_level, mid_level, white_level)
++            tensor_images.append(pil2tensor(levels.adjust(img)))
++        tensor_images = torch.cat(tensor_images, dim=0)
++
++        # Return adjust image tensor
++        return (tensor_images, )
++
++
++    class AdjustLevels:
++        def __init__(self, min_level, mid_level, max_level):
++            self.min_level = min_level
++            self.mid_level = mid_level
++            self.max_level = max_level
++
++        def adjust(self, im):
++
++            im_arr = np.array(im).astype(np.float32)
++            im_arr[im_arr < self.min_level] = self.min_level
++            im_arr = (im_arr - self.min_level) * \
++                (255 / (self.max_level - self.min_level))
++            im_arr = np.clip(im_arr, 0, 255)
++
++            # mid-level adjustment
++            if self.mid_level <= self.min_level:  
++                gamma = 1.0
++            else:
++                gamma = math.log(0.5) / math.log((self.mid_level - self.min_level) / (self.max_level - self.min_level))
++            im_arr = np.power(im_arr / 255, gamma) * 255
++
++            im_arr = im_arr.astype(np.uint8)
++
++            im = Image.fromarray(im_arr)
++
++            return im
++
++
++# --- WAS_Node_Suite.py:3528-3629
++class WAS_Image_Paste_Crop:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++                "required": {
++                    "image": ("IMAGE",),
++                    "crop_image": ("IMAGE",),
++                    "crop_data": ("CROP_DATA",),
++                    "crop_blending": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
++                    "crop_sharpening": ("INT", {"default": 0, "min": 0, "max": 3, "step": 1}),
++                }
++            }
++
++    RETURN_TYPES = ("IMAGE", "IMAGE")
++    RETURN_NAMES = ("IMAGE", "MASK")
++    FUNCTION = "image_paste_crop"
++
++    CATEGORY = "WAS Suite/Image/Process"
++
++    def image_paste_crop(self, image, crop_image, crop_data=None, crop_blending=0.25, crop_sharpening=0):
++
++        if crop_data == False:
++            cstr("No valid crop data found!").error.print()
++            return (image, pil2tensor(Image.new("RGB", tensor2pil(image).size, (0,0,0))))
++
++        result_image, result_mask = self.paste_image(tensor2pil(image), tensor2pil(crop_image), crop_data, crop_blending, crop_sharpening)
++
++        return (result_image, result_mask)
++
++    def paste_image(self, image, crop_image, crop_data, blend_amount=0.25, sharpen_amount=1):
++
++        def lingrad(size, direction, white_ratio):
++            image = Image.new('RGB', size)
++            draw = ImageDraw.Draw(image)
++            if direction == 'vertical':
++                black_end = int(size[1] * (1 - white_ratio))
++                range_start = 0
++                range_end = size[1]
++                range_step = 1
++                for y in range(range_start, range_end, range_step):
++                    color_ratio = y / size[1]
++                    if y <= black_end:
++                        color = (0, 0, 0)
++                    else:
++                        color_value = int(((y - black_end) / (size[1] - black_end)) * 255)
++                        color = (color_value, color_value, color_value)
++                    draw.line([(0, y), (size[0], y)], fill=color)
++            elif direction == 'horizontal':
++                black_end = int(size[0] * (1 - white_ratio))
++                range_start = 0
++                range_end = size[0]
++                range_step = 1
++                for x in range(range_start, range_end, range_step):
++                    color_ratio = x / size[0]
++                    if x <= black_end:
++                        color = (0, 0, 0)
++                    else:
++                        color_value = int(((x - black_end) / (size[0] - black_end)) * 255)
++                        color = (color_value, color_value, color_value)
++                    draw.line([(x, 0), (x, size[1])], fill=color)
++
++            return image.convert("L")
++
++        crop_size, (left, top, right, bottom) = crop_data
++        crop_image = crop_image.resize(crop_size)
++
++        if sharpen_amount > 0:
++            for _ in range(int(sharpen_amount)):
++                crop_image = crop_image.filter(ImageFilter.SHARPEN)
++
++        blended_image = Image.new('RGBA', image.size, (0, 0, 0, 255))
++        blended_mask = Image.new('L', image.size, 0)
++        crop_padded = Image.new('RGBA', image.size, (0, 0, 0, 0))
++        blended_image.paste(image, (0, 0))
++        crop_padded.paste(crop_image, (left, top))
++        crop_mask = Image.new('L', crop_image.size, 0)
++
++        if top > 0:
++            gradient_image = ImageOps.flip(lingrad(crop_image.size, 'vertical', blend_amount))
++            crop_mask = ImageChops.screen(crop_mask, gradient_image)
++
++        if left > 0:
++            gradient_image = ImageOps.mirror(lingrad(crop_image.size, 'horizontal', blend_amount))
++            crop_mask = ImageChops.screen(crop_mask, gradient_image)
++
++        if right < image.width:
++            gradient_image = lingrad(crop_image.size, 'horizontal', blend_amount)
++            crop_mask = ImageChops.screen(crop_mask, gradient_image)
++
++        if bottom < image.height:
++            gradient_image = lingrad(crop_image.size, 'vertical', blend_amount)
++            crop_mask = ImageChops.screen(crop_mask, gradient_image)
++
++        crop_mask = ImageOps.invert(crop_mask)
++        blended_mask.paste(crop_mask, (left, top))
++        blended_mask = blended_mask.convert("L")
++        blended_image.paste(crop_padded, (0, 0), blended_mask)
++
++        return (pil2tensor(blended_image.convert("RGB")), pil2tensor(blended_mask.convert("RGB")))
++
++
++# --- WAS_Node_Suite.py:5248-5308
++class WAS_Image_Rescale:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "mode": (["rescale", "resize"],),
++                "supersample": (["true", "false"],),
++                "resampling": (["lanczos", "nearest", "bilinear", "bicubic"],),
++                "rescale_factor": ("FLOAT", {"default": 2, "min": 0.01, "max": 16.0, "step": 0.01}),
++                "resize_width": ("INT", {"default": 1024, "min": 1, "max": 48000, "step": 1}),
++                "resize_height": ("INT", {"default": 1536, "min": 1, "max": 48000, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "image_rescale"
++
++    CATEGORY = "WAS Suite/Image/Transform"
++
++    def image_rescale(self, image, mode="rescale", supersample='true', resampling="lanczos", rescale_factor=2, resize_width=1024, resize_height=1024):
++        scaled_images = []
++        for img in image:
++            scaled_images.append(pil2tensor(self.apply_resize_image(tensor2pil(img), mode, supersample, rescale_factor, resize_width, resize_height, resampling)))
++        scaled_images = torch.cat(scaled_images, dim=0)
++
++        return (scaled_images, )
++
++    def apply_resize_image(self, image: Image.Image, mode='scale', supersample='true', factor: int = 2, width: int = 1024, height: int = 1024, resample='bicubic'):
++
++        # Get the current width and height of the image
++        current_width, current_height = image.size
++
++        # Calculate the new width and height based on the given mode and parameters
++        if mode == 'rescale':
++            new_width, new_height = int(
++                current_width * factor), int(current_height * factor)
++        else:
++            new_width = width if width % 8 == 0 else width + (8 - width % 8)
++            new_height = height if height % 8 == 0 else height + \
++                (8 - height % 8)
++
++        # Define a dictionary of resampling filters
++        resample_filters = {
++            'nearest': 0,
++            'bilinear': 2,
++            'bicubic': 3,
++            'lanczos': 1
++        }
++
++        # Apply supersample
++        if supersample == 'true':
++            image = image.resize((new_width * 8, new_height * 8), resample=Image.Resampling(resample_filters[resample]))
++
++        # Resize the image using the given resampling filter
++        resized_image = image.resize((new_width, new_height), resample=Image.Resampling(resample_filters[resample]))
++
++        return resized_image
++
++
++# --- WAS_Node_Suite.py:6383-6440
++class WAS_Image_Rotate:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "images": ("IMAGE",),
++                "mode": (["transpose", "internal",],),
++                "rotation": ("INT", {"default": 0, "min": 0, "max": 360, "step": 90}),
++                "sampler": (["nearest", "bilinear", "bicubic"],),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    RETURN_NAMES = ("images",)
++    FUNCTION = "image_rotate"
++
++    CATEGORY = "WAS Suite/Image/Transform"
++
++    def image_rotate(self, images, mode, rotation, sampler):
++
++        batch_tensor = []
++        for image in images:
++            # PIL Image
++            image = tensor2pil(image)
++
++            # Check rotation
++            if rotation > 360:
++                rotation = int(360)
++            if (rotation % 90 != 0):
++                rotation = int((rotation//90)*90)
++
++            # Set Sampler
++            if sampler:
++                if sampler == 'nearest':
++                    sampler = Image.NEAREST
++                elif sampler == 'bicubic':
++                    sampler = Image.BICUBIC
++                elif sampler == 'bilinear':
++                    sampler = Image.BILINEAR
++                else:
++                    sampler == Image.BILINEAR
++
++            # Rotate Image
++            if mode == 'internal':
++                image = image.rotate(rotation, sampler)
++            else:
++                rot = int(rotation / 90)
++                for _ in range(rot):
++                    image = image.transpose(2)
++
++            batch_tensor.append(pil2tensor(image))
++
++        batch_tensor = torch.cat(batch_tensor, dim=0)
++
++        return (batch_tensor, )
++
++
++# --- WAS_Node_Suite.py:6798-6850
++class WAS_Image_Select_Color:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "red": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
++                "green": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
++                "blue": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
++                "variance": ("INT", {"default": 10, "min": 0, "max": 255, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "select_color"
++
++    CATEGORY = "WAS Suite/Image/Process"
++
++    def select_color(self, image, red=255, green=255, blue=255, variance=10):
++
++        image = self.color_pick(tensor2pil(image), red, green, blue, variance)
++
++        return (pil2tensor(image), )
++
++    def color_pick(self, image, red=255, green=255, blue=255, variance=10):
++        # Convert image to RGB mode
++        image = image.convert('RGB')
++
++        # Create a new black image of the same size as the input image
++        selected_color = Image.new('RGB', image.size, (0, 0, 0))
++
++        # Get the width and height of the image
++        width, height = image.size
++
++        # Loop through every pixel in the image
++        for x in range(width):
++            for y in range(height):
++                # Get the color of the pixel
++                pixel = image.getpixel((x, y))
++                r, g, b = pixel
++
++                # Check if the pixel is within the specified color range
++                if ((r >= red-variance) and (r <= red+variance) and
++                    (g >= green-variance) and (g <= green+variance) and
++                        (b >= blue-variance) and (b <= blue+variance)):
++                    # Set the pixel in the selected_color image to the RGB value of the pixel
++                    selected_color.putpixel((x, y), (r, g, b))
++
++        # Return the selected color image
++        return selected_color
++
++
++# --- WAS_Node_Suite.py:12306-12410
++class WAS_Bounded_Image_Blend_With_Mask:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(self):
++        return {
++            "required": {
++                "target": ("IMAGE",),
++                "target_mask": ("MASK",),
++                "target_bounds": ("IMAGE_BOUNDS",),
++                "source": ("IMAGE",),
++                "blend_factor": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0}),
++                "feathering": ("INT", {"default": 16, "min": 0, "max": 0xffffffffffffffff}),
++            }
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "bounded_image_blend_with_mask"
++
++    CATEGORY = "WAS Suite/Image/Bound"
++
++    def bounded_image_blend_with_mask(self, target, target_mask, target_bounds, source, blend_factor, feathering):
++        # Ensure we are working with batches
++        target = target.unsqueeze(0) if target.dim() == 3 else target
++        source = source.unsqueeze(0) if source.dim() == 3 else source
++        target_mask = target_mask.unsqueeze(0) if target_mask.dim() == 2 else target_mask
++
++        # If number of target masks and source images don't match, then only the first mask will be used on
++        # the source images, otherwise, each mask will be used for each source image 1 to 1
++        # Simarly, if the number of target images and source images don't match then
++        # all source images will be applied only to the first target, otherwise they will be applied
++        # 1 to 1
++        tgt_mask_len = 1 if len(target_mask) != len(source) else len(source)
++        tgt_len = 1 if len(target) != len(source) else len(source)
++        bounds_len = 1 if len(target_bounds) != len(source) else len(source)
++
++        tgt_arr = [tensor2pil(tgt) for tgt in target[:tgt_len]]
++        src_arr = [tensor2pil(src) for src in source]
++        tgt_mask_arr=[]
++
++        # Convert Target Mask(s) to grayscale image format
++        for m_idx in range(tgt_mask_len):
++            np_array = np.clip((target_mask[m_idx].cpu().numpy().squeeze() * 255.0), 0, 255)
++            tgt_mask_arr.append(Image.fromarray((np_array).astype(np.uint8), mode='L'))
++
++        result_tensors = []
++        for idx in range(len(src_arr)):
++            src = src_arr[idx]
++            # If only one target image, then ensure it is the only one used
++            if (tgt_len == 1 and idx == 0) or tgt_len > 1:
++                tgt = tgt_arr[idx]
++
++            # If only one bounds, no need to extract and calculate more than once
++            if (bounds_len == 1 and idx == 0) or bounds_len > 1:
++                # Extract the target bounds
++                rmin, rmax, cmin, cmax = target_bounds[idx]
++
++                # Calculate the dimensions of the target bounds
++                height, width = (rmax - rmin + 1, cmax - cmin + 1)
++
++            # If only one mask, then ensure that is the only the first is used
++            if (tgt_mask_len == 1 and idx == 0) or tgt_mask_len > 1:
++                tgt_mask = tgt_mask_arr[idx]
++
++            # If only one mask and one bounds, then mask only needs to
++            #   be extended once because all targets will be the same size
++            if (tgt_mask_len == 1 and bounds_len == 1 and idx == 0) or \
++                (tgt_mask_len > 1 or bounds_len > 1):
++
++                # This is an imperfect, but easy way to determine if  the mask based on the
++                #   target image or source image. If not target, assume source. If neither,
++                #   then it's not going to look right regardless
++                if (tgt_mask.size != tgt.size):
++                    # Create the blend mask with the same size as the target image
++                    mask_extended_canvas = Image.new('L', tgt.size, 0)
++
++                    # Paste the mask portion into the extended mask at the target bounds position
++                    mask_extended_canvas.paste(tgt_mask, (cmin, rmin))
++
++                    tgt_mask = mask_extended_canvas
++
++                # Apply feathering (Gaussian blur) to the blend mask if feather_amount is greater than 0
++                if feathering > 0:
++                    tgt_mask = tgt_mask.filter(ImageFilter.GaussianBlur(radius=feathering))
++
++                # Apply blending factor to the tgt mask now that it has been extended
++                tgt_mask = tgt_mask.point(lambda p: p * blend_factor)
++
++            # Resize the source image to match the dimensions of the target bounds
++            src_resized = src.resize((width, height), Image.Resampling.LANCZOS)
++
++            # Create a blank image with the same size and mode as the target
++            src_positioned = Image.new(tgt.mode, tgt.size)
++
++            # Paste the source image onto the blank image using the target
++            src_positioned.paste(src_resized, (cmin, rmin))
++
++            # Blend the source and target images using the blend mask
++            result = Image.composite(src_positioned, tgt, tgt_mask)
++
++            # Convert the result back to a PyTorch tensor
++            result_tensors.append(pil2tensor(result))
++
++        return (torch.cat(result_tensors, dim=0),)
++
++
++# --- WAS_Node_Suite.py:12414-12469
++class WAS_Bounded_Image_Crop_With_Mask:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(self):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "mask": ("MASK",),
++                "padding_left": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
++                "padding_right": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
++                "padding_top": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
++                "padding_bottom": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
++                
++            },
++            "optional":{
++                "return_list": ("BOOLEAN", {"default": False}),
++            }
++        }
++
++    RETURN_TYPES = ("IMAGE", "IMAGE_BOUNDS",)
++    FUNCTION = "bounded_image_crop_with_mask"
++
++    CATEGORY = "WAS Suite/Image/Bound"
++
++    def bounded_image_crop_with_mask(self, image, mask, padding_left, padding_right, padding_top, padding_bottom,return_list=False):
++        # Ensure we are working with batches
++        image = image.unsqueeze(0) if image.dim() == 3 else image
++        mask = mask.unsqueeze(0) if mask.dim() == 2 else mask
++
++        # If number of masks and images don't match, then only the first mask will be used on
++        # the images, otherwise, each mask will be used for each image 1 to 1
++        mask_len = 1 if len(image) != len(mask) else len(image)
++
++        cropped_images = []
++        all_bounds = []
++        for i in range(len(image)):
++            # Single mask or multiple?
++            if (mask_len == 1 and i == 0) or mask_len > 0:
++                rows = torch.any(mask[i], dim=1)
++                cols = torch.any(mask[i], dim=0)
++                rmin, rmax = torch.where(rows)[0][[0, -1]]
++                cmin, cmax = torch.where(cols)[0][[0, -1]]
++
++                rmin = max(rmin - padding_top, 0)
++                rmax = min(rmax + padding_bottom, mask[i].shape[0] - 1)
++                cmin = max(cmin - padding_left, 0)
++                cmax = min(cmax + padding_right, mask[i].shape[1] - 1)
++
++            # Even if only a single mask, create a bounds for each cropped image
++            all_bounds.append([rmin, rmax, cmin, cmax])
++            cropped_images.append(image[i][rmin:rmax+1, cmin:cmax+1, :])
++        if return_list:
++            return cropped_images, all_bounds
++        return torch.stack(cropped_images), all_bounds
++
++
++# --- WAS_Node_Suite.py:8444-8467
++class WAS_Mask_Subtract:
++
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++                    "required": {
++                        "masks_a": ("MASK",),
++                        "masks_b": ("MASK",),
++                    }
++                }
++
++    CATEGORY = "WAS Suite/Image/Masking"
++
++    RETURN_TYPES = ("MASK",)
++    RETURN_NAMES = ("MASKS",)
++
++    FUNCTION = "subtract_masks"
++
++    def subtract_masks(self, masks_a, masks_b):
++        subtracted_masks = torch.clamp(masks_a - masks_b, 0, 255)
++        return (subtracted_masks,)
++
++
++# --- WAS_Node_Suite.py:10707-10737
++class WAS_Search_and_Replace_Input:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "text": (TEXT_TYPE, {"forceInput": is_force_input()}),
++                "find": (TEXT_TYPE, {"forceInput": is_force_input()}),
++                "replace": (TEXT_TYPE, {"forceInput": is_force_input()}),
++            }
++        }
++
++    RETURN_TYPES = (TEXT_TYPE, "NUMBER", "FLOAT", "INT")
++    RETURN_NAMES = ("result_text", "replacement_count_number", "replacement_count_float", "replacement_count_int")
++    FUNCTION = "text_search_and_replace"
++
++    CATEGORY = "WAS Suite/Text/Search"
++
++    def text_search_and_replace(self, text, find, replace):
++        count = 0
++        new_text = text
++        while find in new_text:
++            new_text = new_text.replace(find, replace, 1)
++            count += 1
++        return (new_text, count, float(count), int(count))
++
++    @classmethod
++    def IS_CHANGED(cls, **kwargs):
++        return float("NaN")
++
++
++# --- WAS_Node_Suite.py:13161-13206
++class WAS_Bus:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required":{},
++            "optional": {
++                "bus" : ("BUS",),
++                "model": ("MODEL",),
++                "clip": ("CLIP",),
++                "vae": ("VAE",),
++                "positive": ("CONDITIONING",),
++                "negative": ("CONDITIONING",),
++            }
++        }
++    RETURN_TYPES = ("BUS", "MODEL", "CLIP", "VAE", "CONDITIONING", "CONDITIONING",)
++    RETURN_NAMES = ("bus", "model", "clip", "vae", "positive",     "negative")
++    FUNCTION = "bus_fn"
++    CATEGORY = "WAS Suite/Utilities"
++
++    def bus_fn(self, bus=(None,None,None,None,None), model=None, clip=None, vae=None, positive=None, negative=None):
++
++        # Unpack the 5 constituents of the bus from the bus tuple.
++        (bus_model, bus_clip, bus_vae, bus_positive, bus_negative) = bus
++
++        # If you pass in specific inputs, they override what comes from the bus.
++        out_model       = model     or bus_model
++        out_clip        = clip      or bus_clip
++        out_vae         = vae       or bus_vae
++        out_positive    = positive  or bus_positive
++        out_negative    = negative  or bus_negative
++
++        # Squash all 5 inputs into the output bus tuple.
++        out_bus = (out_model, out_clip, out_vae, out_positive, out_negative)
++
++        if not out_model:
++            raise ValueError('Either model or bus containing a model should be supplied')
++        if not out_clip:
++            raise ValueError('Either clip or bus containing a clip should be supplied')
++        if not out_vae:
++            raise ValueError('Either vae or bus containing a vae should be supplied')
++        # We don't insist that a bus contains conditioning.
++
++        return (out_bus, out_model, out_clip, out_vae, out_positive, out_negative)
++
++
++# --- WAS_Node_Suite.py:9645-9744
++class WAS_Blend_Latents:
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "latent_a": ("LATENT",),
++                "latent_b": ("LATENT",),
++                "operation": (["add", "multiply", "divide", "subtract", "overlay", "hard_light", "soft_light", "screen", "linear_dodge", "difference", "exclusion", "random"],),
++                "blend": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 1.0, "step": 0.01}),
++            }
++        }
++
++    RETURN_TYPES = ("LATENT",)
++    FUNCTION = "latent_blend"
++
++    CATEGORY = "WAS Suite/Latent"
++
++    def latent_blend(self, latent_a, latent_b, operation, blend):
++        return ( {"samples": self.blend_latents(latent_a['samples'], latent_b['samples'], operation, blend)}, )
++
++    def blend_latents(self, latent1, latent2, mode='add', blend_percentage=0.5):
++
++        def overlay_blend(latent1, latent2, blend_factor):
++            low = 2 * latent1 * latent2
++            high = 1 - 2 * (1 - latent1) * (1 - latent2)
++            blended_latent = (latent1 * blend_factor) * low + (latent2 * blend_factor) * high
++            return blended_latent
++
++        def screen_blend(latent1, latent2, blend_factor):
++            inverted_latent1 = 1 - latent1
++            inverted_latent2 = 1 - latent2
++            blended_latent = 1 - (inverted_latent1 * inverted_latent2 * (1 - blend_factor))
++            return blended_latent
++
++        def difference_blend(latent1, latent2, blend_factor):
++            blended_latent = abs(latent1 - latent2) * blend_factor
++            return blended_latent
++
++        def exclusion_blend(latent1, latent2, blend_factor):
++            blended_latent = (latent1 + latent2 - 2 * latent1 * latent2) * blend_factor
++            return blended_latent
++
++        def hard_light_blend(latent1, latent2, blend_factor):
++            blended_latent = torch.where(latent2 < 0.5, 2 * latent1 * latent2, 1 - 2 * (1 - latent1) * (1 - latent2)) * blend_factor
++            return blended_latent
++
++        def linear_dodge_blend(latent1, latent2, blend_factor):
++            blended_latent = torch.clamp(latent1 + latent2, 0, 1) * blend_factor
++            return blended_latent
++
++        def soft_light_blend(latent1, latent2, blend_factor):
++            low = 2 * latent1 * latent2 + latent1 ** 2 - 2 * latent1 * latent2 * latent1
++            high = 2 * latent1 * (1 - latent2) + torch.sqrt(latent1) * (2 * latent2 - 1)
++            blended_latent = (latent1 * blend_factor) * low + (latent2 * blend_factor) * high
++            return blended_latent
++
++        def random_noise(latent1, latent2, blend_factor):
++            noise1 = torch.randn_like(latent1)
++            noise2 = torch.randn_like(latent2)
++            noise1 = (noise1 - noise1.min()) / (noise1.max() - noise1.min())
++            noise2 = (noise2 - noise2.min()) / (noise2.max() - noise2.min())
++            blended_noise = (latent1 * blend_factor) * noise1 + (latent2 * blend_factor) * noise2
++            blended_noise = torch.clamp(blended_noise, 0, 1)
++            return blended_noise
++
++        blend_factor1 = blend_percentage
++        blend_factor2 = 1 - blend_percentage
++
++        if mode == 'add':
++            blended_latent = (latent1 * blend_factor1) + (latent2 * blend_factor2)
++        elif mode == 'multiply':
++            blended_latent = (latent1 * blend_factor1) * (latent2 * blend_factor2)
++        elif mode == 'divide':
++            blended_latent = (latent1 * blend_factor1) / (latent2 * blend_factor2)
++        elif mode == 'subtract':
++            blended_latent = (latent1 * blend_factor1) - (latent2 * blend_factor2)
++        elif mode == 'overlay':
++            blended_latent = overlay_blend(latent1, latent2, blend_factor1)
++        elif mode == 'screen':
++            blended_latent = screen_blend(latent1, latent2, blend_factor1)
++        elif mode == 'difference':
++            blended_latent = difference_blend(latent1, latent2, blend_factor1)
++        elif mode == 'exclusion':
++            blended_latent = exclusion_blend(latent1, latent2, blend_factor1)
++        elif mode == 'hard_light':
++            blended_latent = hard_light_blend(latent1, latent2, blend_factor1)
++        elif mode == 'linear_dodge':
++            blended_latent = linear_dodge_blend(latent1, latent2, blend_factor1)
++        elif mode == 'soft_light':
++            blended_latent = soft_light_blend(latent1, latent2, blend_factor1)
++        elif mode == 'random':
++            blended_latent = random_noise(latent1, latent2, blend_factor1)
++        else:
++            raise ValueError("Unsupported blending mode. Please choose from 'add', 'multiply', 'divide', 'subtract', 'overlay', 'screen', 'difference', 'exclusion', 'hard_light', 'linear_dodge', 'soft_light', 'custom_noise'.")
++
++        blended_latent = self.normalize(blended_latent)
++        return blended_latent
++
++    def normalize(self, latent):
++        return (latent - latent.min()) / (latent.max() - latent.min())
++
++
++# --- WAS_Node_Suite.py:6292-6344
++class WAS_Film_Grain:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "density": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 1.0, "step": 0.01}),
++                "intensity": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 1.0, "step": 0.01}),
++                "highlights": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 255.0, "step": 0.01}),
++                "supersample_factor": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1})
++            }
++        }
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "film_grain"
++
++    CATEGORY = "WAS Suite/Image/Filter"
++
++    def film_grain(self, image, density, intensity, highlights, supersample_factor):
++        return (pil2tensor(self.apply_film_grain(tensor2pil(image), density, intensity, highlights, supersample_factor)), )
++
++    def apply_film_grain(self, img, density=0.1, intensity=1.0, highlights=1.0, supersample_factor=4):
++        """
++        Apply grayscale noise with specified density, intensity, and highlights to a PIL image.
++        """
++        img_gray = img.convert('L')
++        original_size = img.size
++        img_gray = img_gray.resize(
++            ((img.size[0] * supersample_factor), (img.size[1] * supersample_factor)), Image.Resampling(2))
++        num_pixels = int(density * img_gray.size[0] * img_gray.size[1])
++
++        noise_pixels = []
++        for i in range(num_pixels):
++            x = random.randint(0, img_gray.size[0]-1)
++            y = random.randint(0, img_gray.size[1]-1)
++            noise_pixels.append((x, y))
++
++        for x, y in noise_pixels:
++            value = random.randint(0, 255)
++            img_gray.putpixel((x, y), value)
++
++        img_noise = img_gray.convert('RGB')
++        img_noise = img_noise.filter(ImageFilter.GaussianBlur(radius=0.125))
++        img_noise = img_noise.resize(original_size, Image.Resampling(1))
++        img_noise = img_noise.filter(ImageFilter.EDGE_ENHANCE_MORE)
++        img_final = Image.blend(img, img_noise, intensity)
++        enhancer = ImageEnhance.Brightness(img_final)
++        img_highlights = enhancer.enhance(highlights)
++
++        # Return the final image
++        return img_highlights
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,60 @@
 +"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
 +
 +PACK = "was-ns"
@@ -37106,6 +38226,11 @@
 +IMAGE_SAVE_LISTING = (
 +    f"{PACK}/Image Save: output folder {{path!r}} holds more names than the asset catalogue lists at once (4096), so "
 +    "the next file number cannot be computed the way the original computed it."
++)
++
++NEEDS_SCIPY = (
++    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
++    "which the guest runtime for this pack does not provide yet."
 +)
 --- /dev/null
 +++ b/v2/was_v2/schema_v3.py

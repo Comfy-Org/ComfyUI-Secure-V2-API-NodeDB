@@ -1,8 +1,10 @@
 """Functions and node classes copied verbatim from WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4.
 
 The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
-it byte for byte. The module-level names they use are bound here: TEXT_TYPE and is_force_input with the original's
-default configuration (WAS_Node_Suite.py:309-319), TextTokens from tokens.py (the original's class, for a guest).
+it byte for byte against the file read as text (the pinned file has CRLF line endings; this module uses LF).
+The module-level names they use are bound here:
+TEXT_TYPE and is_force_input with the original's default configuration (WAS_Node_Suite.py:309-319), TextTokens from
+tokens.py (the original's class, for a guest).
 """
 import hashlib
 import math
@@ -11,7 +13,7 @@ import re
 
 import numpy as np
 import torch
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from .tokens import TextTokens
 
@@ -1668,3 +1670,1042 @@ class WAS_Image_Blank:
                           color=(red, green, blue))
 
         return (pil2tensor(blank), )
+
+
+# --- WAS_Node_Suite.py:4226-4260
+class WAS_Image_Blend:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image_a": ("IMAGE",),
+                "image_b": ("IMAGE",),
+                "blend_percentage": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "image_blend"
+
+    CATEGORY = "WAS Suite/Image"
+
+    def image_blend(self, image_a, image_b, blend_percentage):
+
+        # Convert images to PIL
+        img_a = tensor2pil(image_a)
+        img_b = tensor2pil(image_b)
+
+        # Blend image
+        blend_mask = Image.new(mode="L", size=img_a.size,
+                               color=(round(blend_percentage * 255)))
+        blend_mask = ImageOps.invert(blend_mask)
+        img_result = Image.composite(img_a, img_b, blend_mask)
+
+        del img_a, img_b, blend_mask
+
+        return (pil2tensor(img_result), )
+
+
+# --- WAS_Node_Suite.py:5769-5813
+class WAS_Image_Bloom_Filter:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "radius": ("FLOAT", {"default": 10, "min": 0.0, "max": 1024, "step": 0.1}),
+                "intensity": ("FLOAT", {"default": 1, "min": 0.0, "max": 1.0, "step": 0.1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_bloom"
+
+    CATEGORY = "WAS Suite/Image/Filter"
+
+    def image_bloom(self, image, radius=0.5, intensity=1.0):
+        return (pil2tensor(self.apply_bloom_filter(tensor2pil(image), radius, intensity)), )
+
+    def apply_bloom_filter(self, input_image, radius, bloom_factor):
+        # Apply a blur filter to the input image
+        blurred_image = input_image.filter(
+            ImageFilter.GaussianBlur(radius=radius))
+
+        # Subtract the blurred image from the input image to create a high-pass filter
+        high_pass_filter = ImageChops.subtract(input_image, blurred_image)
+
+        # Create a blurred version of the bloom filter
+        bloom_filter = high_pass_filter.filter(
+            ImageFilter.GaussianBlur(radius=radius*2))
+
+        # Adjust brightness and levels of bloom filter
+        bloom_filter = ImageEnhance.Brightness(bloom_filter).enhance(2.0)
+
+        # Multiply the bloom image with the bloom factor
+        bloom_filter = ImageChops.multiply(bloom_filter, Image.new('RGB', input_image.size, (int(
+            255 * bloom_factor), int(255 * bloom_factor), int(255 * bloom_factor))))
+
+        # Multiply the bloom filter with the original image using the bloom factor
+        blended_image = ImageChops.screen(input_image, bloom_filter)
+
+        return blended_image
+
+
+# --- WAS_Node_Suite.py:12111-12132
+class WAS_Image_Bounds:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(self):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE_BOUNDS",)
+    FUNCTION = "image_bounds"
+
+    CATEGORY = "WAS Suite/Image/Bound"
+
+    def image_bounds(self, image):
+        # Ensure we are working with batches
+        image = image.unsqueeze(0) if image.dim() == 3 else image
+
+        return([(0, img.shape[0]-1 , 0, img.shape[1]-1) for img in image],)
+
+
+# --- WAS_Node_Suite.py:5670-5764
+class WAS_Image_Chromatic_Aberration:
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "red_offset": ("INT", {"default": 2, "min": -255, "max": 255, "step": 1}),
+                "green_offset": ("INT", {"default": -1, "min": -255, "max": 255, "step": 1}),
+                "blue_offset": ("INT", {"default": 1, "min": -255, "max": 255, "step": 1}),
+                "intensity": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "fade_radius": ("INT", {"default": 12, "min": 0, "max": 1024, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_chromatic_aberration"
+
+    CATEGORY = "WAS Suite/Image/Filter"
+
+    def image_chromatic_aberration(self, image, red_offset=4, green_offset=2, blue_offset=0, intensity=1, fade_radius=12):
+        return (pil2tensor(self.apply_chromatic_aberration(tensor2pil(image), red_offset, green_offset, blue_offset, intensity, fade_radius)), )
+
+    def apply_chromatic_aberration(self, img, r_offset, g_offset, b_offset, intensity, fade_radius):
+
+        def lingrad(size, direction, white_ratio):
+            image = Image.new('RGB', size)
+            draw = ImageDraw.Draw(image)
+            if direction == 'vertical':
+                black_end = size[1] - white_ratio
+                range_start = 0
+                range_end = size[1]
+                range_step = 1
+                for y in range(range_start, range_end, range_step):
+                    color_ratio = y / size[1]
+                    if y <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((y - black_end) / (size[1] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(0, y), (size[0], y)], fill=color)
+            elif direction == 'horizontal':
+                black_end = size[0] - white_ratio
+                range_start = 0
+                range_end = size[0]
+                range_step = 1
+                for x in range(range_start, range_end, range_step):
+                    color_ratio = x / size[0]
+                    if x <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((x - black_end) / (size[0] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(x, 0), (x, size[1])], fill=color)
+
+            return image.convert("L")
+
+        def create_fade_mask(size, fade_radius):
+            mask = Image.new("L", size, 255)
+
+            left = ImageOps.invert(lingrad(size, 'horizontal', int(fade_radius * 2)))
+            right = left.copy().transpose(Image.FLIP_LEFT_RIGHT)
+            top = ImageOps.invert(lingrad(size, 'vertical', int(fade_radius *2)))
+            bottom = top.copy().transpose(Image.FLIP_TOP_BOTTOM)
+
+            # Multiply masks with the original mask image
+            mask = ImageChops.multiply(mask, left)
+            mask = ImageChops.multiply(mask, right)
+            mask = ImageChops.multiply(mask, top)
+            mask = ImageChops.multiply(mask, bottom)
+            mask = ImageChops.multiply(mask, mask)
+
+            return mask
+
+        # split the channels of the image
+        r, g, b = img.split()
+
+        # apply the offset to each channel
+        r_offset_img = ImageChops.offset(r, r_offset, 0)
+        g_offset_img = ImageChops.offset(g, 0, g_offset)
+        b_offset_img = ImageChops.offset(b, 0, b_offset)
+
+        # merge the channels with the offsets
+        merged = Image.merge("RGB", (r_offset_img, g_offset_img, b_offset_img))
+
+        # create fade masks for blending
+        fade_mask = create_fade_mask(img.size, fade_radius)
+
+        # merge the blended channels back into an RGB image
+        result = Image.composite(merged, img, fade_mask).convert("RGB")
+
+        return result
+
+
+# --- WAS_Node_Suite.py:3386-3428
+class WAS_Image_Crop_Location:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "top": ("INT", {"default":0, "max": 10000000, "min":0, "step":1}),
+                "left": ("INT", {"default":0, "max": 10000000, "min":0, "step":1}),
+                "right": ("INT", {"default":256, "max": 10000000, "min":0, "step":1}),
+                "bottom": ("INT", {"default":256, "max": 10000000, "min":0, "step":1}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "CROP_DATA")
+    FUNCTION = "image_crop_location"
+
+    CATEGORY = "WAS Suite/Image/Process"
+
+    def image_crop_location(self, image, top=0, left=0, right=256, bottom=256):
+        image = tensor2pil(image)
+        img_width, img_height = image.size
+
+        # Calculate the final coordinates for cropping
+        crop_top = max(top, 0)
+        crop_left = max(left, 0)
+        crop_bottom = min(bottom, img_height)
+        crop_right = min(right, img_width)
+
+        # Ensure that the cropping region has non-zero width and height
+        crop_width = crop_right - crop_left
+        crop_height = crop_bottom - crop_top
+        if crop_width <= 0 or crop_height <= 0:
+            raise ValueError("Invalid crop dimensions. Please check the values for top, left, right, and bottom.")
+
+        # Crop the image and resize
+        crop = image.crop((crop_left, crop_top, crop_right, crop_bottom))
+        crop_data = (crop.size, (crop_left, crop_top, crop_right, crop_bottom))
+        crop = crop.resize((((crop.size[0] // 8) * 8), ((crop.size[1] // 8) * 8)))
+
+        return (pil2tensor(crop), crop_data)
+
+
+# --- WAS_Node_Suite.py:6229-6287
+class WAS_Image_Levels:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "black_level": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 255.0, "step": 0.1}),
+                "mid_level": ("FLOAT", {"default": 127.5, "min": 0.0, "max": 255.0, "step": 0.1}),
+                "white_level": ("FLOAT", {"default": 255, "min": 0.0, "max": 255.0, "step": 0.1}),
+            }
+        }
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "apply_image_levels"
+
+    CATEGORY = "WAS Suite/Image/Adjustment"
+
+    def apply_image_levels(self, image, black_level, mid_level, white_level):
+
+        # Convert image to PIL
+        tensor_images = []
+        for img in image:
+            img = tensor2pil(img)
+            levels = self.AdjustLevels(black_level, mid_level, white_level)
+            tensor_images.append(pil2tensor(levels.adjust(img)))
+        tensor_images = torch.cat(tensor_images, dim=0)
+
+        # Return adjust image tensor
+        return (tensor_images, )
+
+
+    class AdjustLevels:
+        def __init__(self, min_level, mid_level, max_level):
+            self.min_level = min_level
+            self.mid_level = mid_level
+            self.max_level = max_level
+
+        def adjust(self, im):
+
+            im_arr = np.array(im).astype(np.float32)
+            im_arr[im_arr < self.min_level] = self.min_level
+            im_arr = (im_arr - self.min_level) * \
+                (255 / (self.max_level - self.min_level))
+            im_arr = np.clip(im_arr, 0, 255)
+
+            # mid-level adjustment
+            if self.mid_level <= self.min_level:  
+                gamma = 1.0
+            else:
+                gamma = math.log(0.5) / math.log((self.mid_level - self.min_level) / (self.max_level - self.min_level))
+            im_arr = np.power(im_arr / 255, gamma) * 255
+
+            im_arr = im_arr.astype(np.uint8)
+
+            im = Image.fromarray(im_arr)
+
+            return im
+
+
+# --- WAS_Node_Suite.py:3528-3629
+class WAS_Image_Paste_Crop:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+                "required": {
+                    "image": ("IMAGE",),
+                    "crop_image": ("IMAGE",),
+                    "crop_data": ("CROP_DATA",),
+                    "crop_blending": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
+                    "crop_sharpening": ("INT", {"default": 0, "min": 0, "max": 3, "step": 1}),
+                }
+            }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("IMAGE", "MASK")
+    FUNCTION = "image_paste_crop"
+
+    CATEGORY = "WAS Suite/Image/Process"
+
+    def image_paste_crop(self, image, crop_image, crop_data=None, crop_blending=0.25, crop_sharpening=0):
+
+        if crop_data == False:
+            cstr("No valid crop data found!").error.print()
+            return (image, pil2tensor(Image.new("RGB", tensor2pil(image).size, (0,0,0))))
+
+        result_image, result_mask = self.paste_image(tensor2pil(image), tensor2pil(crop_image), crop_data, crop_blending, crop_sharpening)
+
+        return (result_image, result_mask)
+
+    def paste_image(self, image, crop_image, crop_data, blend_amount=0.25, sharpen_amount=1):
+
+        def lingrad(size, direction, white_ratio):
+            image = Image.new('RGB', size)
+            draw = ImageDraw.Draw(image)
+            if direction == 'vertical':
+                black_end = int(size[1] * (1 - white_ratio))
+                range_start = 0
+                range_end = size[1]
+                range_step = 1
+                for y in range(range_start, range_end, range_step):
+                    color_ratio = y / size[1]
+                    if y <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((y - black_end) / (size[1] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(0, y), (size[0], y)], fill=color)
+            elif direction == 'horizontal':
+                black_end = int(size[0] * (1 - white_ratio))
+                range_start = 0
+                range_end = size[0]
+                range_step = 1
+                for x in range(range_start, range_end, range_step):
+                    color_ratio = x / size[0]
+                    if x <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((x - black_end) / (size[0] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(x, 0), (x, size[1])], fill=color)
+
+            return image.convert("L")
+
+        crop_size, (left, top, right, bottom) = crop_data
+        crop_image = crop_image.resize(crop_size)
+
+        if sharpen_amount > 0:
+            for _ in range(int(sharpen_amount)):
+                crop_image = crop_image.filter(ImageFilter.SHARPEN)
+
+        blended_image = Image.new('RGBA', image.size, (0, 0, 0, 255))
+        blended_mask = Image.new('L', image.size, 0)
+        crop_padded = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        blended_image.paste(image, (0, 0))
+        crop_padded.paste(crop_image, (left, top))
+        crop_mask = Image.new('L', crop_image.size, 0)
+
+        if top > 0:
+            gradient_image = ImageOps.flip(lingrad(crop_image.size, 'vertical', blend_amount))
+            crop_mask = ImageChops.screen(crop_mask, gradient_image)
+
+        if left > 0:
+            gradient_image = ImageOps.mirror(lingrad(crop_image.size, 'horizontal', blend_amount))
+            crop_mask = ImageChops.screen(crop_mask, gradient_image)
+
+        if right < image.width:
+            gradient_image = lingrad(crop_image.size, 'horizontal', blend_amount)
+            crop_mask = ImageChops.screen(crop_mask, gradient_image)
+
+        if bottom < image.height:
+            gradient_image = lingrad(crop_image.size, 'vertical', blend_amount)
+            crop_mask = ImageChops.screen(crop_mask, gradient_image)
+
+        crop_mask = ImageOps.invert(crop_mask)
+        blended_mask.paste(crop_mask, (left, top))
+        blended_mask = blended_mask.convert("L")
+        blended_image.paste(crop_padded, (0, 0), blended_mask)
+
+        return (pil2tensor(blended_image.convert("RGB")), pil2tensor(blended_mask.convert("RGB")))
+
+
+# --- WAS_Node_Suite.py:5248-5308
+class WAS_Image_Rescale:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "mode": (["rescale", "resize"],),
+                "supersample": (["true", "false"],),
+                "resampling": (["lanczos", "nearest", "bilinear", "bicubic"],),
+                "rescale_factor": ("FLOAT", {"default": 2, "min": 0.01, "max": 16.0, "step": 0.01}),
+                "resize_width": ("INT", {"default": 1024, "min": 1, "max": 48000, "step": 1}),
+                "resize_height": ("INT", {"default": 1536, "min": 1, "max": 48000, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_rescale"
+
+    CATEGORY = "WAS Suite/Image/Transform"
+
+    def image_rescale(self, image, mode="rescale", supersample='true', resampling="lanczos", rescale_factor=2, resize_width=1024, resize_height=1024):
+        scaled_images = []
+        for img in image:
+            scaled_images.append(pil2tensor(self.apply_resize_image(tensor2pil(img), mode, supersample, rescale_factor, resize_width, resize_height, resampling)))
+        scaled_images = torch.cat(scaled_images, dim=0)
+
+        return (scaled_images, )
+
+    def apply_resize_image(self, image: Image.Image, mode='scale', supersample='true', factor: int = 2, width: int = 1024, height: int = 1024, resample='bicubic'):
+
+        # Get the current width and height of the image
+        current_width, current_height = image.size
+
+        # Calculate the new width and height based on the given mode and parameters
+        if mode == 'rescale':
+            new_width, new_height = int(
+                current_width * factor), int(current_height * factor)
+        else:
+            new_width = width if width % 8 == 0 else width + (8 - width % 8)
+            new_height = height if height % 8 == 0 else height + \
+                (8 - height % 8)
+
+        # Define a dictionary of resampling filters
+        resample_filters = {
+            'nearest': 0,
+            'bilinear': 2,
+            'bicubic': 3,
+            'lanczos': 1
+        }
+
+        # Apply supersample
+        if supersample == 'true':
+            image = image.resize((new_width * 8, new_height * 8), resample=Image.Resampling(resample_filters[resample]))
+
+        # Resize the image using the given resampling filter
+        resized_image = image.resize((new_width, new_height), resample=Image.Resampling(resample_filters[resample]))
+
+        return resized_image
+
+
+# --- WAS_Node_Suite.py:6383-6440
+class WAS_Image_Rotate:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "mode": (["transpose", "internal",],),
+                "rotation": ("INT", {"default": 0, "min": 0, "max": 360, "step": 90}),
+                "sampler": (["nearest", "bilinear", "bicubic"],),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "image_rotate"
+
+    CATEGORY = "WAS Suite/Image/Transform"
+
+    def image_rotate(self, images, mode, rotation, sampler):
+
+        batch_tensor = []
+        for image in images:
+            # PIL Image
+            image = tensor2pil(image)
+
+            # Check rotation
+            if rotation > 360:
+                rotation = int(360)
+            if (rotation % 90 != 0):
+                rotation = int((rotation//90)*90)
+
+            # Set Sampler
+            if sampler:
+                if sampler == 'nearest':
+                    sampler = Image.NEAREST
+                elif sampler == 'bicubic':
+                    sampler = Image.BICUBIC
+                elif sampler == 'bilinear':
+                    sampler = Image.BILINEAR
+                else:
+                    sampler == Image.BILINEAR
+
+            # Rotate Image
+            if mode == 'internal':
+                image = image.rotate(rotation, sampler)
+            else:
+                rot = int(rotation / 90)
+                for _ in range(rot):
+                    image = image.transpose(2)
+
+            batch_tensor.append(pil2tensor(image))
+
+        batch_tensor = torch.cat(batch_tensor, dim=0)
+
+        return (batch_tensor, )
+
+
+# --- WAS_Node_Suite.py:6798-6850
+class WAS_Image_Select_Color:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "red": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
+                "green": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
+                "blue": ("INT", {"default": 255.0, "min": 0.0, "max": 255.0, "step": 0.1}),
+                "variance": ("INT", {"default": 10, "min": 0, "max": 255, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "select_color"
+
+    CATEGORY = "WAS Suite/Image/Process"
+
+    def select_color(self, image, red=255, green=255, blue=255, variance=10):
+
+        image = self.color_pick(tensor2pil(image), red, green, blue, variance)
+
+        return (pil2tensor(image), )
+
+    def color_pick(self, image, red=255, green=255, blue=255, variance=10):
+        # Convert image to RGB mode
+        image = image.convert('RGB')
+
+        # Create a new black image of the same size as the input image
+        selected_color = Image.new('RGB', image.size, (0, 0, 0))
+
+        # Get the width and height of the image
+        width, height = image.size
+
+        # Loop through every pixel in the image
+        for x in range(width):
+            for y in range(height):
+                # Get the color of the pixel
+                pixel = image.getpixel((x, y))
+                r, g, b = pixel
+
+                # Check if the pixel is within the specified color range
+                if ((r >= red-variance) and (r <= red+variance) and
+                    (g >= green-variance) and (g <= green+variance) and
+                        (b >= blue-variance) and (b <= blue+variance)):
+                    # Set the pixel in the selected_color image to the RGB value of the pixel
+                    selected_color.putpixel((x, y), (r, g, b))
+
+        # Return the selected color image
+        return selected_color
+
+
+# --- WAS_Node_Suite.py:12306-12410
+class WAS_Bounded_Image_Blend_With_Mask:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(self):
+        return {
+            "required": {
+                "target": ("IMAGE",),
+                "target_mask": ("MASK",),
+                "target_bounds": ("IMAGE_BOUNDS",),
+                "source": ("IMAGE",),
+                "blend_factor": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0}),
+                "feathering": ("INT", {"default": 16, "min": 0, "max": 0xffffffffffffffff}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "bounded_image_blend_with_mask"
+
+    CATEGORY = "WAS Suite/Image/Bound"
+
+    def bounded_image_blend_with_mask(self, target, target_mask, target_bounds, source, blend_factor, feathering):
+        # Ensure we are working with batches
+        target = target.unsqueeze(0) if target.dim() == 3 else target
+        source = source.unsqueeze(0) if source.dim() == 3 else source
+        target_mask = target_mask.unsqueeze(0) if target_mask.dim() == 2 else target_mask
+
+        # If number of target masks and source images don't match, then only the first mask will be used on
+        # the source images, otherwise, each mask will be used for each source image 1 to 1
+        # Simarly, if the number of target images and source images don't match then
+        # all source images will be applied only to the first target, otherwise they will be applied
+        # 1 to 1
+        tgt_mask_len = 1 if len(target_mask) != len(source) else len(source)
+        tgt_len = 1 if len(target) != len(source) else len(source)
+        bounds_len = 1 if len(target_bounds) != len(source) else len(source)
+
+        tgt_arr = [tensor2pil(tgt) for tgt in target[:tgt_len]]
+        src_arr = [tensor2pil(src) for src in source]
+        tgt_mask_arr=[]
+
+        # Convert Target Mask(s) to grayscale image format
+        for m_idx in range(tgt_mask_len):
+            np_array = np.clip((target_mask[m_idx].cpu().numpy().squeeze() * 255.0), 0, 255)
+            tgt_mask_arr.append(Image.fromarray((np_array).astype(np.uint8), mode='L'))
+
+        result_tensors = []
+        for idx in range(len(src_arr)):
+            src = src_arr[idx]
+            # If only one target image, then ensure it is the only one used
+            if (tgt_len == 1 and idx == 0) or tgt_len > 1:
+                tgt = tgt_arr[idx]
+
+            # If only one bounds, no need to extract and calculate more than once
+            if (bounds_len == 1 and idx == 0) or bounds_len > 1:
+                # Extract the target bounds
+                rmin, rmax, cmin, cmax = target_bounds[idx]
+
+                # Calculate the dimensions of the target bounds
+                height, width = (rmax - rmin + 1, cmax - cmin + 1)
+
+            # If only one mask, then ensure that is the only the first is used
+            if (tgt_mask_len == 1 and idx == 0) or tgt_mask_len > 1:
+                tgt_mask = tgt_mask_arr[idx]
+
+            # If only one mask and one bounds, then mask only needs to
+            #   be extended once because all targets will be the same size
+            if (tgt_mask_len == 1 and bounds_len == 1 and idx == 0) or \
+                (tgt_mask_len > 1 or bounds_len > 1):
+
+                # This is an imperfect, but easy way to determine if  the mask based on the
+                #   target image or source image. If not target, assume source. If neither,
+                #   then it's not going to look right regardless
+                if (tgt_mask.size != tgt.size):
+                    # Create the blend mask with the same size as the target image
+                    mask_extended_canvas = Image.new('L', tgt.size, 0)
+
+                    # Paste the mask portion into the extended mask at the target bounds position
+                    mask_extended_canvas.paste(tgt_mask, (cmin, rmin))
+
+                    tgt_mask = mask_extended_canvas
+
+                # Apply feathering (Gaussian blur) to the blend mask if feather_amount is greater than 0
+                if feathering > 0:
+                    tgt_mask = tgt_mask.filter(ImageFilter.GaussianBlur(radius=feathering))
+
+                # Apply blending factor to the tgt mask now that it has been extended
+                tgt_mask = tgt_mask.point(lambda p: p * blend_factor)
+
+            # Resize the source image to match the dimensions of the target bounds
+            src_resized = src.resize((width, height), Image.Resampling.LANCZOS)
+
+            # Create a blank image with the same size and mode as the target
+            src_positioned = Image.new(tgt.mode, tgt.size)
+
+            # Paste the source image onto the blank image using the target
+            src_positioned.paste(src_resized, (cmin, rmin))
+
+            # Blend the source and target images using the blend mask
+            result = Image.composite(src_positioned, tgt, tgt_mask)
+
+            # Convert the result back to a PyTorch tensor
+            result_tensors.append(pil2tensor(result))
+
+        return (torch.cat(result_tensors, dim=0),)
+
+
+# --- WAS_Node_Suite.py:12414-12469
+class WAS_Bounded_Image_Crop_With_Mask:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(self):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "mask": ("MASK",),
+                "padding_left": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
+                "padding_right": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
+                "padding_top": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
+                "padding_bottom": ("INT", {"default": 64, "min": 0, "max": 0xffffffffffffffff}),
+                
+            },
+            "optional":{
+                "return_list": ("BOOLEAN", {"default": False}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE_BOUNDS",)
+    FUNCTION = "bounded_image_crop_with_mask"
+
+    CATEGORY = "WAS Suite/Image/Bound"
+
+    def bounded_image_crop_with_mask(self, image, mask, padding_left, padding_right, padding_top, padding_bottom,return_list=False):
+        # Ensure we are working with batches
+        image = image.unsqueeze(0) if image.dim() == 3 else image
+        mask = mask.unsqueeze(0) if mask.dim() == 2 else mask
+
+        # If number of masks and images don't match, then only the first mask will be used on
+        # the images, otherwise, each mask will be used for each image 1 to 1
+        mask_len = 1 if len(image) != len(mask) else len(image)
+
+        cropped_images = []
+        all_bounds = []
+        for i in range(len(image)):
+            # Single mask or multiple?
+            if (mask_len == 1 and i == 0) or mask_len > 0:
+                rows = torch.any(mask[i], dim=1)
+                cols = torch.any(mask[i], dim=0)
+                rmin, rmax = torch.where(rows)[0][[0, -1]]
+                cmin, cmax = torch.where(cols)[0][[0, -1]]
+
+                rmin = max(rmin - padding_top, 0)
+                rmax = min(rmax + padding_bottom, mask[i].shape[0] - 1)
+                cmin = max(cmin - padding_left, 0)
+                cmax = min(cmax + padding_right, mask[i].shape[1] - 1)
+
+            # Even if only a single mask, create a bounds for each cropped image
+            all_bounds.append([rmin, rmax, cmin, cmax])
+            cropped_images.append(image[i][rmin:rmax+1, cmin:cmax+1, :])
+        if return_list:
+            return cropped_images, all_bounds
+        return torch.stack(cropped_images), all_bounds
+
+
+# --- WAS_Node_Suite.py:8444-8467
+class WAS_Mask_Subtract:
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+                    "required": {
+                        "masks_a": ("MASK",),
+                        "masks_b": ("MASK",),
+                    }
+                }
+
+    CATEGORY = "WAS Suite/Image/Masking"
+
+    RETURN_TYPES = ("MASK",)
+    RETURN_NAMES = ("MASKS",)
+
+    FUNCTION = "subtract_masks"
+
+    def subtract_masks(self, masks_a, masks_b):
+        subtracted_masks = torch.clamp(masks_a - masks_b, 0, 255)
+        return (subtracted_masks,)
+
+
+# --- WAS_Node_Suite.py:10707-10737
+class WAS_Search_and_Replace_Input:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": (TEXT_TYPE, {"forceInput": is_force_input()}),
+                "find": (TEXT_TYPE, {"forceInput": is_force_input()}),
+                "replace": (TEXT_TYPE, {"forceInput": is_force_input()}),
+            }
+        }
+
+    RETURN_TYPES = (TEXT_TYPE, "NUMBER", "FLOAT", "INT")
+    RETURN_NAMES = ("result_text", "replacement_count_number", "replacement_count_float", "replacement_count_int")
+    FUNCTION = "text_search_and_replace"
+
+    CATEGORY = "WAS Suite/Text/Search"
+
+    def text_search_and_replace(self, text, find, replace):
+        count = 0
+        new_text = text
+        while find in new_text:
+            new_text = new_text.replace(find, replace, 1)
+            count += 1
+        return (new_text, count, float(count), int(count))
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("NaN")
+
+
+# --- WAS_Node_Suite.py:13161-13206
+class WAS_Bus:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required":{},
+            "optional": {
+                "bus" : ("BUS",),
+                "model": ("MODEL",),
+                "clip": ("CLIP",),
+                "vae": ("VAE",),
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
+            }
+        }
+    RETURN_TYPES = ("BUS", "MODEL", "CLIP", "VAE", "CONDITIONING", "CONDITIONING",)
+    RETURN_NAMES = ("bus", "model", "clip", "vae", "positive",     "negative")
+    FUNCTION = "bus_fn"
+    CATEGORY = "WAS Suite/Utilities"
+
+    def bus_fn(self, bus=(None,None,None,None,None), model=None, clip=None, vae=None, positive=None, negative=None):
+
+        # Unpack the 5 constituents of the bus from the bus tuple.
+        (bus_model, bus_clip, bus_vae, bus_positive, bus_negative) = bus
+
+        # If you pass in specific inputs, they override what comes from the bus.
+        out_model       = model     or bus_model
+        out_clip        = clip      or bus_clip
+        out_vae         = vae       or bus_vae
+        out_positive    = positive  or bus_positive
+        out_negative    = negative  or bus_negative
+
+        # Squash all 5 inputs into the output bus tuple.
+        out_bus = (out_model, out_clip, out_vae, out_positive, out_negative)
+
+        if not out_model:
+            raise ValueError('Either model or bus containing a model should be supplied')
+        if not out_clip:
+            raise ValueError('Either clip or bus containing a clip should be supplied')
+        if not out_vae:
+            raise ValueError('Either vae or bus containing a vae should be supplied')
+        # We don't insist that a bus contains conditioning.
+
+        return (out_bus, out_model, out_clip, out_vae, out_positive, out_negative)
+
+
+# --- WAS_Node_Suite.py:9645-9744
+class WAS_Blend_Latents:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "latent_a": ("LATENT",),
+                "latent_b": ("LATENT",),
+                "operation": (["add", "multiply", "divide", "subtract", "overlay", "hard_light", "soft_light", "screen", "linear_dodge", "difference", "exclusion", "random"],),
+                "blend": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 1.0, "step": 0.01}),
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "latent_blend"
+
+    CATEGORY = "WAS Suite/Latent"
+
+    def latent_blend(self, latent_a, latent_b, operation, blend):
+        return ( {"samples": self.blend_latents(latent_a['samples'], latent_b['samples'], operation, blend)}, )
+
+    def blend_latents(self, latent1, latent2, mode='add', blend_percentage=0.5):
+
+        def overlay_blend(latent1, latent2, blend_factor):
+            low = 2 * latent1 * latent2
+            high = 1 - 2 * (1 - latent1) * (1 - latent2)
+            blended_latent = (latent1 * blend_factor) * low + (latent2 * blend_factor) * high
+            return blended_latent
+
+        def screen_blend(latent1, latent2, blend_factor):
+            inverted_latent1 = 1 - latent1
+            inverted_latent2 = 1 - latent2
+            blended_latent = 1 - (inverted_latent1 * inverted_latent2 * (1 - blend_factor))
+            return blended_latent
+
+        def difference_blend(latent1, latent2, blend_factor):
+            blended_latent = abs(latent1 - latent2) * blend_factor
+            return blended_latent
+
+        def exclusion_blend(latent1, latent2, blend_factor):
+            blended_latent = (latent1 + latent2 - 2 * latent1 * latent2) * blend_factor
+            return blended_latent
+
+        def hard_light_blend(latent1, latent2, blend_factor):
+            blended_latent = torch.where(latent2 < 0.5, 2 * latent1 * latent2, 1 - 2 * (1 - latent1) * (1 - latent2)) * blend_factor
+            return blended_latent
+
+        def linear_dodge_blend(latent1, latent2, blend_factor):
+            blended_latent = torch.clamp(latent1 + latent2, 0, 1) * blend_factor
+            return blended_latent
+
+        def soft_light_blend(latent1, latent2, blend_factor):
+            low = 2 * latent1 * latent2 + latent1 ** 2 - 2 * latent1 * latent2 * latent1
+            high = 2 * latent1 * (1 - latent2) + torch.sqrt(latent1) * (2 * latent2 - 1)
+            blended_latent = (latent1 * blend_factor) * low + (latent2 * blend_factor) * high
+            return blended_latent
+
+        def random_noise(latent1, latent2, blend_factor):
+            noise1 = torch.randn_like(latent1)
+            noise2 = torch.randn_like(latent2)
+            noise1 = (noise1 - noise1.min()) / (noise1.max() - noise1.min())
+            noise2 = (noise2 - noise2.min()) / (noise2.max() - noise2.min())
+            blended_noise = (latent1 * blend_factor) * noise1 + (latent2 * blend_factor) * noise2
+            blended_noise = torch.clamp(blended_noise, 0, 1)
+            return blended_noise
+
+        blend_factor1 = blend_percentage
+        blend_factor2 = 1 - blend_percentage
+
+        if mode == 'add':
+            blended_latent = (latent1 * blend_factor1) + (latent2 * blend_factor2)
+        elif mode == 'multiply':
+            blended_latent = (latent1 * blend_factor1) * (latent2 * blend_factor2)
+        elif mode == 'divide':
+            blended_latent = (latent1 * blend_factor1) / (latent2 * blend_factor2)
+        elif mode == 'subtract':
+            blended_latent = (latent1 * blend_factor1) - (latent2 * blend_factor2)
+        elif mode == 'overlay':
+            blended_latent = overlay_blend(latent1, latent2, blend_factor1)
+        elif mode == 'screen':
+            blended_latent = screen_blend(latent1, latent2, blend_factor1)
+        elif mode == 'difference':
+            blended_latent = difference_blend(latent1, latent2, blend_factor1)
+        elif mode == 'exclusion':
+            blended_latent = exclusion_blend(latent1, latent2, blend_factor1)
+        elif mode == 'hard_light':
+            blended_latent = hard_light_blend(latent1, latent2, blend_factor1)
+        elif mode == 'linear_dodge':
+            blended_latent = linear_dodge_blend(latent1, latent2, blend_factor1)
+        elif mode == 'soft_light':
+            blended_latent = soft_light_blend(latent1, latent2, blend_factor1)
+        elif mode == 'random':
+            blended_latent = random_noise(latent1, latent2, blend_factor1)
+        else:
+            raise ValueError("Unsupported blending mode. Please choose from 'add', 'multiply', 'divide', 'subtract', 'overlay', 'screen', 'difference', 'exclusion', 'hard_light', 'linear_dodge', 'soft_light', 'custom_noise'.")
+
+        blended_latent = self.normalize(blended_latent)
+        return blended_latent
+
+    def normalize(self, latent):
+        return (latent - latent.min()) / (latent.max() - latent.min())
+
+
+# --- WAS_Node_Suite.py:6292-6344
+class WAS_Film_Grain:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "density": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 1.0, "step": 0.01}),
+                "intensity": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 1.0, "step": 0.01}),
+                "highlights": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 255.0, "step": 0.01}),
+                "supersample_factor": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1})
+            }
+        }
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "film_grain"
+
+    CATEGORY = "WAS Suite/Image/Filter"
+
+    def film_grain(self, image, density, intensity, highlights, supersample_factor):
+        return (pil2tensor(self.apply_film_grain(tensor2pil(image), density, intensity, highlights, supersample_factor)), )
+
+    def apply_film_grain(self, img, density=0.1, intensity=1.0, highlights=1.0, supersample_factor=4):
+        """
+        Apply grayscale noise with specified density, intensity, and highlights to a PIL image.
+        """
+        img_gray = img.convert('L')
+        original_size = img.size
+        img_gray = img_gray.resize(
+            ((img.size[0] * supersample_factor), (img.size[1] * supersample_factor)), Image.Resampling(2))
+        num_pixels = int(density * img_gray.size[0] * img_gray.size[1])
+
+        noise_pixels = []
+        for i in range(num_pixels):
+            x = random.randint(0, img_gray.size[0]-1)
+            y = random.randint(0, img_gray.size[1]-1)
+            noise_pixels.append((x, y))
+
+        for x, y in noise_pixels:
+            value = random.randint(0, 255)
+            img_gray.putpixel((x, y), value)
+
+        img_noise = img_gray.convert('RGB')
+        img_noise = img_noise.filter(ImageFilter.GaussianBlur(radius=0.125))
+        img_noise = img_noise.resize(original_size, Image.Resampling(1))
+        img_noise = img_noise.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        img_final = Image.blend(img, img_noise, intensity)
+        enhancer = ImageEnhance.Brightness(img_final)
+        img_highlights = enhancer.enhance(highlights)
+
+        # Return the final image
+        return img_highlights

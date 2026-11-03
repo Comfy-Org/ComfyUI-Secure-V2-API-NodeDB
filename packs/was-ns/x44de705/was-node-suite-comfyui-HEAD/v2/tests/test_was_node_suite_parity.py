@@ -392,6 +392,95 @@ CASES += [
                                probe(image=['11', 0]))),
 ]
 
+# ---- phase B batch 3 (r4): image, mask, latent and bus nodes
+BLEND_OPS = ['add', 'multiply', 'divide', 'subtract', 'overlay', 'hard_light', 'soft_light', 'screen', 'linear_dodge',
+             'difference', 'exclusion', 'random']
+
+CASES += [
+    case('image-blend', g(image(seed=1), test_image('5', seed=2),
+                          node('11', 'Image Blend', image_a=['2', 0], image_b=['5', 0], blend_percentage=0.3),
+                          probe(image=['11', 0]))),
+    case('image-bloom', g(image(width=32, height=24, seed=3),
+                          node('11', 'Image Bloom Filter', image=['2', 0], radius=4.5, intensity=0.7),
+                          probe(image=['11', 0]))),
+    case('image-bounds', g(image(width=20, height=10), node('11', 'Image Bounds', image=['2', 0]),
+                           probe(files=['11', 0]))),
+    case('image-chromatic-aberration', g(image(width=32, height=24, seed=4),
+                                         node('11', 'Image Chromatic Aberration', image=['2', 0], red_offset=3,
+                                              green_offset=-2, blue_offset=1, intensity=0.6, fade_radius=8),
+                                         probe(image=['11', 0]))),
+    case('image-crop-location-and-paste', g(image(width=40, height=32, seed=5),
+                                            node('11', 'Image Crop Location', image=['2', 0], top=4, left=6, right=30,
+                                                 bottom=24),
+                                            node('12', 'Image Paste Crop', image=['2', 0], crop_image=['11', 0],
+                                                 crop_data=['11', 1], crop_blending=0.25, crop_sharpening=1),
+                                            probe(image=['12', 0], files=['11', 1]), probe_at('98', image=['12', 1]))),
+    case('image-levels', g(image(seed=6), node('11', 'Image Levels Adjustment', image=['2', 0], black_level=20.0,
+                                               mid_level=110.0, white_level=230.0),
+                           probe(image=['11', 0]))),
+] + [
+    case(f'image-resize-{mode}-{res}', g(image(width=20, height=12, seed=7),
+                                         node('11', 'Image Resize', image=['2', 0], mode=mode, supersample=ss,
+                                              resampling=res, rescale_factor=1.5, resize_width=26, resize_height=18),
+                                         probe(image=['11', 0])))
+    for mode, ss, res in (('rescale', 'true', 'lanczos'), ('rescale', 'false', 'nearest'),
+                          ('resize', 'false', 'bilinear'), ('resize', 'true', 'bicubic'))
+] + [
+    case(f'image-rotate-{mode}-{rotation}', g(image(width=20, height=12, seed=8),
+                                              node('11', 'Image Rotate', images=['2', 0], mode=mode, rotation=rotation,
+                                                   sampler=sampler),
+                                              probe(image=['11', 0])))
+    for mode, rotation, sampler in (('transpose', 90, 'nearest'), ('internal', 270, 'bilinear'),
+                                    ('transpose', 180, 'bicubic'))
+] + [
+    case('image-select-color', g(image(seed=9), node('11', 'Image Select Color', image=['2', 0], red=200, green=100,
+                                                     blue=50, variance=80),
+                                 probe(image=['11', 0]))),
+    # Refused by name until the guest runtime provides scipy (the original uses scipy.signal.convolve2d).
+    case('image-lucy-sharpen-needs-scipy', g(image(width=24, height=16, seed=10),
+                                             node('11', 'Image Lucy Sharpen', images=['2', 0], iterations=2,
+                                                  kernel_size=3),
+                                             probe(image=['11', 0])),
+         expect='refused-named:scipy.signal.convolve2d from scipy'),
+    case('bounded-crop-and-blend', g(image(width=40, height=32, seed=11), mask_from(),
+                                     node('11', 'Bounded Image Crop with Mask', image=['30', 0], mask=['30', 1],
+                                          padding_left=2, padding_right=3, padding_top=1, padding_bottom=0),
+                                     node('12', 'Image Levels Adjustment', image=['11', 0], black_level=10.0,
+                                          mid_level=127.5, white_level=240.0),
+                                     node('13', 'Bounded Image Blend with Mask', target=['30', 0], target_mask=['30', 1],
+                                          target_bounds=['11', 1], source=['12', 0], blend_factor=0.8, feathering=4),
+                                     probe(image=['13', 0], files=['11', 1]), probe_at('98', image=['11', 0]))),
+    case('masks-subtract', g(image(seed=12), mask_from(),
+                             node('31', 'ImagePadForOutpaint', image=['2', 0], left=0, top=8, right=8, bottom=0,
+                                  feathering=0),
+                             node('11', 'Masks Subtract', masks_a=['31', 1], masks_b=['30', 1]),
+                             probe(files=['11', 0]))),
+    case('text-find-replace-input', g(text('10', 'a cat and a cat'), text('13', 'cat'), text('14', 'dog'),
+                                      node('11', 'Text Find and Replace Input', text=['10', 0], find=['13', 0],
+                                           replace=['14', 0]),
+                                      probe(**outs('11', text=0, number=1, number_float=2, number_int=3))), runs=2),
+    case('bus-node', g(ckpt(), text('10', 'x'), node('15', 'Text to Conditioning', clip=['1', 1], text=['10', 0]),
+                       node('11', 'Bus Node', model=['1', 0], clip=['1', 1], vae=['1', 2], positive=['15', 0]),
+                       node('12', 'Load Lora', model=['1', 0], clip=['1', 1], lora_name='test-lora.safetensors',
+                            strength_model=0.5, strength_clip=0.5),
+                       node('13', 'Bus Node', bus=['11', 0], model=['12', 0]),
+                       probe(model=['13', 1], clip=['13', 2], conditioning=['13', 4], files=['13', 3]))),
+    case('bus-node-missing-model-error', g(ckpt(), node('11', 'Bus Node', clip=['1', 1], vae=['1', 2]),
+                                           probe(clip=['11', 2])), expect='error'),
+] + [
+    case(f'blend-latents-{op}', g(node('20', 'EmptyLatentImage', width=64, height=64, batch_size=1),
+                                  node('21', 'Latent Noise Injection', samples=['20', 0], noise_std=0.5),
+                                  node('11', 'Blend Latents', latent_a=['21', 0], latent_b=['20', 0], operation=op,
+                                       blend=0.35),
+                                  probe(latent=['11', 0])))
+    for op in BLEND_OPS
+] + [
+    case('image-film-grain', g(image(width=24, height=16, seed=13),
+                               node('11', 'Image Film Grain', image=['2', 0], density=0.3, intensity=0.5,
+                                    highlights=1.1, supersample_factor=2),
+                               probe(image=['11', 0]))),
+]
+
 
 def run_side(side):
     out = WORK / side
@@ -468,6 +557,12 @@ def compare_case(spec, orig, conv, output_dir):
         text = json.dumps([r.get('node_errors') for r in validation_c])
         ok = not validation_o and all(r.get('success') for r in runs_o) and validation_c \
             and 'is not yet converted to Secure Nodes V2' in text
+        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
+                'v2_validation': text[:400]}
+    if expect.startswith('refused-named:'):
+        phrase = expect.split(':', 1)[1]
+        text = json.dumps([r.get('node_errors') for r in validation_c])
+        ok = not validation_o and all(r.get('success') for r in runs_o) and bool(validation_c) and phrase in text
         return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
                 'v2_validation': text[:400]}
     if validation_o or validation_c:
@@ -651,6 +746,7 @@ def main():
                          'stand-ins recording every LoRA patch; frozen clocks; torch seeded before every prompt',
               'counts': counts, 'cases': rows, 'schema_counts': schema_counts,
               'schemas': {k: v for k, v in schemas.items() if v != 'EXACT'}, 'schema_ids': sorted(schemas),
+              'values_mode_boundary_checked': converted.get('values_mode_boundary_checked'),
               'bare_load': {'ok': bare_ok, 'rows': bare.get('rows'), 'loaded': bare.get('ok'),
                             'failures': bare.get('failures'), 'root_init_executed': bare.get('root_init_executed'),
                             'converted': bare.get('converted'), 'values_mode_issues': bare.get('values_mode_issues'),

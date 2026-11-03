@@ -53,3 +53,8 @@ IMAGE_SAVE_LISTING = (
     f"{PACK}/Image Save: output folder {{path!r}} holds more names than the asset catalogue lists at once (4096), so "
     "the next file number cannot be computed the way the original computed it."
 )
+
+NEEDS_SCIPY = (
+    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
+    "which the guest runtime for this pack does not provide yet."
+)

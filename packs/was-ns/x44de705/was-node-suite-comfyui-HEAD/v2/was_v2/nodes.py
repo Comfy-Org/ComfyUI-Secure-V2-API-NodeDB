@@ -16,8 +16,8 @@ from comfy_api.latest import io, sdk
 
 from . import originals
 from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, SecureConversionRefusal,
-                       not_converted)
+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY,
+                       SecureConversionRefusal, not_converted)
 from .schema_v3 import ROWS, build_schema
 from .tokens import TextTokens
 
@@ -72,12 +72,34 @@ _PURE = {
     "Masks Combine Batch": ("WAS_Mask_Combine_Batch", "combine_masks"),
     "Image to Seed": ("WAS_Image_To_Seed", "image_to_seed"),
     "Image Blank": ("WAS_Image_Blank", "blank_image"),
+    # phase B batch 3 (r4)
+    "Image Blend": ("WAS_Image_Blend", "image_blend"),
+    "Image Bloom Filter": ("WAS_Image_Bloom_Filter", "image_bloom"),
+    "Image Bounds": ("WAS_Image_Bounds", "image_bounds"),
+    "Image Chromatic Aberration": ("WAS_Image_Chromatic_Aberration", "image_chromatic_aberration"),
+    "Image Crop Location": ("WAS_Image_Crop_Location", "image_crop_location"),
+    "Image Levels Adjustment": ("WAS_Image_Levels", "apply_image_levels"),
+    "Image Paste Crop": ("WAS_Image_Paste_Crop", "image_paste_crop"),
+    "Image Resize": ("WAS_Image_Rescale", "image_rescale"),
+    "Image Rotate": ("WAS_Image_Rotate", "image_rotate"),
+    "Image Select Color": ("WAS_Image_Select_Color", "select_color"),
+    "Bounded Image Blend with Mask": ("WAS_Bounded_Image_Blend_With_Mask", "bounded_image_blend_with_mask"),
+    "Bounded Image Crop with Mask": ("WAS_Bounded_Image_Crop_With_Mask", "bounded_image_crop_with_mask"),
+    "Masks Subtract": ("WAS_Mask_Subtract", "subtract_masks"),
+    "Text Find and Replace Input": ("WAS_Search_and_Replace_Input", "text_search_and_replace"),
+    "Bus Node": ("WAS_Bus", "bus_fn"),
+    "Blend Latents": ("WAS_Blend_Latents", "latent_blend"),
+    "Image Film Grain": ("WAS_Film_Grain", "film_grain"),
 }
 # WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 # toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
 _SKIP_INIT = {"Masks Combine Batch"}
+# Refused by name until the pack's guest runtime provides their dependency (SECURE_CONVERSION.md).
+_NAMED_REFUSALS = {
+    "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
+}
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
-_ALWAYS_CHANGED = {"Text Parse Tokens"}
+_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input"}
 
 
 def _pure_execute(class_name, function, construct=True):
@@ -292,7 +314,7 @@ def _always_changed(cls, **kwargs):
 # Switches between engine objects: they take handles (SDK_REFS) and return the chosen one unchanged, as the original
 # returned the chosen object. Without handles the guest would have to materialize a MODEL, CLIP or VAE.
 _PASS_THROUGH_REFS = {"Latent Input Switch", "Lora Input Switch", "VAE Input Switch", "Model Input Switch",
-                      "Conditioning Input Switch"}
+                      "Conditioning Input Switch", "Bus Node"}
 
 _CONVERTED = {}
 for _node_id, (_class_name, _function) in _PURE.items():
@@ -332,7 +354,7 @@ def _make_class(node_id):
     if node_id in _CONVERTED:
         attrs.update(spec)
     else:
-        message = not_converted(node_id)
+        message = _NAMED_REFUSALS.get(node_id) or not_converted(node_id)
 
         def validate_inputs(cls, **kwargs):
             return message

@@ -53,8 +53,10 @@ for node_id, row in manifest["nodes"].items():
 # Values mode (a row without sdk_refs): the guest materializes tensor and value refs and refuses any other handle
 # (comfy_secure_nodes/guest/adapter.py materialize). A converted node without sdk_refs may therefore take only value,
 # tensor, latent and conditioning inputs.
+# WAS's own data sockets cross as data too: IMAGE_BOUNDS (lists of numbers, or of 0-dim tensors that the host wraps
+# leaf by leaf and the guest materializes) and CROP_DATA (tuples of ints).
 VALUES_SAFE = {"STRING", "INT", "FLOAT", "BOOLEAN", "COMBO", "NUMBER", "SEED", "LIST", "IMAGE", "MASK", "LATENT",
-               "CONDITIONING", "*"}
+               "CONDITIONING", "IMAGE_BOUNDS", "CROP_DATA", "*"}
 nodes_module = importlib.import_module(f"{NAME}.was_v2.nodes")
 values_mode_issues = {}
 for node_id in nodes_module.CONVERTED_IDS:

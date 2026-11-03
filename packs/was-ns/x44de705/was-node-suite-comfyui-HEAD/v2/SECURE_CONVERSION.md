@@ -3,9 +3,9 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 45 of the 220 registered node ids are converted. The other 175 are registered with their real schemas and refuse
+Status: 62 of the 220 registered node ids are converted. The other 158 are registered with their real schemas and refuse
 with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-so core never calls its validate_inputs), when it runs. The original declares one more id,
+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen refuses with its own message (Known differences). The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14662-14720). It is not registered here.
 
@@ -20,6 +20,10 @@ Converted:
 - Round 3: Image Size to Number, Latent Size to Number, Create Grid Image from Batch, Image Batch, Images to RGB,
   Tensor Batch to Image, Convert Masks to Images, Masks Combine Batch, Image to Seed and Image Blank. Their tensors
   reach the guest as raw values and leave as raw values.
+- Round 4: Image Blend, Image Bloom Filter, Image Bounds, Image Chromatic Aberration, Image Crop Location, Image
+  Levels Adjustment, Image Paste Crop, Image Resize, Image Rotate, Image Select Color, Bounded
+  Image Blend with Mask, Bounded Image Crop with Mask, Masks Subtract, Text Find and Replace Input, Bus Node, Blend
+  Latents and Image Film Grain.
 
 ## How the conversion is built
 
@@ -80,6 +84,13 @@ every registered id against the original. A tampered output must turn the compar
   chosen one unchanged, as the original returned the chosen object.
 - Masks Combine Batch: the original's `__init__` only builds the pack's filter toolbox (WAS_Tools_Class,
   WAS_Node_Suite.py:1022-2456), which `combine_masks` never uses. V2 creates the instance without it.
+- Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
+  the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
+  outputs are equal only when both processes start from the same RNG state.
+- Image Lucy Sharpen is refused by name at validation. The original sharpens with scipy.signal.convolve2d, and
+  this pack's guest runtime does not provide scipy yet. It returns once it does.
+- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
+  conditioning counts as present even if it is an empty list.
 - Schemas of refused nodes come from the default configuration:
   - the style menus (no styles.json) and the history loaders (no history database);
   - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on

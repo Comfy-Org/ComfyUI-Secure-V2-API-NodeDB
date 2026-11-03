@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import random
 import shutil
 import struct
 import sys
@@ -225,6 +226,53 @@ loaded = asyncio.run(core_nodes.load_custom_node(pack_path, ignore=set(), module
 PACK_MODULE = sys.modules[pack_path.replace('.', '_x_')]
 PACK_IDS = sorted(PACK_MODULE.NODE_CLASS_MAPPINGS)
 
+# ---- the guest's values-mode output boundary (V2 side only)
+# In production a node without SDK_REFS runs in values mode, and the guest wraps its outputs by declared type
+# (comfy_secure_nodes/guest/fixr1_compat.py wrap_output):
+#   - a declared MASK array must be a bounded B,H,W (or B,1,H,W) mask;
+#   - a declared IMAGE of rank 3 becomes one-channel BHWC;
+#   - anything else that is not plain data gets _ref_type_for's handle, and an IMAGE handle must pass the canonical
+#     IMAGE validator.
+# The in-process executor never crosses that boundary, so every converted values-mode node's outputs are checked here
+# with the same functions. A failure surfaces as that node's error.
+BOUNDARY_CHECKED = []
+if SIDE == 'v2':
+    import importlib
+    sys.path.insert(0, '/overlay')
+    from comfy_api.latest import _sdk as SDK
+    FIX = importlib.import_module('comfy_secure_nodes.guest.fixr1_compat')
+
+    def _check_output(value, declared):
+        if isinstance(value, SDK.Ref) or SDK._is_plain_data(value):
+            return
+        if declared == 'MASK' and FIX._is_array(value):
+            FIX._mask_from_value(SDK, value)
+            return
+        if declared == 'IMAGE' and FIX._is_array(value) and len(value.shape) == 3:
+            FIX._image_from_bhw(SDK, value)
+            return
+        _ref_cls, kind = SDK._ref_type_for(value)
+        if kind == 'IMAGE':
+            SDK._image_from_value(value)
+
+    def _guard(cls):
+        original = cls.execute
+        declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
+
+        def checked(c, **kwargs):
+            result = original(**kwargs)
+            for index, value in enumerate(list(getattr(result, 'result', None) or [])):
+                _check_output(value, declared[index] if index < len(declared) else '')
+            return result
+        cls.execute = classmethod(checked)
+
+    _nodes_module = sys.modules[PACK_MODULE.__name__ + '.was_v2.nodes']
+    for _node_id in _nodes_module.CONVERTED_IDS:
+        _cls = core_nodes.NODE_CLASS_MAPPINGS[_node_id]
+        if not getattr(_cls, 'SDK_REFS', False):
+            _guard(_cls)
+            BOUNDARY_CHECKED.append(_node_id)
+
 
 def schema_of(node_id):
     cls = core_nodes.NODE_CLASS_MAPPINGS[node_id]
@@ -325,6 +373,7 @@ def run_case(case):
                                    'node_errors': json.loads(json.dumps(valid[3], default=str))})
             continue
         torch.manual_seed(20261102)
+        random.seed(20261102)
         executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
                                             cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
         extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
@@ -346,6 +395,7 @@ def run_case(case):
 def main():
     cases = json.loads(Path(CASES).read_text())
     report = {'side': SIDE, 'loaded': bool(loaded), 'pack_path': pack_path, 'output_dir': str(OUTPUT),
+              'values_mode_boundary_checked': BOUNDARY_CHECKED,
               'pack_ids': PACK_IDS, 'schemas': {node_id: schema_of(node_id) for node_id in PACK_IDS}, 'cases': []}
     for case in cases:
         try:
