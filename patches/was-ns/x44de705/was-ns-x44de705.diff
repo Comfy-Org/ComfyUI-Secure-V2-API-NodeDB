@@ -1,16 +1,17 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,189 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 73 of the 220 registered node ids are converted. The other 147 are registered with their real schemas and refuse
++Status: 78 of the 220 registered node ids are converted. The other 142 are registered with their real schemas and refuse
 +with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image
-+Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter refuse with their own message (Known
-+differences). The original declares one more id,
++so core never calls its validate_inputs), when it runs. Eleven of them refuse with their own message instead (Known
++differences): Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image Shadows and Highlights, Image Dragan
++Photography Filter, Image Style Filter, Image Crop Face, Create Video from Path, Video Dump Frames, CLIPSeg Masking and
++CLIPTextEncode (NSP). The original declares one more id,
 +`CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 +(WAS_Node_Suite.py:14662-14720). It is not registered here.
 +
@@ -37,6 +38,8 @@
 +- Round 7: Load Image Batch, over the input folder (Known differences).
 +- Round 8: Image Monitor Effects Filter (WAS_Tools_Class members `digital_distortion`, `signal_distortion`,
 +  `tv_vhs_distortion`), and Image Save's webp with embed_workflow (Known differences).
++- Round 9: Load Text File, Text Load Line From File and Save Text File, over ComfyUI's folders; Number Counter (the
++  original's class, run on a counter kept in host storage); Prompt Styles Selector (Known differences).
 +
 +## How the conversion is built
 +
@@ -128,16 +131,49 @@
 +    follow links out of the input folder. A folder it cannot list is refused by name.
 +  - A folder that holds no files at all returns no image, as a missing folder does in the original. The original
 +    went on with an empty folder and failed on the index.
-+  - Each label's counter, path and pattern live in the pack's host storage (`ctx.storage`). The original kept them
-+    in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:155-158, 874).
-+    - They survive restarts: the host keeps them on disk.
-+    - They are kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and
-+      user shares them, as everyone shared the original's database. On a multi-tenant host each tenant has its own.
-+    - The host keeps at most 256 entries per pack, which means at most 256 labels.
++  - Each label's counter, path and pattern live in the pack's host storage (see "Host storage" below). The original
++    kept them in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:155-158, 874).
 +  - V2 writes no image history. The original also added each batch's file paths to its history database
 +    (update_history_images, WAS_Node_Suite.py:941-964).
 +  - The random mode seeds Python's `random` module, as the original does. As with Text Random Line, the reseeded
 +    module is the guest's.
++- Host storage: Load Image Batch, Text Load Line From File and Number Counter keep their state in the pack's host
++  storage (`ctx.storage`), not in the original's databases or node objects.
++  - It survives restarts: the host keeps it on disk.
++  - It is kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and user
++    shares it, as everyone shared the original's databases. On a multi-tenant host each tenant has its own.
++  - The host keeps at most 256 entries per pack, shared by the batch labels, the text-batch labels and the counters.
++- Load Text File, Text Load Line From File and Save Text File:
++  - The original resolved file_path / path against ComfyUI's working directory and read any file on the host; it
++    wrote only inside the input, output and temp folders (its whitelist, WAS_Node_Suite.py:229-245, 366-374). V2 reads
++    files given as `input/...`, `output/...` or `temp/...` and writes only inside output or temp. Any other path,
++    absolute paths included, is refused by name: at validation for Load Text File and Save Text File, and when the file
++    mode runs for Text Load Line From File (with multiline_text connected the original ignores file_path).
++    Backslashes count as folder separators, as on a Windows host.
++  - Save Text File's default path `./ComfyUI/output/[time(%Y-%m-%d)]` names the output folder only when ComfyUI runs
++    from its parent folder; elsewhere the original refused it as a write-protected path. V2 refuses it by name: use
++    `output/[time(%Y-%m-%d)]`.
++  - Save Text File writes UTF-8 only (another encoding is refused by name; an unknown one fails as in the original),
++    only the extensions the managed text writer accepts (.txt, .caption, .json, .yaml, .yml, .md, .csv, .tsv, .xml,
++    .log, .ini, .toml), at most 960 KiB of text, and no folder separators in the prefix, suffix or extension.
++  - A path naming a folder fails with the original's IsADirectoryError when that folder holds files; a folder that
++    holds none reads as missing, because the host lists files, not folders.
++  - The text-batch counter and path of each label (file mode) and the counter of each label (multiline mode) live in
++    host storage. The original kept the first in its settings database and the second in its history database.
++  - V2 keeps no text-file history (update_history_text_files, WAS_Node_Suite.py:996-1019).
++- Number Counter runs the original's increment_number on a counter kept in host storage under the node id. The
++  original kept it on the node object, which ComfyUI's default cache drops on restart and when a prompt runs
++  without that node; V2's counter survives both. Like the original, mode "decrement" leaves the counter unchanged
++  (its code tests for 'deccrement', WAS_Node_Suite.py:12717).
++- Prompt Styles Selector behaves as the original with its default configuration: there is no styles.json, so the menu
++  holds only "None" and the node returns two empty strings.
++- Image Crop Face, Create Video from Path and Video Dump Frames are refused by name: the original computes them with
++  OpenCV (cv2), which this pack's guest runtime does not provide. Image Crop Face's cascade files are also omitted
++  from this snapshot.
++- CLIPSeg Masking is refused by name: the original downloads its model when it runs, and the host provides no pinned
++  copy yet.
++- CLIPTextEncode (NSP) is refused by name: in Noodle Soup Prompts mode the original downloads its pantry the first time
++  it runs, and in Wildcards mode it reads wildcard files from a folder on the host.
 +- Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
 +  and a Secure Nodes V2 node has no network access.
 +- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
@@ -5125,7 +5161,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28650 @@
+@@ -0,0 +1,28648 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -22414,7 +22450,9 @@
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -22499,9 +22537,10 @@
 +      "sdk_refs": false,
 +      "validation_inputs": {
 +        "args": [
-+          "cls"
++          "cls",
++          "file_path"
 +        ],
-+        "kwargs": true
++        "kwargs": false
 +      }
 +    },
 +    "Logic Boolean": {
@@ -26361,11 +26400,13 @@
 +      "class": "WAS_V2_Number_Counter_5a30a0f6",
 +      "methods": {
 +        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "fingerprint_inputs": true,
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "storage"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -26553,13 +26594,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Number Input Condition": {
 +      "class": "WAS_V2_Number_Input_Condition_84dff2aa",
@@ -27638,7 +27673,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -27715,13 +27750,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Random Number": {
 +      "class": "WAS_V2_Random_Number_dbfaf8bb",
@@ -28307,7 +28336,10 @@
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "output"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -28472,9 +28504,14 @@
 +      "sdk_refs": false,
 +      "validation_inputs": {
 +        "args": [
-+          "cls"
++          "cls",
++          "path",
++          "encoding",
++          "filename_prefix",
++          "filename_suffix",
++          "file_extension"
 +        ],
-+        "kwargs": true
++        "kwargs": false
 +      }
 +    },
 +    "Seed": {
@@ -31014,11 +31051,14 @@
 +      "class": "WAS_V2_Text_Load_Line_From_File_725e1020",
 +      "methods": {
 +        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "fingerprint_inputs": true,
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "storage"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -31178,13 +31218,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Text Multiline": {
 +      "class": "WAS_V2_Text_Multiline_40210e1c",
@@ -33921,7 +33955,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,988 @@
+@@ -0,0 +1,1153 @@
 +"""Tier-1 parity: WAS Node Suite fork (44de7058) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -34018,6 +34052,16 @@
 +    pixels(6, 5, 10).save(many / 'one.png')
 +    (FIXTURES / 'elsewhere').mkdir(parents=True, exist_ok=True)
 +    pixels(7, 4, 11).save(FIXTURES / 'elsewhere' / 'f.png')
++    # text files: lines with a CRLF, a blank line and a comment; an empty file; markdown with comments and UTF-8; bytes
++    # that are not UTF-8; a folder holding a file; a text file outside the input folder
++    texts = FIXTURES / 'input' / 'texts'
++    (texts / 'sub').mkdir(parents=True, exist_ok=True)
++    (texts / 'lines.txt').write_bytes(b'  first line \nsecond\r\n\n# a comment\nlast line')
++    (texts / 'empty.txt').write_bytes(b'')
++    (texts / 'notes.md').write_bytes('# heading\nalpha\r\n  # indented comment\nbeta café\n'.encode('utf-8'))
++    (texts / 'bad.txt').write_bytes(b'ok\n\xff\xfe broken\n')
++    (texts / 'sub' / 'deep.txt').write_bytes(b'deep\n')
++    (FIXTURES / 'elsewhere' / 'note.txt').write_bytes(b'outside\n')
 +
 +
 +def text(node_id, value):
@@ -34061,10 +34105,11 @@
 +    return node('3', 'Image Save', **inputs)
 +
 +
-+def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None):
++def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None, session=False,
++         v2_only=False):
 +    extra_pnginfo = extra if extra is not None else ({'workflow': WORKFLOW} if workflow else None)
 +    return {'name': name, 'prompt': prompt, 'expect': expect, 'allow': sorted(allow), 'runs': runs,
-+            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo}
++            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo, 'session': session, 'v2_only': v2_only}
 +
 +
 +PNG = {'DECODED-EXACT-PNG-PHYS'}
@@ -34611,6 +34656,145 @@
 +]
 +
 +
++# ---- phase B batch 9: text files, Number Counter, Prompt Styles Selector, and refusals by name
++def text_file(file_path, dictionary_name='[filename]'):
++    return node('11', 'Load Text File', file_path=file_path, dictionary_name=dictionary_name)
++
++
++def text_line(**inputs):
++    values = dict(file_path='input/texts/lines.txt', dictionary_name='[filename]', label='TextBatch', mode='automatic',
++                  index=0)
++    values.update(inputs)
++    return node('11', 'Text Load Line From File', **values)
++
++
++def text_saver(**options):
++    inputs = {'text': ['10', 0], 'path': 'output/texts', 'filename_prefix': 'ComfyUI', 'filename_delimiter': '_',
++              'filename_number_padding': 4, 'file_extension': '.txt', 'encoding': 'utf-8', 'filename_suffix': ''}
++    inputs.update(options)
++    return node('11', 'Save Text File', **inputs)
++
++
++def counter(node_id, **inputs):
++    values = dict(number_type='integer', mode='increment', start=0.0, stop=0.0, step=1.0)
++    values.update(inputs)
++    return node(node_id, 'Number Counter', **values)
++
++
++def counter_probe(node_id):
++    return probe(**outs(node_id, number=0, number_float=1, number_int=2))
++
++
++TEXT_PROBE = dict(text=['11', 0], files=['11', 1])
++OUTSIDE_NOTE = str(FIXTURES / 'elsewhere' / 'note.txt')
++SAVED_TEXT = 'line one\nline two café\n'
++OUTSIDE_SAVE = "is not a folder inside ComfyUI's output or temp folder"
++CASES += [
++    case('load-text-file', g(text_file('input/texts/notes.md'), probe(**TEXT_PROBE))),
++    case('load-text-file-named-dictionary', g(text_file('input/texts/lines.txt', 'mine'), probe(**TEXT_PROBE))),
++    case('load-text-file-missing', g(text_file('input/texts/nope.txt'), probe(**TEXT_PROBE))),
++    case('load-text-file-empty-path', g(text_file(''), probe(**TEXT_PROBE))),
++    case('load-text-file-from-output', g(text_file('output/notes/out.txt'), probe(**TEXT_PROBE)),
++         preexisting={'notes/out.txt': 'kept\n# skipped\nlast'}),
++    case('load-text-file-folder-error', g(text_file('input/texts/sub'), probe(**TEXT_PROBE)), expect='error'),
++    case('load-text-file-not-utf8-error', g(text_file('input/texts/bad.txt'), probe(**TEXT_PROBE)), expect='error'),
++    case('load-text-file-absolute-refused', g(text_file(OUTSIDE_NOTE), probe(**TEXT_PROBE)),
++         expect="refused-named:is outside ComfyUI's input, output and temp folders"),
++] + [
++    case('text-load-line-automatic', g(text_line(label='tl-auto'), probe(**TEXT_PROBE)), runs=6),
++    case('text-load-line-index', g(text_line(mode='index', index=3, label='tl-index'), probe(**TEXT_PROBE))),
++    case('text-load-line-index-wraps', g(text_line(mode='index', index=7, label='tl-wrap'), probe(**TEXT_PROBE))),
++    case('text-load-line-empty-file-error', g(text_line(file_path='input/texts/empty.txt', label='tl-empty'),
++                                              probe(**TEXT_PROBE)), expect='error'),
++    case('text-load-line-empty-file-index-error', g(text_line(file_path='input/texts/empty.txt', mode='index',
++                                                              label='tl-empty-index'), probe(**TEXT_PROBE)),
++         expect='error'),
++    case('text-load-line-multiline', g(text('10', 'red\ngreen\nblue\n'),
++                                       text_line(multiline_text=['10', 0], label='tl-multi'), probe(**TEXT_PROBE)),
++         runs=4),
++    case('text-load-line-multiline-bad-index', g(text('10', 'a\nb'),
++                                                 text_line(multiline_text=['10', 0], mode='index', index=5,
++                                                           label='tl-multi-index'), probe(**TEXT_PROBE))),
++    case('text-load-line-missing', g(text_line(file_path='input/texts/nope.txt', label='tl-missing'),
++                                     probe(**TEXT_PROBE))),
++    case('text-load-line-no-path', g(text_line(file_path='', label='tl-none'), probe(**TEXT_PROBE))),
++    case('text-load-line-folder-error', g(text_line(file_path='input/texts/sub', label='tl-folder'),
++                                          probe(**TEXT_PROBE)), expect='error'),
++    # one label across two cases: a new file resets the label's counter, as the original's database did
++    case('text-load-line-shared-label-first-file', g(text_line(label='tl-shared'), probe(**TEXT_PROBE)), runs=2),
++    case('text-load-line-shared-label-new-file-resets', g(text_line(file_path='input/texts/notes.md',
++                                                                    label='tl-shared'), probe(**TEXT_PROBE)), runs=2),
++    case('text-load-line-absolute-refused', g(text_line(file_path=OUTSIDE_NOTE, label='tl-abs'), probe(**TEXT_PROBE)),
++         expect='refusal'),
++] + [
++    case('save-text-file', g(text('10', SAVED_TEXT), text_saver(), probe(text=['10', 0])), runs=2),
++    case('save-text-file-after-existing', g(text('10', SAVED_TEXT), text_saver(), probe(text=['10', 0])),
++         preexisting={'texts/ComfyUI_0007.txt': 'old', 'texts/other_0099.txt': 'x'}),
++    case('save-text-file-no-padding-overwrites', g(text('10', SAVED_TEXT),
++                                                   text_saver(filename_prefix='fixed', filename_number_padding=0),
++                                                   probe(text=['10', 0])),
++         preexisting={'texts/fixed.txt': 'old text'}),
++    case('save-text-file-dated-no-delimiter-md', g(text('10', SAVED_TEXT),
++                                                   text_saver(path='output/[time(%Y-%m-%d)]', filename_delimiter='',
++                                                              filename_suffix='_v', file_extension='.md'),
++                                                   probe(text=['10', 0]))),
++    # The refusal cases have the saver as their only output node: with a second output in the prompt, core would run
++    # that one and leave out the refused saver without failing the prompt.
++    # The original's default path names the output folder only when ComfyUI runs from its parent folder; here it
++    # refuses it as a write-protected path, and V2 refuses it by name.
++    case('save-text-file-default-path-refused', g(text('10', SAVED_TEXT),
++                                                  text_saver(path='./ComfyUI/output/[time(%Y-%m-%d)]')),
++         expect=f'refused-named-original-fails:{OUTSIDE_SAVE}'),
++    case('save-text-file-input-refused', g(text('10', SAVED_TEXT), text_saver(path='input/notes')),
++         expect=f'refused-named:{OUTSIDE_SAVE}'),
++    case('save-text-file-utf16-refused', g(text('10', SAVED_TEXT), text_saver(encoding='utf-16')),
++         expect='refused-named:the managed text writer writes UTF-8 only'),
++    case('save-text-file-extension-refused', g(text('10', SAVED_TEXT), text_saver(file_extension='.prompt')),
++         expect='refused-named:the managed text writer accepts only'),
++    case('save-text-file-unknown-encoding-error', g(text('10', SAVED_TEXT), text_saver(encoding='no-such-codec'),
++                                                    probe(text=['10', 0])), expect='error'),
++] + [
++    # one executor across each case's prompts, as in a running server; one node id per case (the counters persist)
++    case('number-counter-increment', g(counter('61'), counter_probe('61')), runs=3, session=True),
++    case('number-counter-increment-to-stop', g(counter('62', mode='increment_to_stop', stop=2.0), counter_probe('62')),
++         runs=4, session=True),
++    case('number-counter-reset-after-stop', g(counter('63', mode='reset_after_stop', stop=2.0), counter_probe('63')),
++         runs=4, session=True),
++    case('number-counter-decrement-unchanged', g(counter('64', mode='decrement', start=5.0), counter_probe('64')),
++         runs=2, session=True),
++    case('number-counter-float', g(counter('65', number_type='float', step=0.25), counter_probe('65')), runs=3,
++         session=True),
++    case('number-counter-reset-bool', g(node('20', 'Constant Number', number_type='integer', number=1.0),
++                                        counter('66', start=10.0, reset_bool=['20', 0]), counter_probe('66')),
++         runs=2, session=True),
++] + [
++    case('prompt-styles-none', g(node('11', 'Prompt Styles Selector', style='None'),
++                                 probe(text=['11', 0], files=['11', 1]))),
++] + [
++    # refused by name; the original is not run here (it needs cv2, the network, or cascade files this snapshot omits)
++    case('image-crop-face-needs-opencv',
++         g(image(seed=28), node('11', 'Image Crop Face', image=['2', 0], crop_padding_factor=0.25,
++                                cascade_xml='lbpcascade_animeface.xml'), probe(files=['11', 0])),
++         expect='refused-named-v2:computes it with OpenCV (cv2 cascade classifiers)', v2_only=True),
++    case('create-video-needs-opencv',
++         g(node('11', 'Create Video from Path', transition_frames=10, image_delay_sec=1.0, fps=30, max_size=512,
++                input_path='input/batch', output_path='output', filename='morph', codec='H264'),
++           probe(files=['11', 0])),
++         expect='refused-named-v2:computes it with OpenCV (cv2 video writing)', v2_only=True),
++    case('video-dump-frames-needs-opencv',
++         g(node('11', 'Video Dump Frames', video_path='input/clip.mp4', output_path='output/frames', prefix='frame_',
++                filenumber_digits=4, extension='png'), probe(files=['11', 0])),
++         expect='refused-named-v2:computes it with OpenCV (cv2 video reading)', v2_only=True),
++    case('clipseg-needs-weights',
++         g(image(seed=29), node('11', 'CLIPSeg Masking', image=['2', 0], text='a cat'), probe(files=['11', 0])),
++         expect='refused-named-v2:downloads the CLIPSeg model', v2_only=True),
++    case('nsp-needs-network',
++         g(ckpt(), node('11', 'CLIPTextEncode (NSP)', mode='Noodle Soup Prompts', noodle_key='__', seed=1,
++                        text='a __animal__', clip=['1', 1]), probe(files=['11', 0])),
++         expect='refused-named-v2:downloads its prompt pantry', v2_only=True),
++]
++
++
 +def run_side(side):
 +    out = WORK / side
 +    out.mkdir(parents=True, exist_ok=True)
@@ -34694,6 +34878,21 @@
 +        ok = not validation_o and all(r.get('success') for r in runs_o) and bool(validation_c) and phrase in text
 +        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
 +                'v2_validation': text[:400]}
++    if expect.startswith('refused-named-original-fails:'):
++        # V2 refuses at validation, by name; the original runs and fails with its own error
++        phrase = expect.split(':', 1)[1]
++        text = json.dumps([r.get('node_errors') for r in validation_c])
++        failed = [_errors(r) for r in runs_o]
++        ok = not validation_o and bool(runs_o) and all(failed) and bool(validation_c) and phrase in text
++        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
++                'v2_validation': text[:400], 'original_errors': failed}
++    if expect.startswith('refused-named-v2:'):
++        # V2 refuses at validation, by name; the original is not run (case v2_only)
++        phrase = expect.split(':', 1)[1]
++        text = json.dumps([r.get('node_errors') for r in validation_c])
++        ok = orig.get('skipped_original') is True and bool(validation_c) and phrase in text
++        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
++                'v2_validation': text[:400], 'original': 'not run'}
 +    if validation_o or validation_c:
 +        return {'case': name, 'expect': expect, 'verdict': 'MISMATCH',
 +                'notes': [r.get('node_errors') for r in runs_o + runs_c]}
@@ -34912,7 +35111,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/was_parity_worker.py
-@@ -0,0 +1,538 @@
+@@ -0,0 +1,548 @@
 +"""One side of the WAS Node Suite parity run (gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -34966,14 +35165,11 @@
 +                  ('upscale_models', {'.safetensors', '.pth'})):
 +    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 +OUTPUT = OUT / 'output'
-+CWD = OUT / 'cwd'
-+CWD.mkdir(parents=True, exist_ok=True)
-+# The input folder holds the synthetic image fixtures; the original resolves a relative folder path against ComfyUI's
-+# working directory, where `input` is the input folder.
++# ComfyUI's working directory, against which the original resolves relative paths: there `input`, `output` and `temp`
++# are ComfyUI's own folders (OUT/input, OUT/output, OUT/temp). The input folder holds the synthetic fixtures.
++CWD = OUT
 +if (Path(FIXTURES) / 'input').is_dir():
 +    shutil.copytree(Path(FIXTURES) / 'input', OUT / 'input', dirs_exist_ok=True)
-+if not (CWD / 'input').exists():
-+    (CWD / 'input').symlink_to(OUT / 'input', target_is_directory=True)
 +os.chdir(CWD)
 +
 +import comfy.lora  # noqa: E402
@@ -35251,7 +35447,8 @@
 +            SDK._image_from_value(value)
 +
 +    def _guard(cls):
-+        original = cls.execute
++        # the classmethod's function, called with the class core passes: the per-prompt clone that carries cls.hidden
++        function = cls.execute.__func__
 +        declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
 +
 +        def check_all(result):
@@ -35260,12 +35457,12 @@
 +            return result
 +
 +        # core runs execute as a coroutine only when it is a coroutine function, so the wrapper keeps that shape
-+        if inspect.iscoroutinefunction(original):
++        if inspect.iscoroutinefunction(function):
 +            async def checked(c, **kwargs):
-+                return check_all(await original(**kwargs))
++                return check_all(await function(c, **kwargs))
 +        else:
 +            def checked(c, **kwargs):
-+                return check_all(original(**kwargs))
++                return check_all(function(c, **kwargs))
 +        cls.execute = classmethod(checked)
 +
 +    class _PackStorage:
@@ -35400,7 +35597,19 @@
 +        target.parent.mkdir(parents=True, exist_ok=True)
 +        target.write_bytes(text.encode())
 +    result = {'name': case['name'], 'runs': []}
++    if case.get('v2_only') and SIDE == 'original':
++        # the original cannot run here (it needs cv2, the network or files this snapshot omits); V2's refusal is checked
++        result['skipped_original'] = True
++        result['files'] = []
++        result['loader_calls'] = []
++        return result
 +    LOADER_CALLS.clear()
++    # session=True: one executor across the case's prompts, as a running ComfyUI server keeps its caches and node
++    # objects between prompts (Number Counter's original keeps its counters on the node object)
++    session = None
++    if case.get('session'):
++        session = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
++                                           cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
 +    for index in range(case.get('runs', 1)):
 +        prompt = json.loads(json.dumps(case['prompt']))
 +        prompt_id = f"{case['name']}-{index}"
@@ -35412,8 +35621,8 @@
 +        torch.manual_seed(20261102)
 +        random.seed(20261102)
 +        numpy.random.seed(20261102)
-+        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
-+                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
++        executor = session or execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
++                                                       cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
 +        extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
 +        executor.execute(prompt, prompt_id, extra, valid[2])
 +        errors = []
@@ -35457,7 +35666,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,653 @@
+@@ -0,0 +1,991 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35465,6 +35674,7 @@
 +Pure value nodes call the original's method from originals.py (copied verbatim from WAS_Node_Suite.py by the
 +build); nodes that touch models, tensors or files go through the guest SDK.
 +"""
++import codecs
 +import glob
 +import hashlib
 +import io as io_bytes
@@ -35480,10 +35690,11 @@
 +from comfy_api.latest import io, sdk
 +
 +from . import originals
-+from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
-+                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_PILGRAM, NEEDS_SCIPY, NO_NETWORK,
-+                       SecureConversionRefusal, not_converted)
++from .refusals import (CLIPSEG_WEIGHTS, IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING,
++                       IMAGE_SAVE_OVERWRITE, IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED,
++                       LOAD_BATCH_LISTING, LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_OPENCV, NEEDS_PILGRAM,
++                       NEEDS_SCIPY, NO_NETWORK, NSP_SOURCES, SAVE_TEXT_ENCODING, SAVE_TEXT_LISTING, SAVE_TEXT_NAME,
++                       SAVE_TEXT_PATH, TEXT_FILE_LISTING, TEXT_FILE_PATH, SecureConversionRefusal, not_converted)
 +from .schema_v3 import ROWS, build_schema
 +from .tokens import TextTokens
 +
@@ -35582,6 +35793,13 @@
 +    "Image Dragan Photography Filter": NEEDS_PILGRAM.format(node="Image Dragan Photography Filter",
 +                                                            use="pilgram.css.blending.overlay and color"),
 +    "Image Style Filter": NEEDS_PILGRAM.format(node="Image Style Filter", use="its photo filters"),
++    # phase B batch 9: WAS_Image_Crop_Face and WAS_Tools_Class.VideoWriter import cv2 (WAS_Node_Suite.py:3139-3276,
++    # 1268-1473); WAS_CLIPSeg downloads its model (11628-11629); nsp_parse fetches the NSP pantry (528-535)
++    "Image Crop Face": NEEDS_OPENCV.format(node="Image Crop Face", use="cv2 cascade classifiers"),
++    "Create Video from Path": NEEDS_OPENCV.format(node="Create Video from Path", use="cv2 video writing"),
++    "Video Dump Frames": NEEDS_OPENCV.format(node="Video Dump Frames", use="cv2 video reading"),
++    "CLIPSeg Masking": CLIPSEG_WEIGHTS,
++    "CLIPTextEncode (NSP)": NSP_SOURCES,
 +}
 +# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
 +# Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
@@ -35878,6 +36096,319 @@
 +    return True
 +
 +
++# ---- text files (phase B batch 9): Load Text File, Text Load Line From File, Save Text File
++# The originals resolved a file path against ComfyUI's working directory, where input, output and temp are ComfyUI's
++# folders. V2 reads only inside those three folders (ctx.assets) and writes only inside output or temp
++# (ctx.output.write_text). The original also recorded every file it read or wrote in its history database; V2 keeps
++# no such history.
++_TEXT_FOLDERS = ("input", "output", "temp")
++_TEXT_WRITE_FOLDERS = ("output", "temp")
++# The extensions the managed text writer accepts (comfy_api output.write_text)
++_TEXT_WRITE_EXTENSIONS = (".txt", ".caption", ".json", ".yaml", ".yml", ".md", ".csv", ".tsv", ".xml", ".log", ".ini",
++                          ".toml")
++_TEXT_WRITE_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries the text to the writer
++
++
++def _text_location(node, path, folders=_TEXT_FOLDERS, refusal=TEXT_FILE_PATH):
++    """(folder, logical name) for a path inside one of ComfyUI's folders, else a named refusal. Backslashes count as
++    separators, as on a Windows host."""
++    text = path.replace("\\", "/")
++    if text.startswith("/") or _DRIVE.match(text):
++        raise SecureConversionRefusal(refusal.format(node=node, path=path))
++    head, _, rest = posixpath.normpath(text).partition("/")
++    if head in folders:
++        return head, rest
++    raise SecureConversionRefusal(refusal.format(node=node, path=path))
++
++
++async def _text_kind(node, folder, name, path):
++    """What os.path.exists(path) found: "file", "folder" or None. The SDK lists files, so a folder that holds no files
++    reads as missing."""
++    if not name:
++        return "folder"
++    assets = sdk.ctx().assets
++    try:
++        if await assets.exists(folder, name):
++            return "file"
++        below = await assets.list(folder, prefix=name, recursive=True)
++    except Exception as error:  # in a guest a host error arrives as a transport error
++        raise SecureConversionRefusal(TEXT_FILE_LISTING.format(node=node, path=path, reason=error)) from error
++    return "folder" if below else None
++
++
++async def _text_open(folder, name, kind, path):
++    """open(path, 'r', encoding="utf-8", newline='\\n') on the asset's bytes; for a folder, the IsADirectoryError that
++    open() raised."""
++    if kind == "folder":
++        raise IsADirectoryError(21, "Is a directory", path)
++    assets = sdk.ctx().assets
++    data = await assets.read_bytes(await assets.resolve(folder, name))
++    return io_bytes.TextIOWrapper(io_bytes.BytesIO(data), encoding="utf-8", newline="\n")
++
++
++def _text_validate(node):
++    async def validate(cls, file_path=None):
++        # A path outside ComfyUI's folders is refused before the prompt runs; a linked path when the node runs.
++        if isinstance(file_path, str) and file_path:
++            try:
++                _text_location(node, file_path)
++            except SecureConversionRefusal as refusal:
++                return str(refusal)
++        return True
++    return validate
++
++
++async def _load_text_file(cls, file_path='', dictionary_name='[filename]]'):
++    # WAS_Text_Load_From_File.load_file (WAS_Node_Suite.py:11210-11232)
++    filename = (os.path.basename(file_path).split('.', 1)[0]
++                if '.' in os.path.basename(file_path) else os.path.basename(file_path))
++    if dictionary_name != '[filename]':
++        filename = dictionary_name
++    kind = None
++    if file_path:  # os.path.exists('') is False
++        folder, name = _text_location("Load Text File", file_path)
++        kind = await _text_kind("Load Text File", folder, name, file_path)
++    if kind is None:
++        originals.cstr(f"The path `{file_path}` specified cannot be found.").error.print()
++        return io.NodeOutput('', {filename: []})
++    with await _text_open(folder, name, kind, file_path) as file:
++        text = file.read()
++
++    lines = []
++    for line in io_bytes.StringIO(text):
++        if not line.strip().startswith('#'):
++            lines.append(line.replace("\n", '').replace("\r", ''))
++    dictionary = {filename: lines}
++
++    return io.NodeOutput("\n".join(lines), dictionary)
++
++
++def _text_batch_index(position):
++    color = originals.cstr.color
++    originals.cstr(f'{color.YELLOW}TextBatch{color.END} Index: {position}').msg.print()
++
++
++def _text_batch_key(kind, label):
++    return f"text-load-line:{kind}:" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:40]
++
++
++async def _text_load_line(cls, file_path='', dictionary_name='[filename]', label='TextBatch', mode='automatic',
++                          index=0, multiline_text=None):
++    # WAS_Text_Load_Line_From_File.load_file and TextFileLoader (WAS_Node_Suite.py:11274-11363). The original kept the
++    # file mode's counter and path per label in its settings database and the multiline mode's counter per label in
++    # its history database; V2 keeps both in the pack's host storage, under separate keys.
++    storage = sdk.ctx().storage
++    if multiline_text is not None:
++        lines = multiline_text.strip().split('\n')
++        if mode == 'index':
++            if index < 0 or index >= len(lines):
++                originals.cstr(f"Invalid line index `{index}`").error.print()
++                return io.NodeOutput('', {dictionary_name: []})
++            line = lines[index]
++        else:
++            key = _text_batch_key("multiline", label)
++            stored = await storage.get(key)
++            line_index = json.loads(stored) if stored is not None else None
++            if line_index is None:
++                line_index = 0
++            line = lines[line_index % len(lines)]
++            await storage.set(key, json.dumps(line_index + 1))
++        return io.NodeOutput(line, {dictionary_name: lines})
++
++    if file_path == '':
++        originals.cstr("No file path specified.").error.print()
++        return io.NodeOutput('', {dictionary_name: []})
++
++    folder, name = _text_location("Text Load Line From File", file_path)
++    kind = await _text_kind("Text Load Line From File", folder, name, file_path)
++    if kind is None:
++        originals.cstr(f"The path `{file_path}` specified cannot be found.").error.print()
++        return io.NodeOutput('', {dictionary_name: []})
++
++    # TextFileLoader.load_file: the label's counter, reset to 0 (with the new path) when its stored path differs,
++    # before the file is opened
++    key = _text_batch_key("file", label)
++    stored = await storage.get(key)
++    state = json.loads(stored) if stored else {}
++    if state.get("path") != file_path:
++        state = {"label": label, "path": file_path, "counter": 0}
++        await storage.set(key, json.dumps(state))
++    position = state["counter"]
++    with await _text_open(folder, name, kind, file_path) as file:
++        lines = [line.strip() for line in file]
++
++    line, found_lines = None, []
++    if mode == 'automatic':
++        # get_next_line
++        if position >= len(lines):
++            position = 0
++        line = lines[position]
++        position += 1
++        if position == len(lines):
++            position = 0
++        _text_batch_index(position)
++        found_lines = lines
++    elif mode == 'index':
++        if index >= len(lines):
++            index = index % len(lines)
++        # get_line_by_index
++        if index < 0 or index >= len(lines):
++            originals.cstr(f"Invalid line index `{index}`").error.print()
++        else:
++            position = index
++            line = lines[position]
++            _text_batch_index(position)
++            found_lines = lines
++    if line is None:
++        originals.cstr("No valid line was found. The file may be empty or all lines have been read.").error.print()
++        return io.NodeOutput('', {dictionary_name: []})
++    state["counter"] = position  # store_index
++    await storage.set(key, json.dumps(state))
++
++    return io.NodeOutput(line, {dictionary_name: found_lines})
++
++
++async def _text_load_line_fingerprint(cls, **kwargs):
++    # IS_CHANGED (WAS_Node_Suite.py:11255-11266): always changed in automatic mode; in index mode the sha256 of the
++    # file, or False when there is no such file.
++    if kwargs['mode'] != 'index':
++        return float("NaN")
++    file_path = kwargs['file_path']
++    if file_path == '':
++        return False
++    folder, name = _text_location("Text Load Line From File", file_path)
++    kind = await _text_kind("Text Load Line From File", folder, name, file_path)
++    if kind is None:
++        return False
++    if kind == "folder":  # the original's open(path, 'rb') raised; core then counts the node as changed
++        raise IsADirectoryError(21, "Is a directory", file_path)
++    assets = sdk.ctx().assets
++    return await assets.digest(await assets.resolve(folder, name), "sha256")
++
++
++def _save_text_checks(path, encoding, filename_prefix, filename_suffix, file_extension):
++    folder, sub = _text_location("Save Text File", path, _TEXT_WRITE_FOLDERS, SAVE_TEXT_PATH)
++    if codecs.lookup(encoding).name != 'utf-8':  # an unknown name raises the LookupError the original's open() raised
++        raise SecureConversionRefusal(SAVE_TEXT_ENCODING.format(encoding=encoding))
++    for part in (filename_prefix, filename_suffix, file_extension):
++        if "/" in part or "\\" in part:
++            raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
++                name=f"{filename_prefix}{filename_suffix}{file_extension}", why="it holds a folder separator"))
++    if file_extension.lower() not in _TEXT_WRITE_EXTENSIONS:
++        raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
++            name=f"{filename_prefix}{filename_suffix}{file_extension}",
++            why="the managed text writer accepts only " + ", ".join(_TEXT_WRITE_EXTENSIONS)))
++    return folder, sub
++
++
++async def _save_text_file(cls, text, path, filename_prefix='ComfyUI', filename_delimiter='_',
++                          filename_number_padding=4, file_extension='.txt', encoding='utf-8', filename_suffix=''):
++    # WAS_Text_Save.save_text_file, generate_filename and write_text_file (WAS_Node_Suite.py:10848-10916)
++    tokens = TextTokens()
++    path = tokens.parseTokens(path)
++    filename_prefix = tokens.parseTokens(filename_prefix)
++    folder, sub = _save_text_checks(path, encoding, filename_prefix, filename_suffix, file_extension)
++    size = len(text.encode("utf-8"))
++    if size > _TEXT_WRITE_LIMIT:
++        raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
++            name=f"{filename_prefix}{filename_suffix}{file_extension}",
++            why=f"the text takes {size} bytes, more than a Secure Nodes V2 node can write at once"))
++
++    if text.strip() == '':
++        originals.cstr("There is no text specified to save! Text is empty.").error.print()
++
++    delimiter = filename_delimiter
++    number_padding = int(filename_number_padding)
++    prefix, suffix, extension = filename_prefix, filename_suffix, file_extension
++    assets = sdk.ctx().assets
++    if number_padding == 0:
++        # If number_padding is 0, don't use a numerical suffix
++        filename = f"{prefix}{suffix}{extension}"
++    else:
++        if delimiter:
++            pattern = f"{re.escape(prefix)}{re.escape(delimiter)}(\\d{{{number_padding}}}){re.escape(suffix)}{re.escape(extension)}"
++        else:
++            pattern = f"{re.escape(prefix)}(\\d{{{number_padding}}}){re.escape(suffix)}{re.escape(extension)}"
++        try:  # os.listdir(path)
++            listed = [posixpath.basename(name) for name in await assets.list(folder, prefix=sub, recursive=False)]
++        except Exception as error:  # in a guest a host error arrives as a transport error
++            where = posixpath.join(folder, sub)
++            raise SecureConversionRefusal(SAVE_TEXT_LISTING.format(path=where, reason=error)) from error
++        existing_counters = [
++            int(re.search(pattern, filename).group(1))
++            for filename in listed
++            if re.match(pattern, filename) and filename.endswith(extension)
++        ]
++        existing_counters.sort()
++        if existing_counters:
++            counter = existing_counters[-1] + 1
++        else:
++            counter = 1
++        if delimiter:
++            filename = f"{prefix}{delimiter}{counter:0{number_padding}}{suffix}{extension}"
++        else:
++            filename = f"{prefix}{counter:0{number_padding}}{suffix}{extension}"
++
++        while await assets.exists(folder, posixpath.join(sub, filename) if sub else filename):
++            counter += 1
++            if delimiter:
++                filename = f"{prefix}{delimiter}{counter:0{number_padding}}{suffix}{extension}"
++            else:
++                filename = f"{prefix}{counter:0{number_padding}}{suffix}{extension}"
++
++    logical = posixpath.join(sub, filename) if sub else filename
++    await sdk.ctx().output.write_text(text, filename=logical, folder=folder, mode="overwrite")
++    return io.NodeOutput()
++
++
++async def _save_text_validate(cls, path=None, encoding=None, filename_prefix=None, filename_suffix=None,
++                              file_extension=None):
++    # The path, encoding and file name checks of _save_text_file, before the prompt runs (widget values only)
++    values = (path, encoding, filename_prefix, filename_suffix, file_extension)
++    if all(isinstance(value, str) for value in values):
++        try:
++            tokens = TextTokens()
++            _save_text_checks(tokens.parseTokens(path), encoding, tokens.parseTokens(filename_prefix),
++                              filename_suffix, file_extension)
++        except SecureConversionRefusal as refusal:
++            return str(refusal)
++        except LookupError:  # an unknown encoding fails when the node runs, as the original's open() did
++            pass
++    return True
++
++
++# ---- Number Counter (WAS_Number_Counter.increment_number, WAS_Node_Suite.py:12706-12730), phase B batch 9
++async def _number_counter(cls, number_type, mode, start, stop, step, reset_bool=0):
++    # The original kept each node's counter on the node object, keyed by the node id, for as long as ComfyUI kept
++    # that object. V2 keeps it in the pack's host storage under the node id and runs the original method on it.
++    unique_id = cls.hidden.unique_id
++    key = "number-counter:" + hashlib.sha256(str(unique_id).encode("utf-8")).hexdigest()[:40]
++    storage = sdk.ctx().storage
++    node = originals.WAS_Number_Counter()
++    stored = await storage.get(key)
++    if stored is not None:
++        node.counters[unique_id] = json.loads(stored)
++    result = node.increment_number(number_type, mode, start, stop, step, unique_id, reset_bool=reset_bool)
++    await storage.set(key, json.dumps(node.counters[unique_id]))
++    return io.NodeOutput(*result)
++
++
++# ---- Prompt Styles Selector (WAS_Prompt_Styles_Selector.load_style, WAS_Node_Suite.py:9825-9841), phase B batch 9
++def _prompt_styles_selector(cls, style):
++    # The original read styles.json from its configuration folder. With the default configuration there is no such
++    # file (its menu then holds only "None"), and V2 ships none either, so the styles are empty, as there.
++    originals.cstr("The styles file does not exist. Unable to load styles! Have you imported your AUTOMATIC1111 "
++                   "WebUI styles?").error.print()
++    styles = {}
++    if styles and style != None or style != 'None':  # noqa: E711 (the original's test)
++        prompt = styles[style]['prompt']
++        negative_prompt = styles[style]['negative_prompt']
++    else:
++        prompt = ''
++        negative_prompt = ''
++    return io.NodeOutput(prompt, negative_prompt)
++
++
 +# ---- Image Save (WAS_Image_Save.was_save_images)
 +_WEBP_EMBED_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries this metadata to the writer
 +
@@ -36072,6 +36603,22 @@
 +_CONVERTED["Load Image Batch"] = {
 +    "execute": classmethod(_load_image_batch), "fingerprint_inputs": classmethod(_load_image_batch_fingerprint),
 +    "validate_inputs": classmethod(_load_image_batch_validate), "SDK_PERMISSIONS": ("assets", "storage")}
++_CONVERTED["Load Text File"] = {
++    "execute": classmethod(_load_text_file), "validate_inputs": classmethod(_text_validate("Load Text File")),
++    "SDK_PERMISSIONS": ("assets",)}
++# No validate_inputs: with multiline_text connected the original ignores file_path, so a path is refused only when
++# the file mode runs.
++_CONVERTED["Text Load Line From File"] = {
++    "execute": classmethod(_text_load_line), "fingerprint_inputs": classmethod(_text_load_line_fingerprint),
++    "SDK_PERMISSIONS": ("assets", "storage")}
++_CONVERTED["Save Text File"] = {
++    "execute": classmethod(_save_text_file), "validate_inputs": classmethod(_save_text_validate),
++    "SDK_PERMISSIONS": ("assets", "output")}
++# IS_CHANGED returns NaN (WAS_Node_Suite.py:12696-12698)
++_CONVERTED["Number Counter"] = {
++    "execute": classmethod(_number_counter), "fingerprint_inputs": classmethod(_always_changed),
++    "SDK_PERMISSIONS": ("storage",)}
++_CONVERTED["Prompt Styles Selector"] = {"execute": classmethod(_prompt_styles_selector)}
 +_CONVERTED["Upscale Model Loader"] = {
 +    "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
 +    "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}
@@ -36113,7 +36660,7 @@
 +CONVERTED_IDS = sorted(_CONVERTED)
 --- /dev/null
 +++ b/v2/was_v2/originals.py
-@@ -0,0 +1,3178 @@
+@@ -0,0 +1,3238 @@
 +"""Functions and node classes copied verbatim from WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4.
 +
 +The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
@@ -39117,6 +39664,66 @@
 +        return (pil2tensor(image), )
 +
 +
++# --- WAS_Node_Suite.py:12674-12730
++class WAS_Number_Counter:
++    def __init__(self):
++        self.counters = {}
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "number_type": (["integer", "float"],),
++                "mode": (["increment", "decrement", "increment_to_stop", "decrement_to_stop", "reset_after_stop"],),
++                "start": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615, "step": 0.01}),
++                "stop": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615, "step": 0.01}),
++                "step": ("FLOAT", {"default": 1, "min": 0, "max": 99999, "step": 0.01}),
++            },
++            "optional": {
++                "reset_bool": ("NUMBER",),
++            },
++            "hidden": {
++                "unique_id": "UNIQUE_ID",
++            }
++        }
++
++    @classmethod
++    def IS_CHANGED(cls, **kwargs):
++        return float("NaN")
++
++    RETURN_TYPES = ("NUMBER", "FLOAT", "INT")
++    RETURN_NAMES = ("number", "float", "int")
++    FUNCTION = "increment_number"
++
++    CATEGORY = "WAS Suite/Number"
++
++    def increment_number(self, number_type, mode, start, stop, step, unique_id, reset_bool=0):
++
++        counter = int(start) if mode == 'integer' else start
++        if self.counters.__contains__(unique_id):
++            counter = self.counters[unique_id]
++
++        if round(reset_bool) >= 1:
++            counter = start
++
++        if mode == 'increment':
++            counter += step
++        elif mode == 'deccrement':
++            counter -= step
++        elif mode == 'increment_to_stop':
++            counter = counter + step if counter < stop else counter
++        elif mode == 'decrement_to_stop':
++            counter = counter - step if counter > stop else counter
++        elif mode == 'reset_after_stop':
++            counter = counter + step if counter < stop else start + step
++
++        self.counters[unique_id] = counter
++
++        result = int(counter) if number_type == 'integer' else float(counter)
++
++        return ( result, float(counter), int(counter) )
++
++
 +# --- WAS_Node_Suite.py:1022-1025 (class line and docstring; selected members follow)
 +class WAS_Tools_Class():
 +    """
@@ -39294,7 +39901,7 @@
 +        return result_image
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,137 @@
 +"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
 +
 +PACK = "was-ns"
@@ -39383,6 +39990,54 @@
 +    f"{PACK}/Load Image Batch: the host could not list {{path!r}} ({{reason}}). A Secure Nodes V2 node lists at most "
 +    "4096 files at once, and only files that stay inside ComfyUI's input folder (links out of it are not followed). "
 +    "Split a larger batch into folders under input/ of at most 4096 files each."
++)
++
++NEEDS_OPENCV = (
++    f"{PACK}/{{node}} is not available on Secure Nodes V2: the original computes it with OpenCV ({{use}}), which the "
++    "guest runtime for this pack does not provide."
++)
++
++CLIPSEG_WEIGHTS = (
++    f"{PACK}/CLIPSeg Masking is not available on Secure Nodes V2 yet: the original downloads the CLIPSeg model with "
++    "transformers when it runs, and a Secure Nodes V2 node has no network access. It needs a pinned copy of the "
++    "weights provided by the host."
++)
++
++NSP_SOURCES = (
++    f"{PACK}/CLIPTextEncode (NSP) is not available on Secure Nodes V2: in Noodle Soup Prompts mode the original "
++    "downloads its prompt pantry from the network the first time it runs, and in Wildcards mode it reads wildcard "
++    "files from a folder on the host."
++)
++
++TEXT_FILE_PATH = (
++    f"{PACK}/{{node}}: file_path {{path!r}} is outside ComfyUI's input, output and temp folders. The original read any "
++    "file on the host; a Secure Nodes V2 node reads only those folders. Put the file under input/ and enter its path "
++    "as 'input/<file>'."
++)
++
++TEXT_FILE_LISTING = (
++    f"{PACK}/{{node}}: the host could not check {{path!r}} ({{reason}})."
++)
++
++SAVE_TEXT_PATH = (
++    f"{PACK}/Save Text File: path {{path!r}} is not a folder inside ComfyUI's output or temp folder. The original "
++    "resolved it against ComfyUI's working directory and wrote only inside the input, output or temp folder; a "
++    "Secure Nodes V2 node writes only inside the output or temp folder. Use 'output' or 'output/<folder>' (the "
++    "default './ComfyUI/output/...' names the output folder only when ComfyUI runs from its parent folder)."
++)
++
++SAVE_TEXT_NAME = (
++    f"{PACK}/Save Text File: the file name {{name!r}} cannot be written on Secure Nodes V2 ({{why}})."
++)
++
++SAVE_TEXT_ENCODING = (
++    f"{PACK}/Save Text File: encoding {{encoding!r}} is not supported on Secure Nodes V2: the managed text writer "
++    "writes UTF-8 only. Use utf-8."
++)
++
++SAVE_TEXT_LISTING = (
++    f"{PACK}/Save Text File: the host could not list folder {{path!r}} ({{reason}}), so the next file number cannot "
++    "be computed the way the original computed it. A Secure Nodes V2 node lists at most 4096 names at once."
 +)
 --- /dev/null
 +++ b/v2/was_v2/schema_v3.py

@@ -87,3 +87,51 @@ LOAD_BATCH_LISTING = (
     "4096 files at once, and only files that stay inside ComfyUI's input folder (links out of it are not followed). "
     "Split a larger batch into folders under input/ of at most 4096 files each."
 )
+
+NEEDS_OPENCV = (
+    f"{PACK}/{{node}} is not available on Secure Nodes V2: the original computes it with OpenCV ({{use}}), which the "
+    "guest runtime for this pack does not provide."
+)
+
+CLIPSEG_WEIGHTS = (
+    f"{PACK}/CLIPSeg Masking is not available on Secure Nodes V2 yet: the original downloads the CLIPSeg model with "
+    "transformers when it runs, and a Secure Nodes V2 node has no network access. It needs a pinned copy of the "
+    "weights provided by the host."
+)
+
+NSP_SOURCES = (
+    f"{PACK}/CLIPTextEncode (NSP) is not available on Secure Nodes V2: in Noodle Soup Prompts mode the original "
+    "downloads its prompt pantry from the network the first time it runs, and in Wildcards mode it reads wildcard "
+    "files from a folder on the host."
+)
+
+TEXT_FILE_PATH = (
+    f"{PACK}/{{node}}: file_path {{path!r}} is outside ComfyUI's input, output and temp folders. The original read any "
+    "file on the host; a Secure Nodes V2 node reads only those folders. Put the file under input/ and enter its path "
+    "as 'input/<file>'."
+)
+
+TEXT_FILE_LISTING = (
+    f"{PACK}/{{node}}: the host could not check {{path!r}} ({{reason}})."
+)
+
+SAVE_TEXT_PATH = (
+    f"{PACK}/Save Text File: path {{path!r}} is not a folder inside ComfyUI's output or temp folder. The original "
+    "resolved it against ComfyUI's working directory and wrote only inside the input, output or temp folder; a "
+    "Secure Nodes V2 node writes only inside the output or temp folder. Use 'output' or 'output/<folder>' (the "
+    "default './ComfyUI/output/...' names the output folder only when ComfyUI runs from its parent folder)."
+)
+
+SAVE_TEXT_NAME = (
+    f"{PACK}/Save Text File: the file name {{name!r}} cannot be written on Secure Nodes V2 ({{why}})."
+)
+
+SAVE_TEXT_ENCODING = (
+    f"{PACK}/Save Text File: encoding {{encoding!r}} is not supported on Secure Nodes V2: the managed text writer "
+    "writes UTF-8 only. Use utf-8."
+)
+
+SAVE_TEXT_LISTING = (
+    f"{PACK}/Save Text File: the host could not list folder {{path!r}} ({{reason}}), so the next file number cannot "
+    "be computed the way the original computed it. A Secure Nodes V2 node lists at most 4096 names at once."
+)
