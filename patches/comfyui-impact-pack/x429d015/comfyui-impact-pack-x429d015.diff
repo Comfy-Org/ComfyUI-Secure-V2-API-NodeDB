@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,148 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `429d0159ad429e64d2b3916e6e7be9c22d025c3c`.
@@ -102,6 +102,53 @@
 +  - the per-SEG batch is (N, H, W) float32 (upstream: an (N, 1, H, W) bool batch).
 +- `tests/test_sam_repair_r2.py` is the lane-gate parity test. It runs a synthetic SAM model, synthetic SEGS and
 +  synthetic images through the original Impact code and through these handlers.
++
++## Fidelity repair r3 - SEGS chain
++
++- **MaskToSEGS** runs upstream `core.mask_to_segs`, copied verbatim in `_segs_upstream.py`: contours, crop
++  regions, bbox fill, drop size and the label "A".
++  - It replaces a reimplementation that used connected components, its own crop and drop rules, and numeric
++    labels.
++  - MaskToSEGS_for_AnimateDiff keeps its handler.
++- **SegsToCombinedMask** runs upstream `core.segs_to_combined_mask`, also in `_segs_upstream.py`.
++- **SEGS between nodes** travel in Impact v2's layout: masks as (1, h, w) float32, and plain ints and floats in
++  place of numpy scalars, which cannot cross the guest wire.
++- **ImpactSwitch, LatentSwitch and SEGSSwitch.**
++  - For check_lazy_status, Core tags each Autogrow value as (value, original input name) and expects that name
++    back.
++  - A guest wire without tuple preservation delivers the pair as a list. The previous lazy check missed it, so
++    the selected input was never evaluated.
++  - The lazy check now accepts both forms, plus the tagged empty group, and asks for the original name.
++- `tests/test_segs_repair_r3.py` is the lane-gate parity test:
++  - MaskToSEGS → SegsToCombinedMask on synthetic masks, against the original Impact code;
++  - the lazy-check contract through the wire, with and without tuple preservation.
++
++## Fidelity repair r4 - SEGSPaste
++
++- SEGSPaste runs upstream `SEGSPaste.doit`, together with the helpers it calls, copied verbatim in
++  `_segs_paste_upstream.py`. The helpers are `segs_scale_match`, `tensor_paste`, `tensor_gaussian_blur_mask`,
++  `tensor_resize`, and the crop and mask helpers.
++- It replaces a reimplementation that differed from upstream in three ways: it resized crops and masks to the crop
++  region, skipped the scale match, and feathered with its own blur.
++- Boundary stand-ins, which are not upstream code:
++  - the guest's torch device;
++  - Core's `common_upscale`, taken from the pack's own copy in `_image_ops.py`;
++  - Core's default launch arguments, so the result lands on the CPU.
++- `tests/test_paste_repair_r4.py` is the lane-gate parity test. It runs synthetic SEGS and images through the
++  original Impact code and through this handler.
++
++## Fidelity repair r5 - PreviewBridge
++
++- PreviewBridge now returns what upstream `PreviewBridge.doit` returns when no mask has been painted for the node:
++  - the input images, and an empty 64x64 float32 mask, sent as (1, 64, 64) in Impact v2's MASK layout.
++    Previously v2 returned an empty mask the size of the image.
++  - With `block` enabled, an empty mask blocks both outputs, as upstream's `ExecutionBlocker(None)` does. v2 uses
++    `graph.block()` for this, so the node declares the `graph.block` permission.
++- Not available in V2: a mask painted in the mask editor and the images it saves. The guest cannot read them, so
++  `restore_mask` has nothing to restore, and the node behaves like upstream's first run on a new node every time.
++  The preview is still shown.
++- `tests/test_preview_bridge_repair_r5.py` is the lane-gate parity test. It runs every block / restore_mask
++  combination on two image sizes through the original node and through this handler.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,456 +1,13 @@
@@ -36882,7 +36929,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,6601 @@
+@@ -0,0 +1,6620 @@
 +"""Secure Nodes 2.0 conversion for the pinned Impact Pack snapshot.
 +
 +The upstream pack combines ordinary value, mask, image, SEGS and pipe
@@ -37654,10 +37701,24 @@
 +    return values.get(name), label, index
 +
 +
++def _lazy_untag(value, names):
++    """Core's lazy check tags each Autogrow value as (value, original input name); the guest wire may deliver the
++    pair as a list."""
++    if (isinstance(value, (tuple, list)) and len(value) == 2 and isinstance(value[1], str)
++            and value[1] in names):
++        return value[0], value[1]
++    return value, None
++
++
 +async def _switch_lazy(select, inputs=None, **kwargs):
 +    key = f"input{int(select)}"
++    # An empty optional Autogrow group arrives tagged as ({}, "inputs").
++    inputs, _name = _lazy_untag(inputs, ("inputs",))
 +    values = _dynamic_switch_values(inputs, **kwargs)
-+    return [key] if key in values and values[key] is None else []
++    if key not in values:
++        return []
++    value, name = _lazy_untag(values[key], (key, f"inputs.{key}"))
++    return [name or key] if value is None else []
 +
 +
 +async def _inverse_switch(select, input, **_kwargs):
@@ -38042,6 +38103,24 @@
 +            str(index + 1) if label is None else str(label), None,
 +        ))
 +    return (height, width), result
++
++
++async def _mask_to_segs_upstream(
++    mask, combined, crop_factor, bbox_fill, drop_size, contour_fill=False,
++    **_kwargs,
++):
++    from . import _segs_upstream
++
++    return _one(_segs_upstream.mask_to_segs_node(
++        torch.as_tensor(await _raw(mask)).cpu(), combined, crop_factor,
++        bbox_fill, drop_size, contour_fill, SEG))
++
++
++async def _segs_to_combined_mask_upstream(segs, **_kwargs):
++    from . import _segs_upstream
++
++    return _one(_segs_upstream.segs_to_combined_mask_node(
++        _segs(await _raw(segs))))
 +
 +
 +async def _mask_to_segs(
@@ -39284,33 +39363,12 @@
 +
 +async def _paste_segs(image, segs, feather, alpha=255,
 +                      ref_image_opt=None, **_kwargs):
-+    output = _image4(await _raw(image)).clone()
-+    _, items = _segs(await _raw(segs))
-+    reference = _image4(await _raw(ref_image_opt)) if ref_image_opt is not None else None
-+    for item in items:
-+        crop = item.cropped_image
-+        if crop is None and reference is not None:
-+            crop = _crop_image(reference, item.crop_region)
-+        if crop is None:
-+            continue
-+        left, top, right, bottom = map(int, item.crop_region)
-+        left, top = max(0, left), max(0, top)
-+        right, bottom = min(output.shape[2], right), min(output.shape[1], bottom)
-+        if right <= left or bottom <= top:
-+            continue
-+        crop = _resize_images(torch.as_tensor(crop), right - left, bottom - top)
-+        mask = _resize_masks(_seg_mask(item), right - left, bottom - top)
-+        mask = _gaussian(mask, int(feather)) * (max(0, min(255, int(alpha))) / 255.0)
-+        batch = output.shape[0]
-+        if crop.shape[0] == 1 and batch > 1:
-+            crop = crop.expand(batch, -1, -1, -1)
-+        if mask.shape[0] == 1 and batch > 1:
-+            mask = mask.expand(batch, -1, -1)
-+        crop = crop[:batch, ..., :output.shape[-1]].to(output.device, output.dtype)
-+        mask = mask[:batch].to(output.device, output.dtype)[..., None]
-+        target = output[:, top:bottom, left:right, :crop.shape[-1]]
-+        output[:, top:bottom, left:right, :crop.shape[-1]] = target * (1.0 - mask) + crop * mask
-+    return _one(output)
++    # Impact Pack segs_nodes.py SEGSPaste.doit, upstream (verbatim in _segs_paste_upstream.py).
++    from . import _segs_paste_upstream
++
++    return _one(_segs_paste_upstream.paste(
++        _image4(await _raw(image)), _segs(await _raw(segs)), feather, alpha,
++        _image4(await _raw(ref_image_opt)) if ref_image_opt is not None else None))
 +
 +
 +async def _clear_control(segs, **_kwargs):
@@ -43085,12 +43143,19 @@
 +    return {"ui": {"latents": [descriptor]}, "result": (value,)}
 +
 +
-+async def _preview_bridge(images, **_kwargs):
++async def _preview_bridge(images, block=False, restore_mask="never", **_kwargs):
 +    value = _image4(await _raw(images))
 +    reference = await sdk.ImageRef._from_raw(value)
 +    display = await _ctx().ui.preview_images(reference)
-+    mask = torch.zeros((value.shape[0], value.shape[1], value.shape[2]))
-+    return {"ui": display, "result": (value, mask)}
++    # Impact Pack bridge_nodes.py PreviewBridge.doit, when no mask is restored or loaded: the empty mask is
++    # torch.zeros((64, 64)) (sent here as (1, 64, 64), Impact v2's MASK layout), and with block enabled an empty
++    # mask blocks both outputs. A mask painted in the mask editor is not available to this node in V2, so
++    # restore_mask has nothing to restore.
++    mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
++    if block and bool(torch.all(mask == 0)):
++        blocker = await _ctx().graph.block()
++        return {"ui": display, "result": (blocker, blocker)}
++    return {"ui": display, "result": (value, mask.unsqueeze(0))}
 +
 +
 +async def _preview_bridge_latent(latent, vae_opt=None, **_kwargs):
@@ -43249,10 +43314,11 @@
 +_set({"AddMask"}, _mask_add, "raw")
 +_set({"MaskRectArea"}, _rect_percent, "raw")
 +_set({"MaskRectAreaAdvanced"}, _rect_advanced, "raw")
-+_set({"MaskToSEGS", "MaskToSEGS_for_AnimateDiff"}, _mask_to_segs, "raw")
++_set({"MaskToSEGS"}, _mask_to_segs_upstream, "raw")
++_set({"MaskToSEGS_for_AnimateDiff"}, _mask_to_segs, "raw")
 +_set({"MediaPipeFaceMeshToSEGS"}, _mediapipe_facemesh_to_segs, "raw")
 +_set({"EmptySegs"}, _empty_segs)
-+_set({"SegsToCombinedMask"}, _segs_to_mask, "raw")
++_set({"SegsToCombinedMask"}, _segs_to_combined_mask_upstream, "raw")
 +_set({"ImpactSEGSToMaskList"}, _segs_to_mask_list, "raw")
 +_set({"ImpactSEGSToMaskBatch"}, _segs_to_mask_batch, "raw")
 +_set({"ImpactSegsAndMask", "ImpactSegsAndMaskForEach"}, _segs_and_mask, "raw")
@@ -43405,7 +43471,7 @@
 +_set({"ImageReceiver"}, _image_receiver, "assets", "raw")
 +_set({"LatentSender"}, _latent_sender, "output")
 +_set({"LatentReceiver"}, _latent_receiver, "assets", "raw")
-+_set({"PreviewBridge"}, _preview_bridge, "raw", "ui")
++_set({"PreviewBridge"}, _preview_bridge, "raw", "ui", "graph.block")
 +_set({"PreviewBridgeLatent"}, _preview_bridge_latent, "raw", "ui")
 +
 +
@@ -43789,6 +43855,696 @@
 +    "unsupported",
 +    "wrap_output",
 +]
+--- /dev/null
++++ b/v2/_segs_paste_upstream.py
+@@ -0,0 +1,399 @@
++"""SEGSPaste for Impact Pack under Secure Nodes V2 (fidelity repair r4).
++
++SEGSPaste.doit and the helpers it calls are upstream code, copied verbatim below as AST source segments of the
++pristine files. Boundary stand-ins (not upstream code): `comfy.model_management` answers this guest's torch device;
++`comfy.utils.common_upscale` is the pack's own copy of Core's (_image_ops.py); `args` answers Core's default launch
++arguments (no --highvram, no --gpu-only), so the result lands on the CPU as upstream's does by default.
++Copied:
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L14-22 TensorBatchBuilder
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L119-124 general_tensor_resize
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L128-128 LANCZOS
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L129-143 tensor_resize
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L153-155 tensor2pil
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L158-159 pil2tensor
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L201-206 _tensor_check_image
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L209-214 _tensor_check_mask
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L227-293 tensor_paste
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L442-478 tensor_gaussian_blur_mask
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L552-560 crop_ndarray4
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L563-563 crop_tensor4
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L588-589 crop_image
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L633-640 make_4d_mask
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L661-664 resize_mask
++#   ComfyUI-Impact-Pack/modules/impact/core.py L46-48 SEG
++#   ComfyUI-Impact-Pack/modules/impact/core.py L1000-1042 segs_scale_match
++#   ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L170-243 SEGSPaste
++"""
++import types
++from collections import namedtuple
++
++import numpy as np
++import torch
++import torchvision
++from PIL import Image
++
++from . import _image_ops
++
++
++# ---------------------------------------------------------------- boundary stand-ins
++def _guest_device():
++    return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
++
++
++comfy = types.SimpleNamespace(model_management=types.SimpleNamespace(get_torch_device=_guest_device),
++                              utils=types.SimpleNamespace(common_upscale=_image_ops.common_upscale))
++args = types.SimpleNamespace(highvram=False, gpu_only=False)
++
++
++# ---------------------------------------------------------------- upstream Impact Pack modules/impact/utils.py
++# ComfyUI-Impact-Pack/modules/impact/utils.py L14-22 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++class TensorBatchBuilder:
++    def __init__(self):
++        self.tensor = None
++
++    def concat(self, new_tensor):
++        if self.tensor is None:
++            self.tensor = new_tensor
++        else:
++            self.tensor = torch.concat((self.tensor, new_tensor), dim=0)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L119-124 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def general_tensor_resize(image, w: int, h: int):
++    _tensor_check_image(image)
++    image = image.permute(0, 3, 1, 2)
++    image = torch.nn.functional.interpolate(image, size=(h, w), mode="bilinear")
++    image = image.permute(0, 2, 3, 1)
++    return image
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L128-128 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L129-143 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_resize(image, w: int, h: int):
++    _tensor_check_image(image)
++    if image.shape[3] >= 3:
++        scaled_images = TensorBatchBuilder()
++        for single_image in image:
++            single_image = single_image.unsqueeze(0)
++            single_pil = tensor2pil(single_image)
++            scaled_pil = single_pil.resize((w, h), resample=LANCZOS)
++
++            single_image = pil2tensor(scaled_pil)
++            scaled_images.concat(single_image)
++
++        return scaled_images.tensor
++    else:
++        return general_tensor_resize(image, w, h)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L153-155 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor2pil(image):
++    _tensor_check_image(image)
++    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8))
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L158-159 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def pil2tensor(image):
++    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L201-206 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def _tensor_check_image(image):
++    if image.ndim != 4:
++        raise ValueError(f"Expected NHWC tensor, but found {image.ndim} dimensions")
++    if image.shape[-1] not in (1, 3, 4):
++        raise ValueError(f"Expected 1, 3 or 4 channels for image, but found {image.shape[-1]} channels")
++    return
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L209-214 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def _tensor_check_mask(mask):
++    if mask.ndim != 4:
++        raise ValueError(f"Expected NHWC tensor, but found {mask.ndim} dimensions")
++    if mask.shape[-1] != 1:
++        raise ValueError(f"Expected 1 channel for mask, but found {mask.shape[-1]} channels")
++    return
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L227-293 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_paste(image1, image2, left_top, mask):
++    """
++    Pastes image2 onto image1 at position left_top using mask.
++    Supports both RGB and RGBA images.
++    """
++    _tensor_check_image(image1)
++    _tensor_check_image(image2)
++    _tensor_check_mask(mask)
++
++    if image2.shape[1:3] != mask.shape[1:3]:
++        mask = resize_mask(mask.squeeze(dim=3), image2.shape[1:3]).unsqueeze(dim=3)
++
++    x, y = left_top
++    _, h1, w1, c1 = image1.shape
++    _, h2, w2, c2 = image2.shape
++
++    # Calculate image patch size
++    w = min(w1, x + w2) - x
++    h = min(h1, y + h2) - y
++
++    # If the patch is out of bound, nothing to do!
++    if w <= 0 or h <= 0:
++        return
++
++    mask = mask[:, :h, :w, :]
++
++    # Get the region to be modified
++    region1 = image1[:, y:y+h, x:x+w, :]
++    region2 = image2[:, :h, :w, :]
++
++    # Handle RGB and RGBA cases
++    if c1 == 3 and c2 == 3:
++        # Both RGB - simple case
++        image1[:, y:y+h, x:x+w, :] = (1 - mask) * region1 + mask * region2
++
++    elif c1 == 4 and c2 == 4:
++        # Both RGBA - need to handle alpha channel separately
++        # RGB channels
++        image1[:, y:y+h, x:x+w, :3] = (
++            (1 - mask) * region1[:, :, :, :3] +
++            mask * region2[:, :, :, :3]
++        )
++
++        # Alpha channel - use "over" composition
++        a1 = region1[:, :, :, 3:4]
++        a2 = region2[:, :, :, 3:4] * mask
++        new_alpha = a1 + a2 * (1 - a1)
++        image1[:, y:y+h, x:x+w, 3:4] = new_alpha
++
++    elif c1 == 4 and c2 == 3:
++        # Target is RGBA, source is RGB - assume source is fully opaque
++        image1[:, y:y+h, x:x+w, :3] = (
++            (1 - mask) * region1[:, :, :, :3] +
++            mask * region2
++        )
++        # Alpha channel - reduce alpha where mask is applied
++        image1[:, y:y+h, x:x+w, 3:4] = region1[:, :, :, 3:4] * (1 - mask) + mask
++
++    elif c1 == 3 and c2 == 4:
++        # Target is RGB, source is RGBA - apply source alpha to mask
++        effective_mask = mask * region2[:, :, :, 3:4]
++        image1[:, y:y+h, x:x+w, :] = (
++            (1 - effective_mask) * region1 +
++            effective_mask * region2[:, :, :, :3]
++        )
++
++    return
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L442-478 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_gaussian_blur_mask(mask, kernel_size, sigma=10.0):
++    """Return NHWC torch.Tenser from ndim == 2 or 4 `np.ndarray` or `torch.Tensor`"""
++    if isinstance(mask, np.ndarray):
++        mask = torch.from_numpy(mask)
++
++    if mask.ndim == 2:
++        mask = mask[None, ..., None]
++    elif mask.ndim == 3:
++        mask = mask[..., None]
++
++    _tensor_check_mask(mask)
++
++    if kernel_size <= 0:
++        return mask
++
++    kernel_size = kernel_size*2+1
++
++    shortest = min(mask.shape[1], mask.shape[2])
++    if shortest <= kernel_size:
++        kernel_size = int(shortest/2)
++        if kernel_size % 2 == 0:
++            kernel_size += 1
++        if kernel_size < 3:
++            return mask  # skip feathering
++
++    prev_device = mask.device
++    device = comfy.model_management.get_torch_device()
++    mask.to(device)
++
++    # apply gaussian blur
++    mask = mask[:, None, ..., 0]
++    blurred_mask = torchvision.transforms.GaussianBlur(kernel_size=kernel_size, sigma=sigma)(mask)
++    blurred_mask = blurred_mask[:, 0, ..., None]
++
++    blurred_mask.to(prev_device)
++
++    return blurred_mask
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L552-560 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def crop_ndarray4(npimg, crop_region):
++    x1 = crop_region[0]
++    y1 = crop_region[1]
++    x2 = crop_region[2]
++    y2 = crop_region[3]
++
++    cropped = npimg[:, y1:y2, x1:x2, :]
++
++    return cropped
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L563-563 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++crop_tensor4 = crop_ndarray4
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L588-589 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def crop_image(image, crop_region):
++    return crop_tensor4(image, crop_region)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L633-640 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def make_4d_mask(mask):
++    if len(mask.shape) == 3:
++        return mask.unsqueeze(0)
++
++    elif len(mask.shape) == 2:
++        return mask.unsqueeze(0).unsqueeze(0)
++
++    return mask
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L661-664 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def resize_mask(mask, size):
++    mask = make_4d_mask(mask)
++    resized_mask = torch.nn.functional.interpolate(mask, size=size, mode='bilinear', align_corners=False)
++    return resized_mask.squeeze(0)
++
++
++utils = types.SimpleNamespace(tensor_resize=tensor_resize, crop_image=crop_image, tensor_paste=tensor_paste,
++                                tensor_gaussian_blur_mask=tensor_gaussian_blur_mask, resize_mask=resize_mask)
++
++
++# ---------------------------------------------------------------- upstream Impact Pack modules/impact/core.py
++# ComfyUI-Impact-Pack/modules/impact/core.py L46-48 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++SEG = namedtuple("SEG",
++                 ['cropped_image', 'cropped_mask', 'confidence', 'crop_region', 'bbox', 'label', 'control_net_wrapper'],
++                 defaults=[None])
++
++# ComfyUI-Impact-Pack/modules/impact/core.py L1000-1042 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++def segs_scale_match(segs, target_shape):
++    h = segs[0][0]
++    w = segs[0][1]
++
++    th = target_shape[1]
++    tw = target_shape[2]
++
++    if (h == th and w == tw) or h == 0 or w == 0:
++        return segs
++
++    rh = th / h
++    rw = tw / w
++
++    new_segs = []
++    for seg in segs[1]:
++        cropped_image = seg.cropped_image
++        cropped_mask = seg.cropped_mask
++        x1, y1, x2, y2 = seg.crop_region
++        bx1, by1, bx2, by2 = seg.bbox
++
++        crop_region = int(x1*rw), int(y1*rw), int(x2*rh), int(y2*rh)
++        bbox = int(bx1*rw), int(by1*rw), int(bx2*rh), int(by2*rh)
++        new_w = crop_region[2] - crop_region[0]
++        new_h = crop_region[3] - crop_region[1]
++
++        if isinstance(cropped_mask, np.ndarray):
++            cropped_mask = torch.from_numpy(cropped_mask)
++
++        if isinstance(cropped_mask, torch.Tensor) and len(cropped_mask.shape) == 3:
++            cropped_mask = torch.nn.functional.interpolate(cropped_mask.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)
++            cropped_mask = cropped_mask.squeeze(0)
++        else:
++            cropped_mask = torch.nn.functional.interpolate(cropped_mask.unsqueeze(0).unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)
++            cropped_mask = cropped_mask.squeeze(0).squeeze(0).numpy()
++
++        if cropped_image is not None:
++            cropped_image = utils.tensor_resize(cropped_image if isinstance(cropped_image, torch.Tensor) else torch.from_numpy(cropped_image), new_w, new_h)
++            cropped_image = cropped_image.numpy()
++
++        new_seg = SEG(cropped_image, cropped_mask, seg.confidence, crop_region, bbox, seg.label, seg.control_net_wrapper)
++        new_segs.append(new_seg)
++
++    return (th, tw), new_segs
++
++
++core = types.SimpleNamespace(segs_scale_match=segs_scale_match)
++
++
++# ---------------------------------------------------------------- upstream Impact Pack segs_nodes.py
++# ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L170-243 (pristine sha256 51e4b938627fb4f7958c220940747476cafc7f424f87035a886e8a0686e1ac8a)
++class SEGSPaste:
++    @classmethod
++    def INPUT_TYPES(s):
++        return {"required": {
++                     "image": ("IMAGE", ),
++                     "segs": ("SEGS", ),
++                     "feather": ("INT", {"default": 5, "min": 0, "max": 100, "step": 1}),
++                     "alpha": ("INT", {"default": 255, "min": 0, "max": 255, "step": 1}),
++                     },
++                "optional": {"ref_image_opt": ("IMAGE", ), }
++                }
++
++    RETURN_TYPES = ("IMAGE", )
++    FUNCTION = "doit"
++
++    CATEGORY = "ImpactPack/Detailer"
++
++    DESCRIPTION = "This node provides a function to paste the enhanced SEGS, improved through the SEGS detailer, back onto the original image."
++
++    @staticmethod
++    def doit(image, segs, feather, alpha=255, ref_image_opt=None):
++        # Optimized SEGS paste node: preallocates result and avoids repeated concat.
++        segs = core.segs_scale_match(segs, image.shape)
++
++        batch_size, _, _, _ = image.shape
++        result = torch.empty_like(image)
++
++        with torch.no_grad():
++            for i in range(batch_size):
++                # avoid extra clone/unsqueeze
++                image_i = image[i].unsqueeze(0).clone()
++
++                for seg in segs[1]:
++                    ref_image = None
++
++                    # ref_image handling
++                    if ref_image_opt is None and seg.cropped_image is not None:
++                        cropped_image = seg.cropped_image
++                        if isinstance(cropped_image, np.ndarray):
++                            cropped_image = torch.from_numpy(cropped_image)
++                        ref_image = cropped_image[i].unsqueeze(0)
++                    elif ref_image_opt is not None:
++                        ref_tensor = ref_image_opt[i].unsqueeze(0)
++                        ref_image = utils.crop_image(ref_tensor, seg.crop_region)
++
++                    if ref_image is None:
++                        continue
++
++                    # mask handling
++                    cmask = seg.cropped_mask
++                    if cmask.ndim == 3 and len(cmask) == batch_size:
++                        mask = cmask[i]
++                    elif cmask.ndim == 3 and len(cmask) > 1:
++                        # statt OR-Schleife → vektorisiert
++                        mask = torch.any(cmask > 0.1, dim=0).float()
++                    else:  # ndim == 2
++                        mask = cmask
++
++                    # blur + alpha
++                    mask = utils.tensor_gaussian_blur_mask(mask, feather) * (alpha / 255.0)
++
++                    # ensure same device
++                    mask = mask.to(image_i.device)
++                    ref_image = ref_image.to(image_i.device)
++
++                    x, y, *_ = seg.crop_region
++                    utils.tensor_paste(image_i, ref_image, (x, y), mask)
++
++                result[i] = image_i[0]
++
++        if not args.highvram and not args.gpu_only:
++            result = result.cpu()
++
++        return (result,)
++
++
++# ---------------------------------------------------------------- V2: Impact v2's SEGS into upstream SEGSPaste
++def paste(image, segs, feather, alpha, ref_image_opt):
++    """Upstream SEGSPaste.doit on Impact v2's SEGS: upstream SEG values (cropped images as tensors, masks as given)."""
++    shape, items = segs
++    upstream = (tuple(shape), [SEG(*item) for item in items])
++    (result,) = SEGSPaste.doit(image, upstream, feather, alpha, ref_image_opt)
++    return result
+--- /dev/null
++++ b/v2/_segs_upstream.py
+@@ -0,0 +1,285 @@
++"""Upstream SEGS operations for Impact Pack under Secure Nodes V2 (fidelity repair r3).
++
++MaskToSEGS and SegsToCombinedMask run upstream code, copied verbatim below as AST source segments of the
++pristine files. The V2 part at the end only converts between upstream's SEG value types and the layout Impact v2
++passes between nodes (masks as (1, h, w) float32 tensors, plain ints and floats instead of numpy scalars, which
++cannot cross the guest wire).
++Copied:
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L509-520 normalize_region
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L523-549 make_crop_region
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L613-620 make_2d_mask
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L623-630 make_3d_mask
++#   ComfyUI-Impact-Pack/modules/impact/core.py L46-48 SEG
++#   ComfyUI-Impact-Pack/modules/impact/core.py L1296-1407 mask_to_segs
++#   ComfyUI-Impact-Pack/modules/impact/core.py L1481-1493 segs_to_combined_mask
++"""
++import logging
++import types
++from collections import namedtuple
++
++import cv2
++import numpy as np
++import torch
++
++
++# ---------------------------------------------------------------- upstream Impact Pack modules/impact/utils.py
++# ComfyUI-Impact-Pack/modules/impact/utils.py L509-520 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def normalize_region(limit, startp, size):
++    if startp < 0:
++        new_endp = min(limit, size)
++        new_startp = 0
++    elif startp + size > limit:
++        new_startp = max(0, limit - size)
++        new_endp = limit
++    else:
++        new_startp = startp
++        new_endp = min(limit, startp+size)
++
++    return int(new_startp), int(new_endp)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L523-549 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def make_crop_region(w, h, bbox, crop_factor, crop_min_size=None):
++    x1 = bbox[0]
++    y1 = bbox[1]
++    x2 = bbox[2]
++    y2 = bbox[3]
++
++    bbox_w = x2 - x1
++    bbox_h = y2 - y1
++
++    crop_w = bbox_w * crop_factor
++    crop_h = bbox_h * crop_factor
++
++    if crop_min_size is not None:
++        crop_w = max(crop_min_size, crop_w)
++        crop_h = max(crop_min_size, crop_h)
++
++    kernel_x = x1 + bbox_w / 2
++    kernel_y = y1 + bbox_h / 2
++
++    new_x1 = int(kernel_x - crop_w / 2)
++    new_y1 = int(kernel_y - crop_h / 2)
++
++    # make sure position in (w,h)
++    new_x1, new_x2 = normalize_region(w, new_x1, crop_w)
++    new_y1, new_y2 = normalize_region(h, new_y1, crop_h)
++
++    return [new_x1, new_y1, new_x2, new_y2]
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L613-620 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def make_2d_mask(mask):
++    if len(mask.shape) == 4:
++        return mask.squeeze(0).squeeze(0)
++
++    elif len(mask.shape) == 3:
++        return mask.squeeze(0)
++
++    return mask
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L623-630 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def make_3d_mask(mask):
++    if len(mask.shape) == 4:
++        return mask.squeeze(0)
++
++    elif len(mask.shape) == 2:
++        return mask.unsqueeze(0)
++
++    return mask
++
++
++utils = types.SimpleNamespace(normalize_region=normalize_region, make_crop_region=make_crop_region,
++                                make_2d_mask=make_2d_mask, make_3d_mask=make_3d_mask)
++
++
++# ---------------------------------------------------------------- upstream Impact Pack modules/impact/core.py
++# ComfyUI-Impact-Pack/modules/impact/core.py L46-48 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++SEG = namedtuple("SEG",
++                 ['cropped_image', 'cropped_mask', 'confidence', 'crop_region', 'bbox', 'label', 'control_net_wrapper'],
++                 defaults=[None])
++
++# ComfyUI-Impact-Pack/modules/impact/core.py L1296-1407 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++def mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size=1, label='A', crop_min_size=None, detailer_hook=None, is_contour=True):
++    drop_size = max(drop_size, 1)
++    if mask is None:
++        logging.info("[mask_to_segs] Cannot operate: MASK is empty.")
++        return ([],)
++
++    if isinstance(mask, np.ndarray):
++        pass  # `mask` is already a NumPy array
++    else:
++        try:
++            mask = mask.numpy()
++        except AttributeError:
++            logging.info("[mask_to_segs] Cannot operate: MASK is not a NumPy array or Tensor.")
++            return ([],)
++
++    if mask is None:
++        logging.info("[mask_to_segs] Cannot operate: MASK is empty.")
++        return ([],)
++
++    result = []
++
++    if len(mask.shape) == 2:
++        mask = np.expand_dims(mask, axis=0)
++
++    for i in range(mask.shape[0]):
++        mask_i = mask[i]
++
++        if combined:
++            indices = np.nonzero(mask_i)
++            if len(indices[0]) > 0 and len(indices[1]) > 0:
++                bbox = (
++                    np.min(indices[1]),
++                    np.min(indices[0]),
++                    np.max(indices[1]),
++                    np.max(indices[0]),
++                )
++                crop_region = utils.make_crop_region(
++                    mask_i.shape[1], mask_i.shape[0], bbox, crop_factor
++                )
++                x1, y1, x2, y2 = crop_region
++
++                if detailer_hook is not None:
++                    crop_region = detailer_hook.post_crop_region(mask_i.shape[1], mask_i.shape[0], bbox, crop_region)
++
++                if x2 - x1 > 0 and y2 - y1 > 0:
++                    cropped_mask = mask_i[y1:y2, x1:x2]
++
++                    if bbox_fill:
++                        bx1, by1, bx2, by2 = bbox
++                        cropped_mask = cropped_mask.copy()
++                        cropped_mask[by1:by2, bx1:bx2] = 1.0
++
++                    if cropped_mask is not None:
++                        item = SEG(None, cropped_mask, 1.0, crop_region, bbox, label, None)
++                        result.append(item)
++
++        else:
++            mask_i_uint8 = (mask_i * 255.0).astype(np.uint8)
++            contours, ctree = cv2.findContours(mask_i_uint8, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
++            for j, contour in enumerate(contours):
++                hierarchy = ctree[0][j]
++                if hierarchy[3] != -1:
++                    continue
++
++                separated_mask = np.zeros_like(mask_i_uint8)
++                cv2.drawContours(separated_mask, [contour], 0, 255, -1)
++                separated_mask = np.array(separated_mask / 255.0).astype(np.float32)
++
++                x, y, w, h = cv2.boundingRect(contour)
++                bbox = x, y, x + w, y + h
++                crop_region = utils.make_crop_region(
++                    mask_i.shape[1], mask_i.shape[0], bbox, crop_factor, crop_min_size
++                )
++
++                if detailer_hook is not None:
++                    crop_region = detailer_hook.post_crop_region(mask_i.shape[1], mask_i.shape[0], bbox, crop_region)
++
++                if w > drop_size and h > drop_size:
++                    if is_contour:
++                        mask_src = separated_mask
++                    else:
++                        mask_src = mask_i * separated_mask
++
++                    cropped_mask = np.array(
++                        mask_src[
++                            crop_region[1]: crop_region[3],
++                            crop_region[0]: crop_region[2],
++                        ]
++                    )
++
++                    if bbox_fill:
++                        cx1, cy1, _, _ = crop_region
++                        bx1 = x - cx1
++                        bx2 = x+w - cx1
++                        by1 = y - cy1
++                        by2 = y+h - cy1
++                        cropped_mask[by1:by2, bx1:bx2] = 1.0
++
++                    if cropped_mask is not None:
++                        cropped_mask = torch.clip(torch.from_numpy(cropped_mask), 0, 1.0)
++                        item = SEG(None, cropped_mask.numpy(), 1.0, crop_region, bbox, label, None)
++                        result.append(item)
++
++    if not result:
++        logging.info("[mask_to_segs] Empty mask.")
++
++    logging.info(f"# of Detected SEGS: {len(result)}")
++    # for r in result:
++    #     print(f"\tbbox={r.bbox}, crop={r.crop_region}, label={r.label}")
++
++    # shape: (b,h,w) -> (h,w)
++    return (mask.shape[1], mask.shape[2]), result
++
++# ComfyUI-Impact-Pack/modules/impact/core.py L1481-1493 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++def segs_to_combined_mask(segs):
++    shape = segs[0]
++    h = shape[0]
++    w = shape[1]
++
++    mask = np.zeros((h, w), dtype=np.uint8)
++
++    for seg in segs[1]:
++        cropped_mask = seg.cropped_mask
++        crop_region = seg.crop_region
++        mask[crop_region[1]:crop_region[3], crop_region[0]:crop_region[2]] |= (cropped_mask * 255).astype(np.uint8)
++
++    return torch.from_numpy(mask.astype(np.float32) / 255.0)
++
++
++# ---------------------------------------------------------------- V2: Impact v2's SEGS layout
++def _plain(value):
++    """A numpy scalar as the Python int or float with the same value."""
++    return value.item() if isinstance(value, np.generic) else value
++
++
++def to_upstream_segs(segs):
++    """Impact v2's SEGS in upstream's value types: cropped masks as 2-D float32 numpy arrays, and bboxes as float32
++    arrays where v2 carries floats (Ultralytics detections, which upstream holds as float32) or as given otherwise."""
++    shape, items = segs
++    converted = []
++    for item in items:
++        mask = item.cropped_mask
++        if isinstance(mask, torch.Tensor):
++            mask = mask.detach().cpu().numpy()
++        mask = np.asarray(mask, dtype=np.float32)
++        if mask.ndim == 3 and mask.shape[0] == 1:
++            mask = mask[0]
++        bbox = item.bbox
++        if len(bbox) and all(isinstance(value, float) for value in bbox):
++            bbox = np.asarray(bbox, dtype=np.float32)
++        converted.append(SEG(item.cropped_image, mask, item.confidence, item.crop_region, bbox, item.label,
++                             item.control_net_wrapper))
++    return shape, converted
++
++
++def to_v2_segs(segs, seg_type):
++    """Upstream SEG values in Impact v2's layout; every value is upstream's, only its container changes."""
++    shape, items = segs
++    converted = []
++    for item in items:
++        mask = torch.from_numpy(np.ascontiguousarray(item.cropped_mask, dtype=np.float32))
++        if mask.ndim == 2:
++            mask = mask.unsqueeze(0)
++        bbox = item.bbox
++        bbox = tuple(bbox.tolist()) if isinstance(bbox, np.ndarray) else tuple(_plain(value) for value in bbox)
++        confidence = item.confidence
++        if isinstance(confidence, (np.ndarray, np.generic)):
++            confidence = float(np.asarray(confidence, dtype=np.float32).reshape(-1)[0])
++        converted.append(seg_type(item.cropped_image, mask, confidence, [int(_plain(v)) for v in item.crop_region], bbox,
++                                  item.label, item.control_net_wrapper))
++    return (int(shape[0]), int(shape[1])), converted
++
++
++def mask_to_segs_node(mask, combined, crop_factor, bbox_fill, drop_size, contour_fill, seg_type):
++    # Impact Pack segs_nodes.py, MaskToSEGS.doit:
++    mask = utils.make_2d_mask(mask)
++    result = mask_to_segs(mask, combined, crop_factor, bbox_fill, drop_size, is_contour=contour_fill)
++    return to_v2_segs(result, seg_type)
++
++
++def segs_to_combined_mask_node(segs):
++    # Impact Pack segs_nodes.py, SegsToCombinedMask.doit:
++    mask = segs_to_combined_mask(to_upstream_segs(segs))
++    mask = utils.make_3d_mask(mask)
++    return mask
 --- /dev/null
 +++ b/v2/_ultralytics_detector.py
 @@ -0,0 +1,578 @@
@@ -54553,7 +55309,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,36245 @@
+@@ -0,0 +1,36246 @@
 +{
 + "format": "comfy-secure-nodes-v1",
 + "runtime": {
@@ -81511,7 +82267,8 @@
 +   "sdk_refs": true,
 +   "permissions": [
 +    "raw",
-+    "ui"
++    "ui",
++    "graph.block"
 +   ],
 +   "methods": {
 +    "validate_inputs": false,
@@ -91309,6 +92066,436 @@
 +if __name__ == "__main__":
 +    sys.exit(main(sys.argv[1:]))
 --- /dev/null
++++ b/v2/tests/test_paste_repair_r4.py
+@@ -0,0 +1,243 @@
++"""Impact Pack fidelity repair r4 (SEGSPaste): parity in the lane gate.
++
++DEPS=<the unpacked Impact dependency-profile wheels; upstream-only test needs (piexif, dill) under _orig_only/> \
++run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/> <Impact v2/tests> <results> test_paste_repair_r4.py
++
++SEGS come from MaskToSEGS on synthetic masks; each SEG gets a synthetic cropped image (the inverted crop of the
++image, or a seeded pattern), and SEGSPaste puts them back: feather 0 / 3 / 10 / 60 (a kernel larger than a crop),
++alpha 255 / 100 / 0, with and without ref_image_opt, batch 1 and 2, and SEGS made for half the image size (the
++segs_scale_match path). Original: the pristine Impact Pack segs_nodes.SEGSPaste.doit under Core. v2: the repaired
++handler, its output passed through the overlay's wire encoder. Outputs compare as exact tensor bytes.
++"""
++import asyncio
++import glob
++import hashlib
++import importlib.abc
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++ROOT = "/pack"
++IMPACT = os.path.join(ROOT, "ComfyUI-Impact-Pack-HEAD")
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++
++
++def make_mask(kind, scale=1):
++    import torch
++    m = torch.zeros((80 * scale, 96 * scale))
++    s = scale
++    if kind == "two":
++        m[5 * s:25 * s, 5 * s:30 * s] = 1.0
++        m[40 * s:75 * s, 50 * s:90 * s] = 1.0
++    elif kind == "edge":
++        m[0:30 * s, 0:20 * s] = 1.0
++        m[60 * s:80 * s, 80 * s:96 * s] = 1.0
++    else:
++        m[20 * s:50 * s, 30 * s:70 * s] = 1.0
++    return m.unsqueeze(0)
++
++
++def make_image(batch, scale=1, seed=9):
++    import torch
++    g = torch.Generator().manual_seed(seed)
++    return torch.rand((batch, 80 * scale, 96 * scale, 3), generator=g)
++
++
++def cases():
++    out = []
++    for mask in ("rect", "two", "edge"):
++        for batch in (1, 2):
++            for feather in (0, 3, 10, 60):
++                for alpha in (255, 100, 0):
++                    for crop_source in ("inverted", "pattern", "ref"):
++                        out.append({"mask": mask, "batch": batch, "feather": feather, "alpha": alpha,
++                                    "crop_source": crop_source, "scale": 1, "combined": False, "crop_factor": 1.4})
++    for feather in (0, 5):
++        out.append({"mask": "two", "batch": 1, "feather": feather, "alpha": 255, "crop_source": "inverted", "scale": 2,
++                    "combined": True, "crop_factor": 3.0})
++    return out
++
++
++def crops_for(segs, image, case):
++    """Synthetic 'enhanced' crops per SEG: the inverted crop of the image or a seeded pattern (None for 'ref')."""
++    import torch
++    out = []
++    for index, item in enumerate(segs[1]):
++        x1, y1, x2, y2 = (int(v) for v in item[3])
++        if case["crop_source"] == "ref":
++            out.append(None)
++        elif case["crop_source"] == "inverted":
++            out.append(1.0 - image[:, y1:y2, x1:x2, :])
++        else:
++            g = torch.Generator().manual_seed(100 + index)
++            out.append(torch.rand((image.shape[0], y2 - y1, x2 - x1, 3), generator=g))
++    return out
++
++
++def digest(value):
++    import numpy as np
++    value = np.ascontiguousarray(value.detach().cpu().float().numpy())
++    return [list(value.shape), hashlib.sha256(value.tobytes()).hexdigest()]
++
++
++def outcome(fn):
++    try:
++        return ["value", fn()]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++
++
++def run_original(plan, out_path):
++    sys.path.insert(0, os.path.join(DEPS, "_orig_only"))
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import server
++
++    class Routes:
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: lambda function: function
++
++    class Instance:
++        routes = Routes()
++        prompt_queue = types.SimpleNamespace(currently_running={})
++
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: None
++
++    server.PromptServer.instance = Instance()
++    root = "/tmp/orig-impact"
++    shutil.copytree(IMPACT, root, ignore=shutil.ignore_patterns("v2", "__pycache__", ".git"))
++    sys.path.insert(0, os.path.join(root, "modules"))
++    import impact.config  # noqa: F401  (upstream __init__ order)
++    import impact.impact_server  # noqa: F401
++    import impact.segs_nodes as segs_nodes
++    records = []
++    for case in plan:
++        def run():
++            image = make_image(case["batch"], case["scale"])
++            (segs,) = segs_nodes.MaskToSEGS.doit(make_mask(case["mask"]), case["combined"], case["crop_factor"], False,
++                                                 1, False)
++            base = make_image(case["batch"], 1) if case["scale"] != 1 else image
++            crops = crops_for(segs, base, case)
++            segs = (segs[0], [item._replace(cropped_image=crop) for item, crop in zip(segs[1], crops)])
++            ref = image if case["crop_source"] == "ref" else None
++            (result,) = segs_nodes.SEGSPaste.doit(image, segs, case["feather"], case["alpha"], ref)
++            return digest(result)
++        records.append(outcome(run))
++    with open(out_path, "w") as handle:
++        json.dump({"records": records}, handle)
++
++
++GUEST_BASE = {"av", "blake3", "comfy_api", "comfy_secure_nodes", "comfy_secure_sdk", "filelock", "fsspec", "iniconfig",
++              "jinja2", "markupsafe", "mpmath", "networkx", "numpy", "nvidia", "packaging", "PIL", "pluggy", "psutil",
++              "pygments", "pytest", "_pytest", "py", "pytest_asyncio", "safetensors", "setuptools", "pkg_resources",
++              "_distutils_hack", "sympy", "torch", "functorch", "torchgen", "triton", "typing_extensions", "wheel"}
++
++
++class GuestImports(importlib.abc.MetaPathFinder):
++    def __init__(self, allowed):
++        self.allowed, self.blocked = allowed, set()
++
++    def find_spec(self, fullname, path, target=None):
++        top = fullname.split(".")[0]
++        if top in sys.stdlib_module_names or top in self.allowed or top.startswith("_"):
++            return None
++        frame = sys._getframe(1)
++        while frame and frame.f_code.co_filename.startswith("<frozen"):
++            frame = frame.f_back
++        if frame is not None and not frame.f_code.co_filename.startswith(("/pack/", DEPS)):
++            return None
++        self.blocked.add(fullname)
++        raise ModuleNotFoundError(f"blocked in guest emulation: {fullname}", name=fullname)
++
++
++def run_v2(plan, out_path):
++    deps_top = {n[:-3] if n.endswith(".py") else n for n in os.listdir(DEPS) if not n.endswith((".dist-info", ".data", ".libs"))}
++    finder = GuestImports(GUEST_BASE | deps_top | {"impact_v2"})
++    sys.meta_path.insert(0, finder)
++    spec = importlib.util.spec_from_file_location("impact_v2", os.path.join(IMPACT, "v2", "__init__.py"),
++                                                  submodule_search_locations=[os.path.join(IMPACT, "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["impact_v2"] = package
++    spec.loader.exec_module(package)
++    nodes = sys.modules["impact_v2._secure_nodes"]
++    from comfy_api.latest import sdk as public_sdk
++    wire_spec = importlib.util.spec_from_file_location("overlay_wire", "/overlay/comfy_secure_nodes/transport/wire.py")
++    wire = importlib.util.module_from_spec(wire_spec)
++    wire_spec.loader.exec_module(wire)
++    records, wire_failures = [], []
++    for index, case in enumerate(plan):
++        def run():
++            image = make_image(case["batch"], case["scale"])
++            (segs,) = asyncio.run(nodes._mask_to_segs_upstream(make_mask(case["mask"]), case["combined"],
++                                                               case["crop_factor"], False, 1, False))
++            base = make_image(case["batch"], 1) if case["scale"] != 1 else image
++            crops = crops_for(segs, base, case)
++            segs = (segs[0], [item._replace(cropped_image=crop) for item, crop in zip(segs[1], crops)])
++            ref = image if case["crop_source"] == "ref" else None
++            (result,) = asyncio.run(nodes._paste_segs(image, segs, case["feather"], case["alpha"], ref))
++            wire.decode(json.loads(json.dumps(wire.encode(public_sdk.ImageRef(kind="IMAGE", id=f"t{index}")))))
++            return digest(result)
++        try:
++            records.append(outcome(run))
++        except Exception as exc:
++            records.append(["error", type(exc).__name__, str(exc)])
++            wire_failures.append(index)
++    with open(out_path, "w") as handle:
++        json.dump({"records": records, "wire_failures": wire_failures, "blocked_imports": sorted(finder.blocked)}, handle)
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        plan = json.load(open(argv[2]))
++        return (run_original if argv[1] == "original" else run_v2)(plan, argv[3]) or 0
++    plan = cases()
++    with open("/tmp/plan.json", "w") as handle:
++        json.dump(plan, handle)
++    sides = {}
++    for side in ("original", "v2"):
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/plan.json",
++                                   f"/tmp/out-{side}.json"], stdout=log, stderr=subprocess.STDOUT, timeout=3000)
++        if proc.returncode != 0:
++            print(f"side {side} failed ({proc.returncode}); see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(f"/tmp/out-{side}.json"))
++        shutil.copyfile(f"/tmp/out-{side}.json", os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++    mismatches = [{"case": c, "original": w, "v2": g} for c, w, g in zip(plan, original["records"], v2["records"]) if w != g]
++    values = sum(1 for w in original["records"] if w[0] == "value")
++    unexpected = sorted(set(v2["blocked_imports"]) - {"accimage", "defusedxml", "envwrap"})
++    probe = next(g for w, g in zip(original["records"], v2["records"]) if w[0] == "value")
++    negative_red = [probe[0], [probe[1][0], "0" * 64]] != probe
++    ok = not mismatches and not v2["wire_failures"] and not unexpected and values == len(plan)
++    parity = {"status": "PASS" if ok else "FAIL",
++              "SEGSPaste": {"verdict": "EXACT" if not mismatches else "MISMATCH", "cases": len(plan), "values": values,
++                            "errors": len(plan) - values, "mismatches": len(mismatches)},
++              "wire_failures": v2["wire_failures"], "guest_blocked_imports": v2["blocked_imports"],
++              "guest_blocked_imports_unexpected": unexpected,
++              "negative_control": {"perturbation": "one output digest replaced", "turned_red": negative_red}}
++    with open(os.path.join(RESULTS, "parity.json"), "w") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w") as handle:
++        json.dump(mismatches[:60], handle, indent=1)
++        handle.write("\n")
++    print(json.dumps(parity, indent=1))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+--- /dev/null
++++ b/v2/tests/test_preview_bridge_repair_r5.py
+@@ -0,0 +1,181 @@
++"""Impact Pack fidelity repair r5 (PreviewBridge, no painted mask): parity in the lane gate.
++
++DEPS=<the unpacked Impact dependency-profile wheels; upstream-only test needs (piexif, dill) under _orig_only/> \
++run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/> <Impact v2/tests> <results> test_preview_bridge_repair_r5.py
++
++Each case is a first run of a PreviewBridge node (a new node id, no mask painted in the mask editor), for every
++block / restore_mask combination and two image sizes. Original: the pristine Impact Pack bridge_nodes.PreviewBridge
++under Core (previews saved to a /tmp temp directory). v2: the repaired handler with a fake SDK context (ui previews and
++graph.block). Compared: the pixels, the mask (in (1, H, W) layout) and whether both outputs are blocked.
++"""
++import asyncio
++import glob
++import hashlib
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++ROOT = "/pack"
++IMPACT = os.path.join(ROOT, "ComfyUI-Impact-Pack-HEAD")
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++
++
++def cases():
++    return [{"uid": f"pb{i}", "block": block, "restore_mask": restore, "size": size}
++            for i, (block, restore, size) in enumerate((b, r, s) for b in (False, True)
++                                                        for r in ("never", "always", "if_same_size")
++                                                        for s in ((64, 96), (32, 32)))]
++
++
++def make_image(size):
++    import torch
++    g = torch.Generator().manual_seed(size[0] * 1000 + size[1])
++    return torch.rand((1, size[0], size[1], 3), generator=g)
++
++
++def digest(value):
++    import numpy as np
++    import torch
++    value = torch.as_tensor(value)
++    if value.ndim == 2:
++        value = value.unsqueeze(0)
++    value = np.ascontiguousarray(value.detach().cpu().float().numpy())
++    return [list(value.shape), hashlib.sha256(value.tobytes()).hexdigest()]
++
++
++def outcome(fn):
++    try:
++        return ["value", fn()]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++
++
++def run_original(plan, out_path):
++    sys.path.insert(0, os.path.join(DEPS, "_orig_only"))
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import folder_paths
++    import server
++
++    class Routes:
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: lambda function: function
++
++    class Instance:
++        routes = Routes()
++        prompt_queue = types.SimpleNamespace(currently_running={})
++
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: None
++
++    server.PromptServer.instance = Instance()
++    os.makedirs("/tmp/pb-temp", exist_ok=True)
++    folder_paths.set_temp_directory("/tmp/pb-temp")
++    root = "/tmp/orig-impact"
++    shutil.copytree(IMPACT, root, ignore=shutil.ignore_patterns("v2", "__pycache__", ".git"))
++    sys.path.insert(0, os.path.join(root, "modules"))
++    import impact.config  # noqa: F401  (upstream __init__ order)
++    import impact.impact_server  # noqa: F401
++    import impact.bridge_nodes as bridge_nodes
++    from comfy_execution.graph import ExecutionBlocker
++    records = []
++    for case in plan:
++        def run():
++            out = bridge_nodes.PreviewBridge().doit(make_image(case["size"]), "", case["uid"], case["block"],
++                                                    case["restore_mask"])
++            pixels, mask = out["result"]
++            if isinstance(pixels, ExecutionBlocker) and isinstance(mask, ExecutionBlocker):
++                return "BLOCKED"
++            return {"pixels": digest(pixels), "mask": digest(mask)}
++        records.append(outcome(run))
++    with open(out_path, "w") as handle:
++        json.dump({"records": records}, handle)
++
++
++def run_v2(plan, out_path):
++    spec = importlib.util.spec_from_file_location("impact_v2", os.path.join(IMPACT, "v2", "__init__.py"),
++                                                  submodule_search_locations=[os.path.join(IMPACT, "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["impact_v2"] = package
++    spec.loader.exec_module(package)
++    nodes = sys.modules["impact_v2._secure_nodes"]
++    blocked = object()
++
++    class Ui:
++        async def preview_images(self, reference):
++            return {"images": []}
++
++    class Graph:
++        async def block(self, reason=None):
++            return blocked
++
++    async def from_raw(value):
++        return ("image-ref", tuple(value.shape))
++
++    context = types.SimpleNamespace(ui=Ui(), graph=Graph())
++    nodes.sdk = types.SimpleNamespace(ctx=lambda: context, ImageRef=types.SimpleNamespace(_from_raw=from_raw))
++    records = []
++    for case in plan:
++        def run():
++            out = asyncio.run(nodes._preview_bridge(make_image(case["size"]), image="", block=case["block"],
++                                                    restore_mask=case["restore_mask"]))
++            pixels, mask = out["result"]
++            if pixels is blocked and mask is blocked:
++                return "BLOCKED"
++            return {"pixels": digest(pixels), "mask": digest(mask)}
++        records.append(outcome(run))
++    with open(out_path, "w") as handle:
++        json.dump({"records": records}, handle)
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        plan = json.load(open(argv[2]))
++        return (run_original if argv[1] == "original" else run_v2)(plan, argv[3]) or 0
++    plan = cases()
++    with open("/tmp/plan.json", "w") as handle:
++        json.dump(plan, handle)
++    sides = {}
++    for side in ("original", "v2"):
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/plan.json",
++                                   f"/tmp/out-{side}.json"], stdout=log, stderr=subprocess.STDOUT, timeout=1800)
++        if proc.returncode != 0:
++            print(f"side {side} failed ({proc.returncode}); see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(f"/tmp/out-{side}.json"))
++        shutil.copyfile(f"/tmp/out-{side}.json", os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++    mismatches = [{"case": c, "original": w, "v2": g} for c, w, g in zip(plan, original["records"], v2["records"]) if w != g]
++    blocked = sum(1 for w in original["records"] if w == ["value", "BLOCKED"])
++    probe = next(g for w, g in zip(original["records"], v2["records"]) if isinstance(w[1], dict))
++    negative_red = json.loads(json.dumps(probe)) != ["value", {"pixels": probe[1]["pixels"], "mask": [[1, 1, 1], "0"]}]
++    ok = not mismatches and all(w[0] == "value" for w in original["records"])
++    parity = {"status": "PASS" if ok else "FAIL",
++              "PreviewBridge": {"verdict": "EXACT" if not mismatches else "MISMATCH", "cases": len(plan),
++                                "blocked_cases": blocked, "mismatches": len(mismatches)},
++              "negative_control": {"perturbation": "mask digest replaced", "turned_red": negative_red}}
++    with open(os.path.join(RESULTS, "parity.json"), "w") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w") as handle:
++        json.dump(mismatches, handle, indent=1)
++        handle.write("\n")
++    print(json.dumps(parity, indent=1))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+--- /dev/null
 +++ b/v2/tests/test_sam_repair_r2.py
 @@ -0,0 +1,462 @@
 +"""Impact Pack fidelity repair r2 (SAM in the guest): parity in the lane gate.
@@ -91768,6 +92955,311 @@
 +    print(json.dumps({k: parity[k] for k in ("status", "nodes", "rebuilt_sam_equals_checkpoint_model", "wire_failures",
 +                                             "guest_blocked_imports_unexpected", "negative_control")}, indent=1))
 +    print(json.dumps([[d["model_name"], d["ok"], d["v2"][:2]] for d in designed]))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+--- /dev/null
++++ b/v2/tests/test_segs_repair_r3.py
+@@ -0,0 +1,302 @@
++"""Impact Pack fidelity repair r3 (SEGS chain): parity in the lane gate.
++
++DEPS=<the unpacked Impact dependency-profile wheels; upstream-only test needs (piexif, dill) under _orig_only/> \
++run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/> <Impact v2/tests> <results> test_segs_repair_r3.py
++
++  M  MaskToSEGS -> SegsToCombinedMask on synthetic masks (blobs, holes, soft values, edges, batches, empty) and
++     every combination of combined / crop_factor / bbox_fill / drop_size / contour_fill. Original: the pristine
++     Impact Pack segs_nodes.MaskToSEGS.doit and SegsToCombinedMask.doit under Core. v2: the repaired handlers,
++     their SEGS and masks passed through the overlay's wire encoder (tensors as refs), then JSON and decode.
++  L  the switch lazy check (ImpactSwitch / LatentSwitch / SEGSSwitch). Core calls check_lazy_status with each
++     Autogrow value tagged as (value, original input name) (execution.py, create_dynamic_tuple) and expects that
++     name back for an unevaluated selected input. The tagged values cross the wire both with tuples preserved and
++     as lists (a guest wire without the containers feature).
++"""
++import asyncio
++import glob
++import hashlib
++import importlib.abc
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++ROOT = "/pack"
++IMPACT = os.path.join(ROOT, "ComfyUI-Impact-Pack-HEAD")
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++MASKS = ["rect", "two", "ring", "soft", "tiny", "empty", "edge", "noise", "batch"]
++
++
++def make_mask(kind):
++    import torch
++    m = torch.zeros((80, 96))
++    if kind == "rect":
++        m[20:50, 30:70] = 1.0
++    elif kind == "two":
++        m[5:25, 5:30] = 1.0
++        m[40:75, 50:90] = 1.0
++    elif kind == "ring":
++        m[10:70, 10:80] = 1.0
++        m[25:55, 30:60] = 0.0
++    elif kind == "soft":
++        m[10:40, 10:40] = 0.5
++        m[45:70, 50:85] = 1.0
++    elif kind == "tiny":
++        m[3:6, 3:6] = 1.0
++        m[30:60, 40:44] = 1.0
++        m[70:78, 10:40] = 1.0
++    elif kind == "edge":
++        m[0:30, 0:20] = 1.0
++        m[60:80, 80:96] = 1.0
++    elif kind == "noise":
++        g = torch.Generator().manual_seed(3)
++        m = (torch.rand((80, 96), generator=g) > 0.93).float()
++        m[30:45, 30:50] = 1.0
++    elif kind == "batch":
++        b = torch.zeros((2, 80, 96))
++        b[0, 10:30, 10:40] = 1.0
++        b[1, 40:70, 50:90] = 1.0
++        return b
++    return m.unsqueeze(0)
++
++
++def cases():
++    out = []
++    for kind in MASKS:
++        for combined in (True, False):
++            for crop_factor in (1.0, 1.4, 3.0):
++                for bbox_fill in (False, True):
++                    for drop_size in (1, 10):
++                        for contour_fill in (False, True):
++                            out.append({"mask": kind, "combined": combined, "crop_factor": crop_factor,
++                                        "bbox_fill": bbox_fill, "drop_size": drop_size, "contour_fill": contour_fill})
++    return out
++
++
++def digest(value):
++    import numpy as np
++    value = np.ascontiguousarray(np.asarray(value, dtype=np.float32))
++    return [list(value.shape), hashlib.sha256(value.tobytes()).hexdigest()]
++
++
++def segs_record(shape, items):
++    import numpy as np
++    import torch
++    rows = []
++    for item in items:
++        mask = item[1]
++        mask = mask.detach().cpu().numpy() if isinstance(mask, torch.Tensor) else np.asarray(mask)
++        if mask.ndim == 3 and mask.shape[0] == 1:
++            mask = mask[0]
++        rows.append({"mask": digest(mask), "confidence": float(np.asarray(item[2]).reshape(-1)[0]),
++                     "crop_region": [int(v) for v in item[3]], "bbox": [float(v) for v in item[4]],
++                     "label": str(item[5])})
++    return {"shape": [int(v) for v in shape], "items": rows}
++
++
++def mask_record(mask):
++    import torch
++    mask = torch.as_tensor(mask)
++    if mask.ndim == 2:
++        mask = mask.unsqueeze(0)
++    return digest(mask.float().numpy())
++
++
++def outcome(fn):
++    try:
++        return ["value", fn()]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++
++
++# ---------------------------------------------------------------- original side
++def run_original(plan, out_path):
++    sys.path.insert(0, os.path.join(DEPS, "_orig_only"))
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import server
++
++    class Routes:
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: lambda function: function
++
++    class Instance:
++        routes = Routes()
++        prompt_queue = types.SimpleNamespace(currently_running={})
++
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: None
++
++    server.PromptServer.instance = Instance()
++    root = "/tmp/orig-impact"
++    shutil.copytree(IMPACT, root, ignore=shutil.ignore_patterns("v2", "__pycache__", ".git"))
++    sys.path.insert(0, os.path.join(root, "modules"))
++    import impact.config  # noqa: F401  (upstream __init__ order)
++    import impact.impact_server  # noqa: F401
++    import impact.segs_nodes as segs_nodes
++    records = []
++    for case in plan:
++        def run():
++            (segs,) = segs_nodes.MaskToSEGS.doit(make_mask(case["mask"]), case["combined"], case["crop_factor"],
++                                                 case["bbox_fill"], case["drop_size"], case["contour_fill"])
++            (mask,) = segs_nodes.SegsToCombinedMask().doit(segs)
++            return {"segs": segs_record(segs[0], segs[1]), "combined_mask": mask_record(mask)}
++        records.append(outcome(run))
++    with open(out_path, "w") as handle:
++        json.dump({"records": records}, handle)
++
++
++# ---------------------------------------------------------------- v2 side
++GUEST_BASE = {"av", "blake3", "comfy_api", "comfy_secure_nodes", "comfy_secure_sdk", "filelock", "fsspec", "iniconfig",
++              "jinja2", "markupsafe", "mpmath", "networkx", "numpy", "nvidia", "packaging", "PIL", "pluggy", "psutil",
++              "pygments", "pytest", "_pytest", "py", "pytest_asyncio", "safetensors", "setuptools", "pkg_resources",
++              "_distutils_hack", "sympy", "torch", "functorch", "torchgen", "triton", "typing_extensions", "wheel"}
++
++
++class GuestImports(importlib.abc.MetaPathFinder):
++    def __init__(self, allowed):
++        self.allowed, self.blocked = allowed, set()
++
++    def find_spec(self, fullname, path, target=None):
++        top = fullname.split(".")[0]
++        if top in sys.stdlib_module_names or top in self.allowed or top.startswith("_"):
++            return None
++        frame = sys._getframe(1)
++        while frame and frame.f_code.co_filename.startswith("<frozen"):
++            frame = frame.f_back
++        if frame is not None and not frame.f_code.co_filename.startswith(("/pack/", DEPS)):
++            return None
++        self.blocked.add(fullname)
++        raise ModuleNotFoundError(f"blocked in guest emulation: {fullname}", name=fullname)
++
++
++def run_v2(plan, out_path):
++    import torch
++    deps_top = {n[:-3] if n.endswith(".py") else n for n in os.listdir(DEPS) if not n.endswith((".dist-info", ".data", ".libs"))}
++    finder = GuestImports(GUEST_BASE | deps_top | {"impact_v2"})
++    sys.meta_path.insert(0, finder)
++    spec = importlib.util.spec_from_file_location("impact_v2", os.path.join(IMPACT, "v2", "__init__.py"),
++                                                  submodule_search_locations=[os.path.join(IMPACT, "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["impact_v2"] = package
++    spec.loader.exec_module(package)
++    nodes = sys.modules["impact_v2._secure_nodes"]
++    from comfy_api.latest import sdk as public_sdk
++    wire_spec = importlib.util.spec_from_file_location("overlay_wire", "/overlay/comfy_secure_nodes/transport/wire.py")
++    wire = importlib.util.module_from_spec(wire_spec)
++    wire_spec.loader.exec_module(wire)
++    counter = [0]
++
++    def ref(cls, kind):
++        counter[0] += 1
++        return cls(kind=kind, id=f"t{counter[0]}")
++
++    def through_wire(value, preserve_tuples=False):
++        if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], list):
++            value = (tuple(value[0]), [tuple([None if item[0] is None else ref(public_sdk.ImageRef, "IMAGE"),
++                                              ref(public_sdk.MaskRef, "MASK"), *item[2:]]) for item in value[1]])
++        elif isinstance(value, torch.Tensor):
++            value = ref(public_sdk.MaskRef, "MASK")
++        return wire.decode(json.loads(json.dumps(wire.encode(value, preserve_tuples=preserve_tuples))),
++                           preserve_tuples=preserve_tuples)
++
++    records, wire_failures = [], []
++    for index, case in enumerate(plan):
++        def run():
++            (segs,) = asyncio.run(nodes._mask_to_segs_upstream(make_mask(case["mask"]), case["combined"],
++                                                               case["crop_factor"], case["bbox_fill"],
++                                                               case["drop_size"], case["contour_fill"]))
++            through_wire(segs)
++            (mask,) = asyncio.run(nodes._segs_to_combined_mask_upstream(segs))
++            through_wire(mask)
++            return {"segs": segs_record(segs[0], segs[1]), "combined_mask": mask_record(mask)}
++        try:
++            records.append(outcome(run))
++        except Exception as exc:
++            records.append(["error", type(exc).__name__, str(exc)])
++            wire_failures.append(index)
++
++    # L: the lazy contract, through the wire both ways
++    lazy = []
++    for preserve in (True, False):
++        for select in (1, 2, 3):
++            for evaluated in (True, False):
++                values = {"input1": None, "input2": None, "input3": None}
++                if evaluated:
++                    values[f"input{select}"] = [0, 1]
++                # execution.py: build_nested_inputs with create_dynamic_tuple tags each value (value, flat key)
++                tagged = {k: (v, f"inputs.{k}") for k, v in values.items()}
++                sent = through_wire({"select": select, "inputs": tagged}, preserve_tuples=preserve)
++                got = asyncio.run(nodes._switch_lazy(**sent))
++                want = [] if evaluated else [f"inputs.input{select}"]
++                lazy.append({"wire_tuples": preserve, "select": select, "evaluated": evaluated, "got": got, "want": want,
++                             "ok": got == want})
++        sent = through_wire({"select": 1, "inputs": ({}, "inputs")}, preserve_tuples=preserve)
++        got = outcome(lambda: asyncio.run(nodes._switch_lazy(**sent)))
++        lazy.append({"wire_tuples": preserve, "select": 1, "empty_group": True, "got": got, "want": ["value", []],
++                     "ok": got == ["value", []]})
++    with open(out_path, "w") as handle:
++        json.dump({"records": records, "wire_failures": wire_failures, "lazy": lazy,
++                   "blocked_imports": sorted(finder.blocked)}, handle)
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        plan = json.load(open(argv[2]))
++        return (run_original if argv[1] == "original" else run_v2)(plan, argv[3]) or 0
++    plan = cases()
++    with open("/tmp/plan.json", "w") as handle:
++        json.dump(plan, handle)
++    sides = {}
++    for side in ("original", "v2"):
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/plan.json",
++                                   f"/tmp/out-{side}.json"], stdout=log, stderr=subprocess.STDOUT, timeout=3000)
++        if proc.returncode != 0:
++            print(f"side {side} failed ({proc.returncode}); see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(f"/tmp/out-{side}.json"))
++        shutil.copyfile(f"/tmp/out-{side}.json", os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++    mismatches = [{"case": c, "original": w, "v2": g} for c, w, g in zip(plan, original["records"], v2["records"]) if w != g]
++    values = sum(1 for w in original["records"] if w[0] == "value")
++    segs_items = sum(len(w[1]["segs"]["items"]) for w in original["records"] if w[0] == "value")
++    lazy_ok = all(item["ok"] for item in v2["lazy"])
++    unexpected = sorted(set(v2["blocked_imports"]) - {"accimage", "defusedxml"})
++    probe = next((g for w, g in zip(original["records"], v2["records"]) if w[0] == "value" and w[1]["segs"]["items"]), None)
++    perturbed = json.loads(json.dumps(probe))
++    perturbed[1]["segs"]["items"][0]["crop_region"][0] += 1
++    negative_red = perturbed != probe
++    ok = not mismatches and not v2["wire_failures"] and lazy_ok and not unexpected
++    parity = {"status": "PASS" if ok else "FAIL",
++              "MaskToSEGS_SegsToCombinedMask": {"verdict": "EXACT" if not mismatches else "MISMATCH", "cases": len(plan),
++                                                "values": values, "errors": len(plan) - values, "segs_items": segs_items,
++                                                "mismatches": len(mismatches)},
++              "switch_lazy": {"ok": lazy_ok, "checks": v2["lazy"]}, "wire_failures": v2["wire_failures"],
++              "guest_blocked_imports": v2["blocked_imports"], "guest_blocked_imports_unexpected": unexpected,
++              "negative_control": {"perturbation": "one crop_region + 1", "turned_red": negative_red}}
++    with open(os.path.join(RESULTS, "parity.json"), "w") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w") as handle:
++        json.dump(mismatches[:60], handle, indent=1)
++        handle.write("\n")
++    print(json.dumps({k: parity[k] for k in ("status", "MaskToSEGS_SegsToCombinedMask", "wire_failures",
++                                             "guest_blocked_imports_unexpected", "negative_control")}, indent=1))
++    print(json.dumps({"switch_lazy_ok": lazy_ok, "fails": [c for c in v2["lazy"] if not c["ok"]][:6]}))
 +    return 0 if ok and negative_red else 1
 +
 +

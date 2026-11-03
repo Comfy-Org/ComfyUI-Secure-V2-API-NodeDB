@@ -769,10 +769,24 @@ async def _switch(select, inputs=None, **kwargs):
     return values.get(name), label, index
 
 
+def _lazy_untag(value, names):
+    """Core's lazy check tags each Autogrow value as (value, original input name); the guest wire may deliver the
+    pair as a list."""
+    if (isinstance(value, (tuple, list)) and len(value) == 2 and isinstance(value[1], str)
+            and value[1] in names):
+        return value[0], value[1]
+    return value, None
+
+
 async def _switch_lazy(select, inputs=None, **kwargs):
     key = f"input{int(select)}"
+    # An empty optional Autogrow group arrives tagged as ({}, "inputs").
+    inputs, _name = _lazy_untag(inputs, ("inputs",))
     values = _dynamic_switch_values(inputs, **kwargs)
-    return [key] if key in values and values[key] is None else []
+    if key not in values:
+        return []
+    value, name = _lazy_untag(values[key], (key, f"inputs.{key}"))
+    return [name or key] if value is None else []
 
 
 async def _inverse_switch(select, input, **_kwargs):
@@ -1157,6 +1171,24 @@ def _mask_to_segs_value(
             str(index + 1) if label is None else str(label), None,
         ))
     return (height, width), result
+
+
+async def _mask_to_segs_upstream(
+    mask, combined, crop_factor, bbox_fill, drop_size, contour_fill=False,
+    **_kwargs,
+):
+    from . import _segs_upstream
+
+    return _one(_segs_upstream.mask_to_segs_node(
+        torch.as_tensor(await _raw(mask)).cpu(), combined, crop_factor,
+        bbox_fill, drop_size, contour_fill, SEG))
+
+
+async def _segs_to_combined_mask_upstream(segs, **_kwargs):
+    from . import _segs_upstream
+
+    return _one(_segs_upstream.segs_to_combined_mask_node(
+        _segs(await _raw(segs))))
 
 
 async def _mask_to_segs(
@@ -2399,33 +2431,12 @@ async def _segs_preview_cnet(segs, **_kwargs):
 
 async def _paste_segs(image, segs, feather, alpha=255,
                       ref_image_opt=None, **_kwargs):
-    output = _image4(await _raw(image)).clone()
-    _, items = _segs(await _raw(segs))
-    reference = _image4(await _raw(ref_image_opt)) if ref_image_opt is not None else None
-    for item in items:
-        crop = item.cropped_image
-        if crop is None and reference is not None:
-            crop = _crop_image(reference, item.crop_region)
-        if crop is None:
-            continue
-        left, top, right, bottom = map(int, item.crop_region)
-        left, top = max(0, left), max(0, top)
-        right, bottom = min(output.shape[2], right), min(output.shape[1], bottom)
-        if right <= left or bottom <= top:
-            continue
-        crop = _resize_images(torch.as_tensor(crop), right - left, bottom - top)
-        mask = _resize_masks(_seg_mask(item), right - left, bottom - top)
-        mask = _gaussian(mask, int(feather)) * (max(0, min(255, int(alpha))) / 255.0)
-        batch = output.shape[0]
-        if crop.shape[0] == 1 and batch > 1:
-            crop = crop.expand(batch, -1, -1, -1)
-        if mask.shape[0] == 1 and batch > 1:
-            mask = mask.expand(batch, -1, -1)
-        crop = crop[:batch, ..., :output.shape[-1]].to(output.device, output.dtype)
-        mask = mask[:batch].to(output.device, output.dtype)[..., None]
-        target = output[:, top:bottom, left:right, :crop.shape[-1]]
-        output[:, top:bottom, left:right, :crop.shape[-1]] = target * (1.0 - mask) + crop * mask
-    return _one(output)
+    # Impact Pack segs_nodes.py SEGSPaste.doit, upstream (verbatim in _segs_paste_upstream.py).
+    from . import _segs_paste_upstream
+
+    return _one(_segs_paste_upstream.paste(
+        _image4(await _raw(image)), _segs(await _raw(segs)), feather, alpha,
+        _image4(await _raw(ref_image_opt)) if ref_image_opt is not None else None))
 
 
 async def _clear_control(segs, **_kwargs):
@@ -6200,12 +6211,19 @@ async def _latent_receiver(latent="", **_kwargs):
     return {"ui": {"latents": [descriptor]}, "result": (value,)}
 
 
-async def _preview_bridge(images, **_kwargs):
+async def _preview_bridge(images, block=False, restore_mask="never", **_kwargs):
     value = _image4(await _raw(images))
     reference = await sdk.ImageRef._from_raw(value)
     display = await _ctx().ui.preview_images(reference)
-    mask = torch.zeros((value.shape[0], value.shape[1], value.shape[2]))
-    return {"ui": display, "result": (value, mask)}
+    # Impact Pack bridge_nodes.py PreviewBridge.doit, when no mask is restored or loaded: the empty mask is
+    # torch.zeros((64, 64)) (sent here as (1, 64, 64), Impact v2's MASK layout), and with block enabled an empty
+    # mask blocks both outputs. A mask painted in the mask editor is not available to this node in V2, so
+    # restore_mask has nothing to restore.
+    mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
+    if block and bool(torch.all(mask == 0)):
+        blocker = await _ctx().graph.block()
+        return {"ui": display, "result": (blocker, blocker)}
+    return {"ui": display, "result": (value, mask.unsqueeze(0))}
 
 
 async def _preview_bridge_latent(latent, vae_opt=None, **_kwargs):
@@ -6364,10 +6382,11 @@ _set({"SubtractMask"}, _mask_subtract, "raw")
 _set({"AddMask"}, _mask_add, "raw")
 _set({"MaskRectArea"}, _rect_percent, "raw")
 _set({"MaskRectAreaAdvanced"}, _rect_advanced, "raw")
-_set({"MaskToSEGS", "MaskToSEGS_for_AnimateDiff"}, _mask_to_segs, "raw")
+_set({"MaskToSEGS"}, _mask_to_segs_upstream, "raw")
+_set({"MaskToSEGS_for_AnimateDiff"}, _mask_to_segs, "raw")
 _set({"MediaPipeFaceMeshToSEGS"}, _mediapipe_facemesh_to_segs, "raw")
 _set({"EmptySegs"}, _empty_segs)
-_set({"SegsToCombinedMask"}, _segs_to_mask, "raw")
+_set({"SegsToCombinedMask"}, _segs_to_combined_mask_upstream, "raw")
 _set({"ImpactSEGSToMaskList"}, _segs_to_mask_list, "raw")
 _set({"ImpactSEGSToMaskBatch"}, _segs_to_mask_batch, "raw")
 _set({"ImpactSegsAndMask", "ImpactSegsAndMaskForEach"}, _segs_and_mask, "raw")
@@ -6520,7 +6539,7 @@ _set({"ImageSender"}, _image_sender, "output")
 _set({"ImageReceiver"}, _image_receiver, "assets", "raw")
 _set({"LatentSender"}, _latent_sender, "output")
 _set({"LatentReceiver"}, _latent_receiver, "assets", "raw")
-_set({"PreviewBridge"}, _preview_bridge, "raw", "ui")
+_set({"PreviewBridge"}, _preview_bridge, "raw", "ui", "graph.block")
 _set({"PreviewBridgeLatent"}, _preview_bridge_latent, "raw", "ui")
 
 

@@ -99,3 +99,50 @@ Manifest uses the original indent-1 format with only the five intended field cha
   - the per-SEG batch is (N, H, W) float32 (upstream: an (N, 1, H, W) bool batch).
 - `tests/test_sam_repair_r2.py` is the lane-gate parity test. It runs a synthetic SAM model, synthetic SEGS and
   synthetic images through the original Impact code and through these handlers.
+
+## Fidelity repair r3 - SEGS chain
+
+- **MaskToSEGS** runs upstream `core.mask_to_segs`, copied verbatim in `_segs_upstream.py`: contours, crop
+  regions, bbox fill, drop size and the label "A".
+  - It replaces a reimplementation that used connected components, its own crop and drop rules, and numeric
+    labels.
+  - MaskToSEGS_for_AnimateDiff keeps its handler.
+- **SegsToCombinedMask** runs upstream `core.segs_to_combined_mask`, also in `_segs_upstream.py`.
+- **SEGS between nodes** travel in Impact v2's layout: masks as (1, h, w) float32, and plain ints and floats in
+  place of numpy scalars, which cannot cross the guest wire.
+- **ImpactSwitch, LatentSwitch and SEGSSwitch.**
+  - For check_lazy_status, Core tags each Autogrow value as (value, original input name) and expects that name
+    back.
+  - A guest wire without tuple preservation delivers the pair as a list. The previous lazy check missed it, so
+    the selected input was never evaluated.
+  - The lazy check now accepts both forms, plus the tagged empty group, and asks for the original name.
+- `tests/test_segs_repair_r3.py` is the lane-gate parity test:
+  - MaskToSEGS → SegsToCombinedMask on synthetic masks, against the original Impact code;
+  - the lazy-check contract through the wire, with and without tuple preservation.
+
+## Fidelity repair r4 - SEGSPaste
+
+- SEGSPaste runs upstream `SEGSPaste.doit`, together with the helpers it calls, copied verbatim in
+  `_segs_paste_upstream.py`. The helpers are `segs_scale_match`, `tensor_paste`, `tensor_gaussian_blur_mask`,
+  `tensor_resize`, and the crop and mask helpers.
+- It replaces a reimplementation that differed from upstream in three ways: it resized crops and masks to the crop
+  region, skipped the scale match, and feathered with its own blur.
+- Boundary stand-ins, which are not upstream code:
+  - the guest's torch device;
+  - Core's `common_upscale`, taken from the pack's own copy in `_image_ops.py`;
+  - Core's default launch arguments, so the result lands on the CPU.
+- `tests/test_paste_repair_r4.py` is the lane-gate parity test. It runs synthetic SEGS and images through the
+  original Impact code and through this handler.
+
+## Fidelity repair r5 - PreviewBridge
+
+- PreviewBridge now returns what upstream `PreviewBridge.doit` returns when no mask has been painted for the node:
+  - the input images, and an empty 64x64 float32 mask, sent as (1, 64, 64) in Impact v2's MASK layout.
+    Previously v2 returned an empty mask the size of the image.
+  - With `block` enabled, an empty mask blocks both outputs, as upstream's `ExecutionBlocker(None)` does. v2 uses
+    `graph.block()` for this, so the node declares the `graph.block` permission.
+- Not available in V2: a mask painted in the mask editor and the images it saves. The guest cannot read them, so
+  `restore_mask` has nothing to restore, and the node behaves like upstream's first run on a new node every time.
+  The preview is still shown.
+- `tests/test_preview_bridge_repair_r5.py` is the lane-gate parity test. It runs every block / restore_mask
+  combination on two image sizes through the original node and through this handler.
