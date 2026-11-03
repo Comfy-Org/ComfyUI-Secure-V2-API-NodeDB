@@ -59,6 +59,10 @@ def probe(**links):
     return {'99': {'class_type': 'AMYProbe', 'inputs': {'label': 'probe', **links}}}
 
 
+def probe_at(node_id, **links):
+    return {node_id: {'class_type': 'AMYProbe', 'inputs': {'label': f'probe {node_id}', **links}}}
+
+
 def g(*parts):
     out = {}
     for part in parts:
@@ -188,8 +192,148 @@ CASES = [
     case('save-overwrite-refused', g(image(), save(overwrite_mode='prefix_as_filename', output_path='')),
          expect='refusal', preexisting={'ComfyUI.png': 'x'}),
     case('save-host-token-refused', g(image(), save(filename_prefix='[user]-img')), expect='refusal'),
-    case('refused-node-constant-number', g(node('11', 'Constant Number', number_type='integer', number=7),
-                                           probe(number=['11', 0])), expect='not-converted'),
+    case('refused-node-integer-place-counter', g(node('11', 'Integer place counter', int_input=5),
+                                                 probe(number=['11', 0])), expect='not-converted'),
+    # Number PI has no inputs, so core never calls validate_inputs for it: its refusal is raised when it runs.
+    case('refused-node-number-pi-at-run', g(node('11', 'Number PI'), probe(number=['11', 0])),
+         expect='not-converted-at-run'),
+]
+
+# ---- phase B batch 1 (r2): value, switch, list and token nodes
+NUMBER_OUTS = dict(number=0, number_float=1, number_int=2)
+OPERATIONS = ['addition', 'subtraction', 'division', 'floor division', 'multiplication', 'exponentiation', 'modulus',
+              'greater-than', 'greater-than or equals', 'less-than', 'less-than or equals', 'equals', 'does not equal']
+
+
+def outs(node_id, **slots):
+    return {key: [node_id, index] for key, index in slots.items()}
+
+
+def numbers(a, b, type_a='float', type_b='integer'):
+    return g(node('20', 'Constant Number', number_type=type_a, number=a),
+             node('21', 'Constant Number', number_type=type_b, number=b))
+
+
+CASES += [
+    case('seed', g(node('11', 'Seed', seed=123456789012345),
+                   probe(**outs('11', number=0, text=1, number_float=2, number_int=3)))),
+    case('constant-number-integer', g(node('11', 'Constant Number', number_type='integer', number=7.6),
+                                      probe(**outs('11', **NUMBER_OUTS)))),
+    case('constant-number-float', g(node('11', 'Constant Number', number_type='float', number=-2.25),
+                                    probe(**outs('11', **NUMBER_OUTS)))),
+    case('constant-number-bool', g(node('11', 'Constant Number', number_type='bool', number=0.51),
+                                   probe(**outs('11', **NUMBER_OUTS)))),
+    case('constant-number-as-text', g(text('10', '41'), node('11', 'Constant Number', number_type='integer', number=0.0,
+                                                             number_as_text=['10', 0]),
+                                      probe(**outs('11', **NUMBER_OUTS)))),
+    case('constant-number-as-text-error', g(text('10', '4.5'), node('11', 'Constant Number', number_type='integer',
+                                                                    number=0.0, number_as_text=['10', 0]),
+                                            probe(number=['11', 0])), expect='error'),
+] + [
+    case(f'number-operation-{op.replace(" ", "-")}', g(numbers(7.5, 2), node('11', 'Number Operation', number_a=['20', 0],
+                                                                             number_b=['21', 0], operation=op),
+                                                     probe(**outs('11', **NUMBER_OUTS))))
+    for op in OPERATIONS
+] + [
+    case('number-operation-division-by-zero', g(numbers(7.5, 0), node('11', 'Number Operation', number_a=['20', 0],
+                                                                      number_b=['21', 0], operation='division'),
+                                                probe(number=['11', 0])), expect='error'),
+    case('number-conversions', g(node('20', 'Constant Number', number_type='float', number=3.5),
+                                 node('11', 'Number to String', number=['20', 0]),
+                                 node('12', 'Number to Float', number=['20', 0]),
+                                 node('13', 'Number to Text', number=['20', 0]),
+                                 probe(text=['11', 0], number_float=['12', 0], number=['13', 0]))),
+    case('number-conversions-int', g(node('20', 'Constant Number', number_type='integer', number=12.0),
+                                     node('11', 'Number to String', number=['20', 0]),
+                                     node('12', 'Number to Float', number=['20', 0]),
+                                     node('13', 'Number to Text', number=['20', 0]),
+                                     probe(text=['11', 0], number_float=['12', 0], number=['13', 0]))),
+] + [
+    case(f'logic-boolean-{value}', g(node('11', 'Logic Boolean', boolean=value),
+                                     probe(**outs('11', text=0, number=1, number_int=2, number_float=3))))
+    for value in (0.0, 0.4, 0.5, 0.51, 1.0)
+] + [
+    case(f'latent-switch-{flag}', g(node('20', 'EmptyLatentImage', width=64, height=64, batch_size=1),
+                                    node('21', 'EmptyLatentImage', width=32, height=48, batch_size=2),
+                                    node('22', 'Logic Boolean', boolean=value),
+                                    node('11', 'Latent Input Switch', latent_a=['20', 0], latent_b=['21', 0],
+                                         boolean=['22', 0]),
+                                    probe(latent=['11', 0])))
+    for flag, value in (('true', 1.0), ('false', 0.0))
+] + [
+    case(f'text-switch-{flag}', g(text('10', 'A'), text('13', 'B'), node('22', 'Logic Boolean', boolean=value),
+                                  node('11', 'Text Input Switch', text_a=['10', 0], text_b=['13', 0], boolean=['22', 0]),
+                                  probe(text=['11', 0])))
+    for flag, value in (('true', 1.0), ('false', 0.0))
+] + [
+    case(f'model-clip-vae-switches-{flag}', g(
+        ckpt(), node('12', 'Load Lora', model=['1', 0], clip=['1', 1], lora_name='test-lora.safetensors',
+                     strength_model=0.8, strength_clip=0.6),
+        node('22', 'Logic Boolean', boolean=value),
+        node('11', 'Lora Input Switch', model_a=['1', 0], clip_a=['1', 1], model_b=['12', 0], clip_b=['12', 1],
+             boolean=['22', 0]),
+        node('13', 'Model Input Switch', model_a=['12', 0], model_b=['1', 0], boolean=['22', 0]),
+        node('14', 'VAE Input Switch', vae_a=['1', 2], vae_b=['1', 2], boolean=['22', 0]),
+        probe(model=['11', 0], clip=['11', 1], files=['14', 0]), probe_at('98', model=['13', 0])))
+    for flag, value in (('true', 1.0), ('false', 0.0))
+] + [
+    case(f'conditioning-switch-{flag}', g(ckpt(), text('10', 'red fox'), text('13', 'blue bird'),
+                                          node('15', 'Text to Conditioning', clip=['1', 1], text=['10', 0]),
+                                          node('16', 'Text to Conditioning', clip=['1', 1], text=['13', 0]),
+                                          node('22', 'Logic Boolean', boolean=value),
+                                          node('11', 'Conditioning Input Switch', conditioning_a=['15', 0],
+                                               conditioning_b=['16', 0], boolean=['22', 0]),
+                                          probe(conditioning=['11', 0])))
+    for flag, value in (('true', 1.0), ('false', 0.0))
+] + [
+    case('text-list-to-text', g(text('10', 'alpha'), text('13', 'beta'), text('14', 'gamma'),
+                                node('11', 'Text List', text_a=['10', 0], text_c=['13', 0], text_g=['14', 0]),
+                                node('12', 'Text List to Text', delimiter=' | ', text_list=['11', 0]),
+                                probe(text=['12', 0], number=['11', 0]))),
+    case('text-list-concatenate-newline', g(text('10', 'a'), text('13', 'b'),
+                                            node('11', 'Text List', text_a=['10', 0]),
+                                            node('15', 'Text List', text_b=['13', 0], text_a=['10', 0]),
+                                            node('12', 'Text List Concatenate', list_b=['11', 0], list_a=['15', 0]),
+                                            node('16', 'Text List to Text', delimiter='\\n', text_list=['12', 0]),
+                                            probe(number=['12', 0], text=['16', 0]))),
+    case('text-string-tokens', g(node('11', 'Text String', text='a [time] b', text_b='[time(%H:%M)]', text_c='plain',
+                                      text_d=''),
+                                 probe(**outs('11', text=0, number=1, number_float=2, number_int=3)))),
+    case('text-multiline-code-compatible', g(node('11', 'Text Multiline (Code Compatible)',
+                                                  text='# kept\n[time]\n  indented # also kept'),
+                                             probe(text=['11', 0]))),
+    case('text-parse-tokens', g(text('10', 'on [time(%Y)] at [time]'), node('11', 'Text Parse Tokens', text=['10', 0]),
+                                probe(text=['11', 0])), runs=2),
+    case('text-parse-tokens-cuda-refused', g(text('10', 'gpu [cuda_name]'),
+                                             node('11', 'Text Parse Tokens', text=['10', 0]), probe(text=['11', 0])),
+         expect='refusal'),
+    case('text-compare-difference', g(text('10', 'the quick brown fox'), text('13', 'the quick red fox'),
+                                      node('11', 'Text Compare', text_a=['10', 0], text_b=['13', 0], mode='difference',
+                                           tolerance=0.0),
+                                      probe(**outs('11', text=0, number=1, number_int=2, number_float=3, files=4)))),
+    case('text-compare-similarity-single-word', g(text('10', 'hello'), text('13', 'hello'),
+                                                  node('11', 'Text Compare', text_a=['10', 0], text_b=['13', 0],
+                                                       mode='similarity', tolerance=0.5),
+                                                  probe(**outs('11', text=0, number=1, number_int=2, number_float=3,
+                                                               files=4)))),
+    case('text-compare-similarity-none', g(text('10', 'abc'), text('13', 'xyz'),
+                                           node('11', 'Text Compare', text_a=['10', 0], text_b=['13', 0],
+                                                mode='similarity', tolerance=0.0),
+                                           probe(**outs('11', text=0, number=1, number_int=2, number_float=3,
+                                                        files=4)))),
+] + [
+    case(f'text-truncate-{by}-{side}-{to}', g(text('10', 'one two three four five'), text('13', 'abcdefgh'),
+                                              node('11', 'Text String Truncate', text=['10', 0], text_b=['13', 0],
+                                                   truncate_by=by, truncate_from=side, truncate_to=to),
+                                              probe(**outs('11', text=0, number=1, number_float=2, number_int=3))))
+    for by, side, to in (('words', 'beginning', 2), ('words', 'end', 2), ('characters', 'beginning', 3),
+                         ('characters', 'end', -3), ('words', 'end', 0))
+] + [
+    case('text-random-line', g(text('10', 'l1\nl2\nl3\nl4\nl5'),
+                               node('11', 'Text Random Line', text=['10', 0], seed=987654321987654321),
+                               probe(text=['11', 0]))),
+    case('text-random-line-seed-0', g(text('10', 'x\ny'), node('11', 'Text Random Line', text=['10', 0], seed=0),
+                                      probe(text=['11', 0]))),
 ]
 
 
@@ -275,6 +419,12 @@ def compare_case(spec, orig, conv, output_dir):
                 'notes': [r.get('node_errors') for r in runs_o + runs_c]}
     errors_o = [_errors(r) for r in runs_o]
     errors_c = [_errors(r) for r in runs_c]
+    if expect == 'not-converted-at-run':
+        ok = all(r.get('success') for r in runs_o) and not any(errors_o) and all(
+            e and e[-1][0] == 'SecureConversionRefusal' and 'is not yet converted to Secure Nodes V2' in e[-1][1]
+            for e in errors_c)
+        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
+                'errors': [errors_o, errors_c]}
     files_o = {f['path']: f for f in orig['files']}
     files_c = {f['path']: f for f in conv['files']}
     images_o = [p for p, f in files_o.items() if not f.get('not_an_image')]
@@ -433,7 +583,8 @@ def main():
     (RESULTS / 'bare-load.log').write_text(bare_proc.stdout[-5000:] + '\n--- stderr ---\n' + bare_proc.stderr[-20000:])
     bare = json.loads(bare_out.read_text()) if bare_out.exists() else {'error': f'rc={bare_proc.returncode}'}
     bare_ok = (bare.get('rows') == len(converted['pack_ids']) and bare.get('ok') == bare.get('rows')
-               and not bare.get('failures') and bare.get('root_init_executed') is False)
+               and not bare.get('failures') and bare.get('root_init_executed') is False
+               and bare.get('values_mode_issues') == {})
     schemas = compare_schemas(original, converted)
     schema_counts = {}
     for value in schemas.values():
@@ -446,6 +597,7 @@ def main():
               'schemas': {k: v for k, v in schemas.items() if v != 'EXACT'}, 'schema_ids': sorted(schemas),
               'bare_load': {'ok': bare_ok, 'rows': bare.get('rows'), 'loaded': bare.get('ok'),
                             'failures': bare.get('failures'), 'root_init_executed': bare.get('root_init_executed'),
+                            'converted': bare.get('converted'), 'values_mode_issues': bare.get('values_mode_issues'),
                             'modules': bare.get('modules'), 'error': bare.get('error')},
               'negative_control': {'case': target['case'], 'verdict_after_tamper': control['verdict'],
                                    'turned_red': control['verdict'] == 'MISMATCH'}}

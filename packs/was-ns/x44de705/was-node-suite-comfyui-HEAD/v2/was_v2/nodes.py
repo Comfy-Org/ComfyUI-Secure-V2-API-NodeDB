@@ -38,7 +38,32 @@ _PURE = {
     "Text Concatenate": ("WAS_Text_Concatenate", "text_concatenate"),
     "Text Find and Replace": ("WAS_Search_and_Replace", "text_search_and_replace"),
     "Text Multiline": ("WAS_Text_Multiline", "text_multiline"),
+    # phase B batch 1 (r2)
+    "Seed": ("WAS_Seed", "seed"),
+    "Constant Number": ("WAS_Constant_Number", "return_constant_number"),
+    "Number Operation": ("WAS_Number_Operation", "math_operations"),
+    "Latent Input Switch": ("WAS_Latent_Input_Switch", "latent_input_switch"),
+    "Lora Input Switch": ("WAS_Lora_Input_Switch", "lora_input_switch"),
+    "VAE Input Switch": ("WAS_VAE_Input_Switch", "vae_switch"),
+    "Text Input Switch": ("WAS_Text_Input_Switch", "text_input_switch"),
+    "Model Input Switch": ("WAS_Model_Input_Switch", "model_switch"),
+    "Conditioning Input Switch": ("WAS_Conditioning_Input_Switch", "conditioning_input_switch"),
+    "Text List": ("WAS_Text_List", "text_as_list"),
+    "Text List to Text": ("WAS_Text_List_to_Text", "text_list_to_text"),
+    "Text List Concatenate": ("WAS_Text_List_Concatenate", "text_concatenate_list"),
+    "Text String": ("WAS_Text_String", "text_string"),
+    "Text Multiline (Code Compatible)": ("WAS_Text_Multiline_Raw", "text_multiline"),
+    "Text Parse Tokens": ("WAS_Text_Parse_Tokens", "text_parse_tokens"),
+    "Number to String": ("WAS_Number_To_String", "number_to_string"),
+    "Number to Float": ("WAS_Number_To_Float", "number_to_float"),
+    "Number to Text": ("WAS_Number_To_Text", "number_to_text"),
+    "Logic Boolean": ("WAS_Boolean", "return_boolean"),
+    "Text Compare": ("WAS_Text_Compare", "text_compare"),
+    "Text String Truncate": ("WAS_Text_String_Truncate", "truncate_string"),
+    "Text Random Line": ("WAS_Text_Random_Line", "text_random_line"),
 }
+# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
+_ALWAYS_CHANGED = {"Text Parse Tokens"}
 
 
 def _pure_execute(class_name, function):
@@ -244,9 +269,22 @@ async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", fi
 
 
 # ---- registry
+def _always_changed(cls, **kwargs):
+    return float("NaN")
+
+
+# Switches between engine objects: they take handles (SDK_REFS) and return the chosen one unchanged, as the original
+# returned the chosen object. Without handles the guest would have to materialize a MODEL, CLIP or VAE.
+_PASS_THROUGH_REFS = {"Latent Input Switch", "Lora Input Switch", "VAE Input Switch", "Model Input Switch",
+                      "Conditioning Input Switch"}
+
 _CONVERTED = {}
 for _node_id, (_class_name, _function) in _PURE.items():
     _CONVERTED[_node_id] = {"execute": classmethod(_pure_execute(_class_name, _function))}
+    if _node_id in _ALWAYS_CHANGED:
+        _CONVERTED[_node_id]["fingerprint_inputs"] = classmethod(_always_changed)
+    if _node_id in _PASS_THROUGH_REFS:
+        _CONVERTED[_node_id]["SDK_REFS"] = True
 _CONVERTED["Text to Conditioning"] = {"execute": classmethod(_text_to_conditioning), "SDK_REFS": True}
 _CONVERTED["Image Filter Adjustments"] = {"execute": classmethod(_image_filters), "SDK_REFS": True,
                                           "SDK_PERMISSIONS": ("raw",)}

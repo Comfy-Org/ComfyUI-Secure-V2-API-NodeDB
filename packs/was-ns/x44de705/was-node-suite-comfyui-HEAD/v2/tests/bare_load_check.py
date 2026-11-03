@@ -50,8 +50,24 @@ for node_id, row in manifest["nodes"].items():
         rows[node_id] = "OK"
     except Exception as error:  # noqa: BLE001
         rows[node_id] = f"{type(error).__name__}: {error}"[:300]
+# Values mode (a row without sdk_refs): the guest materializes tensor and value refs and refuses any other handle
+# (comfy_secure_nodes/guest/adapter.py materialize). A converted node without sdk_refs may therefore take only value,
+# tensor, latent and conditioning inputs.
+VALUES_SAFE = {"STRING", "INT", "FLOAT", "BOOLEAN", "COMBO", "NUMBER", "SEED", "LIST", "IMAGE", "MASK", "LATENT",
+               "CONDITIONING", "*"}
+nodes_module = importlib.import_module(f"{NAME}.was_v2.nodes")
+values_mode_issues = {}
+for node_id in nodes_module.CONVERTED_IDS:
+    row = manifest["nodes"][node_id]
+    if row["sdk_refs"]:
+        continue
+    unsafe = [item["attrs"]["id"] + ":" + item["io_type"] for item in row["schema"]["inputs"]
+              if item["io_type"] not in VALUES_SAFE]
+    if unsafe:
+        values_mode_issues[node_id] = unsafe
 report = {"rows": len(rows), "ok": sum(1 for value in rows.values() if value == "OK"),
           "failures": {key: value for key, value in rows.items() if value != "OK"},
+          "converted": len(nodes_module.CONVERTED_IDS), "values_mode_issues": values_mode_issues,
           "root_init_executed": hasattr(package, "comfy_entrypoint") or hasattr(package, "NODE_CLASS_MAPPINGS"),
           "modules": sorted({row["module"] for row in manifest["nodes"].values()})}
 OUT.write_text(json.dumps(report, indent=1) + "\n")

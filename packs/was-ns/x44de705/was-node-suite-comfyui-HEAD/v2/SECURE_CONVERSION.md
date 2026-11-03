@@ -3,14 +3,20 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 13 of the 220 registered node ids are converted. The other 207 are registered with their real schemas and refuse
-at validation with `was-ns/<node id> is not yet converted to Secure Nodes V2`. The original declares one more id,
+Status: 35 of the 220 registered node ids are converted. The other 185 are registered with their real schemas and refuse
+with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
+so core never calls its validate_inputs), when it runs. The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14662-14720). It is not registered here.
 
-Converted: Text to String, Text to Number, String to Text, Number to Int, Text Concatenate, Text Find and Replace,
-Text Multiline, Text to Conditioning, Load Lora, Lora Loader, Image Filter Adjustments, Latent Noise Injection and
-Image Save.
+Converted:
+- Round 1: Text to String, Text to Number, String to Text, Number to Int, Text Concatenate, Text Find and Replace, Text
+  Multiline, Text to Conditioning, Load Lora, Lora Loader, Image Filter Adjustments, Latent Noise Injection and Image
+  Save.
+- Round 2: Seed, Constant Number, Number Operation, Number to String, Number to Float, Number to Text, Logic Boolean,
+  the Latent, Lora, VAE, Text, Model and Conditioning Input Switches, Text List, Text List to Text, Text List
+  Concatenate, Text String, Text Multiline (Code Compatible), Text Parse Tokens, Text Compare, Text String Truncate and
+  Text Random Line.
 
 ## How the conversion is built
 
@@ -61,6 +67,14 @@ every registered id against the original. A tampered output must turn the compar
 - Latent Noise Injection draws its noise from the process's global torch RNG (WAS_Node_Suite.py:8910), as the
   original does. The guest's RNG is not the host's: outputs are equal only when both start from the same RNG state.
   In a live graph the original's state depends on what ran before it (for example a sampler's seeding).
+- Text Random Line seeds Python's `random` module and draws a line, as the original does (WAS_Node_Suite.py:10499-10503).
+  The line is the same, but the reseeded module is the guest's: a later node of another pack that draws from the
+  host's `random` no longer sees that seed.
+- Text Compare in similarity mode collects the similar words in a Python set (WAS_Node_Suite.py:10476). With more
+  than one word, their order follows the process's string-hash seed, so it differs between runs of the original too.
+- Text Parse Tokens re-runs on every prompt, as the original (its IS_CHANGED returns NaN).
+- The engine-object switches (Latent, Lora, VAE, Model and Conditioning Input Switch) take handles and return the
+  chosen one unchanged, as the original returned the chosen object.
 - Schemas of refused nodes come from the default configuration:
   - the style menus (no styles.json) and the history loaders (no history database);
   - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on
