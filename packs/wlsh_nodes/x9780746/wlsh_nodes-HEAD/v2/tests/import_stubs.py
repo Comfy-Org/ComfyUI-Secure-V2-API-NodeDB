@@ -1,15 +1,14 @@
 """TEST ADAPTATION (labelled): import stubs for the original's heavy dependencies that the gate image lacks.
 
-The original package imports modules at package import that the gate image may lack (for RES4LYF:
-matplotlib, cv2, pywt, opensimplex). The tests only exercise the converted nodes,
-whose code paths use none of these. A stub satisfies the import; any real use raises a RuntimeError naming the
-stubbed attribute, so a stub can never silently stand in for a dependency in a comparison.
+The original package imports modules at package import that the gate image may lack (for wlsh_nodes: piexif,
+which only its refused metadata nodes use). The tests only exercise the converted nodes, whose code paths use none of
+these. A stub satisfies the import; any real use raises a RuntimeError naming the stubbed attribute, so a stub can
+never silently stand in for a dependency in a comparison.
 
-The one exception is a call the original makes while importing, named in ``noop_calls``. For RES4LYF that is
-``matplotlib.use('Agg')`` (helper_sigma_preview_image_preproc.py:19), a backend choice for its preview plots. A
-named no-op call returns None; every other use still raises.
+A call the original makes while importing can be named in ``noop_calls``; it then returns None, and every other use
+still raises. wlsh_nodes needs none.
 
-    import import_stubs; import_stubs.install(["cv2", ...], noop_calls=["matplotlib.use"])   # before the original
+    import import_stubs; import_stubs.install(["piexif"])   # before the original
 """
 import importlib.abc
 import importlib.machinery
