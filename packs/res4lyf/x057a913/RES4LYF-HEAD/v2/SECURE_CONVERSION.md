@@ -192,7 +192,10 @@ At run time:
   absolute). V2's latents are bitwise equal to Core's encode of
   the same pixels in contiguous layout, which is what Core's own VAE Encode
   node gives for them. The other interpolations hand over contiguous pixels in
-  both versions and are bitwise equal.
+  both versions and are bitwise equal. Platform ask: a layout-preserving host
+  resize (an `ImageRef.resize` that runs Core's `common_upscale` on the host,
+  so the pixels never cross before the encode) would make these latents
+  bitwise equal as well.
 - `Frames Slice`: an empty slice (`start` at or past the batch size, or not
   below `stop`) is refused by name. The original returns an empty image
   batch, which a V2 image cannot hold. The host's batch selection takes
