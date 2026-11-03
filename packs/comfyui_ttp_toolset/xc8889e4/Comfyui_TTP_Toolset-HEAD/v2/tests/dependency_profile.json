@@ -1,0 +1,36 @@
+{
+  "pack": "comfyui_ttp_toolset",
+  "key": "xc8889e4",
+  "folder": "Comfyui_TTP_Toolset-HEAD",
+  "pins": {"cv2": "4.11.0.86"},
+  "dists": {"cv2": "opencv_python_headless"},
+  "pyproject_old": "dependencies = [\"opencv-python-headless\"]\n",
+  "pyproject_new": "dependencies = [\"opencv-python-headless==4.11.0.86\"]\n",
+  "pyproject_line": "dependencies = [\"opencv-python-headless==4.11.0.86\"]",
+  "load_fail_rows": [
+    "LTXVContext_TTP", "LTXVFirstLastFrameControl_TTP", "LTXVMiddleFrame_TTP", "TTP_CoordinateSplitter",
+    "TTP_Expand_And_Mask", "TTP_Image_Assy", "TTP_Image_Tile_Batch", "TTP_QwenVL3_Local_Loader_Experimental",
+    "TTP_Smart_Tile_Assemble_Experimental", "TTP_Smart_Tile_Composite_Override_Experimental",
+    "TTP_Smart_Tile_Image_Upscale_Prep_Experimental", "TTP_Smart_Tile_Interactive_Crop_Experimental",
+    "TTP_Smart_Tile_Loop_Collect_Experimental", "TTP_Smart_Tile_Loop_Source_Experimental",
+    "TTP_Smart_Tile_Output_Size_Estimate_Experimental", "TTP_Smart_Tile_Prompt_Override_Experimental",
+    "TTP_Smart_Tile_QwenVL_Prompt_Set_Builder_Experimental", "TTP_Smart_Tile_Save_Final_Image_Experimental",
+    "TTP_Smart_Tile_Semantic_Rank_Experimental", "TTP_Smart_Tile_Set_Preview_Experimental",
+    "TTP_Smart_Tile_Stack_Order_Experimental", "TTP_Tile_image_size", "TTP_condsetarea_merge",
+    "TTP_condsetarea_merge_test", "TTP_condtobatch", "TTP_text_mix", "TTPlanet_Tile_Preprocessor_Simple",
+    "TeaCacheHunyuanVideoSampler"
+  ],
+  "reference_deps": true,
+  "guest_cases": [
+    {"node": "TTPlanet_Tile_Preprocessor_Simple", "label": "cv2.resize (area, linear) and cv2.GaussianBlur",
+     "original": {"module": "TTP_toolsets", "class": "TTPlanet_Tile_Preprocessor_Simple"},
+     "inputs": {"image": {"__tensor__": true, "shape": [1, 32, 48, 3], "seed": 1}, "scale_factor": 2.0,
+                "blur_strength": 3.0}},
+    {"node": "TTPlanet_Tile_Preprocessor_Simple", "label": "cv2 again: another scale and blur, batch of 2",
+     "original": {"module": "TTP_toolsets", "class": "TTPlanet_Tile_Preprocessor_Simple"},
+     "inputs": {"image": {"__tensor__": true, "shape": [2, 40, 56, 3], "seed": 2}, "scale_factor": 1.5,
+                "blur_strength": 5.0}}
+  ],
+  "doc_title": "## Dependency profile (NED profile r1): opencv-python-headless 4.11.0.86",
+  "doc_note": "- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not\n  Core's requirements; the guest bases have no OpenCV.\n- `TTP_toolsets.py` imports cv2 at module level (line 6), and every row's module (`_secure_nodes`) imports\n  `TTP_toolsets`, so without the profile none of the 28 rows loads. Nothing else outside the base is imported\n  anywhere in v2, function-local imports included.\n- `pyproject.toml` pins exactly `opencv-python-headless==4.11.0.86` (cp37-abi3 manylinux_2_17 x86_64; PyPI sha256\n  0e0a27c19dd1f40ddff94976cfe43066fbbe9dfbb2ec1907d66c19caef42a57b) in place of the unpinned name. It needs only\n  numpy, which is in the sealed lock.\n- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.\n- `tests/test_dependency_profile.py` lets cv2, and the other modules the guest bases lack, come only from the pinned\n  copy under /deps; its guest cases run TTPlanet_Tile_Preprocessor_Simple (cv2.resize, cv2.GaussianBlur) against\n  the pristine upstream node.\n"
+}
