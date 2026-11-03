@@ -46,3 +46,12 @@ or dependency/API gaps. Evidence includes actual loader/schema census, exact
 differential split/merge/resize/feather/fallback cases, hostile metadata and bounds
 rejection-before-compute, real guest split-to-merge, raw denial, outer declared
 types, fresh renders, canonical stubs, manifest and pristine-to-V2 patch roundtrip.
+
+## Repair NED r1 (empty-grid mask in a real guest)
+- When the tile grid is empty (the image's width or height is no larger than the overlap), the original returns
+  `zeros((H, W))` as its mask, where it otherwise returns `[N, H, W]`.
+- A production guest publishes a values-mode MASK output only as `[B, H, W]` or `[B, 1, H, W]`, so the node failed
+  there for such images. That mask now crosses as a VALUE (`sdk.ValueRef.from_value`), so the host stores exactly
+  the original's tensor.
+- `tests/test_tiled_splitter_guest.py` compares the splitter with the original through a real guest that has the
+  production patch applied, and loads each manifest row the way the guest does.

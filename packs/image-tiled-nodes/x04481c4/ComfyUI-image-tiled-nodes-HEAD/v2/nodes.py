@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 import torch
-from comfy_api.latest import ComfyExtension, io
+from comfy_api.latest import ComfyExtension, io, sdk
 
 from . import algorithm
 
@@ -156,13 +156,17 @@ class TiledImageSplitter(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, image, tile_width, tile_height, overlap, feather_ratio):
+    async def execute(cls, image, tile_width, tile_height, overlap, feather_ratio):
         _validate_split(image, tile_width, tile_height, overlap, feather_ratio)
-        return io.NodeOutput(
-            *algorithm.TiledImageSplitter().split(
-                image, tile_width, tile_height, overlap, feather_ratio
-            )
+        tiles, masks, tile_info = algorithm.TiledImageSplitter().split(
+            image, tile_width, tile_height, overlap, feather_ratio
         )
+        if masks.ndim == 2:
+            # Repair NED r1: the original's empty-grid fallback returns zeros((H, W)). A production guest
+            # publishes a MASK output only as [B, H, W] or [B, 1, H, W], so this [H, W] mask crosses as a
+            # VALUE: the host stores exactly the original's tensor.
+            masks = await sdk.ValueRef.from_value(masks)
+        return io.NodeOutput(tiles, masks, tile_info)
 
 
 class TiledImageMerger(io.ComfyNode):
