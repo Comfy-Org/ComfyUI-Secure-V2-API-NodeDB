@@ -31,9 +31,20 @@ log "review $slug stage=$ST work=$W out=$OUT tools=$(sha256sum "$RV"/*.py "$RV"/
 mapfile -t keys < <(ls "$ST/packs/$slug")
 [ "${#keys[@]}" -eq 1 ] || { fail "expected one key under stage/packs/$slug, found: ${keys[*]}"; exit 1; }
 key=${keys[0]}
-mapfile -t pfs < <(ls "$ST/packs/$slug/$key")
+# Directories only: a published OMITTED.md (omission note) may sit next to the pack folder.
+mapfile -t pfs < <(cd "$ST/packs/$slug/$key" && ls -d */ 2>/dev/null | sed 's#/$##')
 [ "${#pfs[@]}" -eq 1 ] || { fail "expected one pack folder, found: ${pfs[*]}"; exit 1; }
 pack=${pfs[0]}
+others=$(cd "$ST/packs/$slug/$key" && ls -p | grep -v '/$' | grep -vx 'OMITTED.md' || true)
+[ -z "$others" ] || { fail "unexpected files next to the pack folder: $others"; exit 1; }
+if [ -f "$ST/packs/$slug/$key/OMITTED.md" ] && [ "${REPAIR:-0}" = 1 ]; then
+  if git -C "$C" show "origin/main:packs/$slug/$key/OMITTED.md" > "$OUT/main-OMITTED.md" 2>/dev/null \
+     && cmp -s "$OUT/main-OMITTED.md" "$ST/packs/$slug/$key/OMITTED.md"; then
+    log "staged OMITTED.md == main's (a repair keeps the omission note)"
+  else
+    fail "staged OMITTED.md differs from main's (or main has none): a repair must not change the omission note"
+  fi
+fi
 SP="$ST/packs/$slug/$key/$pack"
 PAIR="$ST/patches/$slug/$key/$slug-$key"
 [ -f "$PAIR.json" ] && [ -f "$PAIR.diff" ] || fail "pair missing: $PAIR.{json,diff}"
@@ -215,10 +226,25 @@ c = collections.Counter(); cases = 0
 for k, v in (nodes.items() if isinstance(nodes, dict) else []):
     if isinstance(v, dict) and "verdict" in v:
         c[v["verdict"]] += 1; cases += int(v.get("cases", v.get("case_count", 0)) or 0)
-print(f"  parity verdicts {dict(c)} cases={cases} negative_control={d.get('negative_control') if isinstance(d, dict) else None}")
+# other harness layouts: a flat "rows" list of per-case verdicts, or "totals" {node: {verdict: n}}
+if not c and isinstance(d, dict) and isinstance(d.get("rows"), list):
+    for r in d["rows"]:
+        if isinstance(r, dict) and "verdict" in r:
+            c[r["verdict"]] += 1; cases += 1
+if not c and isinstance(d, dict) and isinstance(d.get("counts"), dict) and all(isinstance(n, int) for n in d["counts"].values()):
+    for vv, n in d["counts"].items():
+        c[vv] += n; cases += n
+if not c and isinstance(d, dict) and isinstance(d.get("totals"), dict):
+    for v in d["totals"].values():
+        if isinstance(v, dict):
+            for vv, n in v.items():
+                if isinstance(n, int):
+                    c[vv] += n; cases += n
+nc = d.get("negative_control", d.get("negative_control_red")) if isinstance(d, dict) else None
+print(f"  parity verdicts {dict(c)} cases={cases} negative_control={nc}")
 EOF
-    elif [ $rc -eq 0 ] && grep -Eq '"(verdict|status)": "PASS"|"ok": true' "$po/stdout.txt"; then
-      log "parity $s wrote no parity.json; its stdout reports PASS: $(grep -Eo '"(verdict|status)": "PASS"|"ok": true' "$po/stdout.txt" | tail -1)"
+    elif [ $rc -eq 0 ] && grep -Eq '"(verdict|status)": "PASS"|"(ok|passed)": true|"failed": \[\]|"negative_control_red": true' "$po/stdout.txt"; then
+      log "parity $s wrote no parity.json; rc=0 and its stdout reports: $(grep -Eo '"(verdict|status)": "PASS"|"(ok|passed)": true|"failed": \[\]|"negative_control_red": true' "$po/stdout.txt" | tail -1) (results: $(cd "$po" && ls *.json 2>/dev/null | tr '\n' ' '))"
     else
       fail "parity $s wrote no parity.json"
     fi

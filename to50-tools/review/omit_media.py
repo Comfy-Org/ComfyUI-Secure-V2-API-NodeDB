@@ -57,6 +57,16 @@ def is_workflow_json(p: Path) -> bool:
     return False
 
 
+def is_opencv_model_xml(p: Path) -> bool:
+    """An OpenCV serialized model (cascade classifiers etc.): an XML file whose root is <opencv_storage>."""
+    try:
+        with p.open("rb") as f:
+            head = f.read(4096)
+    except OSError:
+        return False
+    return b"<opencv_storage>" in head
+
+
 def frontend_names(root: Path) -> str:
     chunks = []
     for rel, p in walk(root, skip_v2=True):
@@ -80,6 +90,8 @@ def plan(root: Path):
             reason = "media"
         elif ext in MODELS:
             reason = "model"
+        elif ext == ".xml" and is_opencv_model_xml(p):
+            reason = "model"  # trained OpenCV classifier data (e.g. Haar cascades)
         elif ext == ".json" and is_workflow_json(p):
             reason = "workflow"
         if reason:
