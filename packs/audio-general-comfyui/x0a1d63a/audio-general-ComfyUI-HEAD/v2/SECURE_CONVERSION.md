@@ -110,3 +110,13 @@ The frozen contract hashes are:
   `14f884a012bd0faed6bf244352939b2fcaf19be05eb04f235aad4363d28b9ae5`
 - TypeScript stub SHA-256:
   `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
+
+## Repair: no Core node id is re-declared (MERVYN, 2026-11-03)
+- ComfyUI Core registers `AudioConcat` (comfy_extras, "Audio Concat"). Core's own loader skips a custom node whose id is already a Core id
+  (`nodes.load_custom_node`: `if name not in ignore`), so on V1 that id is always served by Core and this pack's
+  version never runs. Secure Nodes stage composition is first-owner-wins and refuses a pack that re-declares a Core
+  id, so the whole pack was skipped.
+- v2 no longer registers `AudioConcat`: the entry is removed from the node mappings and from `secure-nodes.json`. Saved
+  workflows that use `AudioConcat` get Core's node, as on V1. Every other node is unchanged.
+- `tests/test_no_core_id_clash.py` loads Core's node set as Core does at startup and checks that the manifest declares
+  none of its ids.

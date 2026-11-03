@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,122 @@
 +# Secure Nodes V2 conversion ledger (terminal)
 +
 +## Source identity and exact census
@@ -113,6 +113,16 @@
 +  `14f884a012bd0faed6bf244352939b2fcaf19be05eb04f235aad4363d28b9ae5`
 +- TypeScript stub SHA-256:
 +  `152c7fab547fe9ec7dd09ec256e4172af5106b8634e098ddce0eee78d5c99758`
++
++## Repair: no Core node id is re-declared (MERVYN, 2026-11-03)
++- ComfyUI Core registers `AudioConcat` (comfy_extras, "Audio Concat"). Core's own loader skips a custom node whose id is already a Core id
++  (`nodes.load_custom_node`: `if name not in ignore`), so on V1 that id is always served by Core and this pack's
++  version never runs. Secure Nodes stage composition is first-owner-wins and refuses a pack that re-declares a Core
++  id, so the whole pack was skipped.
++- v2 no longer registers `AudioConcat`: the entry is removed from the node mappings and from `secure-nodes.json`. Saved
++  workflows that use `AudioConcat` get Core's node, as on V1. Every other node is unchanged.
++- `tests/test_no_core_id_clash.py` loads Core's node set as Core does at startup and checks that the manifest declares
++  none of its ids.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,12 +1,17 @@
@@ -142,7 +152,14 @@
  
  WEB_DIRECTORY = "./js"
  
-@@ -22,7 +27,6 @@
+@@ -15,22 +20,21 @@
+     "AudioSampleRate": AudioSampleRate,
+     "AudioPitch": AudioPitch,
+     "AudioMix": AudioMix,
+-    "AudioConcat": AudioConcatenate,
+     "AudioTrimSilenceVAD": AudioTrimSilenceVAD,
+     "AudioTrimSilenceRosa": AudioTrimSilenceRosa,
+     "AudioBassTreble": AudioBassTreble,
      "AudioSpeed": AudioSpeed,
  }
  
@@ -150,7 +167,11 @@
  NODE_DISPLAY_NAME_MAPPINGS = {
      "AudioInfo": "Audio Info",
      "AudioSampleRate": "Audio Pitch (Sample Rate)",
-@@ -34,3 +38,5 @@
+     "AudioPitch": "Audio Pitch",
+     "AudioMix": "Audio Mix",
+-    "AudioConcat": "Audio Concatenate",
+     "AudioTrimSilenceVAD": "Audio Trim Silence (Voice Activity)",
+     "AudioTrimSilenceRosa": "Audio Trim Silence (dB)",
      "AudioBassTreble": "Audio Bass/Treble",
      "AudioSpeed": "Audio Speed",
  }
@@ -4887,7 +4908,7 @@
 +});
 --- /dev/null
 +++ b/v2/nodes.py
-@@ -0,0 +1,821 @@
+@@ -0,0 +1,819 @@
 +"""Secure, behavior-equivalent Audio General nodes.
 +
 +The pinned pack's algorithms stay here in the guest. AUDIO crosses the host
@@ -5689,7 +5710,6 @@
 +    "AudioSampleRate": AudioSampleRate,
 +    "AudioPitch": AudioPitch,
 +    "AudioMix": AudioMix,
-+    "AudioConcat": AudioConcatenate,
 +    "AudioTrimSilenceVAD": AudioTrimSilenceVAD,
 +    "AudioTrimSilenceRosa": AudioTrimSilenceRosa,
 +    "AudioBassTreble": AudioBassTreble,
@@ -5701,7 +5721,6 @@
 +    "AudioSampleRate": "Audio Pitch (Sample Rate)",
 +    "AudioPitch": "Audio Pitch",
 +    "AudioMix": "Audio Mix",
-+    "AudioConcat": "Audio Concatenate",
 +    "AudioTrimSilenceVAD": "Audio Trim Silence (Voice Activity)",
 +    "AudioTrimSilenceRosa": "Audio Trim Silence (dB)",
 +    "AudioBassTreble": "Audio Bass/Treble",
@@ -5734,7 +5753,7 @@
 +Icon = ""
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,1392 @@
+@@ -0,0 +1,1329 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -5890,69 +5909,6 @@
 +            "attrs": {
 +              "display_name": "audio",
 +              "id": "audio",
-+              "is_output_list": false,
-+              "tooltip": null
-+            },
-+            "io_type": "AUDIO",
-+            "kind": "standard"
-+          }
-+        ]
-+      },
-+      "sdk_refs": true
-+    },
-+    "AudioConcat": {
-+      "class": "AudioConcatenate",
-+      "methods": {
-+        "check_lazy_status": false,
-+        "fingerprint_inputs": true,
-+        "validate_inputs": false
-+      },
-+      "module": "nodes",
-+      "permissions": [
-+        "raw"
-+      ],
-+      "schema": {
-+        "attrs": {
-+          "accept_all_inputs": true,
-+          "category": "Audio",
-+          "description": "Concatenate audios into one",
-+          "display_name": "Audio Concatenate",
-+          "enable_expand": false,
-+          "essentials_category": null,
-+          "has_intermediate_output": false,
-+          "is_api_node": false,
-+          "is_deprecated": false,
-+          "is_dev_only": false,
-+          "is_experimental": false,
-+          "is_input_list": true,
-+          "is_output_node": false,
-+          "node_id": "AudioConcat",
-+          "not_idempotent": false,
-+          "price_badge": null,
-+          "search_aliases": []
-+        },
-+        "hidden": [],
-+        "inputs": [
-+          {
-+            "attrs": {
-+              "advanced": null,
-+              "display_name": null,
-+              "extra_dict": {},
-+              "id": "audio1",
-+              "lazy": null,
-+              "optional": false,
-+              "rawLink": null,
-+              "tooltip": null
-+            },
-+            "io_type": "AUDIO",
-+            "kind": "standard"
-+          }
-+        ],
-+        "outputs": [
-+          {
-+            "attrs": {
-+              "display_name": "audio_out",
-+              "id": "audio_out",
 +              "is_output_list": false,
 +              "tooltip": null
 +            },
@@ -7127,6 +7083,68 @@
 +  },
 +  "web_directory": "js"
 +}
+--- /dev/null
++++ b/v2/tests/test_no_core_id_clash.py
+@@ -0,0 +1,59 @@
++"""The pack registers no node id that ComfyUI Core already owns (gate test).
++
++    run_in_gate.sh <pack root (pristine + v2/)> <tests dir holding this file> <results dir> test_no_core_id_clash.py
++
++Core's own loader skips a custom node whose id is already a Core id (nodes.load_custom_node: `if name not in ignore`,
++with ignore = the base node names taken after the extra and API nodes load). So on V1 such an id is always served by
++Core. Secure Nodes stage composition is first-owner-wins and refuses the whole pack on a duplicate. This test loads
++Core's node set the way Core does at startup (nodes.py, comfy_extras, API nodes) and checks that the pack's manifest
++declares none of its ids. Writes /results/core_id_clash.json; exits 1 on a clash.
++"""
++import asyncio
++import json
++import sys
++from pathlib import Path
++
++sys.path[:0] = ["/core"]
++from comfy.cli_args import args as _cli_args  # noqa: E402
++
++_cli_args.cpu = True
++import nodes  # noqa: E402
++
++
++def pack_root(root=Path("/pack")):
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++def core_ids():
++    # The same order Core uses before loading custom nodes: built-ins, then extras and API nodes.
++    try:
++        result = nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=True)
++        if asyncio.iscoroutine(result):
++            asyncio.run(result)
++    except Exception as error:  # some extras need write access to /core; the ids that loaded still count
++        print(f"note: init_extra_nodes raised {type(error).__name__}: {error}")
++    return set(nodes.NODE_CLASS_MAPPINGS)
++
++
++def main():
++    out = Path("/results")
++    out.mkdir(parents=True, exist_ok=True)
++    manifest = json.loads((pack_root() / "v2" / "secure-nodes.json").read_text())
++    ids = set(manifest["nodes"])
++    core = core_ids()
++    clashes = sorted(ids & core)
++    control = "KSampler" in core  # negative control: a known Core id must be in the loaded set
++    report = {"pack_ids": len(ids), "core_ids": len(core), "clashes": clashes, "control_core_has_KSampler": control,
++              "passed": not clashes and control}
++    (out / "core_id_clash.json").write_text(json.dumps(report, indent=1))
++    print(json.dumps(report, indent=1))
++    return 0 if report["passed"] else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
 --- /dev/null
 +++ b/v2/third-party-notices/README.md
 @@ -0,0 +1,22 @@
