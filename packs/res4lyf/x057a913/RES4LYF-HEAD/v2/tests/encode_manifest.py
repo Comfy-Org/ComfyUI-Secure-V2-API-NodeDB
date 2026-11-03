@@ -32,6 +32,9 @@ args.cpu = True
 from comfy_secure_nodes import packdb, packmanifest, packruntime, schedulerproviders  # noqa: E402
 
 KEY = "x057a913"
+# The guest dependency profile built from v2/pyproject.toml's exact pins (einops 0.8.2, scipy 1.18.1, tqdm 4.70.1;
+# lock de02bb45). The manifest's runtime block declares it, so a production guest gets exactly these modules.
+DEPENDENCY_PROFILE_SHA256 = "b90d9207bd8502c9cf235e120ed8e76c9372c682b3bc920483b4d9a8d1340e44"
 
 
 def load_v2(name="res4lyf_v2_encode"):
@@ -64,7 +67,8 @@ def build(pack, schedulers):
         if weights:
             row["required_weights"] = weights
         nodes[node_id] = row
-    return {"format": packmanifest.FORMAT, "nodes": nodes, "runtime": packruntime.manifest_declaration(V2),
+    runtime = packruntime.manifest_declaration(V2, dependency_profile_sha256=DEPENDENCY_PROFILE_SHA256)
+    return {"format": packmanifest.FORMAT, "nodes": nodes, "runtime": runtime,
             "scheduler_providers": schedulers.SCHEDULER_PROVIDERS}
 
 

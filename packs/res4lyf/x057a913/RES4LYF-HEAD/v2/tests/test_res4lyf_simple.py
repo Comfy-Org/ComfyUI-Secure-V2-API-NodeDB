@@ -87,6 +87,8 @@ ROWS = []
 DESIGNED_REFUSALS = {
     "Frames Slice": "a V2 IMAGE cannot be empty",
     "Image Sharpen FS": "Image Sharpen FS: not converted to Secure Nodes V2 yet (it blurs with OpenCV",
+    "Image Gaussian Blur": "Image Gaussian Blur: not converted to Secure Nodes V2 yet (it blurs with OpenCV",
+    "Latent to Cuda": "Latent to Cuda: not converted to Secure Nodes V2 yet (it moves the latent's tensors",
 }
 
 
@@ -305,6 +307,38 @@ def cases():
         add("Frames Slice", {"frames": frames[name].clone(), "start": start, "stop": stop}, label=name)
     add("Image Sharpen FS", {"images": image(1, 16, 16, 3, 8), "method": "hard", "type": "median",
                              "intensity": 6}, label="rgb_1x16x16")
+    # round 4
+    for seed in (0, 1, 12345, 2**63 - 1, 2**64 - 2, 2**64 - 1):
+        add("SeedGenerator", {"seed": seed})
+    for name, sigmas in SCHEDULES.items():
+        for multiplier in (1, 1.0, 0.5, -2.0, 0.0, 10000.0, 0.001):
+            add("Sigmas Mult", {"sigmas": sigmas.clone(), "multiplier": multiplier}, label=name)
+    for first, second in (("karras_f32", "karras_f64"), ("karras_f64", "karras_f32"), ("karras_f32", "karras_f32"),
+                          ("flow_f32", "flow_f32"), ("karras_f32", "flow_f32"), ("no_zero_f32", "karras_f32")):
+        for multiplier in (1.0, 0.75):
+            add("Sigmas Mult", {"sigmas": SCHEDULES[first].clone(), "multiplier": multiplier,
+                                "sigmas2": SCHEDULES[second].clone()}, label=f"{first}*{second}")
+    for name, select in (("rgb_5x8x12", 0), ("rgb_5x8x12", 2), ("rgb_5x8x12", 4), ("rgb_5x8x12", 5),
+                         ("rgb_5x8x12", 10000), ("rgba_3x6x6", 1), ("gray_4x5x7", 3)):
+        add("Frame Select", {"frames": frames[name].clone(), "select": select}, label=name)
+    tiles = {"rgb_1x8x12": image(1, 8, 12, 3, 9), "rgb_2x5x7": image(2, 5, 7, 3, 10),
+             "rgba_1x6x6": image(1, 6, 6, 4, 11), "gray_1x7x5": image(1, 7, 5, 1, 12)}
+    for name in tiles:
+        for width, height in ((30, 20), (12, 8), (100, 7), (5, 3), (1, 1), (64, 64)):
+            for crop in (True, False):
+                add("Image Repeat Tile To Size", {"image": tiles[name].clone(), "width": width, "height": height,
+                                                  "crop": crop}, label=name)
+    for width, height in ((24, 24), (1024, 1024), (1000, 777), (1, 1), (7, 9)):
+        for mode in ("sdxl", "cascade_b", "cascade_c", "exact", "default"):
+            add("EmptyLatentImageCustom", {"width": width, "height": height, "batch_size": 1, "channels": "4",
+                                           "mode": mode, "compression": 42, "precision": "fp32"})
+    for channels, precision, compression, batch in (("16", "fp16", 4, 3), ("16", "fp64", 128, 2),
+                                                    ("4", "fp16", 42, 4), ("16", "fp32", 32, 1)):
+        add("EmptyLatentImageCustom", {"width": 512, "height": 768, "batch_size": batch, "channels": channels,
+                                       "mode": "cascade_c", "compression": compression, "precision": precision})
+    add("Image Gaussian Blur", {"images": image(1, 16, 16, 3, 13), "size": 6}, label="rgb_1x16x16")
+    add("Latent to Cuda", {"latent": {"samples": torch.zeros((1, 4, 8, 8))}, "to_cuda": True,
+                           "full_latent": True})
     return out
 
 

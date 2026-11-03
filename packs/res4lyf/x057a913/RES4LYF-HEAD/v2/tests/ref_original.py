@@ -164,10 +164,23 @@ def record(index, name, result, calls, seconds):
         tensors["out_noise_mask"] = out["noise_mask"].contiguous().clone()
     if "noise_mask" in den:
         tensors["den_noise_mask"] = den["noise_mask"].contiguous().clone()
+    # The loop's final denoised estimate, which LatentUpscaleWithVAE decodes (helper_sigma_preview_image_preproc.py:
+    # 658-660). Its memory layout is recorded too: a V2 latent's tensors reach the host contiguous.
+    state_layout = {}
+    for side, latent in (("out", out), ("den", den)):
+        state = latent.get("state_info")
+        if isinstance(state, dict) and isinstance(state.get("denoised"), torch.Tensor):
+            denoised = state["denoised"]
+            tensors[f"{side}_state_denoised"] = denoised.contiguous().clone()
+            state_layout[side] = {"contiguous": denoised.is_contiguous(), "stride": list(denoised.stride()),
+                                  "device": str(denoised.device)}
+        else:
+            state_layout[side] = {"state_info": isinstance(state, dict),
+                                  "keys": sorted(state) if isinstance(state, dict) else None}
     aliasing = ("noise_mask" in out and "noise_mask" in den and out["noise_mask"] is den["noise_mask"])
     save_file(tensors, str(REF / f"{index}.safetensors"))
     return {"index": index, "name": name, "ok": True, "calls": calls, "seconds": round(seconds, 4),
-            "noise_mask_shared_between_outputs": aliasing,
+            "noise_mask_shared_between_outputs": aliasing, "state_denoised_layout": state_layout,
             "out_keys": list(out), "den_keys": list(den), "options": jsonable(options),
             "dtypes": {k: str(v.dtype) for k, v in tensors.items()},
             "shapes": {k: list(v.shape) for k, v in tensors.items()}}

@@ -1,5 +1,5 @@
-"""Secure Nodes V2: RES4LYF's image nodes Film Grain, Image Grain Add, Frames Slice and VAEEncodeAdvanced
-(upstream 057a913e).
+"""Secure Nodes V2: RES4LYF's image nodes Film Grain, Image Grain Add, Frames Slice, Frame Select, Image Repeat Tile
+To Size and VAEEncodeAdvanced (upstream 057a913e).
 
 - Film Grain and Image Grain Add run upstream's own classes (images.py:307-371 and :375-443, copied verbatim into
   res4lyf_core/images.py) on the exact input pixels. Like upstream, they draw their grain from torch's global random
@@ -7,7 +7,9 @@
   SECURE_CONVERSION.md). Given the same generator state, both versions give the same image.
 - Frames Slice (images.py:557-581: ``frames[start:stop].clone()``) selects the same frames on the host
   (``image.select_batch``), so its pixels never enter the guest. An empty slice is refused by name: a V2 IMAGE cannot
-  be empty.
+  be empty. Frame Select (images.py:530-554: ``frames[select]``) selects its one frame the same way.
+- Image Repeat Tile To Size (images.py:258-300) runs upstream's body on the exact input pixels: tile, then crop or
+  resize with upstream's image_resize.
 - VAEEncodeAdvanced is upstream's main() (helper_sigma_preview_image_preproc.py:234-317) line for line, with
   upstream's own image_resize (images.py:152-254, verbatim; its "lanczos" is Core's comfy.utils.lanczos, verbatim in
   res4lyf_core/_comfy/utils.py). The VAE encode runs on the host through ``vae.encode``, which is Core's
@@ -88,6 +90,50 @@ class FramesSliceV2(io.ComfyNode):
         return io.NodeOutput(await frames.select_batch(indices))
 
 
+class FrameSelectV2(io.ComfyNode):
+    """images.py:530-554 (Frame_Select.main: ``frames[select].unsqueeze(0).clone()``), as a host-side batch
+    selection."""
+    SDK_REFS = True
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("Frame Select")
+
+    @classmethod
+    async def execute(cls, frames: Any = None, select: int = 0) -> io.NodeOutput:
+        batch = await frames.batch_size()
+        if not 0 <= select < batch:  # upstream's frames[select] raises the same IndexError
+            raise IndexError(f"index {select} is out of bounds for dimension 0 with size {batch}")
+        return io.NodeOutput(await frames.select_batch([select]))
+
+
+class ImageRepeatTileToSizeV2(io.ComfyNode):
+    """images.py:258-300 (ImageRepeatTileToSize.main), line for line, on the exact input pixels."""
+    SDK_REFS = True
+    SDK_PERMISSIONS = ("raw",)
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("Image Repeat Tile To Size")
+
+    @classmethod
+    async def execute(cls, image: Any = None, width: int = 1024, height: int = 1024,
+                      crop: bool = True) -> io.NodeOutput:
+        method, interpolation, condition, multiple_of, keep_proportion = "stretch", "lanczos", "always", 0, False
+        img = (await image.raw()).clone().detach()
+        b, h, w, c = img.shape
+        h_tgt = int(torch.ceil(torch.div(height, h)))
+        w_tgt = int(torch.ceil(torch.div(width,  w)))
+        img_tiled = torch.tile(img, (h_tgt, w_tgt, 1))
+        if crop:
+            img_tiled = img_tiled[:,:height, :width, :]
+        else:
+            img_tiled  = images.image_resize(img_tiled, width, height, method, interpolation, condition, multiple_of,
+                                             keep_proportion)
+        return io.NodeOutput(await sdk.ImageRef.from_value(img_tiled))
+
+
 class VAEEncodeAdvancedV2(io.ComfyNode):
     """helper_sigma_preview_image_preproc.py:234-317 (VAEEncodeAdvanced.main), line for line."""
     SDK_REFS = True
@@ -165,9 +211,12 @@ class VAEEncodeAdvancedV2(io.ComfyNode):
 
 CONVERTED = {
     "Film Grain": FilmGrainV2,
+    "Frame Select": FrameSelectV2,
     "Frames Slice": FramesSliceV2,
     "Image Grain Add": ImageGrainAddV2,
+    "Image Repeat Tile To Size": ImageRepeatTileToSizeV2,
     "VAEEncodeAdvanced": VAEEncodeAdvancedV2,
 }
 
-__all__ = ["CONVERTED", "FilmGrainV2", "FramesSliceV2", "ImageGrainAddV2", "VAEEncodeAdvancedV2"]
+__all__ = ["CONVERTED", "FilmGrainV2", "FrameSelectV2", "FramesSliceV2", "ImageGrainAddV2",
+           "ImageRepeatTileToSizeV2", "VAEEncodeAdvancedV2"]

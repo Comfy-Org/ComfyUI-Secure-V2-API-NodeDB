@@ -72,6 +72,7 @@ def case_table():
         add(f"{model}:denoise0.6", model=model, denoise=0.6)
         add(f"{model}:denoise_alt-0.9", model=model, denoise=-0.9)
         add(f"{model}:steps_to_run3", model=model, steps_to_run=3)
+        add(f"{model}:steps_to_run0", model=model, steps_to_run=0)
         add(f"{model}:cfg1", model=model, cfg=1.0)
         add(f"{model}:seed_big", model=model, seed=2**40 + 17)
         add(f"{model}:mask", model=model, mask=True)
@@ -183,6 +184,52 @@ def option_cases():
     add("opt:EPS:detail:model", [detail()], model="EPS", scheduler="karras")
     add("opt:CONST:detail->shark", [detail(), shark(s_noise_init=0.9, denoise_alt=0.95)])
     add("opt:CONST:shark->detail", [shark(s_noise_init=0.9), detail(method="sampler")])
+
+    def sigma(**kw):  # ClownOptions_SigmaScaling_Beta: its widget defaults, then the case's values
+        base = {"s_noise": 1.0, "s_noise_substep": 1.0, "noise_anchor_sde": 1.0, "lying": 1.0, "lying_inv": 1.0,
+                "lying_start_step": 0, "lying_inv_start_step": 1}
+        base.update(kw)
+        return ("ClownOptions_SigmaScaling_Beta", base)
+
+    s32 = torch.linspace(1.2, 0.8, 6, dtype=torch.float32)  # SIGMAS inputs (per-step s_noise factors)
+    s64 = torch.linspace(0.9, 1.1, 7, dtype=torch.float64)
+    add("opt:CONST:sigma:defaults", [sigma()])
+    add("opt:EPS:sigma:defaults", [sigma()], model="EPS", scheduler="karras")
+    add("opt:CONST:sigma:s_noise1.05", [sigma(s_noise=1.05)])
+    add("opt:CONST:sigma:s_noise1.1:eta0", [sigma(s_noise=1.1)], eta=0.0)
+    add("opt:CONST:sigma:s_noise_substep0.9:res_2s", [sigma(s_noise_substep=0.9)], sampler_name="exponential/res_2s")
+    add("opt:CONST:sigma:noise_anchor0.5", [sigma(noise_anchor_sde=0.5)])
+    add("opt:CONST:sigma:noise_anchor0.5:res_3s", [sigma(noise_anchor_sde=0.5)], sampler_name="exponential/res_3s")
+    add("opt:CONST:sigma:lying0.95@0", [sigma(lying=0.95)])
+    add("opt:CONST:sigma:lying0.97@2", [sigma(lying=0.97, lying_start_step=2)])
+    add("opt:CONST:sigma:lying1.05@0", [sigma(lying=1.05)])
+    add("opt:CONST:sigma:lying1.05@2", [sigma(lying=1.05, lying_start_step=2)])  # then divided by sigma_max
+    add("opt:CONST:sigma:lying_inv1.03@3", [sigma(lying_inv=1.03, lying_inv_start_step=3)])
+    add("opt:CONST:sigma:lying0.95@1+inv1.02@4", [sigma(lying=0.95, lying_start_step=1, lying_inv=1.02,
+                                                        lying_inv_start_step=4)])
+    add("opt:CONST:sigma:lying0.9@6", [sigma(lying=0.9, lying_start_step=6)])  # after the last step
+    add("opt:CONST:sigma:s_noises_f32", [sigma(s_noises=s32.clone())])
+    add("opt:CONST:sigma:s_noises+substep_f64:res_2s", [sigma(s_noise=1.02, s_noises=s64.clone(),
+                                                              s_noises_substep=s64.flip(0).clone())],
+        sampler_name="exponential/res_2s")
+    add("opt:EPS:sigma:karras:lying0.95@1", [sigma(lying=0.95, lying_start_step=1)], model="EPS",
+        scheduler="karras")
+    add("opt:EPS:sigma:karras:s_noises_f32", [sigma(s_noises=s32.clone())], model="EPS", scheduler="karras")
+    # EPS-family final sigma_min step: rescaled away during the loop it no longer fires (exact); rescaled at the
+    # start, prepare_sigmas clamps the last sigma back up to sigma_min and it fires (refused by name in V2)
+    add("opt:EPS:sigma:kl_optimal:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], model="EPS",
+        scheduler="kl_optimal")
+    add("opt:EPS:sigma:kl_optimal:lying0.95@0", [sigma(lying=0.95)], model="EPS", scheduler="kl_optimal",
+        expect="refused_v2")
+    add("opt:CONST:sigma:kl_optimal:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], scheduler="kl_optimal")
+    add("opt:CONST:sigma:kl_optimal:lying0.95@0", [sigma(lying=0.95)], scheduler="kl_optimal")
+    add("opt:CONST:sigma:steps_to_run3:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], steps_to_run=3)
+    # Factors the host cannot evaluate at (negative or non-finite sigmas): refused by name in V2
+    add("opt:CONST:sigma:lying0", [sigma(lying=0.0)], expect="refused_v2")
+    add("opt:CONST:sigma:lying-0.5", [sigma(lying=-0.5)], expect="refused_v2")
+    add("opt:CONST:sigma:lying_inv0@2", [sigma(lying_inv=0.0, lying_inv_start_step=2)], expect="refused_v2")
+    add("opt:CONST:detail->sigma", [detail(), sigma(s_noise=1.04, lying=0.98, lying_start_step=1)])
+    add("opt:CONST:sigma->shark", [sigma(s_noise=1.04), shark(s_noise_init=0.9)])
     return rows
 
 PROVIDER_CASES = [(kind, name, steps) for kind in ("EPS", "CONST") for name in ("beta57", "bong_tangent")
@@ -198,4 +245,7 @@ CHAIN = [
      "down": dict(BASE, sampler_name="linear/euler", steps=4, denoise=0.4, seed=12, eta=0.0)},
     {"name": "chain:EPS:steps_to_run->standard", "model": "EPS",
      "up": dict(BASE, steps=6, steps_to_run=3), "down": dict(BASE, steps=6, denoise=0.6, seed=13)},
+    # the downstream loop runs no step: the original's output state is the upstream state (its denoised estimate)
+    {"name": "chain:CONST:res_2m->steps_to_run0", "model": "CONST",
+     "up": dict(BASE, steps=5), "down": dict(BASE, steps=5, denoise=0.5, seed=14, steps_to_run=0)},
 ]

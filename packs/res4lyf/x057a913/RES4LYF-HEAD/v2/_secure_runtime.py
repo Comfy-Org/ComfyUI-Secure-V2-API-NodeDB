@@ -213,6 +213,18 @@ REFUSAL_REASONS = {
         "it blurs with OpenCV (cv2.medianBlur / cv2.GaussianBlur, images.py:816 and :844), which the guest does not "
         "have, and it moves its frequency-separation blend to CUDA unconditionally (images.py:472-475 and :701-704), "
         "so the original fails on any host without CUDA"),
+    "ReSDPatcher": (
+        "it patches the model by swapping the classes of the diffusion model's own modules for RES4LYF's "
+        "(models.py:622-647), which is not a model transform the SDK offers, and its style code moves tensors to "
+        "CUDA unconditionally (style_transfer.py:428), so the original fails on any host without CUDA"),
+    "SigmasPreview": (
+        "it draws its plot with matplotlib (helper_sigma_preview_image_preproc.py:126-139), which the guest does "
+        "not have, and no byte-exact drawing without it exists yet"),
+    "Image Gaussian Blur": (
+        "it blurs with OpenCV (cv2.GaussianBlur, images.py:844), which the guest does not have"),
+    "Latent to Cuda": (
+        "it moves the latent's tensors to a device it names, CUDA or the CPU (nodes_latents.py:707-750); where a V2 "
+        "latent lives is the host's choice, and on a host without CUDA the original fails"),
 }
 
 

@@ -16,18 +16,35 @@ Upstream: `https://github.com/ClownsharkBatwing/RES4LYF`
 - Every other id (299) is registered with its original schema, frozen from the
   original (`_frozen_nodes.json`). The served node info equals the original's
   (`tests/test_res4lyf_schemas.py`).
-- Converted (18 of the 299):
+- Converted (25 of the 299):
   - `ClownsharKSampler_Beta`, within the reduced envelope below, including the OPTIONS it can apply exactly;
-  - the options nodes `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta`;
-  - the text and size nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize` and `SetImageSizeWithScale`;
-  - the sigma nodes `Sigmas Power`, `Sigmas From Text`, `Sigmas Split Value`, `Sigmas Rescale`, `Sigmas Easing`
-    and `Sigmas Resample`;
-  - the image nodes `Film Grain`, `Image Grain Add`, `Frames Slice` and `VAEEncodeAdvanced`.
+  - the options nodes `SharkOptions_Beta`, `ClownOptions_DetailBoost_Beta` and `ClownOptions_SigmaScaling_Beta`;
+  - the value nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize`, `SetImageSizeWithScale` and
+    `SeedGenerator`;
+  - the sigma nodes `Sigmas Power`, `Sigmas Mult`, `Sigmas From Text`, `Sigmas Split Value`, `Sigmas Rescale`,
+    `Sigmas Easing` and `Sigmas Resample`;
+  - the image nodes `Film Grain`, `Image Grain Add`, `Frames Slice`, `Frame Select`, `Image Repeat Tile To Size`
+    and `VAEEncodeAdvanced`;
+  - the latent nodes `LatentUpscaleWithVAE` and `EmptyLatentImageCustom`.
 - Every other id is refused by name at queue time ("not converted to Secure
-  Nodes V2 yet"), and again at run time. Nothing is approximated.
-  `Image Sharpen FS` names its own reason: it blurs with OpenCV, which the
-  guest does not have, and it runs its blend on CUDA unconditionally
-  (`images.py:472-475`), so the original fails on any host without CUDA.
+  Nodes V2 yet"), and again at run time. Nothing is approximated. Five
+  name their own reason:
+  - `Image Sharpen FS` blurs with OpenCV, which the guest does not have, and
+    runs its blend on CUDA unconditionally (`images.py:472-475`). So the
+    original fails on any host without CUDA.
+  - `ReSDPatcher` patches the model by swapping the classes of the diffusion
+    model's own modules for RES4LYF's (`models.py:622-647`). No SDK model
+    transform does that. Its style code also moves tensors to CUDA
+    unconditionally (`style_transfer.py:428`), so the original fails on any
+    host without CUDA.
+  - `SigmasPreview` draws its plot with matplotlib
+    (`helper_sigma_preview_image_preproc.py:126-139`), which the guest does
+    not have. A drawing without matplotlib would not be byte-exact.
+  - `Image Gaussian Blur` blurs with OpenCV (`images.py:844`), which the
+    guest does not have.
+  - `Latent to Cuda` moves the latent's tensors to the device it names, CUDA
+    or the CPU (`nodes_latents.py:707-750`). Where a V2 latent lives is the
+    host's choice, and on a host without CUDA the original fails.
 - Requires guest SDK base 0cd9adec or later (`ImageRef.from_value`, and SIGMAS
   read and written as tensors).
 - Scheduler names: like the original, the pack adds `beta57` and
@@ -63,25 +80,44 @@ Upstream: `https://github.com/ClownsharkBatwing/RES4LYF`
   Outputs are bitwise equal to the original's (`tests/v2_parity.py`).
 - Apart from the main sampling pass, the node makes only zero-evaluation host
   passes: the schedule, and the denoised output.
+- Both output latents carry the loop's final denoised estimate, as the
+  original's do in their `state_info` (`beta/samplers.py:1009-1010`). It is
+  the one entry of that state a converted node reads (`LatentUpscaleWithVAE`,
+  below). V2 keeps it in a marker key of its own (`latent_chain.py`):
+  `{"node": "ClownsharKSampler_Beta", "denoised": <tensor>}`. The tensor is
+  the original's `state_info["denoised"]`, bit for bit (`tests/v2_parity.py`).
+  When the loop runs no step, the original's state is the incoming latent's.
+  The marker then carries the incoming marker's estimate, or none.
 
 ## Options and value nodes
 
-- `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta` copy the original
-  bodies. An OPTIONS value is a dict. Its tensor entries cross between nodes
-  as tensor refs, so the sampler receives the original's values and dtypes.
+- `SharkOptions_Beta`, `ClownOptions_DetailBoost_Beta` and
+  `ClownOptions_SigmaScaling_Beta` copy the original bodies. An OPTIONS value
+  is a dict. Its tensor entries cross between nodes as tensor refs, so the
+  sampler receives the original's values and dtypes. An unlinked SIGMAS
+  input of `ClownOptions_SigmaScaling_Beta` is stored as None, as there.
 - `ClownsharKSampler_Beta` applies OPTIONS the way the original does. Each
   option is read in three places: the sampler node, its advanced sampler
   stage and its noise stage. The node mirrors those reads, in order, for:
   - its own OPTIONS output (chained into a later sampler);
   - `SharkOptions_Beta`'s keys;
-  - `ClownOptions_DetailBoost_Beta`'s keys.
+  - `ClownOptions_DetailBoost_Beta`'s keys;
+  - `ClownOptions_SigmaScaling_Beta`'s keys: the SDE noise scales
+    (`s_noise`, `s_noise_substep` and their per-step lists), `noise_anchor`,
+    and the schedule factors `d_noise` and `d_noise_inv` with their start
+    steps. The loop applies the factors itself, so the model is evaluated at
+    the rescaled sigmas, as in the original. The node's check for the final
+    sigma_min step (below) follows the same rescaling.
 - Any other OPTIONS key is refused by name before sampling. So are:
   - SDE noise types other than gaussian;
   - channelwise CFG;
   - the `brownian` init noise, which needs core's Brownian-tree sampler;
   - the `wavelet` init noise when the guest runtime lacks PyWavelets;
   - noise-scaling cycles other than 1;
-  - non-zero noise boosts.
+  - non-zero noise boosts;
+  - a `d_noise` or `d_noise_inv` that is not finite and positive. The loop
+    would evaluate the model at negative or non-finite sigmas, which the host
+    refuses.
 - At the pinned commit, the DetailBoost methods `sampler_substep` and
   `sampler_substep_normal` fail inside the original's sampling loop. V2 runs
   the same loop and fails the same way.
@@ -91,8 +127,19 @@ Upstream: `https://github.com/ClownsharkBatwing/RES4LYF`
 
 ## Text, size, sigma and image nodes
 
-- `TextBox2`, `TextConcatenate` and `SetImageSize` return what the original
-  returns. An unlinked `TextConcatenate` text is the empty string, as there.
+- `TextBox2`, `TextConcatenate`, `SetImageSize` and `SeedGenerator` return
+  what the original returns. An unlinked `TextConcatenate` text is the empty
+  string, as there.
+- `Sigmas Mult` multiplies the exact input schedules as the original does,
+  `sigmas * sigmas2 * multiplier`, in torch's own dtype promotion.
+- `Frame Select` selects the frame `frames[select]` on the host
+  (`image.select_batch`), as `Frames Slice` does; an index past the batch
+  fails with the original's IndexError.
+- `Image Repeat Tile To Size` runs the original's body on the exact input
+  pixels: tile, then crop, or resize with upstream's `image_resize` (stretch,
+  lanczos).
+- `EmptyLatentImageCustom` builds the original's zeros: shape, channels,
+  ratio and precision as there.
 - The sigma nodes run upstream's own classes, copied verbatim from
   `sigmas.py` into `res4lyf_core/sigmas_values.py` and
   `res4lyf_core/sigmas_resample.py`, on the exact input schedule in its own
@@ -106,6 +153,20 @@ Upstream: `https://github.com/ClownsharkBatwing/RES4LYF`
 - `VAEEncodeAdvanced` follows the original's `main` line for line. It resizes
   with upstream's own `image_resize` (whose `lanczos` is Core's, copied
   verbatim) and encodes on the host with Core's `vae.encode`.
+- `LatentUpscaleWithVAE` follows the original's `main`
+  (`helper_sigma_preview_image_preproc.py:618-691`), with these steps:
+  - It decodes on the host with Core's `vae.decode`. The original decodes the
+    estimate a RES4LYF sampler's latent carries in its `state_info`; V2
+    decodes the one the V2 sampler's marker carries (the same tensor). Without
+    either, both decode the samples.
+  - `vae.decode_tensor` applies the original's 5-D to 4-D reshape.
+  - It resizes with upstream's `image_resize` (stretch, lanczos), encodes on
+    the host with Core's `vae.encode`, and returns a copy of the input latent.
+    The new samples are in the input samples' dtype. Where a marker came in,
+    it carries the new latent as its estimate, as the original's `state_info`
+    does.
+  - A latent carrying an unconverted sampler's `state_info` is refused by
+    name.
 - Copied upstream code: `res4lyf_core/VENDOR.json` records each copied
   definition's source lines and sha256. `vendor_res4lyf.py` also proves from
   the source text that every global name a copied definition uses resolves
@@ -144,11 +205,14 @@ At run time:
 
 ## Known differences
 
-- Output latents: `samples` and `noise_mask` are exact. V2 adds its own chain
-  marker in place of the original's `sampler`, `guider` and `state_info`
-  entries. Those are host objects and loop state that a V2 latent cannot
-  carry. Core nodes ignore them. RES4LYF's continuation modes need them, and
-  they are refused.
+- Output latents: `samples` and `noise_mask` are exact. In place of the
+  original's `sampler`, `guider` and `state_info` entries, V2 adds its own
+  marker, carrying the loop's final denoised estimate (exact, see above).
+  The rest of the original's entries are host objects and loop state that a
+  V2 latent cannot carry. RES4LYF's continuation modes need them, and they
+  are refused. Core's nodes pass the marker on, or drop it, exactly where they
+  pass on or drop the original's `state_info`, and otherwise behave the same
+  with it as without it (`tests/test_chain_key_core.py`).
 - Queue-time checks for the seven widgets that `validate_inputs` names
   (sampler, scheduler, steps, cfg, seed, sampler mode, denoise):
   - V2 applies Core's own bounds and lists, including the original menu's
@@ -204,6 +268,23 @@ At run time:
   resize (an `ImageRef.resize` that runs Core's `common_upscale` on the host,
   so the pixels never cross before the encode) would make these latents
   bitwise equal as well.
+- `LatentUpscaleWithVAE` has the same two differences as `VAEEncodeAdvanced`:
+  - The original seeds torch's process-wide generator with 42 before decoding
+    (`helper_sigma_preview_image_preproc.py:653-654`); V2 does not. The
+    latents do not depend on it. The host's generator is left where it was.
+  - Its interpolation is always `lanczos`, so its latents fall in the
+    layout-rounding class above. The pixels are bitwise equal. The latents are
+    bitwise equal to Core's encode of those pixels in contiguous layout.
+  - In addition, with `state_info` the original also decodes, resizes and
+    re-encodes the loop's history (`data_prev_`) into its output state. Only
+    the refused continuation modes read that history, so V2 carries none.
+- Image outputs cross to the host as contiguous buffers. Where the original
+  returns a strided view (`Image Repeat Tile To Size` crops a tiled view and
+  its lanczos path returns channels-first memory), the pixels are equal, and
+  a later VAE encode of them can round as described for `VAEEncodeAdvanced`.
+- `EmptyLatentImageCustom`: the original allocates its zeros on Core's
+  intermediate device, which is the CPU unless the host runs GPU-only. A V2
+  latent is the host's copy of the guest's zeros.
 - `Frames Slice`: an empty slice (`start` at or past the batch size, or not
   below `stop`) is refused by name. The original returns an empty image
   batch, which a V2 image cannot hold. The host's batch selection takes
@@ -211,7 +292,9 @@ At run time:
 - Image outputs are finite and hold at most 4096 images (V2 images).
   `Film Grain` refuses by name when `repeats` would exceed that.
 - Guest runtime: the pack declares a dependency profile in `pyproject.toml`
-  (exact pins: einops, scipy, tqdm). The ClownsharKSampler_Beta loop needs
+  (exact pins: einops, scipy, tqdm). The manifest's runtime block names the
+  profile built from those pins (`profile_sha256` b90d9207…), so a production
+  guest gets exactly these modules. The ClownsharKSampler_Beta loop needs
   einops and tqdm when its module is imported. The beta57 scheduler needs
   scipy when it runs, and so does `Sigmas Resample` (its copied code imports
   scipy at module level, as upstream's `sigmas.py` does; only an unreachable
@@ -244,10 +327,26 @@ profile.
   - a negative control.
 - `tests/v2_parity.py` also runs the sampler fed by OPTIONS chains that the
   options nodes build in the guest, against the original's chains. It
-  compares the option dicts and the outputs bitwise.
-- `tests/test_res4lyf_simple.py`: the text, size, sigma and image nodes
-  (all but `VAEEncodeAdvanced`) against the original, every option, edge
-  values and failures. The random nodes are compared with both sides seeded
+  compares the option dicts and the outputs bitwise. On both output latents
+  it compares the marker's estimate with the original's
+  `state_info["denoised"]`, bitwise.
+- `tests/test_res4lyf_upscale.py`: `LatentUpscaleWithVAE` against the
+  original on the TAESD and KL VAEs:
+  - plain and chained latents, sizes up and down, batches, masks and other
+    keys, half-precision samples, and the failure when no estimate was
+    stored;
+  - the layout-rounding check above;
+  - the seed: results with the generators moved, and the generator side
+    effect;
+  - a negative control.
+- `tests/test_chain_key_core.py`: every core node that takes a LATENT and
+  can run on synthetic inputs, run three ways: with a plain latent, with the
+  V2 marker, and with the original's `state_info`. Outputs, UI data and
+  written files must be equal once the extra key is set aside. The marker must
+  be passed on exactly where `state_info` is.
+- `tests/test_res4lyf_simple.py`: the value, sigma, image and latent nodes
+  (all but `VAEEncodeAdvanced` and `LatentUpscaleWithVAE`) against the
+  original, every option, edge values and failures, and the named refusals. The random nodes are compared with both sides seeded
   identically. Two negative controls (a 1-ulp change, a different seed).
 - `tests/test_res4lyf_vae.py`: `VAEEncodeAdvanced` against the original on a
   TAESD and an SD-style KL VAE: every option, inputs present and absent, the

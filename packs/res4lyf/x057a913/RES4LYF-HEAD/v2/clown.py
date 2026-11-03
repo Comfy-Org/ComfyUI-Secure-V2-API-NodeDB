@@ -11,7 +11,8 @@ The node reproduces the original's arithmetic exactly:
 - KSAMPLER's noise scaling, done host-side on the node's float64 SIGMAS and explicit noise;
 - the loop itself;
 - the post-sample mask blend;
-- both output latents.
+- both output latents, which also carry the loop's final denoised estimate as the original's state_info does
+  (latent_chain.py).
 
 Anything outside the reduced envelope is refused by name:
 - at queue time when the widget values decide it;
@@ -33,6 +34,7 @@ import torch.nn.functional as F
 from comfy_api.latest import io, sdk
 
 from ._secure_runtime import schema_for
+from .latent_chain import CHAIN_KEY
 from .options_nodes import export as export_options, materialize as materialize_options
 from .res4lyf_core._comfy._refuse import OutOfEnvelope
 from .res4lyf_core._comfy.model_sampling import GuestCONST, GuestEPS
@@ -47,7 +49,6 @@ from .res4lyf_core.latents import normalize_zscore
 
 NODE_ID = "ClownsharKSampler_Beta"
 PREFIX = f"RES4LYF/{NODE_ID}"
-CHAIN_KEY = "res4lyf_v2_chain"
 
 _HERE = Path(__file__).resolve().parent
 _FROZEN = json.loads((_HERE / "_clown_frozen.json").read_text())
@@ -192,6 +193,9 @@ OPTION_KEYS_ADMITTED = frozenset({
     "noise_scaling_weight", "noise_scaling_type", "noise_scaling_mode", "noise_scaling_eta", "noise_scaling_cycles",
     "noise_scaling_weights", "noise_scaling_etas", "noise_boost_step", "noise_boost_substep",
     "noise_boost_normalize",
+    # ClownOptions_SigmaScaling_Beta
+    "noise_anchor", "s_noise", "s_noise_substep", "d_noise", "d_noise_start_step", "d_noise_inv",
+    "d_noise_inv_start_step", "s_noises", "s_noises_substep",
 })
 # Init-noise types proven exact in parity; "brownian" needs core's Brownian-tree sampler (refused)
 INIT_NOISE_ADMITTED = frozenset(NOISE_GENERATOR_CLASSES_SIMPLE) - {"brownian"}
@@ -217,6 +221,14 @@ def option_problems(merged: dict) -> list[str]:
     for key in ("noise_boost_step", "noise_boost_substep"):
         if merged.get(key, 0.0) != 0.0:
             problems.append(f"OPTIONS {key}={merged[key]!r} is not converted yet (only 0.0)")
+    # The loop multiplies the schedule by d_noise and divides it by d_noise_inv (rk_noise_sampler_beta.py:916-917,
+    # rk_sampler_beta.py:2167-2174) and evaluates the model there. The original evaluates at any sigma; the host
+    # accepts only finite, non-negative sigmas, so a factor that is not finite and positive is refused by name.
+    for key in ("d_noise", "d_noise_inv"):
+        value = merged.get(key, 1.0)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            problems.append(f"OPTIONS {key}={value!r}: only finite positive values are converted (the loop would "
+                            f"evaluate the model at negative or non-finite sigmas, which the host refuses)")
     return problems
 
 
@@ -297,12 +309,27 @@ def rk_kwargs(*, eta, sampler_name, steps_to_run, bongmath, seed, options_dict, 
         "noise_boost_substep": options_mgr.get('noise_boost_substep', 0.0),
         "noise_boost_normalize": options_mgr.get('noise_boost_normalize', True),
     }
+    # ClownOptions_SigmaScaling_Beta's keys. ClownsharKSampler_Beta reads them with its own defaults
+    # (beta/samplers.py:1641-1648, :1798-1805) and passes the values down (:1924-1930); Advanced reads them again from
+    # the same options with those values as defaults (:1389-1396). s_noises and s_noises_substep are not passed
+    # down, so Advanced reads them with None (:1438-1439). Every read is options.get(key, default); a key that the
+    # options node set to None (an unlinked SIGMAS input) stays None, as there.
+    noise_anchor = options_mgr.get('noise_anchor', 1.0)
+    s_noise = options_mgr.get('s_noise', 1.0)
+    s_noise_substep = options_mgr.get('s_noise_substep', 1.0)
+    d_noise = options_mgr.get('d_noise', 1.0)
+    d_noise_start_step = options_mgr.get('d_noise_start_step', 0)
+    d_noise_inv = options_mgr.get('d_noise_inv', 1.0)
+    d_noise_inv_start_step = options_mgr.get('d_noise_inv_start_step', 0)
+    s_noises = options_mgr.get('s_noises', None)
+    s_noises_substep = options_mgr.get('s_noises_substep', None)
     rescale_floor = EO("rescale_floor")
 
+    # beta/samplers.py:1441-1449
     etas = initialize_or_scale(None, eta, MAX_STEPS).to(default_dtype)
     etas_substep = initialize_or_scale(None, eta_substep, MAX_STEPS).to(default_dtype)
-    s_noises = initialize_or_scale(None, 1.0, MAX_STEPS).to(default_dtype)
-    s_noises_substep = initialize_or_scale(None, 1.0, MAX_STEPS).to(default_dtype)
+    s_noises = initialize_or_scale(s_noises, s_noise, MAX_STEPS).to(default_dtype)
+    s_noises_substep = initialize_or_scale(s_noises_substep, s_noise_substep, MAX_STEPS).to(default_dtype)
     etas = F.pad(etas, (0, MAX_STEPS), value=0.0)
     etas_substep = F.pad(etas_substep, (0, MAX_STEPS), value=0.0)
     s_noises = F.pad(s_noises, (0, MAX_STEPS), value=1.0)
@@ -317,9 +344,10 @@ def rk_kwargs(*, eta, sampler_name, steps_to_run, bongmath, seed, options_dict, 
         "extra_options": extra_options, "sampler_mode": "standard", "etas": etas, "etas_substep": etas_substep,
         "s_noises": s_noises, "s_noises_substep": s_noises_substep, "epsilon_scales": None,
         "regional_conditioning_weights": None, "guides": None, "frame_weights_mgr": None,
-        "noise_mode_sde_substep": "hard", **detail, "noise_anchor": 1.0, "s_noise": 1.0,
-        "s_noise_substep": 1.0, "d_noise": 1.0, "d_noise_start_step": 0, "d_noise_inv": 1.0,
-        "d_noise_inv_start_step": 0, "overshoot_mode": "hard", "overshoot_mode_substep": "hard",
+        "noise_mode_sde_substep": "hard", **detail, "noise_anchor": noise_anchor, "s_noise": s_noise,
+        "s_noise_substep": s_noise_substep, "d_noise": d_noise, "d_noise_start_step": d_noise_start_step,
+        "d_noise_inv": d_noise_inv, "d_noise_inv_start_step": d_noise_inv_start_step,
+        "overshoot_mode": "hard", "overshoot_mode_substep": "hard",
         "overshoot": 0.0, "overshoot_substep": 0.0, "BONGMATH": bongmath, "implicit_type": "bongmath",
         "implicit_type_substeps": "bongmath", "rk_swaps": [], "steps_to_run": steps_to_run, "sde_mask": None,
         "momentum": 0.0,
@@ -344,14 +372,23 @@ def rk_kwargs(*, eta, sampler_name, steps_to_run, bongmath, seed, options_dict, 
     return kw
 
 
-def final_step_fires(outer, sigma_min, steps_to_run):
+def final_step_fires(outer, sigma_min, steps_to_run, *, sigma_max=None, d_noise=1.0, d_noise_start_step=0,
+                     d_noise_inv=1.0, d_noise_inv_start_step=0):
     """Whether the loop ends with RES4LYF's no-evaluation final step, which applies the MODEL's calculate_denoised
-    (rk_sampler_beta.py:2202-2209). It mirrors, for standard mode with d_noise 1:
-    - NS.prepare_sigmas (rk_noise_sampler_beta.py:916-944): drop consecutive duplicates; clamp the last nonzero
-      sigma up to sigma_min, or insert sigma_min when it is more than 1e-4 away;
-    - the loop length (rk_sampler_beta.py:480-487).
+    (rk_sampler_beta.py:2202-2209). It mirrors, for standard mode:
+    - NS.prepare_sigmas (rk_noise_sampler_beta.py:916-944): the d_noise scaling when d_noise_start_step is 0; drop
+      consecutive duplicates; clamp the last nonzero sigma up to sigma_min, or insert sigma_min when it is more
+      than 1e-4 away;
+    - the loop length (rk_sampler_beta.py:480-487);
+    - the loop's rescaling after each step (rk_sampler_beta.py:2167-2174): times d_noise at d_noise_start_step and
+      divided by d_noise_inv at d_noise_inv_start_step, each followed by a division by sigma_max when the schedule
+      then exceeds it. This can move the last nonzero sigma off sigma_min before the final check.
+    NS holds sigma_min and sigma_max as the model's float32 values in float64 (rk_noise_sampler_beta.py:70-71).
+    With the default scaling (d_noise and d_noise_inv 1, start steps 0) this is the round-3 rule unchanged.
     """
     sigmas = outer.clone()
+    if d_noise_start_step == 0:
+        sigmas = sigmas.clone() * d_noise
     keep = torch.cat((torch.tensor([True]), torch.diff(sigmas) != 0))
     sigmas = sigmas[keep]
     smin = torch.tensor(sigma_min, dtype=torch.float32).to(torch.float64)
@@ -360,10 +397,25 @@ def final_step_fires(outer, sigma_min, steps_to_run):
             sigmas[-2] = smin
         elif (sigmas[-2] - smin).abs() > 1e-4:
             sigmas = torch.cat((sigmas[:-1], smin.unsqueeze(0), sigmas[-1:]))
-    if sigmas.numel() < 2 or sigmas[-1] != 0 or sigmas[-2] != smin:
+    if sigmas.numel() < 2:
         return False
-    num_steps = len(sigmas) - 2
-    return steps_to_run < 0 or steps_to_run >= num_steps
+    num_steps = len(sigmas) - 2 if sigmas[-1] == 0 else len(sigmas) - 1
+    run = num_steps if steps_to_run < 0 else min(num_steps, steps_to_run)
+    rescales = (d_noise_start_step, d_noise_inv_start_step)
+    if any(1 <= start <= run for start in rescales):
+        if sigma_max is None:
+            raise ValueError("sigma_max is required when the schedule is rescaled during the loop")
+        smax = torch.tensor(sigma_max, dtype=torch.float32).to(torch.float64)
+        for step in range(1, run + 1):
+            if d_noise_start_step == step:
+                sigmas = sigmas.clone() * d_noise
+                if sigmas.max() > smax:
+                    sigmas = sigmas / smax
+            if d_noise_inv_start_step == step:
+                sigmas = sigmas.clone() / d_noise_inv
+                if sigmas.max() > smax:
+                    sigmas = sigmas / smax
+    return run == len(sigmas) - 2 and bool(sigmas[-1] == 0) and bool(sigmas[-2] == smin)
 
 
 def reshape_mask(input_mask, output_shape):
@@ -671,8 +723,10 @@ async def _run(*, eta, sampler_name, scheduler, steps, steps_to_run, denoise, cf
     kw = rk_kwargs(eta=resolved["eta"], sampler_name=sampler_name, steps_to_run=steps_to_run, bongmath=bongmath,
                    seed=seed, options_dict=options_dict, eta_substep=resolved["eta_substep"],
                    noise_type_sde_substep=resolved["noise_type_sde_substep"])
-    stash = {"x0": None, "x_final": None, "params": None, "failure": None}
-    fires = final_step_fires(outer, sigma_min, steps_to_run)
+    stash = {"x0": None, "x_final": None, "params": None, "failure": None, "state_info_out": None}
+    fires = final_step_fires(outer, sigma_min, kw["steps_to_run"], sigma_max=sigma_max, d_noise=kw["d_noise"],
+                             d_noise_start_step=kw["d_noise_start_step"], d_noise_inv=kw["d_noise_inv"],
+                             d_noise_inv_start_step=kw["d_noise_inv_start_step"])
 
     def model_sampling_for(params):
         if params["parameterization"] == "const":
@@ -730,6 +784,7 @@ async def _run(*, eta, sampler_name, scheduler, steps, steps_to_run, denoise, cf
 
         result = await asyncio.to_thread(run)
         stash["x_final"] = result
+        stash["state_info_out"] = state_kw["state_info_out"]
         return result.to(dtype=latent.dtype, device=latent.device)
 
     async def passthrough_program(broker, latent, host_sigmas):
@@ -773,8 +828,21 @@ async def _run(*, eta, sampler_name, scheduler, steps, steps_to_run, denoise, cf
     if noise_mask is not None:
         out["noise_mask"] = noise_mask.clone()
         out_denoised["noise_mask"] = noise_mask.clone()
-    out[CHAIN_KEY] = NODE_ID
-    out_denoised[CHAIN_KEY] = NODE_ID
+    # The original attaches the loop's state_info to both output latents (beta/samplers.py:1009-1010). Of it, a V2
+    # latent carries the one entry a converted consumer reads in standard mode: the loop's final denoised estimate
+    # (rk_sampler_beta.py:2254), which LatentUpscaleWithVAE decodes in place of the samples
+    # (helper_sigma_preview_image_preproc.py:658-666). When the loop ran no step, the original's state is instead
+    # the incoming latent's (a deep copy, beta/samplers.py:436; rk_sampler_beta.py:2231-2232), so the marker carries
+    # the incoming marker's estimate, or none.
+    chain = {"node": NODE_ID}
+    state_info_out = stash["state_info_out"] or {}
+    incoming = latent_value.get(CHAIN_KEY)
+    if "denoised" in state_info_out:
+        chain["denoised"] = state_info_out["denoised"]
+    elif isinstance(incoming, dict) and "denoised" in incoming:
+        chain["denoised"] = incoming["denoised"].clone()
+    out[CHAIN_KEY] = chain
+    out_denoised[CHAIN_KEY] = dict(chain)
     return io.NodeOutput(
         await sdk.LatentRef.from_value(out),
         await sdk.LatentRef.from_value(out_denoised),

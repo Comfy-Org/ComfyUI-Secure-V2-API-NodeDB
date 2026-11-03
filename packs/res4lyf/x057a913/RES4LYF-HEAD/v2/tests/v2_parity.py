@@ -7,8 +7,10 @@ manifest registers.
   comfy_secure_nodes GuestSession, with exactly its declared SDK permissions. The guest starts through
   _res4_sealed_guest_entry.py with its guest import audit on (pack code may import only the stdlib, the sealed guest
   lock or the declared profile); the summary lists any import it refused.
-* Comparisons are bitwise and dtype-strict: output samples and noise_mask, denoised samples and noise_mask, and
-  the OPTIONS dict.
+* Comparisons are bitwise and dtype-strict: output samples and noise_mask, denoised samples and noise_mask, the
+  OPTIONS dict, and on both output latents the chain marker's denoised estimate against the original's
+  state_info['denoised'] (what LatentUpscaleWithVAE decodes). Each row also records the sha256 of V2's samples, so
+  two pack versions' runs of the same cases can be compared directly.
 * Every ctx.sample call is recorded: the model evaluations it made and the wall time it took.
 * A negative control flips one value and must turn the comparator red.
 Writes /results/v2-parity.json and exits 1 on any MISMATCH or harness failure.
@@ -89,6 +91,10 @@ def import_package(name, root):
 
 SECURE = import_package("res4lyf_secure", V2)
 SCHED = importlib.import_module("res4lyf_secure.schedulers")
+try:
+    CHAIN_KEY = importlib.import_module("res4lyf_secure.latent_chain").CHAIN_KEY
+except ImportError:  # an earlier pack version under this harness (the cross-version sample check)
+    CHAIN_KEY = "res4lyf_v2_chain"
 
 
 def register_providers():
@@ -337,6 +343,7 @@ async def option_rows(by_name):
             row["v2_seconds"] = round(time.perf_counter() - t0, 4)
             row["v2_calls"] = COUNT["n"]
             row["passes"] = list(PASSES)
+            row["v2_sha256"] = sample_hashes(values)
             if not ref_row["ok"]:
                 row["verdict"] = "MISMATCH"
                 row["note"] = f"original failed: {ref_row.get('error')}; V2 ran"
@@ -378,10 +385,32 @@ def compare(ref_row, values):
     if "den_noise_mask" in ref_t:
         checks["den_noise_mask"] = "noise_mask" in den and tensors_equal(ref_t["den_noise_mask"], den["noise_mask"])
     checks["options"] = jsonable(options) == ref_row["options"]
+    # The chain marker in place of state_info: its denoised estimate must be the original's state_info['denoised']
+    # bit for bit (dtype, shape, values), on both output latents; absent exactly when the original has none.
+    for side, latent in (("out", out), ("den", den)):
+        chain = latent.get(CHAIN_KEY)
+        checks[f"{side}_chain_node"] = isinstance(chain, dict) and chain.get("node") == NODE
+        if f"{side}_state_denoised" in ref_t:
+            carried = chain.get("denoised") if isinstance(chain, dict) else None
+            checks[f"{side}_chain_denoised"] = (isinstance(carried, torch.Tensor)
+                                                and tensors_equal(ref_t[f"{side}_state_denoised"], carried))
+        else:
+            checks[f"{side}_chain_without_denoised"] = isinstance(chain, dict) and "denoised" not in chain
     diff = None
     if tuple(ref_t["out_samples"].shape) == tuple(out["samples"].shape):
         diff = float((ref_t["out_samples"].double() - out["samples"].double()).abs().max())
     return all(checks.values()), checks, diff
+
+
+def sample_hashes(values):
+    """sha256 of V2's output samples and masks (dtype, shape and bytes), for comparing two pack versions' runs."""
+    out, den = values[0], values[1]
+    hashes = {}
+    for side, latent in (("out", out), ("den", den)):
+        for key in ("samples", "noise_mask"):
+            if isinstance(latent.get(key), torch.Tensor):
+                hashes[f"{side}_{key}"] = jsonable(latent[key])
+    return hashes
 
 
 def widgets_inputs(case_widgets, model, pos, neg, latent):
@@ -484,6 +513,7 @@ async def main():
             row["v2_seconds"] = round(time.perf_counter() - t0, 4)
             row["v2_calls"] = COUNT["n"]
             row["passes"] = list(PASSES)
+            row["v2_sha256"] = sample_hashes(values)
             ok, checks, diff = compare(ref_row, values)
             row.update(checks=checks, max_abs_diff=diff)
             row["verdict"] = "EXACT" if ok and case["expect"] == "exact" else "MISMATCH"
@@ -517,6 +547,7 @@ async def main():
             row["v2_seconds"] = round(time.perf_counter() - t0, 4)
             row["v2_calls"] = COUNT["n"]
             row["passes"] = list(PASSES)
+            row["v2_sha256"] = sample_hashes(down)
             ok, checks, diff = compare(ref_row, down)
             row.update(checks=checks, max_abs_diff=diff, v2_upstream_keys=sorted(up[0]))
             row["verdict"] = "EXACT" if ok else "MISMATCH"

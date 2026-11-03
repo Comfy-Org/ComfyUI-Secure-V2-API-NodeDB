@@ -1,4 +1,5 @@
-"""Secure Nodes V2: RES4LYF's sampler options nodes SharkOptions_Beta and ClownOptions_DetailBoost_Beta.
+"""Secure Nodes V2: RES4LYF's sampler options nodes SharkOptions_Beta, ClownOptions_DetailBoost_Beta and
+ClownOptions_SigmaScaling_Beta.
 
 Bodies are copied from upstream 057a913e (beta/samplers_extensions.py). An OPTIONS value is a dict; its tensor
 entries cross between nodes as tensor refs (materialized with ``raw()``, exported with ``_from_raw``), so the
@@ -148,4 +149,39 @@ class ClownOptionsDetailBoostBetaV2(io.ComfyNode):
         return io.NodeOutput(await export(options))
 
 
-__all__ = ["ClownOptionsDetailBoostBetaV2", "SharkOptionsBetaV2", "export", "materialize"]
+class ClownOptionsSigmaScalingBetaV2(io.ComfyNode):
+    """beta/samplers_extensions.py:356-418 (ClownOptions_SigmaScaling_Beta.main). Unlinked SIGMAS inputs are
+    stored as None, as there; linked ones as the exact tensors."""
+    SDK_REFS = True
+    SDK_PERMISSIONS = ("raw",)
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("ClownOptions_SigmaScaling_Beta")
+
+    @classmethod
+    async def execute(cls, noise_anchor_sde: float = 1.0, s_noise: float = 1.0, s_noise_substep: float = 1.0,
+                      lying: float = 1.0, lying_start_step: int = 0, lying_inv: float = 1.0,
+                      lying_inv_start_step: int = 1, s_noises=None, s_noises_substep=None,
+                      options=None) -> io.NodeOutput:
+        s_noises         = await s_noises.raw() if s_noises is not None else None
+        s_noises_substep = await s_noises_substep.raw() if s_noises_substep is not None else None
+
+        options = await materialize(options) if options is not None else {}
+
+        options['noise_anchor']           = noise_anchor_sde
+        options['s_noise']                = s_noise
+        options['s_noise_substep']        = s_noise_substep
+        options['d_noise']                = lying
+        options['d_noise_start_step']     = lying_start_step
+        options['d_noise_inv']            = lying_inv
+        options['d_noise_inv_start_step'] = lying_inv_start_step
+
+        options['s_noises']                = s_noises
+        options['s_noises_substep']        = s_noises_substep
+
+        return io.NodeOutput(await export(options))
+
+
+__all__ = ["ClownOptionsDetailBoostBetaV2", "ClownOptionsSigmaScalingBetaV2", "SharkOptionsBetaV2", "export",
+           "materialize"]

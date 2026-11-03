@@ -101,5 +101,41 @@ class SigmasPowerV2(io.ComfyNode):
         return io.NodeOutput(await sdk.SigmasRef._from_raw(result))
 
 
-__all__ = ["SetImageSizeV2", "SetImageSizeWithScaleV2", "SigmasPowerV2", "TextBox1V2", "TextBox2V2",
-           "TextConcatenateV2"]
+class SigmasMultV2(io.ComfyNode):
+    """sigmas.py:609-633 (sigmas_mult.main: ``sigmas * sigmas2 * multiplier`` or ``sigmas * multiplier``), on the
+    exact input tensors in their own dtypes."""
+    SDK_REFS = True
+    SDK_PERMISSIONS = ("raw",)
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("Sigmas Mult")
+
+    @classmethod
+    async def execute(cls, sigmas: Any = None, multiplier: float = 1, sigmas2: Any = None) -> io.NodeOutput:
+        if sigmas is None:
+            raise OutOfEnvelope("RES4LYF/Sigmas Mult: sigmas must be connected")
+        tensor = await sigmas.raw()
+        if sigmas2 is not None:
+            result = tensor * (await sigmas2.raw()) * multiplier
+        else:
+            result = tensor * multiplier
+        return io.NodeOutput(await sdk.SigmasRef._from_raw(result))
+
+
+class SeedGeneratorV2(io.ComfyNode):
+    """nodes_misc.py:373-390 (SeedGenerator.main returns ``(seed, seed+1)``)."""
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("SeedGenerator")
+
+    @classmethod
+    async def execute(cls, seed: int = 0) -> io.NodeOutput:
+        return io.NodeOutput(seed, seed + 1)
+
+
+__all__ = ["SeedGeneratorV2", "SetImageSizeV2", "SetImageSizeWithScaleV2", "SigmasMultV2", "SigmasPowerV2",
+           "TextBox1V2", "TextBox2V2", "TextConcatenateV2"]

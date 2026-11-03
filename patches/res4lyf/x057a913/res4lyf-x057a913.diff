@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,274 @@
+@@ -0,0 +1,373 @@
 +# Secure Nodes V2 conversion
 +
 +Pinned upstream commit: `057a913ed3c04cbfb756e1a3dbfc398a6bd4044f`
@@ -19,18 +19,35 @@
 +- Every other id (299) is registered with its original schema, frozen from the
 +  original (`_frozen_nodes.json`). The served node info equals the original's
 +  (`tests/test_res4lyf_schemas.py`).
-+- Converted (18 of the 299):
++- Converted (25 of the 299):
 +  - `ClownsharKSampler_Beta`, within the reduced envelope below, including the OPTIONS it can apply exactly;
-+  - the options nodes `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta`;
-+  - the text and size nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize` and `SetImageSizeWithScale`;
-+  - the sigma nodes `Sigmas Power`, `Sigmas From Text`, `Sigmas Split Value`, `Sigmas Rescale`, `Sigmas Easing`
-+    and `Sigmas Resample`;
-+  - the image nodes `Film Grain`, `Image Grain Add`, `Frames Slice` and `VAEEncodeAdvanced`.
++  - the options nodes `SharkOptions_Beta`, `ClownOptions_DetailBoost_Beta` and `ClownOptions_SigmaScaling_Beta`;
++  - the value nodes `TextBox1`, `TextBox2`, `TextConcatenate`, `SetImageSize`, `SetImageSizeWithScale` and
++    `SeedGenerator`;
++  - the sigma nodes `Sigmas Power`, `Sigmas Mult`, `Sigmas From Text`, `Sigmas Split Value`, `Sigmas Rescale`,
++    `Sigmas Easing` and `Sigmas Resample`;
++  - the image nodes `Film Grain`, `Image Grain Add`, `Frames Slice`, `Frame Select`, `Image Repeat Tile To Size`
++    and `VAEEncodeAdvanced`;
++  - the latent nodes `LatentUpscaleWithVAE` and `EmptyLatentImageCustom`.
 +- Every other id is refused by name at queue time ("not converted to Secure
-+  Nodes V2 yet"), and again at run time. Nothing is approximated.
-+  `Image Sharpen FS` names its own reason: it blurs with OpenCV, which the
-+  guest does not have, and it runs its blend on CUDA unconditionally
-+  (`images.py:472-475`), so the original fails on any host without CUDA.
++  Nodes V2 yet"), and again at run time. Nothing is approximated. Five
++  name their own reason:
++  - `Image Sharpen FS` blurs with OpenCV, which the guest does not have, and
++    runs its blend on CUDA unconditionally (`images.py:472-475`). So the
++    original fails on any host without CUDA.
++  - `ReSDPatcher` patches the model by swapping the classes of the diffusion
++    model's own modules for RES4LYF's (`models.py:622-647`). No SDK model
++    transform does that. Its style code also moves tensors to CUDA
++    unconditionally (`style_transfer.py:428`), so the original fails on any
++    host without CUDA.
++  - `SigmasPreview` draws its plot with matplotlib
++    (`helper_sigma_preview_image_preproc.py:126-139`), which the guest does
++    not have. A drawing without matplotlib would not be byte-exact.
++  - `Image Gaussian Blur` blurs with OpenCV (`images.py:844`), which the
++    guest does not have.
++  - `Latent to Cuda` moves the latent's tensors to the device it names, CUDA
++    or the CPU (`nodes_latents.py:707-750`). Where a V2 latent lives is the
++    host's choice, and on a host without CUDA the original fails.
 +- Requires guest SDK base 0cd9adec or later (`ImageRef.from_value`, and SIGMAS
 +  read and written as tensors).
 +- Scheduler names: like the original, the pack adds `beta57` and
@@ -66,25 +83,44 @@
 +  Outputs are bitwise equal to the original's (`tests/v2_parity.py`).
 +- Apart from the main sampling pass, the node makes only zero-evaluation host
 +  passes: the schedule, and the denoised output.
++- Both output latents carry the loop's final denoised estimate, as the
++  original's do in their `state_info` (`beta/samplers.py:1009-1010`). It is
++  the one entry of that state a converted node reads (`LatentUpscaleWithVAE`,
++  below). V2 keeps it in a marker key of its own (`latent_chain.py`):
++  `{"node": "ClownsharKSampler_Beta", "denoised": <tensor>}`. The tensor is
++  the original's `state_info["denoised"]`, bit for bit (`tests/v2_parity.py`).
++  When the loop runs no step, the original's state is the incoming latent's.
++  The marker then carries the incoming marker's estimate, or none.
 +
 +## Options and value nodes
 +
-+- `SharkOptions_Beta` and `ClownOptions_DetailBoost_Beta` copy the original
-+  bodies. An OPTIONS value is a dict. Its tensor entries cross between nodes
-+  as tensor refs, so the sampler receives the original's values and dtypes.
++- `SharkOptions_Beta`, `ClownOptions_DetailBoost_Beta` and
++  `ClownOptions_SigmaScaling_Beta` copy the original bodies. An OPTIONS value
++  is a dict. Its tensor entries cross between nodes as tensor refs, so the
++  sampler receives the original's values and dtypes. An unlinked SIGMAS
++  input of `ClownOptions_SigmaScaling_Beta` is stored as None, as there.
 +- `ClownsharKSampler_Beta` applies OPTIONS the way the original does. Each
 +  option is read in three places: the sampler node, its advanced sampler
 +  stage and its noise stage. The node mirrors those reads, in order, for:
 +  - its own OPTIONS output (chained into a later sampler);
 +  - `SharkOptions_Beta`'s keys;
-+  - `ClownOptions_DetailBoost_Beta`'s keys.
++  - `ClownOptions_DetailBoost_Beta`'s keys;
++  - `ClownOptions_SigmaScaling_Beta`'s keys: the SDE noise scales
++    (`s_noise`, `s_noise_substep` and their per-step lists), `noise_anchor`,
++    and the schedule factors `d_noise` and `d_noise_inv` with their start
++    steps. The loop applies the factors itself, so the model is evaluated at
++    the rescaled sigmas, as in the original. The node's check for the final
++    sigma_min step (below) follows the same rescaling.
 +- Any other OPTIONS key is refused by name before sampling. So are:
 +  - SDE noise types other than gaussian;
 +  - channelwise CFG;
 +  - the `brownian` init noise, which needs core's Brownian-tree sampler;
 +  - the `wavelet` init noise when the guest runtime lacks PyWavelets;
 +  - noise-scaling cycles other than 1;
-+  - non-zero noise boosts.
++  - non-zero noise boosts;
++  - a `d_noise` or `d_noise_inv` that is not finite and positive. The loop
++    would evaluate the model at negative or non-finite sigmas, which the host
++    refuses.
 +- At the pinned commit, the DetailBoost methods `sampler_substep` and
 +  `sampler_substep_normal` fail inside the original's sampling loop. V2 runs
 +  the same loop and fails the same way.
@@ -94,8 +130,19 @@
 +
 +## Text, size, sigma and image nodes
 +
-+- `TextBox2`, `TextConcatenate` and `SetImageSize` return what the original
-+  returns. An unlinked `TextConcatenate` text is the empty string, as there.
++- `TextBox2`, `TextConcatenate`, `SetImageSize` and `SeedGenerator` return
++  what the original returns. An unlinked `TextConcatenate` text is the empty
++  string, as there.
++- `Sigmas Mult` multiplies the exact input schedules as the original does,
++  `sigmas * sigmas2 * multiplier`, in torch's own dtype promotion.
++- `Frame Select` selects the frame `frames[select]` on the host
++  (`image.select_batch`), as `Frames Slice` does; an index past the batch
++  fails with the original's IndexError.
++- `Image Repeat Tile To Size` runs the original's body on the exact input
++  pixels: tile, then crop, or resize with upstream's `image_resize` (stretch,
++  lanczos).
++- `EmptyLatentImageCustom` builds the original's zeros: shape, channels,
++  ratio and precision as there.
 +- The sigma nodes run upstream's own classes, copied verbatim from
 +  `sigmas.py` into `res4lyf_core/sigmas_values.py` and
 +  `res4lyf_core/sigmas_resample.py`, on the exact input schedule in its own
@@ -109,6 +156,20 @@
 +- `VAEEncodeAdvanced` follows the original's `main` line for line. It resizes
 +  with upstream's own `image_resize` (whose `lanczos` is Core's, copied
 +  verbatim) and encodes on the host with Core's `vae.encode`.
++- `LatentUpscaleWithVAE` follows the original's `main`
++  (`helper_sigma_preview_image_preproc.py:618-691`), with these steps:
++  - It decodes on the host with Core's `vae.decode`. The original decodes the
++    estimate a RES4LYF sampler's latent carries in its `state_info`; V2
++    decodes the one the V2 sampler's marker carries (the same tensor). Without
++    either, both decode the samples.
++  - `vae.decode_tensor` applies the original's 5-D to 4-D reshape.
++  - It resizes with upstream's `image_resize` (stretch, lanczos), encodes on
++    the host with Core's `vae.encode`, and returns a copy of the input latent.
++    The new samples are in the input samples' dtype. Where a marker came in,
++    it carries the new latent as its estimate, as the original's `state_info`
++    does.
++  - A latent carrying an unconverted sampler's `state_info` is refused by
++    name.
 +- Copied upstream code: `res4lyf_core/VENDOR.json` records each copied
 +  definition's source lines and sha256. `vendor_res4lyf.py` also proves from
 +  the source text that every global name a copied definition uses resolves
@@ -147,11 +208,14 @@
 +
 +## Known differences
 +
-+- Output latents: `samples` and `noise_mask` are exact. V2 adds its own chain
-+  marker in place of the original's `sampler`, `guider` and `state_info`
-+  entries. Those are host objects and loop state that a V2 latent cannot
-+  carry. Core nodes ignore them. RES4LYF's continuation modes need them, and
-+  they are refused.
++- Output latents: `samples` and `noise_mask` are exact. In place of the
++  original's `sampler`, `guider` and `state_info` entries, V2 adds its own
++  marker, carrying the loop's final denoised estimate (exact, see above).
++  The rest of the original's entries are host objects and loop state that a
++  V2 latent cannot carry. RES4LYF's continuation modes need them, and they
++  are refused. Core's nodes pass the marker on, or drop it, exactly where they
++  pass on or drop the original's `state_info`, and otherwise behave the same
++  with it as without it (`tests/test_chain_key_core.py`).
 +- Queue-time checks for the seven widgets that `validate_inputs` names
 +  (sampler, scheduler, steps, cfg, seed, sampler mode, denoise):
 +  - V2 applies Core's own bounds and lists, including the original menu's
@@ -207,6 +271,23 @@
 +  resize (an `ImageRef.resize` that runs Core's `common_upscale` on the host,
 +  so the pixels never cross before the encode) would make these latents
 +  bitwise equal as well.
++- `LatentUpscaleWithVAE` has the same two differences as `VAEEncodeAdvanced`:
++  - The original seeds torch's process-wide generator with 42 before decoding
++    (`helper_sigma_preview_image_preproc.py:653-654`); V2 does not. The
++    latents do not depend on it. The host's generator is left where it was.
++  - Its interpolation is always `lanczos`, so its latents fall in the
++    layout-rounding class above. The pixels are bitwise equal. The latents are
++    bitwise equal to Core's encode of those pixels in contiguous layout.
++  - In addition, with `state_info` the original also decodes, resizes and
++    re-encodes the loop's history (`data_prev_`) into its output state. Only
++    the refused continuation modes read that history, so V2 carries none.
++- Image outputs cross to the host as contiguous buffers. Where the original
++  returns a strided view (`Image Repeat Tile To Size` crops a tiled view and
++  its lanczos path returns channels-first memory), the pixels are equal, and
++  a later VAE encode of them can round as described for `VAEEncodeAdvanced`.
++- `EmptyLatentImageCustom`: the original allocates its zeros on Core's
++  intermediate device, which is the CPU unless the host runs GPU-only. A V2
++  latent is the host's copy of the guest's zeros.
 +- `Frames Slice`: an empty slice (`start` at or past the batch size, or not
 +  below `stop`) is refused by name. The original returns an empty image
 +  batch, which a V2 image cannot hold. The host's batch selection takes
@@ -214,7 +295,9 @@
 +- Image outputs are finite and hold at most 4096 images (V2 images).
 +  `Film Grain` refuses by name when `repeats` would exceed that.
 +- Guest runtime: the pack declares a dependency profile in `pyproject.toml`
-+  (exact pins: einops, scipy, tqdm). The ClownsharKSampler_Beta loop needs
++  (exact pins: einops, scipy, tqdm). The manifest's runtime block names the
++  profile built from those pins (`profile_sha256` b90d9207…), so a production
++  guest gets exactly these modules. The ClownsharKSampler_Beta loop needs
 +  einops and tqdm when its module is imported. The beta57 scheduler needs
 +  scipy when it runs, and so does `Sigmas Resample` (its copied code imports
 +  scipy at module level, as upstream's `sigmas.py` does; only an unreachable
@@ -247,10 +330,26 @@
 +  - a negative control.
 +- `tests/v2_parity.py` also runs the sampler fed by OPTIONS chains that the
 +  options nodes build in the guest, against the original's chains. It
-+  compares the option dicts and the outputs bitwise.
-+- `tests/test_res4lyf_simple.py`: the text, size, sigma and image nodes
-+  (all but `VAEEncodeAdvanced`) against the original, every option, edge
-+  values and failures. The random nodes are compared with both sides seeded
++  compares the option dicts and the outputs bitwise. On both output latents
++  it compares the marker's estimate with the original's
++  `state_info["denoised"]`, bitwise.
++- `tests/test_res4lyf_upscale.py`: `LatentUpscaleWithVAE` against the
++  original on the TAESD and KL VAEs:
++  - plain and chained latents, sizes up and down, batches, masks and other
++    keys, half-precision samples, and the failure when no estimate was
++    stored;
++  - the layout-rounding check above;
++  - the seed: results with the generators moved, and the generator side
++    effect;
++  - a negative control.
++- `tests/test_chain_key_core.py`: every core node that takes a LATENT and
++  can run on synthetic inputs, run three ways: with a plain latent, with the
++  V2 marker, and with the original's `state_info`. Outputs, UI data and
++  written files must be equal once the extra key is set aside. The marker must
++  be passed on exactly where `state_info` is.
++- `tests/test_res4lyf_simple.py`: the value, sigma, image and latent nodes
++  (all but `VAEEncodeAdvanced` and `LatentUpscaleWithVAE`) against the
++  original, every option, edge values and failures, and the named refusals. The random nodes are compared with both sides seeded
 +  identically. Two negative controls (a 1-ulp change, a different seed).
 +- `tests/test_res4lyf_vae.py`: `VAEEncodeAdvanced` against the original on a
 +  TAESD and an SD-style KL VAE: every option, inputs present and absent, the
@@ -277,7 +376,7 @@
 +  out (`meta.core_owned`).
 --- a/__init__.py
 +++ b/v2/__init__.py
-@@ -1,477 +1,43 @@
+@@ -1,477 +1,52 @@
 -import importlib
 -import os
 -
@@ -761,13 +860,17 @@
 +  saved workflows load unchanged. The exception is ConditioningMultiply: core registers that id itself, and core's
 +  node serves it, as it does with the original installed (SECURE_CONVERSION.md).
 +- Converted:
-+  - ClownsharKSampler_Beta, a reduced exact port (clown.py), including the OPTIONS it can apply exactly;
-+  - the options nodes SharkOptions_Beta and ClownOptions_DetailBoost_Beta (options_nodes.py);
-+  - the text and size nodes TextBox1, TextBox2, TextConcatenate, SetImageSize, SetImageSizeWithScale and the sigma
-+    node "Sigmas Power" (simple_nodes.py);
++  - ClownsharKSampler_Beta, a reduced exact port (clown.py), including the OPTIONS it can apply exactly; its output
++    latents carry the loop's final denoised estimate (latent_chain.py);
++  - the options nodes SharkOptions_Beta, ClownOptions_DetailBoost_Beta and ClownOptions_SigmaScaling_Beta
++    (options_nodes.py);
++  - the value nodes TextBox1, TextBox2, TextConcatenate, SetImageSize, SetImageSizeWithScale and SeedGenerator, and
++    the sigma nodes "Sigmas Power" and "Sigmas Mult" (simple_nodes.py);
 +  - the sigma nodes Sigmas From Text, Sigmas Split Value, Sigmas Rescale, Sigmas Easing and Sigmas Resample
 +    (sigma_nodes.py);
-+  - the image nodes Film Grain, Image Grain Add, Frames Slice and VAEEncodeAdvanced (image_nodes.py);
++  - the image nodes Film Grain, Image Grain Add, Frames Slice, Frame Select, Image Repeat Tile To Size and
++    VAEEncodeAdvanced (image_nodes.py);
++  - the latent nodes LatentUpscaleWithVAE and EmptyLatentImageCustom (latent_nodes.py);
 +  - the two global scheduler names RES4LYF adds, bong_tangent and beta57 (manifest scheduler providers,
 +    schedulers.py).
 +- Every other node refuses by name at queue time and when executed. See SECURE_CONVERSION.md.
@@ -775,22 +878,27 @@
 +from ._secure_runtime import FROZEN, REFUSED
 +from .clown import ClownsharKSamplerBetaV2
 +from .image_nodes import CONVERTED as IMAGE_NODES
-+from .options_nodes import ClownOptionsDetailBoostBetaV2, SharkOptionsBetaV2
++from .latent_nodes import CONVERTED as LATENT_NODES
++from .options_nodes import ClownOptionsDetailBoostBetaV2, ClownOptionsSigmaScalingBetaV2, SharkOptionsBetaV2
 +from .sigma_nodes import CONVERTED as SIGMA_NODES
-+from .simple_nodes import (SetImageSizeV2, SetImageSizeWithScaleV2, SigmasPowerV2, TextBox1V2, TextBox2V2,
-+                           TextConcatenateV2)
++from .simple_nodes import (SeedGeneratorV2, SetImageSizeV2, SetImageSizeWithScaleV2, SigmasMultV2, SigmasPowerV2,
++                           TextBox1V2, TextBox2V2, TextConcatenateV2)
 +
 +CONVERTED = {
 +    "ClownOptions_DetailBoost_Beta": ClownOptionsDetailBoostBetaV2,
++    "ClownOptions_SigmaScaling_Beta": ClownOptionsSigmaScalingBetaV2,
 +    "ClownsharKSampler_Beta": ClownsharKSamplerBetaV2,
++    "SeedGenerator": SeedGeneratorV2,
 +    "SetImageSize": SetImageSizeV2,
 +    "SetImageSizeWithScale": SetImageSizeWithScaleV2,
 +    "SharkOptions_Beta": SharkOptionsBetaV2,
++    "Sigmas Mult": SigmasMultV2,
 +    "Sigmas Power": SigmasPowerV2,
 +    "TextBox1": TextBox1V2,
 +    "TextBox2": TextBox2V2,
 +    "TextConcatenate": TextConcatenateV2,
 +    **IMAGE_NODES,
++    **LATENT_NODES,
 +    **SIGMA_NODES,
 +}
 +
@@ -56830,7 +56938,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_runtime.py
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,274 @@
 +"""Frozen-schema runtime for the RES4LYF Secure Nodes V2 pack.
 +
 +_frozen_nodes.json holds every node declaration of upstream RES4LYF 057a913e, frozen in the gate from the
@@ -57046,6 +57154,18 @@
 +        "it blurs with OpenCV (cv2.medianBlur / cv2.GaussianBlur, images.py:816 and :844), which the guest does not "
 +        "have, and it moves its frequency-separation blend to CUDA unconditionally (images.py:472-475 and :701-704), "
 +        "so the original fails on any host without CUDA"),
++    "ReSDPatcher": (
++        "it patches the model by swapping the classes of the diffusion model's own modules for RES4LYF's "
++        "(models.py:622-647), which is not a model transform the SDK offers, and its style code moves tensors to "
++        "CUDA unconditionally (style_transfer.py:428), so the original fails on any host without CUDA"),
++    "SigmasPreview": (
++        "it draws its plot with matplotlib (helper_sigma_preview_image_preproc.py:126-139), which the guest does "
++        "not have, and no byte-exact drawing without it exists yet"),
++    "Image Gaussian Blur": (
++        "it blurs with OpenCV (cv2.GaussianBlur, images.py:844), which the guest does not have"),
++    "Latent to Cuda": (
++        "it moves the latent's tensors to a device it names, CUDA or the CPU (nodes_latents.py:707-750); where a V2 "
++        "latent lives is the host's choice, and on a host without CUDA the original fails"),
 +}
 +
 +
@@ -57095,7 +57215,7 @@
 +           "v3_schema"]
 --- /dev/null
 +++ b/v2/clown.py
-@@ -0,0 +1,782 @@
+@@ -0,0 +1,850 @@
 +"""Secure Nodes V2: ClownsharKSampler_Beta, the reduced exact port of RES4LYF 057a913e.
 +
 +Where the code runs:
@@ -57109,7 +57229,8 @@
 +- KSAMPLER's noise scaling, done host-side on the node's float64 SIGMAS and explicit noise;
 +- the loop itself;
 +- the post-sample mask blend;
-+- both output latents.
++- both output latents, which also carry the loop's final denoised estimate as the original's state_info does
++  (latent_chain.py).
 +
 +Anything outside the reduced envelope is refused by name:
 +- at queue time when the widget values decide it;
@@ -57131,6 +57252,7 @@
 +from comfy_api.latest import io, sdk
 +
 +from ._secure_runtime import schema_for
++from .latent_chain import CHAIN_KEY
 +from .options_nodes import export as export_options, materialize as materialize_options
 +from .res4lyf_core._comfy._refuse import OutOfEnvelope
 +from .res4lyf_core._comfy.model_sampling import GuestCONST, GuestEPS
@@ -57145,7 +57267,6 @@
 +
 +NODE_ID = "ClownsharKSampler_Beta"
 +PREFIX = f"RES4LYF/{NODE_ID}"
-+CHAIN_KEY = "res4lyf_v2_chain"
 +
 +_HERE = Path(__file__).resolve().parent
 +_FROZEN = json.loads((_HERE / "_clown_frozen.json").read_text())
@@ -57290,6 +57411,9 @@
 +    "noise_scaling_weight", "noise_scaling_type", "noise_scaling_mode", "noise_scaling_eta", "noise_scaling_cycles",
 +    "noise_scaling_weights", "noise_scaling_etas", "noise_boost_step", "noise_boost_substep",
 +    "noise_boost_normalize",
++    # ClownOptions_SigmaScaling_Beta
++    "noise_anchor", "s_noise", "s_noise_substep", "d_noise", "d_noise_start_step", "d_noise_inv",
++    "d_noise_inv_start_step", "s_noises", "s_noises_substep",
 +})
 +# Init-noise types proven exact in parity; "brownian" needs core's Brownian-tree sampler (refused)
 +INIT_NOISE_ADMITTED = frozenset(NOISE_GENERATOR_CLASSES_SIMPLE) - {"brownian"}
@@ -57315,6 +57439,14 @@
 +    for key in ("noise_boost_step", "noise_boost_substep"):
 +        if merged.get(key, 0.0) != 0.0:
 +            problems.append(f"OPTIONS {key}={merged[key]!r} is not converted yet (only 0.0)")
++    # The loop multiplies the schedule by d_noise and divides it by d_noise_inv (rk_noise_sampler_beta.py:916-917,
++    # rk_sampler_beta.py:2167-2174) and evaluates the model there. The original evaluates at any sigma; the host
++    # accepts only finite, non-negative sigmas, so a factor that is not finite and positive is refused by name.
++    for key in ("d_noise", "d_noise_inv"):
++        value = merged.get(key, 1.0)
++        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
++            problems.append(f"OPTIONS {key}={value!r}: only finite positive values are converted (the loop would "
++                            f"evaluate the model at negative or non-finite sigmas, which the host refuses)")
 +    return problems
 +
 +
@@ -57395,12 +57527,27 @@
 +        "noise_boost_substep": options_mgr.get('noise_boost_substep', 0.0),
 +        "noise_boost_normalize": options_mgr.get('noise_boost_normalize', True),
 +    }
++    # ClownOptions_SigmaScaling_Beta's keys. ClownsharKSampler_Beta reads them with its own defaults
++    # (beta/samplers.py:1641-1648, :1798-1805) and passes the values down (:1924-1930); Advanced reads them again from
++    # the same options with those values as defaults (:1389-1396). s_noises and s_noises_substep are not passed
++    # down, so Advanced reads them with None (:1438-1439). Every read is options.get(key, default); a key that the
++    # options node set to None (an unlinked SIGMAS input) stays None, as there.
++    noise_anchor = options_mgr.get('noise_anchor', 1.0)
++    s_noise = options_mgr.get('s_noise', 1.0)
++    s_noise_substep = options_mgr.get('s_noise_substep', 1.0)
++    d_noise = options_mgr.get('d_noise', 1.0)
++    d_noise_start_step = options_mgr.get('d_noise_start_step', 0)
++    d_noise_inv = options_mgr.get('d_noise_inv', 1.0)
++    d_noise_inv_start_step = options_mgr.get('d_noise_inv_start_step', 0)
++    s_noises = options_mgr.get('s_noises', None)
++    s_noises_substep = options_mgr.get('s_noises_substep', None)
 +    rescale_floor = EO("rescale_floor")
 +
++    # beta/samplers.py:1441-1449
 +    etas = initialize_or_scale(None, eta, MAX_STEPS).to(default_dtype)
 +    etas_substep = initialize_or_scale(None, eta_substep, MAX_STEPS).to(default_dtype)
-+    s_noises = initialize_or_scale(None, 1.0, MAX_STEPS).to(default_dtype)
-+    s_noises_substep = initialize_or_scale(None, 1.0, MAX_STEPS).to(default_dtype)
++    s_noises = initialize_or_scale(s_noises, s_noise, MAX_STEPS).to(default_dtype)
++    s_noises_substep = initialize_or_scale(s_noises_substep, s_noise_substep, MAX_STEPS).to(default_dtype)
 +    etas = F.pad(etas, (0, MAX_STEPS), value=0.0)
 +    etas_substep = F.pad(etas_substep, (0, MAX_STEPS), value=0.0)
 +    s_noises = F.pad(s_noises, (0, MAX_STEPS), value=1.0)
@@ -57415,9 +57562,10 @@
 +        "extra_options": extra_options, "sampler_mode": "standard", "etas": etas, "etas_substep": etas_substep,
 +        "s_noises": s_noises, "s_noises_substep": s_noises_substep, "epsilon_scales": None,
 +        "regional_conditioning_weights": None, "guides": None, "frame_weights_mgr": None,
-+        "noise_mode_sde_substep": "hard", **detail, "noise_anchor": 1.0, "s_noise": 1.0,
-+        "s_noise_substep": 1.0, "d_noise": 1.0, "d_noise_start_step": 0, "d_noise_inv": 1.0,
-+        "d_noise_inv_start_step": 0, "overshoot_mode": "hard", "overshoot_mode_substep": "hard",
++        "noise_mode_sde_substep": "hard", **detail, "noise_anchor": noise_anchor, "s_noise": s_noise,
++        "s_noise_substep": s_noise_substep, "d_noise": d_noise, "d_noise_start_step": d_noise_start_step,
++        "d_noise_inv": d_noise_inv, "d_noise_inv_start_step": d_noise_inv_start_step,
++        "overshoot_mode": "hard", "overshoot_mode_substep": "hard",
 +        "overshoot": 0.0, "overshoot_substep": 0.0, "BONGMATH": bongmath, "implicit_type": "bongmath",
 +        "implicit_type_substeps": "bongmath", "rk_swaps": [], "steps_to_run": steps_to_run, "sde_mask": None,
 +        "momentum": 0.0,
@@ -57442,14 +57590,23 @@
 +    return kw
 +
 +
-+def final_step_fires(outer, sigma_min, steps_to_run):
++def final_step_fires(outer, sigma_min, steps_to_run, *, sigma_max=None, d_noise=1.0, d_noise_start_step=0,
++                     d_noise_inv=1.0, d_noise_inv_start_step=0):
 +    """Whether the loop ends with RES4LYF's no-evaluation final step, which applies the MODEL's calculate_denoised
-+    (rk_sampler_beta.py:2202-2209). It mirrors, for standard mode with d_noise 1:
-+    - NS.prepare_sigmas (rk_noise_sampler_beta.py:916-944): drop consecutive duplicates; clamp the last nonzero
-+      sigma up to sigma_min, or insert sigma_min when it is more than 1e-4 away;
-+    - the loop length (rk_sampler_beta.py:480-487).
++    (rk_sampler_beta.py:2202-2209). It mirrors, for standard mode:
++    - NS.prepare_sigmas (rk_noise_sampler_beta.py:916-944): the d_noise scaling when d_noise_start_step is 0; drop
++      consecutive duplicates; clamp the last nonzero sigma up to sigma_min, or insert sigma_min when it is more
++      than 1e-4 away;
++    - the loop length (rk_sampler_beta.py:480-487);
++    - the loop's rescaling after each step (rk_sampler_beta.py:2167-2174): times d_noise at d_noise_start_step and
++      divided by d_noise_inv at d_noise_inv_start_step, each followed by a division by sigma_max when the schedule
++      then exceeds it. This can move the last nonzero sigma off sigma_min before the final check.
++    NS holds sigma_min and sigma_max as the model's float32 values in float64 (rk_noise_sampler_beta.py:70-71).
++    With the default scaling (d_noise and d_noise_inv 1, start steps 0) this is the round-3 rule unchanged.
 +    """
 +    sigmas = outer.clone()
++    if d_noise_start_step == 0:
++        sigmas = sigmas.clone() * d_noise
 +    keep = torch.cat((torch.tensor([True]), torch.diff(sigmas) != 0))
 +    sigmas = sigmas[keep]
 +    smin = torch.tensor(sigma_min, dtype=torch.float32).to(torch.float64)
@@ -57458,10 +57615,25 @@
 +            sigmas[-2] = smin
 +        elif (sigmas[-2] - smin).abs() > 1e-4:
 +            sigmas = torch.cat((sigmas[:-1], smin.unsqueeze(0), sigmas[-1:]))
-+    if sigmas.numel() < 2 or sigmas[-1] != 0 or sigmas[-2] != smin:
++    if sigmas.numel() < 2:
 +        return False
-+    num_steps = len(sigmas) - 2
-+    return steps_to_run < 0 or steps_to_run >= num_steps
++    num_steps = len(sigmas) - 2 if sigmas[-1] == 0 else len(sigmas) - 1
++    run = num_steps if steps_to_run < 0 else min(num_steps, steps_to_run)
++    rescales = (d_noise_start_step, d_noise_inv_start_step)
++    if any(1 <= start <= run for start in rescales):
++        if sigma_max is None:
++            raise ValueError("sigma_max is required when the schedule is rescaled during the loop")
++        smax = torch.tensor(sigma_max, dtype=torch.float32).to(torch.float64)
++        for step in range(1, run + 1):
++            if d_noise_start_step == step:
++                sigmas = sigmas.clone() * d_noise
++                if sigmas.max() > smax:
++                    sigmas = sigmas / smax
++            if d_noise_inv_start_step == step:
++                sigmas = sigmas.clone() / d_noise_inv
++                if sigmas.max() > smax:
++                    sigmas = sigmas / smax
++    return run == len(sigmas) - 2 and bool(sigmas[-1] == 0) and bool(sigmas[-2] == smin)
 +
 +
 +def reshape_mask(input_mask, output_shape):
@@ -57769,8 +57941,10 @@
 +    kw = rk_kwargs(eta=resolved["eta"], sampler_name=sampler_name, steps_to_run=steps_to_run, bongmath=bongmath,
 +                   seed=seed, options_dict=options_dict, eta_substep=resolved["eta_substep"],
 +                   noise_type_sde_substep=resolved["noise_type_sde_substep"])
-+    stash = {"x0": None, "x_final": None, "params": None, "failure": None}
-+    fires = final_step_fires(outer, sigma_min, steps_to_run)
++    stash = {"x0": None, "x_final": None, "params": None, "failure": None, "state_info_out": None}
++    fires = final_step_fires(outer, sigma_min, kw["steps_to_run"], sigma_max=sigma_max, d_noise=kw["d_noise"],
++                             d_noise_start_step=kw["d_noise_start_step"], d_noise_inv=kw["d_noise_inv"],
++                             d_noise_inv_start_step=kw["d_noise_inv_start_step"])
 +
 +    def model_sampling_for(params):
 +        if params["parameterization"] == "const":
@@ -57828,6 +58002,7 @@
 +
 +        result = await asyncio.to_thread(run)
 +        stash["x_final"] = result
++        stash["state_info_out"] = state_kw["state_info_out"]
 +        return result.to(dtype=latent.dtype, device=latent.device)
 +
 +    async def passthrough_program(broker, latent, host_sigmas):
@@ -57871,8 +58046,21 @@
 +    if noise_mask is not None:
 +        out["noise_mask"] = noise_mask.clone()
 +        out_denoised["noise_mask"] = noise_mask.clone()
-+    out[CHAIN_KEY] = NODE_ID
-+    out_denoised[CHAIN_KEY] = NODE_ID
++    # The original attaches the loop's state_info to both output latents (beta/samplers.py:1009-1010). Of it, a V2
++    # latent carries the one entry a converted consumer reads in standard mode: the loop's final denoised estimate
++    # (rk_sampler_beta.py:2254), which LatentUpscaleWithVAE decodes in place of the samples
++    # (helper_sigma_preview_image_preproc.py:658-666). When the loop ran no step, the original's state is instead
++    # the incoming latent's (a deep copy, beta/samplers.py:436; rk_sampler_beta.py:2231-2232), so the marker carries
++    # the incoming marker's estimate, or none.
++    chain = {"node": NODE_ID}
++    state_info_out = stash["state_info_out"] or {}
++    incoming = latent_value.get(CHAIN_KEY)
++    if "denoised" in state_info_out:
++        chain["denoised"] = state_info_out["denoised"]
++    elif isinstance(incoming, dict) and "denoised" in incoming:
++        chain["denoised"] = incoming["denoised"].clone()
++    out[CHAIN_KEY] = chain
++    out_denoised[CHAIN_KEY] = dict(chain)
 +    return io.NodeOutput(
 +        await sdk.LatentRef.from_value(out),
 +        await sdk.LatentRef.from_value(out_denoised),
@@ -62812,9 +63000,9 @@
 +providers: Providers = ...
 --- /dev/null
 +++ b/v2/image_nodes.py
-@@ -0,0 +1,173 @@
-+"""Secure Nodes V2: RES4LYF's image nodes Film Grain, Image Grain Add, Frames Slice and VAEEncodeAdvanced
-+(upstream 057a913e).
+@@ -0,0 +1,222 @@
++"""Secure Nodes V2: RES4LYF's image nodes Film Grain, Image Grain Add, Frames Slice, Frame Select, Image Repeat Tile
++To Size and VAEEncodeAdvanced (upstream 057a913e).
 +
 +- Film Grain and Image Grain Add run upstream's own classes (images.py:307-371 and :375-443, copied verbatim into
 +  res4lyf_core/images.py) on the exact input pixels. Like upstream, they draw their grain from torch's global random
@@ -62822,7 +63010,9 @@
 +  SECURE_CONVERSION.md). Given the same generator state, both versions give the same image.
 +- Frames Slice (images.py:557-581: ``frames[start:stop].clone()``) selects the same frames on the host
 +  (``image.select_batch``), so its pixels never enter the guest. An empty slice is refused by name: a V2 IMAGE cannot
-+  be empty.
++  be empty. Frame Select (images.py:530-554: ``frames[select]``) selects its one frame the same way.
++- Image Repeat Tile To Size (images.py:258-300) runs upstream's body on the exact input pixels: tile, then crop or
++  resize with upstream's image_resize.
 +- VAEEncodeAdvanced is upstream's main() (helper_sigma_preview_image_preproc.py:234-317) line for line, with
 +  upstream's own image_resize (images.py:152-254, verbatim; its "lanczos" is Core's comfy.utils.lanczos, verbatim in
 +  res4lyf_core/_comfy/utils.py). The VAE encode runs on the host through ``vae.encode``, which is Core's
@@ -62903,6 +63093,50 @@
 +        return io.NodeOutput(await frames.select_batch(indices))
 +
 +
++class FrameSelectV2(io.ComfyNode):
++    """images.py:530-554 (Frame_Select.main: ``frames[select].unsqueeze(0).clone()``), as a host-side batch
++    selection."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("Frame Select")
++
++    @classmethod
++    async def execute(cls, frames: Any = None, select: int = 0) -> io.NodeOutput:
++        batch = await frames.batch_size()
++        if not 0 <= select < batch:  # upstream's frames[select] raises the same IndexError
++            raise IndexError(f"index {select} is out of bounds for dimension 0 with size {batch}")
++        return io.NodeOutput(await frames.select_batch([select]))
++
++
++class ImageRepeatTileToSizeV2(io.ComfyNode):
++    """images.py:258-300 (ImageRepeatTileToSize.main), line for line, on the exact input pixels."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("raw",)
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("Image Repeat Tile To Size")
++
++    @classmethod
++    async def execute(cls, image: Any = None, width: int = 1024, height: int = 1024,
++                      crop: bool = True) -> io.NodeOutput:
++        method, interpolation, condition, multiple_of, keep_proportion = "stretch", "lanczos", "always", 0, False
++        img = (await image.raw()).clone().detach()
++        b, h, w, c = img.shape
++        h_tgt = int(torch.ceil(torch.div(height, h)))
++        w_tgt = int(torch.ceil(torch.div(width,  w)))
++        img_tiled = torch.tile(img, (h_tgt, w_tgt, 1))
++        if crop:
++            img_tiled = img_tiled[:,:height, :width, :]
++        else:
++            img_tiled  = images.image_resize(img_tiled, width, height, method, interpolation, condition, multiple_of,
++                                             keep_proportion)
++        return io.NodeOutput(await sdk.ImageRef.from_value(img_tiled))
++
++
 +class VAEEncodeAdvancedV2(io.ComfyNode):
 +    """helper_sigma_preview_image_preproc.py:234-317 (VAEEncodeAdvanced.main), line for line."""
 +    SDK_REFS = True
@@ -62980,16 +63214,170 @@
 +
 +CONVERTED = {
 +    "Film Grain": FilmGrainV2,
++    "Frame Select": FrameSelectV2,
 +    "Frames Slice": FramesSliceV2,
 +    "Image Grain Add": ImageGrainAddV2,
++    "Image Repeat Tile To Size": ImageRepeatTileToSizeV2,
 +    "VAEEncodeAdvanced": VAEEncodeAdvancedV2,
 +}
 +
-+__all__ = ["CONVERTED", "FilmGrainV2", "FramesSliceV2", "ImageGrainAddV2", "VAEEncodeAdvancedV2"]
++__all__ = ["CONVERTED", "FilmGrainV2", "FrameSelectV2", "FramesSliceV2", "ImageGrainAddV2",
++           "ImageRepeatTileToSizeV2", "VAEEncodeAdvancedV2"]
+--- /dev/null
++++ b/v2/latent_chain.py
+@@ -0,0 +1,11 @@
++"""The marker a V2 ClownsharKSampler_Beta output latent carries in place of the original's state_info.
++
++The original attaches the loop's whole state to both output latents (beta/samplers.py:1009-1010). A V2 latent carries
++{"node": "ClownsharKSampler_Beta", "denoised": <the loop's final denoised estimate>} under CHAIN_KEY: the one entry a
++converted consumer reads in standard mode (LatentUpscaleWithVAE, helper_sigma_preview_image_preproc.py:658-666).
++Core's nodes copy or drop it exactly as they copy or drop the original's state_info entry
++(tests/test_chain_key_core.py). Kept in its own module so that the image-side nodes need not import the sampler.
++"""
++CHAIN_KEY = "res4lyf_v2_chain"
++
++__all__ = ["CHAIN_KEY"]
+--- /dev/null
++++ b/v2/latent_nodes.py
+@@ -0,0 +1,133 @@
++"""Secure Nodes V2: RES4LYF's latent nodes LatentUpscaleWithVAE and EmptyLatentImageCustom (057a913e).
++
++LatentUpscaleWithVAE (helper_sigma_preview_image_preproc.py:618-691):
++
++The original decodes the latent, or, when the latent carries a RES4LYF sampler's state, that sampler's final denoised
++estimate; resizes the pixels with its own image_resize (stretch, lanczos); encodes them; and returns a copy of the
++input latent with the new samples (in the input samples' dtype and device) and, in the carried state, the new latent
++as the denoised estimate. V2 does the same:
++- the V2 sampler's chain marker (latent_chain.py) stands in for state_info, and the decode reads its "denoised"
++  tensor, which equals the original's state_info['denoised'] bit for bit (tests/v2_parity.py);
++- decode and encode run on the host with Core's vae.decode and vae.encode. vae.decode_tensor applies the original's
++  5-D -> 4-D reshape; the resize runs in the guest with upstream's image_resize (res4lyf_core/images.py, whose
++  lanczos is Core's, copied verbatim).
++Known differences (SECURE_CONVERSION.md):
++- the original seeds torch's process-wide generator with 42 first (:653-654); V2 does not;
++- lanczos returns channels-first memory, which the original hands to vae.encode, while V2's pixels cross to the host
++  contiguous: equal pixels, last-bit latent differences (the documented LAYOUT_ROUNDING class);
++- with state_info the original also decodes, resizes and re-encodes the loop's data_prev_ history into its output
++  state (:662-680); only unsample/resample read it, which V2 refuses, so V2 carries no history.
++"""
++from __future__ import annotations
++
++from typing import Any
++
++import torch
++
++from comfy_api.latest import io, sdk
++
++from ._secure_runtime import schema_for
++from .latent_chain import CHAIN_KEY
++from .res4lyf_core import images
++from .res4lyf_core._comfy._refuse import OutOfEnvelope
++
++PREFIX = "RES4LYF/LatentUpscaleWithVAE"
++
++
++def _refuse(reason: str):
++    raise OutOfEnvelope(f"{PREFIX}: {reason} is outside the V2 reduced envelope; refused instead of approximated "
++                        f"(see SECURE_CONVERSION.md)")
++
++
++class LatentUpscaleWithVAEV2(io.ComfyNode):
++    """helper_sigma_preview_image_preproc.py:618-691 (LatentUpscaleWithVAE.main)."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("raw",)
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("LatentUpscaleWithVAE")
++
++    @classmethod
++    async def execute(cls, latent: Any, width: int = 1024, height: int = 1024, vae: Any = None) -> io.NodeOutput:
++        method, interpolation, condition, multiple_of, keep_proportion = "stretch", "lanczos", "always", 0, False
++
++        # (upstream seeds torch's process-wide generator with 42 here; not reproduced, see the module docstring)
++
++        latent_value = await latent.value()
++        if "state_info" in latent_value:
++            _refuse("a latent carrying an unconverted RES4LYF sampler's state_info")
++        chain = latent_value.get(CHAIN_KEY)
++        if chain is not None and not isinstance(chain, dict):
++            _refuse("a chain marker without the sampler's denoised estimate (from an earlier V2 version)")
++
++        if chain is not None:
++            denoised = chain["denoised"]  # KeyError when the loop ran no step, as latent['state_info']['denoised']
++            source = await sdk.LatentRef.from_value({"samples": denoised})
++        else:
++            source = latent
++        decoded = await vae.decode_tensor(source)
++        pixels = await decoded.raw()
++
++        pixels = images.image_resize(pixels, width, height, method, interpolation, condition, multiple_of,
++                                     keep_proportion)
++        encoded = await vae.encode(await sdk.ImageRef.from_value(pixels[:, :, :, :3]))
++        latent_tensor = (await encoded.value())["samples"]
++
++        latent_out = dict(latent_value)
++        if chain is not None:
++            latent_out[CHAIN_KEY] = dict(chain)
++            latent_out[CHAIN_KEY]["denoised"] = latent_tensor
++
++        latent_out["samples"] = latent_tensor.to(latent_value["samples"])
++
++        return io.NodeOutput(await sdk.LatentRef.from_value(latent_out))
++
++
++class EmptyLatentImageCustomV2(io.ComfyNode):
++    """nodes_latents.py:1907-1969 (EmptyLatentImageCustom.generate), line for line: zeros of the chosen shape and
++    precision. The original allocates them on core's intermediate device (the CPU unless the host runs GPU-only);
++    a V2 latent is the host's copy of the guest's zeros (SECURE_CONVERSION.md)."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("raw",)
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("EmptyLatentImageCustom")
++
++    @classmethod
++    async def execute(cls, width: int = 24, height: int = 24, batch_size: int = 1, channels: str = '4',
++                      mode: str = 'default', compression: int = 42, precision: str = 'fp32') -> io.NodeOutput:
++        c = int(channels)
++        ratio = 1
++        match mode:
++            case "sdxl":
++                ratio = 8
++            case "cascade_b":
++                ratio = 4
++            case "cascade_c":
++                ratio = compression
++            case "exact":
++                ratio = 1
++        dtype = torch.float32
++        match precision:
++            case "fp16":
++                dtype = torch.float16
++            case "fp32":
++                dtype = torch.float32
++            case "fp64":
++                dtype = torch.float64
++        latent = torch.zeros([batch_size,
++                              c,
++                              height // ratio,
++                              width // ratio],
++                             dtype=dtype)
++        return io.NodeOutput(await sdk.LatentRef.from_value({"samples": latent}))
++
++
++CONVERTED = {
++    "EmptyLatentImageCustom": EmptyLatentImageCustomV2,
++    "LatentUpscaleWithVAE": LatentUpscaleWithVAEV2,
++}
++
++__all__ = ["CONVERTED", "EmptyLatentImageCustomV2", "LatentUpscaleWithVAEV2"]
 --- /dev/null
 +++ b/v2/options_nodes.py
-@@ -0,0 +1,151 @@
-+"""Secure Nodes V2: RES4LYF's sampler options nodes SharkOptions_Beta and ClownOptions_DetailBoost_Beta.
+@@ -0,0 +1,187 @@
++"""Secure Nodes V2: RES4LYF's sampler options nodes SharkOptions_Beta, ClownOptions_DetailBoost_Beta and
++ClownOptions_SigmaScaling_Beta.
 +
 +Bodies are copied from upstream 057a913e (beta/samplers_extensions.py). An OPTIONS value is a dict; its tensor
 +entries cross between nodes as tensor refs (materialized with ``raw()``, exported with ``_from_raw``), so the
@@ -63139,7 +63527,42 @@
 +        return io.NodeOutput(await export(options))
 +
 +
-+__all__ = ["ClownOptionsDetailBoostBetaV2", "SharkOptionsBetaV2", "export", "materialize"]
++class ClownOptionsSigmaScalingBetaV2(io.ComfyNode):
++    """beta/samplers_extensions.py:356-418 (ClownOptions_SigmaScaling_Beta.main). Unlinked SIGMAS inputs are
++    stored as None, as there; linked ones as the exact tensors."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("raw",)
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("ClownOptions_SigmaScaling_Beta")
++
++    @classmethod
++    async def execute(cls, noise_anchor_sde: float = 1.0, s_noise: float = 1.0, s_noise_substep: float = 1.0,
++                      lying: float = 1.0, lying_start_step: int = 0, lying_inv: float = 1.0,
++                      lying_inv_start_step: int = 1, s_noises=None, s_noises_substep=None,
++                      options=None) -> io.NodeOutput:
++        s_noises         = await s_noises.raw() if s_noises is not None else None
++        s_noises_substep = await s_noises_substep.raw() if s_noises_substep is not None else None
++
++        options = await materialize(options) if options is not None else {}
++
++        options['noise_anchor']           = noise_anchor_sde
++        options['s_noise']                = s_noise
++        options['s_noise_substep']        = s_noise_substep
++        options['d_noise']                = lying
++        options['d_noise_start_step']     = lying_start_step
++        options['d_noise_inv']            = lying_inv
++        options['d_noise_inv_start_step'] = lying_inv_start_step
++
++        options['s_noises']                = s_noises
++        options['s_noises_substep']        = s_noises_substep
++
++        return io.NodeOutput(await export(options))
++
++
++__all__ = ["ClownOptionsDetailBoostBetaV2", "ClownOptionsSigmaScalingBetaV2", "SharkOptionsBetaV2", "export",
++           "materialize"]
 --- a/pyproject.toml
 +++ b/v2/pyproject.toml
 @@ -1,37 +1,12 @@
@@ -78424,7 +78847,7 @@
 +]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,61592 @@
+@@ -0,0 +1,61556 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -90075,14 +90498,16 @@
 +      }
 +    },
 +    "ClownOptions_SigmaScaling_Beta": {
-+      "class": "Refused_ClownOptions_SigmaScaling_Beta_a4153266",
++      "class": "ClownOptionsSigmaScalingBetaV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "options_nodes",
++      "permissions": [
++        "raw"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -90328,14 +90753,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "s_noise"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "ClownOptions_StepSize_Beta": {
 +      "class": "Refused_ClownOptions_StepSize_Beta_658f0d9b",
@@ -104717,14 +105135,16 @@
 +      }
 +    },
 +    "EmptyLatentImageCustom": {
-+      "class": "Refused_EmptyLatentImageCustom_409b7b12",
++      "class": "EmptyLatentImageCustomV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "latent_nodes",
++      "permissions": [
++        "raw"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -104938,14 +105358,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "width"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "Film Grain": {
 +      "class": "FilmGrainV2",
@@ -105666,13 +106079,13 @@
 +      }
 +    },
 +    "Frame Select": {
-+      "class": "Refused_Frame_Select_1341b480",
++      "class": "FrameSelectV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
++      "module": "image_nodes",
 +      "permissions": [],
 +      "schema": {
 +        "attrs": {
@@ -105748,14 +106161,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "frames"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "Frame Select Latent": {
 +      "class": "Refused_Frame_Select_Latent_a4799c6e",
@@ -108088,14 +108494,16 @@
 +      }
 +    },
 +    "Image Repeat Tile To Size": {
-+      "class": "Refused_Image_Repeat_Tile_To_Size_b9d94f9b",
++      "class": "ImageRepeatTileToSizeV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "image_nodes",
++      "permissions": [
++        "raw"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -108213,14 +108621,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "image"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "Image Sharpen FS": {
 +      "class": "Refused_Image_Sharpen_FS_5eb06a30",
@@ -114221,14 +114622,16 @@
 +      }
 +    },
 +    "LatentUpscaleWithVAE": {
-+      "class": "Refused_LatentUpscaleWithVAE_408971e3",
++      "class": "LatentUpscaleWithVAEV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "latent_nodes",
++      "permissions": [
++        "raw"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -114340,14 +114743,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "latent"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "LayerPatcher": {
 +      "class": "Refused_LayerPatcher_14d06464",
@@ -121457,13 +121853,13 @@
 +      }
 +    },
 +    "SeedGenerator": {
-+      "class": "Refused_SeedGenerator_b23c4574",
++      "class": "SeedGeneratorV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
++      "module": "simple_nodes",
 +      "permissions": [],
 +      "schema": {
 +        "attrs": {
@@ -121535,14 +121931,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "seed"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": false
 +    },
 +    "Set Precision": {
 +      "class": "Refused_Set_Precision_23aae068",
@@ -130516,14 +130905,16 @@
 +      }
 +    },
 +    "Sigmas Mult": {
-+      "class": "Refused_Sigmas_Mult_b7ab2c96",
++      "class": "SigmasMultV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "simple_nodes",
++      "permissions": [
++        "raw"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -130617,14 +131008,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "sigmas"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "Sigmas Noise Inversion": {
 +      "class": "Refused_Sigmas_Noise_Inversion_8422f9a7",
@@ -139991,6 +140375,9 @@
 +    }
 +  },
 +  "runtime": {
++    "dependencies": {
++      "profile_sha256": "b90d9207bd8502c9cf235e120ed8e76c9372c682b3bc920483b4d9a8d1340e44"
++    },
 +    "python": {
 +      "requires": ">=3.13,<3.14",
 +      "resolved": "3.13"
@@ -140150,7 +140537,7 @@
 +           "SigmasSplitValueV2"]
 --- /dev/null
 +++ b/v2/simple_nodes.py
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,141 @@
 +"""Secure Nodes V2: RES4LYF's small value nodes, ported exactly (bodies copied from upstream 057a913e).
 +
 +Each class serves the original's frozen schema (_secure_runtime.schema_for) and computes what the original computes,
@@ -140254,8 +140641,44 @@
 +        return io.NodeOutput(await sdk.SigmasRef._from_raw(result))
 +
 +
-+__all__ = ["SetImageSizeV2", "SetImageSizeWithScaleV2", "SigmasPowerV2", "TextBox1V2", "TextBox2V2",
-+           "TextConcatenateV2"]
++class SigmasMultV2(io.ComfyNode):
++    """sigmas.py:609-633 (sigmas_mult.main: ``sigmas * sigmas2 * multiplier`` or ``sigmas * multiplier``), on the
++    exact input tensors in their own dtypes."""
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("raw",)
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("Sigmas Mult")
++
++    @classmethod
++    async def execute(cls, sigmas: Any = None, multiplier: float = 1, sigmas2: Any = None) -> io.NodeOutput:
++        if sigmas is None:
++            raise OutOfEnvelope("RES4LYF/Sigmas Mult: sigmas must be connected")
++        tensor = await sigmas.raw()
++        if sigmas2 is not None:
++            result = tensor * (await sigmas2.raw()) * multiplier
++        else:
++            result = tensor * multiplier
++        return io.NodeOutput(await sdk.SigmasRef._from_raw(result))
++
++
++class SeedGeneratorV2(io.ComfyNode):
++    """nodes_misc.py:373-390 (SeedGenerator.main returns ``(seed, seed+1)``)."""
++    SDK_REFS = False
++    SDK_PERMISSIONS = ()
++
++    @classmethod
++    def define_schema(cls):
++        return schema_for("SeedGenerator")
++
++    @classmethod
++    async def execute(cls, seed: int = 0) -> io.NodeOutput:
++        return io.NodeOutput(seed, seed + 1)
++
++
++__all__ = ["SeedGeneratorV2", "SetImageSizeV2", "SetImageSizeWithScaleV2", "SigmasMultV2", "SigmasPowerV2",
++           "TextBox1V2", "TextBox2V2", "TextConcatenateV2"]
 --- /dev/null
 +++ b/v2/tests/_res4_profile_guest_entry.py
 @@ -0,0 +1,79 @@
@@ -140449,7 +140872,7 @@
 +    asyncio.run(main())
 --- /dev/null
 +++ b/v2/tests/cases.py
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,251 @@
 +"""Shared tier-1 parity fixtures for RES4LYF ClownsharKSampler_Beta: seeded tiny models, inputs and the case table.
 +
 +Both gate runs import this file. The ORIGINAL reference run imports RES4LYF in its own process. The V2 run uses a
@@ -140524,6 +140947,7 @@
 +        add(f"{model}:denoise0.6", model=model, denoise=0.6)
 +        add(f"{model}:denoise_alt-0.9", model=model, denoise=-0.9)
 +        add(f"{model}:steps_to_run3", model=model, steps_to_run=3)
++        add(f"{model}:steps_to_run0", model=model, steps_to_run=0)
 +        add(f"{model}:cfg1", model=model, cfg=1.0)
 +        add(f"{model}:seed_big", model=model, seed=2**40 + 17)
 +        add(f"{model}:mask", model=model, mask=True)
@@ -140635,6 +141059,52 @@
 +    add("opt:EPS:detail:model", [detail()], model="EPS", scheduler="karras")
 +    add("opt:CONST:detail->shark", [detail(), shark(s_noise_init=0.9, denoise_alt=0.95)])
 +    add("opt:CONST:shark->detail", [shark(s_noise_init=0.9), detail(method="sampler")])
++
++    def sigma(**kw):  # ClownOptions_SigmaScaling_Beta: its widget defaults, then the case's values
++        base = {"s_noise": 1.0, "s_noise_substep": 1.0, "noise_anchor_sde": 1.0, "lying": 1.0, "lying_inv": 1.0,
++                "lying_start_step": 0, "lying_inv_start_step": 1}
++        base.update(kw)
++        return ("ClownOptions_SigmaScaling_Beta", base)
++
++    s32 = torch.linspace(1.2, 0.8, 6, dtype=torch.float32)  # SIGMAS inputs (per-step s_noise factors)
++    s64 = torch.linspace(0.9, 1.1, 7, dtype=torch.float64)
++    add("opt:CONST:sigma:defaults", [sigma()])
++    add("opt:EPS:sigma:defaults", [sigma()], model="EPS", scheduler="karras")
++    add("opt:CONST:sigma:s_noise1.05", [sigma(s_noise=1.05)])
++    add("opt:CONST:sigma:s_noise1.1:eta0", [sigma(s_noise=1.1)], eta=0.0)
++    add("opt:CONST:sigma:s_noise_substep0.9:res_2s", [sigma(s_noise_substep=0.9)], sampler_name="exponential/res_2s")
++    add("opt:CONST:sigma:noise_anchor0.5", [sigma(noise_anchor_sde=0.5)])
++    add("opt:CONST:sigma:noise_anchor0.5:res_3s", [sigma(noise_anchor_sde=0.5)], sampler_name="exponential/res_3s")
++    add("opt:CONST:sigma:lying0.95@0", [sigma(lying=0.95)])
++    add("opt:CONST:sigma:lying0.97@2", [sigma(lying=0.97, lying_start_step=2)])
++    add("opt:CONST:sigma:lying1.05@0", [sigma(lying=1.05)])
++    add("opt:CONST:sigma:lying1.05@2", [sigma(lying=1.05, lying_start_step=2)])  # then divided by sigma_max
++    add("opt:CONST:sigma:lying_inv1.03@3", [sigma(lying_inv=1.03, lying_inv_start_step=3)])
++    add("opt:CONST:sigma:lying0.95@1+inv1.02@4", [sigma(lying=0.95, lying_start_step=1, lying_inv=1.02,
++                                                        lying_inv_start_step=4)])
++    add("opt:CONST:sigma:lying0.9@6", [sigma(lying=0.9, lying_start_step=6)])  # after the last step
++    add("opt:CONST:sigma:s_noises_f32", [sigma(s_noises=s32.clone())])
++    add("opt:CONST:sigma:s_noises+substep_f64:res_2s", [sigma(s_noise=1.02, s_noises=s64.clone(),
++                                                              s_noises_substep=s64.flip(0).clone())],
++        sampler_name="exponential/res_2s")
++    add("opt:EPS:sigma:karras:lying0.95@1", [sigma(lying=0.95, lying_start_step=1)], model="EPS",
++        scheduler="karras")
++    add("opt:EPS:sigma:karras:s_noises_f32", [sigma(s_noises=s32.clone())], model="EPS", scheduler="karras")
++    # EPS-family final sigma_min step: rescaled away during the loop it no longer fires (exact); rescaled at the
++    # start, prepare_sigmas clamps the last sigma back up to sigma_min and it fires (refused by name in V2)
++    add("opt:EPS:sigma:kl_optimal:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], model="EPS",
++        scheduler="kl_optimal")
++    add("opt:EPS:sigma:kl_optimal:lying0.95@0", [sigma(lying=0.95)], model="EPS", scheduler="kl_optimal",
++        expect="refused_v2")
++    add("opt:CONST:sigma:kl_optimal:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], scheduler="kl_optimal")
++    add("opt:CONST:sigma:kl_optimal:lying0.95@0", [sigma(lying=0.95)], scheduler="kl_optimal")
++    add("opt:CONST:sigma:steps_to_run3:lying0.95@2", [sigma(lying=0.95, lying_start_step=2)], steps_to_run=3)
++    # Factors the host cannot evaluate at (negative or non-finite sigmas): refused by name in V2
++    add("opt:CONST:sigma:lying0", [sigma(lying=0.0)], expect="refused_v2")
++    add("opt:CONST:sigma:lying-0.5", [sigma(lying=-0.5)], expect="refused_v2")
++    add("opt:CONST:sigma:lying_inv0@2", [sigma(lying_inv=0.0, lying_inv_start_step=2)], expect="refused_v2")
++    add("opt:CONST:detail->sigma", [detail(), sigma(s_noise=1.04, lying=0.98, lying_start_step=1)])
++    add("opt:CONST:sigma->shark", [sigma(s_noise=1.04), shark(s_noise_init=0.9)])
 +    return rows
 +
 +PROVIDER_CASES = [(kind, name, steps) for kind in ("EPS", "CONST") for name in ("beta57", "bong_tangent")
@@ -140650,10 +141120,13 @@
 +     "down": dict(BASE, sampler_name="linear/euler", steps=4, denoise=0.4, seed=12, eta=0.0)},
 +    {"name": "chain:EPS:steps_to_run->standard", "model": "EPS",
 +     "up": dict(BASE, steps=6, steps_to_run=3), "down": dict(BASE, steps=6, denoise=0.6, seed=13)},
++    # the downstream loop runs no step: the original's output state is the upstream state (its denoised estimate)
++    {"name": "chain:CONST:res_2m->steps_to_run0", "model": "CONST",
++     "up": dict(BASE, steps=5), "down": dict(BASE, steps=5, denoise=0.5, seed=14, steps_to_run=0)},
 +]
 --- /dev/null
 +++ b/v2/tests/encode_manifest.py
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,131 @@
 +"""Regenerate v2/secure-nodes.json with the live encoder and prove the real loader accepts it (gate only).
 +
 +  encode_manifest.py --write    -> /results/secure-nodes.json (+ /results/encode.json)
@@ -140688,6 +141161,9 @@
 +from comfy_secure_nodes import packdb, packmanifest, packruntime, schedulerproviders  # noqa: E402
 +
 +KEY = "x057a913"
++# The guest dependency profile built from v2/pyproject.toml's exact pins (einops 0.8.2, scipy 1.18.1, tqdm 4.70.1;
++# lock de02bb45). The manifest's runtime block declares it, so a production guest gets exactly these modules.
++DEPENDENCY_PROFILE_SHA256 = "b90d9207bd8502c9cf235e120ed8e76c9372c682b3bc920483b4d9a8d1340e44"
 +
 +
 +def load_v2(name="res4lyf_v2_encode"):
@@ -140720,7 +141196,8 @@
 +        if weights:
 +            row["required_weights"] = weights
 +        nodes[node_id] = row
-+    return {"format": packmanifest.FORMAT, "nodes": nodes, "runtime": packruntime.manifest_declaration(V2),
++    runtime = packruntime.manifest_declaration(V2, dependency_profile_sha256=DEPENDENCY_PROFILE_SHA256)
++    return {"format": packmanifest.FORMAT, "nodes": nodes, "runtime": runtime,
 +            "scheduler_providers": schedulers.SCHEDULER_PROVIDERS}
 +
 +
@@ -210993,7 +211470,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/ref_original.py
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,291 @@
 +"""Tier-1 reference run: ORIGINAL RES4LYF ClownsharKSampler_Beta, in-process, on core 6257422b (gate only).
 +
 +Writes <out>/ref/<n>.safetensors (tensors) and <out>/ref.json (metadata), read by the V2 run. <out> is /results,
@@ -211160,10 +211637,23 @@
 +        tensors["out_noise_mask"] = out["noise_mask"].contiguous().clone()
 +    if "noise_mask" in den:
 +        tensors["den_noise_mask"] = den["noise_mask"].contiguous().clone()
++    # The loop's final denoised estimate, which LatentUpscaleWithVAE decodes (helper_sigma_preview_image_preproc.py:
++    # 658-660). Its memory layout is recorded too: a V2 latent's tensors reach the host contiguous.
++    state_layout = {}
++    for side, latent in (("out", out), ("den", den)):
++        state = latent.get("state_info")
++        if isinstance(state, dict) and isinstance(state.get("denoised"), torch.Tensor):
++            denoised = state["denoised"]
++            tensors[f"{side}_state_denoised"] = denoised.contiguous().clone()
++            state_layout[side] = {"contiguous": denoised.is_contiguous(), "stride": list(denoised.stride()),
++                                  "device": str(denoised.device)}
++        else:
++            state_layout[side] = {"state_info": isinstance(state, dict),
++                                  "keys": sorted(state) if isinstance(state, dict) else None}
 +    aliasing = ("noise_mask" in out and "noise_mask" in den and out["noise_mask"] is den["noise_mask"])
 +    save_file(tensors, str(REF / f"{index}.safetensors"))
 +    return {"index": index, "name": name, "ok": True, "calls": calls, "seconds": round(seconds, 4),
-+            "noise_mask_shared_between_outputs": aliasing,
++            "noise_mask_shared_between_outputs": aliasing, "state_denoised_layout": state_layout,
 +            "out_keys": list(out), "den_keys": list(den), "options": jsonable(options),
 +            "dtypes": {k: str(v.dtype) for k, v in tensors.items()},
 +            "shapes": {k: list(v.shape) for k, v in tensors.items()}}
@@ -211272,6 +211762,330 @@
 +    except Exception:
 +        traceback.print_exc()
 +        sys.exit(1)
+--- /dev/null
++++ b/v2/tests/test_chain_key_core.py
+@@ -0,0 +1,321 @@
++"""Core's own LATENT consumers with the V2 chain marker (gate only).
++
++A V2 ClownsharKSampler_Beta output latent carries CHAIN_KEY: {"node": ..., "denoised": <tensor>} where the original's
++carries "state_info" (a dict holding the same estimate and more loop state). This test runs every node core registers
++(nodes.py and comfy_extras) that takes a LATENT and whose other inputs can be synthesised here (a seeded tiny SD1.5
++UNet, a seeded TAESD, small conditioning, images, masks, sigmas and samplers), through core's own execution helpers
++(execution.get_input_data and get_output_data, as the executor calls a node). Each node runs three times, with the
++LATENT input(s), under torch.inference_mode as the executor runs nodes (execution.py:1053):
++  plain     {"samples", ...}
++  v2        plain + {CHAIN_KEY: {"node", "denoised"}}
++  original  plain + {"state_info": {"denoised", "raw_x", "data_prev_", "end_step", ...}}
++Checks per node:
++  * the three runs give the same result once the extra key is set aside: every output value bitwise equal (tensors
++    by dtype, shape and bits), the same UI data and the same files written, or the same failure in all three;
++  * the V2 marker is passed on wherever, and only wherever, the original's state_info is (per output), and unchanged.
++Run twice per node with more than one LATENT input: the extra key on every LATENT input, and on the first one only.
++Nodes whose inputs cannot be synthesised here are listed (not run).
++Writes /results/chain-key-core.json; exits 1 on any difference.
++Run: run_in_gate.sh <RES4LYF-HEAD with v2> <v2/tests> <out> test_chain_key_core.py
++"""
++import asyncio
++import json
++import os
++import sys
++import tempfile
++import traceback
++import types
++from pathlib import Path
++
++CORE = Path(os.environ.get("COMFY_CORE_ROOT", "/core"))
++for entry in (str(CORE), "/overlay"):
++    if entry not in sys.path:
++        sys.path.insert(0, entry)
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++import torch  # noqa: E402
++
++import comfy.model_base as mb  # noqa: E402
++import comfy.model_patcher as mp  # noqa: E402
++import comfy.samplers  # noqa: E402
++import comfy.sd  # noqa: E402
++import comfy.supported_models as sm  # noqa: E402
++import comfy.taesd.taesd  # noqa: E402
++import folder_paths  # noqa: E402
++import server  # noqa: E402
++from aiohttp import web  # noqa: E402
++from app.node_replace_manager import NodeReplaceManager  # noqa: E402
++
++server.PromptServer.instance = types.SimpleNamespace(
++    routes=web.RouteTableDef(), supports={"custom_nodes_from_web"}, send_sync=lambda *a, **k: None,
++    client_id=None, last_node_id=None, node_replace_manager=NodeReplaceManager())
++folder_paths.set_input_directory(tempfile.mkdtemp(prefix="res4-chain-input-"))
++import execution  # noqa: E402
++import nodes  # noqa: E402
++
++TESTS = Path(__file__).resolve().parent
++sys.path.insert(0, str(TESTS))
++import cases  # noqa: E402  (the parity fixtures' tiny model)
++
++PACK = Path(os.environ.get("RES4_PACK", "/pack"))
++CHAIN_KEY = "res4lyf_v2_chain"
++assert (PACK / "v2" / "latent_chain.py").read_text().count(f'CHAIN_KEY = "{CHAIN_KEY}"') == 1
++RESULTS = Path(os.environ.get("RES4_RESULTS", "/results"))
++INT_VIEW = {torch.float16: torch.int16, torch.bfloat16: torch.int16, torch.float32: torch.int32,
++            torch.float64: torch.int64}
++
++
++def gen(seed):
++    return torch.Generator().manual_seed(seed)
++
++
++def taesd():
++    module = comfy.taesd.taesd.TAESD(latent_channels=4)
++    g = gen(101)
++    with torch.no_grad():
++        for p in module.parameters():
++            p.copy_(torch.randn(p.shape, generator=g) * 0.05)
++    return comfy.sd.VAE(sd={k: v.clone() for k, v in module.state_dict().items()})
++
++
++MODEL = cases.tiny_model(mb, mp, sm, "EPS")
++VAE = taesd()
++SAMPLES = torch.randn((1, 4, 8, 8), generator=gen(1)) * 0.5
++DENOISED = torch.randn((1, 4, 8, 8), generator=gen(2)) * 0.5
++EXTRA = {
++    "v2": (CHAIN_KEY, lambda: {"node": "ClownsharKSampler_Beta", "denoised": DENOISED.clone()}),
++    "original": ("state_info", lambda: {"denoised": DENOISED.clone(), "raw_x": SAMPLES.clone(),
++                                        "data_prev_": torch.zeros((4, 1, 4, 8, 8)), "end_step": 5,
++                                        "sampler_mode": "standard", "sigmas": torch.linspace(1.0, 0.0, 7)}),
++}
++
++
++def conditioning(seed):
++    return [[torch.randn((1, 8, 32), generator=gen(seed)), {}]]
++
++
++def synth(type_, opts):
++    """A value for one input, or raise LookupError when this test cannot make one."""
++    opts = opts or {}
++    if isinstance(type_, (list, tuple)):
++        if not type_:
++            raise LookupError("empty combo")
++        return opts.get("default", type_[0]) if opts.get("default") in type_ else type_[0]
++    if type_ == "COMBO":
++        options = opts.get("options") or []
++        if not options:
++            raise LookupError("empty combo")
++        return opts.get("default") if opts.get("default") in options else options[0]
++    if type_ == "INT":
++        value = opts.get("default", 1)
++        return max(int(opts.get("min", value)), min(int(opts.get("max", value)), int(value)))
++    if type_ == "FLOAT":
++        value = opts.get("default", 1.0)
++        return float(max(opts.get("min", value), min(opts.get("max", value), value)))
++    if type_ == "BOOLEAN":
++        return bool(opts.get("default", False))
++    if type_ == "STRING":
++        return str(opts.get("default", ""))
++    if type_ == "MODEL":
++        return MODEL
++    if type_ == "VAE":
++        return VAE
++    if type_ == "CONDITIONING":
++        return conditioning(3)
++    if type_ == "IMAGE":
++        return torch.rand((1, 64, 64, 3), generator=gen(4))
++    if type_ == "MASK":
++        return torch.rand((1, 64, 64), generator=gen(5))
++    if type_ == "SIGMAS":
++        return comfy.samplers.calculate_sigmas(MODEL.get_model_object("model_sampling"), "normal", 4)
++    if type_ == "SAMPLER":
++        return comfy.samplers.sampler_object("euler")
++    if type_ == "NOISE":
++        from comfy_extras.nodes_custom_sampler import Noise_RandomNoise
++        return Noise_RandomNoise(7)
++    if type_ == "GUIDER":
++        guider = comfy.samplers.CFGGuider(MODEL)
++        guider.set_conds(conditioning(3), conditioning(6))
++        guider.set_cfg(2.0)
++        return guider
++    raise LookupError(f"no synthetic {type_}")
++
++
++def latent(variant):
++    value = {"samples": SAMPLES.clone()}
++    if variant != "plain":
++        key, make = EXTRA[variant]
++        value[key] = make()
++    return value
++
++
++def same(a, b):
++    if type(a) is not type(b):
++        return False
++    if isinstance(a, torch.Tensor):
++        if a.dtype != b.dtype or a.shape != b.shape or a.device != b.device:
++            return False
++        if a.is_floating_point() and a.dtype in INT_VIEW:
++            nan_a, nan_b = torch.isnan(a), torch.isnan(b)
++            return torch.equal(nan_a, nan_b) and torch.equal(
++                a.contiguous().view(INT_VIEW[a.dtype])[~nan_a], b.contiguous().view(INT_VIEW[b.dtype])[~nan_b])
++        return torch.equal(a, b)
++    if isinstance(a, float):
++        return a.hex() == b.hex()
++    if isinstance(a, (list, tuple)):
++        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
++    if isinstance(a, dict):
++        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
++    if isinstance(a, (str, int, bool, bytes)) or a is None:
++        return a == b
++    return True  # live objects (models, samplers): compared by type only
++
++
++def strip(value, key):
++    """value without the extra key in any LATENT-like dict; returns (stripped, list of carried values found)."""
++    found = []
++
++    def walk(v):
++        if isinstance(v, dict):
++            if key in v and "samples" in v:
++                found.append(v[key])
++            return {k: walk(x) for k, x in v.items() if not (k == key and "samples" in v)}
++        if isinstance(v, (list, tuple)):
++            items = [walk(x) for x in v]
++            return tuple(items) if isinstance(v, tuple) else items
++        return v
++    return walk(value), found
++
++
++def latent_inputs(class_def):
++    types_ = class_def.INPUT_TYPES()
++    names = []
++    for section in ("required", "optional"):
++        for name, spec in (types_.get(section) or {}).items():
++            type_ = spec[0] if isinstance(spec, (list, tuple)) else spec
++            if type_ == "LATENT":
++                names.append(name)
++    return names
++
++
++def build_inputs(class_def, latents, variant):
++    types_ = class_def.INPUT_TYPES()
++    inputs = {}
++    for section in ("required", "optional"):
++        for name, spec in (types_.get(section) or {}).items():
++            spec = list(spec) if isinstance(spec, (list, tuple)) else [spec]
++            type_, opts = spec[0], (spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {})
++            if type_ == "LATENT":
++                inputs[name] = latent(variant if name in latents else "plain")
++                continue
++            try:
++                inputs[name] = synth(type_, opts)
++            except LookupError:
++                if section == "required":
++                    raise
++    return inputs
++
++
++async def run(node_id, class_def, latents, variant):
++    out_dir = Path(tempfile.mkdtemp(prefix="res4-chain-out-"))
++    folder_paths.set_output_directory(str(out_dir))
++    folder_paths.set_temp_directory(str(out_dir / "temp"))
++    inputs = build_inputs(class_def, latents, variant)
++    torch.manual_seed(0)
++    try:
++        input_data_all, _missing, v3_data = execution.get_input_data(inputs, class_def, "1")
++        obj = class_def()
++        with torch.inference_mode():  # as core's executor runs every node (execution.py:1053)
++            output, ui, _sub, pending = await execution.get_output_data("res4-chain", "1", obj, input_data_all,
++                                                                         v3_data=v3_data)
++        if pending:
++            raise RuntimeError("pending task")
++        files = {str(p.relative_to(out_dir)): p.read_bytes() for p in sorted(out_dir.rglob("*")) if p.is_file()}
++        return {"ok": True, "output": output, "ui": ui, "files": files}
++    except Exception as error:  # noqa: BLE001
++        return {"ok": False, "error": f"{type(error).__name__}: {str(error)[:200]}"}
++
++
++async def node_row(node_id, class_def):
++    names = latent_inputs(class_def)
++    try:
++        build_inputs(class_def, names, "plain")
++    except LookupError as error:
++        return {"node": node_id, "verdict": "NOT_SYNTHESISABLE", "why": str(error)}
++    except Exception as error:  # noqa: BLE001
++        return {"node": node_id, "verdict": "NOT_SYNTHESISABLE", "why": f"{type(error).__name__}: {error}"[:200]}
++    placements = [("all", names)] + ([("first", names[:1])] if len(names) > 1 else [])
++    row = {"node": node_id, "latent_inputs": names, "placements": {}}
++    verdicts = []
++    for placement, latents in placements:
++        runs = {variant: await run(node_id, class_def, latents, variant) for variant in ("plain", "v2", "original")}
++        detail = {"ok": {v: r["ok"] for v, r in runs.items()}}
++        if not any(r["ok"] for r in runs.values()):
++            same_failure = len({r["error"] for r in runs.values()}) == 1
++            detail["error"] = runs["plain"]["error"]
++            verdict = "FAIL_IDENTICAL" if same_failure else "DIFFER"
++            if not same_failure:
++                detail["errors"] = {v: r["error"] for v, r in runs.items()}
++        elif not all(r["ok"] for r in runs.values()):
++            verdict = "DIFFER"
++            detail["errors"] = {v: r.get("error") for v, r in runs.items()}
++        else:
++            base = runs["plain"]
++            carried, equal = {}, {}
++            for variant in ("v2", "original"):
++                key = EXTRA[variant][0]
++                stripped, found = strip(runs[variant]["output"], key)
++                ui_stripped, _ = strip(runs[variant]["ui"], key)
++                equal[variant] = (same(stripped, base["output"]) and same(ui_stripped, base["ui"])
++                                  and runs[variant]["files"] == base["files"])
++                carried[variant] = {"count": len(found), "positions": [
++                    i for i, values in enumerate(runs[variant]["output"] or [])
++                    if strip(values, key)[1]]}
++                if variant == "v2":
++                    reference = EXTRA["v2"][1]()
++                    carried[variant]["unchanged"] = all(same(f, reference) for f in found)
++            detail.update(outputs_equal_without_the_key=equal, carried=carried)
++            same_pattern = carried["v2"]["positions"] == carried["original"]["positions"] and \
++                carried["v2"]["count"] == carried["original"]["count"]
++            ok = all(equal.values()) and same_pattern and carried["v2"].get("unchanged", True)
++            verdict = ("IDENTICAL_PASSED_ON" if carried["v2"]["count"] else "IDENTICAL_DROPPED") if ok else "DIFFER"
++        detail["verdict"] = verdict
++        row["placements"][placement] = detail
++        verdicts.append(verdict)
++    row["verdict"] = "DIFFER" if "DIFFER" in verdicts else verdicts[0]
++    return row
++
++
++async def main():
++    failed_extras = list(await nodes.init_builtin_extra_nodes() or [])
++    rows = []
++    for node_id, class_def in sorted(nodes.NODE_CLASS_MAPPINGS.items()):
++        try:
++            if not latent_inputs(class_def):
++                continue
++        except Exception:  # noqa: BLE001
++            continue
++        row = await node_row(node_id, class_def)
++        rows.append(row)
++        print(row["verdict"], node_id, row.get("why", ""), flush=True)
++    totals = {}
++    for row in rows:
++        totals[row["verdict"]] = totals.get(row["verdict"], 0) + 1
++    doc = {"totals": totals, "nodes_with_latent_inputs": len(rows),
++           "ran_successfully": sorted(r["node"] for r in rows if r["verdict"].startswith("IDENTICAL")),
++           "differ": sorted(r["node"] for r in rows if r["verdict"] == "DIFFER"),
++           "core_modules_failed": failed_extras, "rows": rows}
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (RESULTS / "chain-key-core.json").write_text(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
++    print(json.dumps({k: doc[k] for k in ("totals", "nodes_with_latent_inputs", "differ", "core_modules_failed")},
++                     indent=1))
++    return 1 if doc["differ"] or failed_extras else 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(asyncio.run(main()))
++    except Exception:
++        traceback.print_exc()
++        sys.exit(2)
 --- /dev/null
 +++ b/v2/tests/test_core_ids.py
 @@ -0,0 +1,97 @@
@@ -212260,7 +213074,7 @@
 +    sys.exit(main())
 --- /dev/null
 +++ b/v2/tests/test_res4lyf_simple.py
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,429 @@
 +"""Tier-1 parity for RES4LYF's small nodes: the ORIGINAL in-process vs V2 in a real guest (gate only).
 +
 +Nodes: TextBox1, TextBox2, TextConcatenate, SetImageSize, SetImageSizeWithScale; the sigma nodes "Sigmas Power",
@@ -212350,6 +213164,8 @@
 +DESIGNED_REFUSALS = {
 +    "Frames Slice": "a V2 IMAGE cannot be empty",
 +    "Image Sharpen FS": "Image Sharpen FS: not converted to Secure Nodes V2 yet (it blurs with OpenCV",
++    "Image Gaussian Blur": "Image Gaussian Blur: not converted to Secure Nodes V2 yet (it blurs with OpenCV",
++    "Latent to Cuda": "Latent to Cuda: not converted to Secure Nodes V2 yet (it moves the latent's tensors",
 +}
 +
 +
@@ -212568,6 +213384,38 @@
 +        add("Frames Slice", {"frames": frames[name].clone(), "start": start, "stop": stop}, label=name)
 +    add("Image Sharpen FS", {"images": image(1, 16, 16, 3, 8), "method": "hard", "type": "median",
 +                             "intensity": 6}, label="rgb_1x16x16")
++    # round 4
++    for seed in (0, 1, 12345, 2**63 - 1, 2**64 - 2, 2**64 - 1):
++        add("SeedGenerator", {"seed": seed})
++    for name, sigmas in SCHEDULES.items():
++        for multiplier in (1, 1.0, 0.5, -2.0, 0.0, 10000.0, 0.001):
++            add("Sigmas Mult", {"sigmas": sigmas.clone(), "multiplier": multiplier}, label=name)
++    for first, second in (("karras_f32", "karras_f64"), ("karras_f64", "karras_f32"), ("karras_f32", "karras_f32"),
++                          ("flow_f32", "flow_f32"), ("karras_f32", "flow_f32"), ("no_zero_f32", "karras_f32")):
++        for multiplier in (1.0, 0.75):
++            add("Sigmas Mult", {"sigmas": SCHEDULES[first].clone(), "multiplier": multiplier,
++                                "sigmas2": SCHEDULES[second].clone()}, label=f"{first}*{second}")
++    for name, select in (("rgb_5x8x12", 0), ("rgb_5x8x12", 2), ("rgb_5x8x12", 4), ("rgb_5x8x12", 5),
++                         ("rgb_5x8x12", 10000), ("rgba_3x6x6", 1), ("gray_4x5x7", 3)):
++        add("Frame Select", {"frames": frames[name].clone(), "select": select}, label=name)
++    tiles = {"rgb_1x8x12": image(1, 8, 12, 3, 9), "rgb_2x5x7": image(2, 5, 7, 3, 10),
++             "rgba_1x6x6": image(1, 6, 6, 4, 11), "gray_1x7x5": image(1, 7, 5, 1, 12)}
++    for name in tiles:
++        for width, height in ((30, 20), (12, 8), (100, 7), (5, 3), (1, 1), (64, 64)):
++            for crop in (True, False):
++                add("Image Repeat Tile To Size", {"image": tiles[name].clone(), "width": width, "height": height,
++                                                  "crop": crop}, label=name)
++    for width, height in ((24, 24), (1024, 1024), (1000, 777), (1, 1), (7, 9)):
++        for mode in ("sdxl", "cascade_b", "cascade_c", "exact", "default"):
++            add("EmptyLatentImageCustom", {"width": width, "height": height, "batch_size": 1, "channels": "4",
++                                           "mode": mode, "compression": 42, "precision": "fp32"})
++    for channels, precision, compression, batch in (("16", "fp16", 4, 3), ("16", "fp64", 128, 2),
++                                                    ("4", "fp16", 42, 4), ("16", "fp32", 32, 1)):
++        add("EmptyLatentImageCustom", {"width": 512, "height": 768, "batch_size": batch, "channels": channels,
++                                       "mode": "cascade_c", "compression": compression, "precision": precision})
++    add("Image Gaussian Blur", {"images": image(1, 16, 16, 3, 13), "size": 6}, label="rgb_1x16x16")
++    add("Latent to Cuda", {"latent": {"samples": torch.zeros((1, 4, 8, 8))}, "to_cuda": True,
++                           "full_latent": True})
 +    return out
 +
 +
@@ -212647,6 +213495,469 @@
 +                                          "negative_control_seed_red", "upstream_film_grain_repeatable_multithreaded",
 +                                          "guest_import_audit", "guest_pids", "alive_after_kill")}, indent=1))
 +    bad = any(r["verdict"] == "MISMATCH" for r in ROWS) or alive or not ulp_red or not seed_red
++    return 1 if bad else 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(asyncio.run(main()))
++    except Exception:
++        traceback.print_exc()
++        sys.exit(2)
+--- /dev/null
++++ b/v2/tests/test_res4lyf_upscale.py
+@@ -0,0 +1,460 @@
++"""Tier-1 parity for RES4LYF's LatentUpscaleWithVAE: the ORIGINAL in-process vs V2 in a real guest (gate only).
++
++* Original side: the pristine package imported in this process (labelled import stubs as in test_res4lyf_vae.py).
++* V2 side: the node runs in a real guest (GuestSession through _res4_sealed_guest_entry.py, guest import audit on)
++  with exactly its declared permissions; decode and encode go to the host's vae.decode_tensor and vae.encode.
++* Fixtures: the seeded TAESD and SD-style KL VAEs of test_res4lyf_vae.py, handed to both sides as the same Core VAE.
++* Latents: plain ones (the original decodes the samples), and chained ones. A chained latent is what each version's
++  sampler outputs: the original's carries state_info with the loop's denoised estimate and its data_prev_ history; the
++  V2 one carries the chain marker {"node", "denoised"}. Both decode that estimate, which differs from the samples
++  here, so a row also proves which tensor was decoded. (tests/v2_parity.py proves the V2 sampler's carried estimate
++  equals the original's state_info['denoised'] bit for bit.)
++* Compared: the output samples (dtype, shape, bits), the carried estimate (V2's chain["denoised"] against the
++  original's state_info["denoised"]), the chain's node name, and every other key of the input latent (copied).
++* LAYOUT_ROUNDING (the class documented for VAEEncodeAdvanced in SECURE_CONVERSION.md): the interpolation is fixed
++  to lanczos, whose output is channels-first memory, and the original hands vae.encode that view; V2's pixels cross
++  to the host contiguous. A row passes as LAYOUT_ROUNDING only when the original's resized pixels are such a view
++  and V2's latents (samples and carried estimate) are bitwise equal to Core's encode of exactly those pixels made
++  contiguous. The original's pixels come from its own decode of the tensor it decodes, so this also proves that V2
++  decoded and resized the same values.
++* Seeds: the original seeds torch's process-wide generator with 42 first (helper_sigma_preview_image_preproc.py:
++  653-654); V2 does not. SEED_INDEPENDENT rows seed the host's and the guest's generators with 1234 before the V2 run;
++  KNOWN_DIFFERENCE records where each side leaves the host's generator.
++* Errors must occur on both sides (BOTH_FAIL); V2-only refusals by name are listed (REFUSED_AS_DESIGNED). A 1-ulp
++  change to a V2 latent must compare unequal (negative control).
++Writes /results/upscale.json; exit 1 on any difference.
++Run: run_in_gate.sh <RES4LYF-HEAD with v2> <v2/tests> <out> test_res4lyf_upscale.py   (DEPS optional)
++"""
++import asyncio
++import importlib
++import importlib.util
++import json
++import os
++import shutil
++import sys
++import tempfile
++import traceback
++import types
++from pathlib import Path
++
++CORE = Path(os.environ.get("COMFY_CORE_ROOT", "/core"))
++sys.path[:0] = [str(CORE), "/overlay"]
++if Path("/deps").is_dir():
++    sys.path.append("/deps")
++
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++import torch  # noqa: E402
++
++import comfy.sd  # noqa: E402
++import comfy.taesd.taesd  # noqa: E402
++import folder_paths  # noqa: E402,F401
++import server  # noqa: E402
++from aiohttp import web  # noqa: E402
++from comfy.ldm.models.autoencoder import AutoencodingEngine  # noqa: E402
++
++server.PromptServer.instance = types.SimpleNamespace(
++    routes=web.RouteTableDef(), supports={"custom_nodes_from_web"}, send_sync=lambda *a, **k: None,
++    client_id=None, last_node_id=None)
++
++from comfy_api.latest import _execution_metadata, _sdk  # noqa: E402
++from comfy_execution.graph import DynamicPrompt  # noqa: E402
++from comfy_secure_nodes.transport.host import GuestSession  # noqa: E402
++
++TESTS = Path(__file__).resolve().parent
++sys.path.insert(0, str(TESTS))
++import import_stubs  # noqa: E402
++
++STUBBED = import_stubs.install(["matplotlib", "cv2", "pywt", "opensimplex"],  # only those genuinely absent
++                               noop_calls=["matplotlib.use"])  # the original calls it at import (see import_stubs)
++PACK = Path(os.environ.get("RES4_PACK", "/pack"))
++V2 = PACK / "v2"
++RESULTS = Path(os.environ.get("RES4_RESULTS", "/results"))
++TMP = Path(tempfile.mkdtemp(prefix="res4-upscale-"))
++GUARD_LOG = TMP / "import-guard.jsonl"
++shutil.copytree(PACK, TMP / "RES4LYF", ignore=shutil.ignore_patterns("v2"))
++sys.path.insert(0, str(TMP))
++ORIGINAL = importlib.import_module("RES4LYF").NODE_CLASS_MAPPINGS["LatentUpscaleWithVAE"]
++ORIGINAL_IMAGES = sys.modules["RES4LYF.images"]  # upstream's image_resize, which the original node calls
++
++
++def import_package(name, root):
++    spec = importlib.util.spec_from_file_location(name, root / "__init__.py", submodule_search_locations=[str(root)])
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++SECURE = import_package("res4lyf_secure", V2).NODE_CLASS_MAPPINGS["LatentUpscaleWithVAE"]
++CHAIN_KEY = sys.modules["res4lyf_secure.latent_chain"].CHAIN_KEY
++SAMPLER = "ClownsharKSampler_Beta"
++GUEST = {"session": None, "pids": set()}
++
++
++class SealedEntryGuestSession(GuestSession):
++    """The production entry order with the guest import audit on (and an optional seed); see the entry's docstring."""
++
++    seed = None
++
++    def _guest_command(self, python):
++        return [python, str(TESTS / "_res4_sealed_guest_entry.py")]
++
++    def _adjust_guest_env(self, env):
++        super()._adjust_guest_env(env)
++        env["RES4_GUARD_ROOT"] = str(self.guest_runtime_root)
++        env["RES4_GUARD_LOG"] = str(GUARD_LOG)
++        if self.seed is not None:
++            env["RES4_GUEST_SEED"] = str(self.seed)
++
++
++async def run_v2(inputs, seed=None):
++    cls = SECURE
++    permissions = tuple(cls.SDK_PERMISSIONS)
++    refs = _sdk.InProcessRefResolver()
++    scope = _execution_metadata.ExecutionMetadataScope("res4-upscale", DynamicPrompt({}), None, observe=True)
++    scope.__enter__()
++    guest = None
++    try:
++        plan = _sdk.ExecutionPlan(
++            prompt_id="res4-upscale", node_id="9", node_type=cls.__name__, tier="sandbox",
++            node_module=cls.__module__, inputs=dict(inputs), input_mode="refs", method="execute",
++            permissions=permissions, prompt=None, extra_pnginfo=None, dynamic_prompt=DynamicPrompt({}),
++            execution_metadata=scope)
++        runtime = _sdk.Runtime(refs=refs, ctx=_sdk.InProcessCtxProvider().build(plan), ops=_sdk.InProcessOps())
++        plan.inputs = await _sdk.wrap_inputs(runtime.refs, plan.inputs)
++        if seed is None:
++            if GUEST["session"] is None:
++                GUEST["session"] = await SealedEntryGuestSession("res4-upscale", guest_runtime_root=V2).start()
++            guest = GUEST["session"]
++        else:  # a fresh guest whose global generator was seeded before it served anything
++            guest = SealedEntryGuestSession(f"res4-upscale-seed-{seed}", guest_runtime_root=V2)
++            guest.seed = seed
++            await guest.start()
++        with torch.inference_mode():  # the host's ops run inside the executor's inference mode (execution.py:1053)
++            result = await guest.execute(plan, runtime, capabilities=permissions, tenant="res4-upscale")
++        if guest.last_guest_pid:
++            GUEST["pids"].add(guest.last_guest_pid)
++        return tuple([await refs.resolve(v) if isinstance(v, _sdk.Ref) else v for v in (result.result or ())])
++    finally:
++        scope.__exit__(None, None, None)
++        if seed is not None and guest is not None:
++            await guest.kill()
++
++
++def clone(value):
++    if isinstance(value, torch.Tensor):
++        return value.clone()
++    if isinstance(value, dict):
++        return {k: clone(v) for k, v in value.items()}
++    return value
++
++
++def run_original(inputs):
++    with torch.inference_mode():  # as core's executor runs every node (execution.py:1053)
++        return tuple(ORIGINAL().main(**{k: clone(v) for k, v in inputs.items()}))
++
++
++INT_VIEW = {torch.float16: torch.int16, torch.bfloat16: torch.int16, torch.float32: torch.int32,
++            torch.float64: torch.int64}
++
++
++def same(a, b):
++    if type(a) is not type(b):
++        return False
++    if isinstance(a, torch.Tensor):
++        if a.dtype != b.dtype or a.shape != b.shape or a.device != b.device:
++            return False
++        if a.dtype in INT_VIEW:
++            nan_a, nan_b = torch.isnan(a), torch.isnan(b)
++            return torch.equal(nan_a, nan_b) and torch.equal(
++                a.contiguous().view(INT_VIEW[a.dtype])[~nan_a], b.contiguous().view(INT_VIEW[b.dtype])[~nan_b])
++        return torch.equal(a, b)
++    if isinstance(a, float):
++        return a.hex() == b.hex()
++    if isinstance(a, (list, tuple)):
++        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
++    if isinstance(a, dict):
++        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
++    return a == b
++
++
++def show(value):
++    if isinstance(value, torch.Tensor):
++        flat = value.detach().double().flatten()
++        return {"dtype": str(value.dtype), "shape": list(value.shape),
++                "sum": float(flat.nansum()) if value.numel() else 0.0}
++    if isinstance(value, (list, tuple)):
++        return [show(v) for v in value]
++    if isinstance(value, dict):
++        return {str(k): show(v) for k, v in value.items()}
++    return value
++
++
++# --------------------------------------------------------------------------------------------------------------- #
++# Fixtures (synthetic; seeded)
++# --------------------------------------------------------------------------------------------------------------- #
++def seeded_(module, seed, scale):
++    gen = torch.Generator().manual_seed(seed)
++    with torch.no_grad():
++        for p in module.parameters():
++            p.copy_(torch.randn(p.shape, generator=gen) * scale)
++    return module
++
++
++def taesd_vae(seed):
++    module = seeded_(comfy.taesd.taesd.TAESD(latent_channels=4), seed, 0.05)
++    return comfy.sd.VAE(sd={k: v.clone() for k, v in module.state_dict().items()})
++
++
++def kl_vae(seed):
++    """Core's default SD-style KL VAE (see test_res4lyf_vae.py)."""
++    ddconfig = {"double_z": True, "z_channels": 4, "resolution": 256, "in_channels": 3, "out_ch": 3, "ch": 128,
++                "ch_mult": [1, 2, 4, 4], "num_res_blocks": 2, "attn_resolutions": [], "dropout": 0.0}
++    module = AutoencodingEngine(
++        regularizer_config={"target": "comfy.ldm.models.autoencoder.DiagonalGaussianRegularizer"},
++        encoder_config={"target": "comfy.ldm.modules.diffusionmodules.model.Encoder", "params": ddconfig},
++        decoder_config={"target": "comfy.ldm.modules.diffusionmodules.model.Decoder", "params": ddconfig})
++    seeded_(module, seed, 0.02)
++    vae = comfy.sd.VAE(sd={k: v.clone() for k, v in module.state_dict().items()})
++    assert type(vae.first_stage_model).__name__ == "AutoencodingEngine", type(vae.first_stage_model)
++    return vae
++
++
++def randn(shape, seed, scale=0.5):
++    return torch.randn(shape, generator=torch.Generator().manual_seed(seed)) * scale
++
++
++TAESD = taesd_vae(101)
++KL = kl_vae(102)
++S1, D1 = randn((1, 4, 8, 8), 11), randn((1, 4, 8, 8), 12)
++S2, D2 = randn((2, 4, 6, 10), 13), randn((2, 4, 6, 10), 14)
++MASK = torch.zeros((1, 8, 8))
++MASK[:, 2:6, 1:7] = 1.0
++
++
++def chained(samples, denoised, extra=None):
++    """The same chained latent as each version's sampler outputs it: (original's, V2's). The original's loop always
++    stores its data_prev_ history (4 entries, rk_sampler_beta.py:837-839 and :2255) next to the estimate."""
++    state = {"denoised": denoised.clone(), "end_step": 5, "sampler_mode": "standard",
++             "data_prev_": randn((4,) + tuple(denoised.shape), 15, 0.3)}
++    original = {"samples": samples.clone(), "state_info": state}
++    v2 = {"samples": samples.clone(), CHAIN_KEY: {"node": SAMPLER, "denoised": denoised.clone()}}
++    for key, value in (extra or {}).items():
++        original[key] = clone(value)
++        v2[key] = clone(value)
++    return original, v2
++
++
++def cases():
++    """(label, original inputs, V2 inputs, expect)."""
++    out = []
++
++    def add(label, latent_original, latent_v2, vae, width, height, expect="compare"):
++        base = {"vae": vae, "width": width, "height": height}
++        out.append((label, dict(base, latent=latent_original), dict(base, latent=latent_v2), expect))
++
++    for name, vae in (("taesd", TAESD), ("kl", KL)):
++        for width, height in ((64, 64), (96, 80), (40, 32), (72, 56)):
++            add(f"{name}:plain:{width}x{height}", {"samples": S1.clone()}, {"samples": S1.clone()}, vae, width,
++                height)
++            o, v = chained(S1, D1)
++            add(f"{name}:chained:{width}x{height}", o, v, vae, width, height)
++        o, v = chained(S2, D2)
++        add(f"{name}:chained:batch2:88x48", o, v, vae, 88, 48)
++        add(f"{name}:plain:batch2:88x48", {"samples": S2.clone()}, {"samples": S2.clone()}, vae, 88, 48)
++    o, v = chained(S1, D1, extra={"noise_mask": MASK, "batch_index": [3]})
++    add("taesd:chained:noise_mask+batch_index", o, v, TAESD, 80, 64)
++    add("taesd:plain:noise_mask", {"samples": S1.clone(), "noise_mask": MASK.clone()},
++        {"samples": S1.clone(), "noise_mask": MASK.clone()}, TAESD, 64, 48)
++    o, v = chained(S1.half(), D1)
++    add("taesd:chained:float16 samples", o, v, TAESD, 64, 64)
++    add("kl:plain:bfloat16 samples", {"samples": S1.bfloat16()}, {"samples": S1.bfloat16()}, KL, 48, 64)
++    # A sampler whose loop ran no step and had no incoming state: no denoised estimate, and the original fails
++    # reading it (KeyError)
++    add("taesd:chained:no denoised", {"samples": S1.clone(), "state_info": {"model_call_counts": [0, 0, 0]}},
++        {"samples": S1.clone(), CHAIN_KEY: {"node": SAMPLER}}, TAESD, 64, 64)
++    # V2-only inputs refused by name: an unconverted sampler's state_info, and an earlier version's string marker
++    add("v2:state_info refused", {"samples": S1.clone()}, chained(S1, D1)[0], TAESD, 64, 64, expect="refused_v2")
++    add("v2:string marker refused", {"samples": S1.clone()}, {"samples": S1.clone(), CHAIN_KEY: SAMPLER}, TAESD,
++        64, 64, expect="refused_v2")
++    return out
++
++
++def decoded_source(latent):
++    state = latent.get("state_info")
++    return state["denoised"] if isinstance(state, dict) else latent["samples"]
++
++
++def layout_check(inputs, expected, actual):
++    """The LAYOUT_ROUNDING conditions (see the module docstring); returns (holds, details)."""
++    vae, latent = inputs["vae"], inputs["latent"]
++    with torch.inference_mode():
++        images = vae.decode(decoded_source(latent))
++        if len(images.shape) == 5:
++            images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
++        resized = ORIGINAL_IMAGES.image_resize(images, inputs["width"], inputs["height"], "stretch", "lanczos",
++                                               "always", 0, False)[:, :, :, :3]
++        reference = vae.encode(resized.contiguous())
++    out_e, out_a = expected[0], actual[0]
++    details = {"original_pixels_contiguous": resized.is_contiguous(),
++               "v2_samples_equal_core_encode_of_original_pixels_contiguous":
++                   same(reference.to(latent["samples"]), out_a["samples"])}
++    if isinstance(out_e.get("state_info"), dict):
++        details["v2_carried_equals_core_encode_of_original_pixels_contiguous"] = same(
++            reference, out_a[CHAIN_KEY]["denoised"])
++    diff = (out_e["samples"].double() - out_a["samples"].double()).abs()
++    details.update(max_abs_diff=float(diff.max()), elements_differing=int((diff > 0).sum()),
++                   elements=diff.numel())
++    holds = (not resized.is_contiguous()
++             and all(v for k, v in details.items() if k.startswith("v2_")))
++    return holds, details
++
++
++def mapped(expected, actual):
++    """Compare the parts that must be bitwise equal outside the encode: every copied key, the node name, and which
++    tensor each side carries. Returns (ok, details)."""
++    out_e, out_a = expected[0], actual[0]
++    details = {}
++    plain_e = {k: v for k, v in out_e.items() if k not in ("samples", "state_info")}
++    plain_a = {k: v for k, v in out_a.items() if k not in ("samples", CHAIN_KEY)}
++    details["other_keys_equal"] = same(plain_e, plain_a)
++    has_state = isinstance(out_e.get("state_info"), dict)
++    details["carries_iff_original_does"] = has_state == (CHAIN_KEY in out_a)
++    if has_state:
++        chain = out_a[CHAIN_KEY]
++        details["chain_node_kept"] = chain.get("node") == SAMPLER
++        details["chain_keys"] = sorted(chain) == ["denoised", "node"]
++        details["carried_dtype_shape"] = (chain["denoised"].dtype == out_e["state_info"]["denoised"].dtype
++                                          and chain["denoised"].shape == out_e["state_info"]["denoised"].shape)
++    details["samples_dtype_shape"] = (out_e["samples"].dtype == out_a["samples"].dtype
++                                      and out_e["samples"].shape == out_a["samples"].shape)
++    return all(v for k, v in details.items()), details
++
++
++def exact(expected, actual):
++    out_e, out_a = expected[0], actual[0]
++    ok = same(out_e["samples"], out_a["samples"])
++    if isinstance(out_e.get("state_info"), dict):
++        ok = ok and same(out_e["state_info"]["denoised"], out_a[CHAIN_KEY]["denoised"])
++    return ok
++
++
++async def compare(label, inputs_original, inputs_v2, expect, v2_seed=None):
++    try:
++        expected, expected_error = run_original(inputs_original), None
++    except Exception as error:  # noqa: BLE001
++        expected, expected_error = None, f"{type(error).__name__}: {error}"[:300]
++    if v2_seed is not None:
++        torch.manual_seed(v2_seed)
++    try:
++        actual, actual_error = await run_v2(inputs_v2, seed=v2_seed), None
++    except Exception as error:  # noqa: BLE001
++        actual, actual_error = None, f"{type(error).__name__}: {error}"[:400]
++    layout, structure = None, None
++    if expect == "refused_v2":
++        named = actual_error is not None and "RES4LYF/LatentUpscaleWithVAE" in actual_error
++        verdict = "REFUSED_AS_DESIGNED" if named else "MISMATCH"
++    elif expected_error or actual_error:
++        verdict = "BOTH_FAIL" if expected_error and actual_error else "MISMATCH"
++        if verdict == "BOTH_FAIL" and expected_error.split(":")[0] not in actual_error:
++            verdict = "MISMATCH"  # the same failure: the original's exception type, as the guest reports it
++    else:
++        ok, structure = mapped(expected, actual)
++        if not ok:
++            verdict = "MISMATCH"
++        elif exact(expected, actual):
++            verdict = "EXACT"
++        else:
++            holds, layout = layout_check(inputs_original, expected, actual)
++            verdict = "LAYOUT_ROUNDING" if holds else "MISMATCH"
++    return {"case": label, "verdict": verdict, "expect": expect, "layout": layout, "structure": structure,
++            "expected": show(expected), "actual": show(actual), "expected_error": expected_error,
++            "actual_error": actual_error}, expected, actual
++
++
++async def main():
++    rows, perturb = [], None
++    for label, inputs_original, inputs_v2, expect in cases():
++        row, expected, actual = await compare(label, inputs_original, inputs_v2, expect)
++        rows.append(row)
++        print(row["verdict"], label, row["expected_error"] or "", row["actual_error"] or "", flush=True)
++        if perturb is None and row["verdict"] in ("EXACT", "LAYOUT_ROUNDING") and expect == "compare":
++            perturb = (inputs_original, expected, actual)
++    # The original seeds the global generator with 42; V2 does not. With both generators elsewhere (1234), the
++    # results must still pass.
++    seed_rows = []
++    for name, vae in (("taesd", TAESD), ("kl", KL)):
++        o, v = chained(S1, D1)
++        base = {"vae": vae, "width": 72, "height": 56}
++        row, _e, _a = await compare(f"{name}:chained:generators seeded 1234 before the V2 run", dict(base, latent=o),
++                                    dict(base, latent=v), "compare", v2_seed=1234)
++        row["verdict"] = "SEED_INDEPENDENT" if row["verdict"] in ("EXACT", "LAYOUT_ROUNDING") else row["verdict"]
++        seed_rows.append(row)
++    side_o, side_v = chained(S1, D1)
++    side_base = {"vae": TAESD, "width": 64, "height": 64}
++    torch.manual_seed(7)
++    run_original(dict(side_base, latent=side_o))
++    after_original = torch.rand(4)
++    torch.manual_seed(42)
++    at_seed_42 = torch.rand(4)
++    torch.manual_seed(7)
++    await run_v2(dict(side_base, latent=side_v))
++    after_v2 = torch.rand(4)
++    torch.manual_seed(7)
++    untouched = torch.rand(4)
++    side_effect = {"verdict": "KNOWN_DIFFERENCE",
++                   "original_leaves_host_generator_at_seed_42": torch.equal(after_original, at_seed_42),
++                   "v2_leaves_host_generator_where_it_was": torch.equal(after_v2, untouched)}
++    # negative control: one ulp on V2's samples must fail both the exact and the layout comparison
++    inputs_original, expected, actual = perturb
++    bumped = dict(actual[0])
++    bumped["samples"] = actual[0]["samples"].clone()
++    flat = bumped["samples"].view(-1)
++    flat[0] = torch.nextafter(flat[0], torch.tensor(float("inf"), dtype=flat.dtype))
++    ulp_red = not exact(expected, (bumped,)) and not layout_check(inputs_original, expected, (bumped,))[0]
++    if GUEST["session"] is not None:
++        await GUEST["session"].kill()
++    await asyncio.sleep(0.5)
++    alive = [pid for pid in GUEST["pids"] if Path(f"/proc/{pid}").exists()]
++    totals = {}
++    for row in rows + seed_rows:
++        totals[row["verdict"]] = totals.get(row["verdict"], 0) + 1
++    guard = [json.loads(line) for line in GUARD_LOG.read_text().splitlines()] if GUARD_LOG.exists() else []
++    layout_rows = [r for r in rows + seed_rows if r["layout"]]
++    doc = {"totals": totals, "cases": len(rows) + len(seed_rows),
++           "layout_rounding": {"rows": len(layout_rows),
++                               "max_abs_diff": max((r["layout"]["max_abs_diff"] for r in layout_rows), default=0.0),
++                               "all_original_pixels_channels_first_views": all(
++                                   not r["layout"]["original_pixels_contiguous"] for r in layout_rows)},
++           "chained_rows_decoding_the_carried_estimate": sum(
++               1 for r in rows if ":chained:" in r["case"] and r["verdict"] in ("EXACT", "LAYOUT_ROUNDING")),
++           "seed_independence": seed_rows, "seed_side_effect": side_effect, "negative_control_ulp_red": ulp_red,
++           "vae_fixtures": {"taesd": type(TAESD.first_stage_model).__name__,
++                            "kl": f"{type(KL.first_stage_model).__name__} + "
++                                  f"{type(KL.first_stage_model.regularization).__name__}"},
++           "guest_import_audit": {"on": True, "refused_imports": sorted({g["module"] for g in guard}),
++                                  "refused_import_events": len(guard)},
++           "guest_pids": len(GUEST["pids"]), "alive_after_kill": alive, "stubbed_imports_original_side": STUBBED,
++           "rows": rows}
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (RESULTS / "upscale.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
++    print(json.dumps({k: doc[k] for k in ("totals", "cases", "layout_rounding",
++                                          "chained_rows_decoding_the_carried_estimate", "seed_side_effect",
++                                          "negative_control_ulp_red", "vae_fixtures", "guest_import_audit",
++                                          "guest_pids", "alive_after_kill")}, indent=1))
++    bad = (any(r["verdict"] == "MISMATCH" for r in rows + seed_rows) or alive or not ulp_red
++           or not all(r["verdict"] == "SEED_INDEPENDENT" for r in seed_rows)
++           or not side_effect["original_leaves_host_generator_at_seed_42"]
++           or not side_effect["v2_leaves_host_generator_where_it_was"]
++           or guard)
 +    return 1 if bad else 0
 +
 +
@@ -213149,7 +214460,7 @@
 +    sys.exit(main())
 --- /dev/null
 +++ b/v2/tests/v2_parity.py
-@@ -0,0 +1,615 @@
+@@ -0,0 +1,646 @@
 +"""Tier-1 parity, V2 side: RES4LYF ClownsharKSampler_Beta V2 in a REAL guest vs the ORIGINAL reference (gate only).
 +
 +This process never imports the original pack. Core is clean apart from the two scheduler names that the V2
@@ -213159,8 +214470,10 @@
 +  comfy_secure_nodes GuestSession, with exactly its declared SDK permissions. The guest starts through
 +  _res4_sealed_guest_entry.py with its guest import audit on (pack code may import only the stdlib, the sealed guest
 +  lock or the declared profile); the summary lists any import it refused.
-+* Comparisons are bitwise and dtype-strict: output samples and noise_mask, denoised samples and noise_mask, and
-+  the OPTIONS dict.
++* Comparisons are bitwise and dtype-strict: output samples and noise_mask, denoised samples and noise_mask, the
++  OPTIONS dict, and on both output latents the chain marker's denoised estimate against the original's
++  state_info['denoised'] (what LatentUpscaleWithVAE decodes). Each row also records the sha256 of V2's samples, so
++  two pack versions' runs of the same cases can be compared directly.
 +* Every ctx.sample call is recorded: the model evaluations it made and the wall time it took.
 +* A negative control flips one value and must turn the comparator red.
 +Writes /results/v2-parity.json and exits 1 on any MISMATCH or harness failure.
@@ -213241,6 +214554,10 @@
 +
 +SECURE = import_package("res4lyf_secure", V2)
 +SCHED = importlib.import_module("res4lyf_secure.schedulers")
++try:
++    CHAIN_KEY = importlib.import_module("res4lyf_secure.latent_chain").CHAIN_KEY
++except ImportError:  # an earlier pack version under this harness (the cross-version sample check)
++    CHAIN_KEY = "res4lyf_v2_chain"
 +
 +
 +def register_providers():
@@ -213489,6 +214806,7 @@
 +            row["v2_seconds"] = round(time.perf_counter() - t0, 4)
 +            row["v2_calls"] = COUNT["n"]
 +            row["passes"] = list(PASSES)
++            row["v2_sha256"] = sample_hashes(values)
 +            if not ref_row["ok"]:
 +                row["verdict"] = "MISMATCH"
 +                row["note"] = f"original failed: {ref_row.get('error')}; V2 ran"
@@ -213530,10 +214848,32 @@
 +    if "den_noise_mask" in ref_t:
 +        checks["den_noise_mask"] = "noise_mask" in den and tensors_equal(ref_t["den_noise_mask"], den["noise_mask"])
 +    checks["options"] = jsonable(options) == ref_row["options"]
++    # The chain marker in place of state_info: its denoised estimate must be the original's state_info['denoised']
++    # bit for bit (dtype, shape, values), on both output latents; absent exactly when the original has none.
++    for side, latent in (("out", out), ("den", den)):
++        chain = latent.get(CHAIN_KEY)
++        checks[f"{side}_chain_node"] = isinstance(chain, dict) and chain.get("node") == NODE
++        if f"{side}_state_denoised" in ref_t:
++            carried = chain.get("denoised") if isinstance(chain, dict) else None
++            checks[f"{side}_chain_denoised"] = (isinstance(carried, torch.Tensor)
++                                                and tensors_equal(ref_t[f"{side}_state_denoised"], carried))
++        else:
++            checks[f"{side}_chain_without_denoised"] = isinstance(chain, dict) and "denoised" not in chain
 +    diff = None
 +    if tuple(ref_t["out_samples"].shape) == tuple(out["samples"].shape):
 +        diff = float((ref_t["out_samples"].double() - out["samples"].double()).abs().max())
 +    return all(checks.values()), checks, diff
++
++
++def sample_hashes(values):
++    """sha256 of V2's output samples and masks (dtype, shape and bytes), for comparing two pack versions' runs."""
++    out, den = values[0], values[1]
++    hashes = {}
++    for side, latent in (("out", out), ("den", den)):
++        for key in ("samples", "noise_mask"):
++            if isinstance(latent.get(key), torch.Tensor):
++                hashes[f"{side}_{key}"] = jsonable(latent[key])
++    return hashes
 +
 +
 +def widgets_inputs(case_widgets, model, pos, neg, latent):
@@ -213636,6 +214976,7 @@
 +            row["v2_seconds"] = round(time.perf_counter() - t0, 4)
 +            row["v2_calls"] = COUNT["n"]
 +            row["passes"] = list(PASSES)
++            row["v2_sha256"] = sample_hashes(values)
 +            ok, checks, diff = compare(ref_row, values)
 +            row.update(checks=checks, max_abs_diff=diff)
 +            row["verdict"] = "EXACT" if ok and case["expect"] == "exact" else "MISMATCH"
@@ -213669,6 +215010,7 @@
 +            row["v2_seconds"] = round(time.perf_counter() - t0, 4)
 +            row["v2_calls"] = COUNT["n"]
 +            row["passes"] = list(PASSES)
++            row["v2_sha256"] = sample_hashes(down)
 +            ok, checks, diff = compare(ref_row, down)
 +            row.update(checks=checks, max_abs_diff=diff, v2_upstream_keys=sorted(up[0]))
 +            row["verdict"] = "EXACT" if ok else "MISMATCH"
