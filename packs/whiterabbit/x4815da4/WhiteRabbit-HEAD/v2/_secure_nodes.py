@@ -172,9 +172,44 @@ class _BytesWatermarkCompositor(WatermarkCompositor):
         return self._watermark.to(device=device, dtype=torch.float32)
 
 
+def _image_names(names):
+    """Core's folder_paths.filter_files_content_types(files, ["image"]) on listed names (repair r1)."""
+    import mimetypes
+
+    result, kinds = [], {}
+    for name in names:
+        extension = name.split('.')[-1]
+        if extension not in kinds:
+            mime_type, _ = mimetypes.guess_type(name, strict=False)
+            if not mime_type:
+                continue
+            kinds[extension] = mime_type.split('/')[0]
+        if kinds[extension] == "image":
+            result.append(name)
+    return result
+
+
 class BatchWatermarkSingleSecure(BatchWatermarkSingleV3):
     SDK_REFS = True
     SDK_PERMISSIONS = ("raw", "assets")
+
+    @classmethod
+    async def validate_inputs(cls, watermark=None):
+        """The original's watermark menu, checked now (repair r1).
+
+        secure-nodes.json freezes the menu when the pack is converted, and it was empty, so core
+        refused every file. The original lists the input folder's images whenever the schema is
+        read (WatermarkFileResolver.choices); this checks against the same list, with core's text.
+        """
+        del cls
+        if watermark is None:
+            return True
+        names = await sdk.ctx().assets.list("input", recursive=False)
+        choices = sorted(_image_names(names))
+        if watermark not in choices:
+            list_info = f"(list of length {len(choices)})" if len(choices) > 20 else str(choices)
+            return f"Value not in list: watermark: {watermark!r} not in {list_info}"
+        return True
 
     @classmethod
     async def execute(
@@ -417,6 +452,18 @@ class RifeSeamTimingAnalyzerSecure(_RifeNode, RifeSeamTimingAnalyzerV3):
             use_first_two, use_last_two, use_global_median, calibrate_metric,
             calibrate_iters, t_min, t_max, auto_tmax, t_cap,
         ))
+
+
+# The manifest imports classes by module attribute. Keep each generated class's
+# declared name available alongside its existing public node alias.
+AssembleLoopFramesSecure = AssembleLoopFrames
+AutocropToLoopSecure = AutocropToLoop
+BatchResizeWithLanczosSecure = BatchResizeWithLanczos
+PixelHoldSecure = PixelHold
+PrepareLoopFramesSecure = PrepareLoopFrames
+RollFramesSecure = RollFrames
+TrimBatchEndsSecure = TrimBatchEnds
+UnrollFramesSecure = UnrollFrames
 
 
 NODE_CLASS_MAPPINGS = {

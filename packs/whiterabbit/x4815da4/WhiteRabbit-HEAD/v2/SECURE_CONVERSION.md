@@ -57,3 +57,15 @@ interpolation-state projection and tiled-upscaler fallback behavior.
 The pristine sibling remains byte-identical to the pinned upstream tree. The
 V2 conversion retains the upstream AGPL-3.0 license and the existing MIT notice
 for the adapted ComfyUI-Frame-Interpolation architecture.
+
+## Repair r1
+
+- **Class names.** The eight pure-binding classes (`PrepareLoopFrames`, `AssembleLoopFrames`, `RollFrames`,
+  `UnrollFrames`, `TrimBatchEnds`, `AutocropToLoop`, `PixelHold`, `BatchResizeWithLanczos`) are also
+  bound under their generated names (`...Secure`), which is how `secure-nodes.json` imports them.
+- **Watermark menu.** `secure-nodes.json` holds the watermark menu as it was when the pack was converted
+  (empty), so core refused every file. `BatchWatermarkSingle` now checks the value itself against the
+  original's list, the input folder's images (`WatermarkFileResolver.choices`), read through the SDK
+  when the prompt is validated. A missing file gets core's "Value not in list" text.
+- **Dependency profile.** `runtime.dependencies.profile_sha256` is the one the reference deployment
+  resolved for `torchlanc==1.1.1`.
