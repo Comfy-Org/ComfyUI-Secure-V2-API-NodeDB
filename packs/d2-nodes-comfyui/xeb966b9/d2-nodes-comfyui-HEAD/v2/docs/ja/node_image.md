@@ -1,0 +1,595 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+
+<h1>
+Node
+</h1>
+
+
+## :tomato: Image Node
+
+### D2 Preview Image
+
+<figure>
+<img src="../img/preview_image_1.png">
+<img src="../img/preview_image_2.png">
+</figure>
+
+- `Popup Image`: ボタンをクリックすると全画面ギャラリーが表示される
+
+---
+
+### D2 Save Image
+
+<figure>
+  <img src="../img/save_image_2.png?2">
+  <figcaption>▲filenames には保存した画像のパスが出力される</figcaption>
+</figure>
+
+
+- `D2 Preview Image` と同じく、全画面ギャラリー機能を搭載した画像保存ノード
+- 画像フォーマットは PNG / JPEG / WEBP / アニメーションWEBP に対応
+- A1111方式の生成パラメーターをメタデータに保存する（PNG / JPEG / WEBP形式のみ）
+- 保存した画像を `D2 Load Image` から読み込むと positive, negative プロンプトを取り出し可能（PNG / JPEG / WEBP形式のみ）
+
+<figure>
+  <img src="../img/save_image_3.png?2">
+  <figcaption>▲d2_pipeから生成パラメーターを取得し、メタデータに保存</figcaption>
+</figure>
+
+
+#### Input
+
+- `images`: 保存する画像
+- `d2_pipe`: `D2 KSampler` などから生成パラメーターを受け取る
+- `filename_prefix`: ファイルネーム書式。詳細は <a href="node_text.md#D2-Filename-Template">`D2 Filename Template`</a> 参照
+- `preview_only`:
+  - `true`: 画像を保存せず、プレビュー表示だけになる
+  - `false`: 画像を保存する
+- `format`: 画像フォーマットを `png` / `jpeg` / `webp` / `animated_webp` から選択
+- `lossless`: `webp`、`animated_webp` で適用
+  - `true`:可逆圧縮
+  - `false`:不可逆圧縮。
+- `quality`: 画像圧縮率。`jpeg` または `webp`、`animated_webp` で `losless:false` の時に適用
+- `fps`: `animated_webp` のフレームレート
+- `Popup Image`: ボタンをクリックすると全画面ギャラリーが表示される
+
+#### Output
+
+- `filenames`: 保存した画像ファイルのフルパス配列
+
+---
+
+
+### D2 Save Image Eagle
+
+<figure>
+  <img src="../img/save_image_eagle.png?2">
+</figure>
+
+- `D2 Save Image` にEagle登録機能が付いたもの
+- <a href="https://eagle.cool/" target="_blank">Eagle公式サイト</a>
+
+#### `D2 Send Eagle` との違い
+
+- アニメーションWEBPに対応
+- 全画面ギャラリー機能
+- ファイル名のルールが標準に `Save Image` に準拠
+- タグの保存機能を除外
+
+#### Input
+
+- `eagle_folder`: Eagleの登録フォルダ。フォルダ名、フォルダIDどちらでも可能
+- `memo_text`: Eagleのメモとして登録するテキスト
+
+#### StableDiffusion A1111 webui のようなパラメーターをEagleメモに記録するには
+
+##### 自動で作成
+
+`D2 Ksampler` から `d2_pipe` を接続するとEagle用メモに保存される。
+
+<figure>
+  <img src="../img/save_image_eagle_4.png?2">
+</figure>
+
+##### 独自形式で作成
+
+動画など複雑な生成パラメーターをしたい時などは、独自のメモを記録することも可能。
+
+<figure>
+  <img src="../img/save_image_eagle_3.png?2">
+</figure>
+
+`D2 Filename Template2` を使ってテンプレート化し、`D2 Save Image Eagle` の `memo_text` に入力します。
+
+上のサンプルでは `D2 KSampler` から `positive` `negative` を `arg_1` `arg_2` に入力して `%arg_1%` `%arg_2%` で取得、その他のパラメーターは `%{ノード名}.{Param}` で取得しています。
+
+パラメーター取得方法の詳細は <a href="node_text.md#D2-Filename-Template">`D2 Filename Template`</a> をご覧下さい。
+
+```
+%arg_1%
+
+Negative prompt: %arg_2%
+Steps: %D2 KSampler.steps%, Sampler: %D2 KSampler.sampler_name% %D2 KSampler.scheduler%, CFG scale: %D2 KSampler.cfg%, Seed: %D2 KSampler.seed%, Size: %Empty Latent Image.width%x%Empty Latent Image.height%, Model: %D2 Checkpoint Loader.ckpt_name%
+```
+出力結果
+```
+masterpiece, 1girl, bikini, blue sky,
+
+Negative prompt: bad quality, worst quality, sepia,
+Steps: 20, Sampler: euler_ancestral simple, CFG scale: 5.000000000000001, Seed: 926243299419009, Size: 768x1024, Model: _SDXL_Illustrious\anime\HiyokoDarkness_vpred_v2_20250329.safetensors
+```
+
+---
+
+### D2 Send File Eagle
+
+<figure>
+<img src="../img/send_file_eagle.png?2">
+</figure>
+
+- `file_path` で入力されたパスのファイルを<a href="https://eagle.cool/" target="_blank">Eagle</a>に登録する
+- `Video Combine` の出力ファイルをEagleに登録するために作りました
+- `D2 File Template2` を使って `memo_text` に入力すれば動画生成パラメーターの保存も可能
+
+##### file_path について
+
+ファイルのフルパスを文字列、または文字列の配列で与える。
+
+例：文字列
+```
+D:\ComfyUI\output\foo.png
+```
+例：文字列の配列
+```
+["D:\ComfyUI\output\foo.png","D:\ComfyUI\output\bar.png"]
+```
+
+##### Video Combine が出力する Filenames について
+
+<a href="https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite" target="_blank">Video Combine</a> が出力する `Filenames` は以下のような配列になっています。
+
+```
+[
+  true, 
+  [
+    "D:\\ComfyUI\\output\\AnimateDiff_00002.png",
+    "D:\\ComfyUI\\output\\AnimateDiff_00002.mp4"
+  ]
+]
+```
+
+上の画像では <a href="https://github.com/godmt/ComfyUI-List-Utils" target="_blank">ComfyUI-List-Utils</a> に含まれる `Exec` ノードによってファイル名の部分を抜き出しています。
+
+---
+
+### D2 Load Image
+
+<figure>
+<img src="../img/load_image.png">
+</figure>
+
+- 画像からプロンプトを取得できる Load Image ノード
+- StableDiffusion webui A1111、NovelAI で作成した画像にも対応
+- マスクエディターを開くボタンが付いてる
+
+#### Input
+
+- `image_path`
+  - 画像のパスを入力するとファイルを読み込む
+  - `D2 Folder Image Queue` との接続に使用する
+
+#### Output
+
+- `IMAGE / MASK`: 画像とマスク
+- `width / height`: 画像サイズ
+- `positive` / `negative`: プロンプト
+- `filename` / `filepath`: 保存したファイルの名前、パス
+- `pnginfo`: 画像のメタデータ
+
+#### プロンプトの出力について
+
+下記のノード、UIで保存した画像に対応しています。
+
+- `D2 Save Image`、`D2 Save Image Eagle`
+- <a href="https://github.com/easygoing0114/ComfyUI-easygoing-nodes?tab=readme-ov-file" target="_blank">Save Image With Prompt</a>
+- <a href="https://github.com/giriss/comfy-image-saver" target="_blank">Save Image w/Metadata</a>
+- Novel AI
+- A1111（Forge系含む）
+
+> **注意：マスクエディタを使うとプロンプトが抽出できません**
+>
+> マスクエディタで編集すると ComfyUI が新しい画像ファイルを書き出して内部的に置き換わるため、元画像のメタデータが失われプロンプトを抽出できなくなります。マスクをクリアしても置き換わったままです。
+>
+> 対応策として、プロンプト抽出専用の `D2 Load Image` をもう一つ追加し、そちらではマスクエディタを使わないようにすることで回避できます。
+
+
+---
+
+### D2 Load Folder Images
+
+<figure>
+<img src="../img/load_folder_images.png">
+</figure>
+
+- フォルダー内の画像を一括ロードしてまとめて出力する
+- `D2 Grid Image` などで使う
+- 順次処理をしたいなら `D2 Folder Image Queue` を使う
+
+#### Input
+
+- `folder`
+  - フォルダーをフルパスで指定
+- `extension`
+  - JPEG画像だけを読み込むなら `*.jpg` のように指定する
+  - `*silver*.webp` のような指定も可能
+  - `*.png, *.jpg, *.webp` のようにカンマ区切りで複数の拡張子を指定できる
+- `include_subfolders`
+  - `true`: サブフォルダー内の画像も対象にする
+  - `false`: 指定フォルダー直下のみ
+  - `folder` に `画像フォルダー/**` のように `**` を直接書いても再帰的に取得できる
+
+
+
+---
+
+
+
+### D2 Folder Image Queue
+
+<figure>
+<img src="../img/folder_image_queue_2.png">
+</figure>
+
+- フォルダ内の画像のパスを出力する
+- Queue を実行すると画像枚数分の Queue を自動的に実行する
+
+#### Input
+
+- `folder`
+  - 画像フォルダ
+- `extension`
+  - ファイル名のフィルタを指定
+  - `*.*`: 全ての画像
+  - `*.png`: PNG形式のみ対象
+  - `*.png, *.jpg, *.webp` のようにカンマ区切りで複数の拡張子を指定できる
+- `include_subfolders`
+  - `true`: サブフォルダー内の画像も対象にする
+  - `false`: 指定フォルダー直下のみ
+  - `folder` に `画像フォルダー/**` のように `**` を直接書いても再帰的に取得できる
+- `start_at`
+  - 処理を開始する画像番号
+- `auto_queue`
+  - `true`: 残りの Queue を自動的に実行する
+  - `false`: 1回だけ実行する
+
+#### Output
+
+- `image_path`
+  - 画像のフルパス
+
+
+
+---
+
+### D2 Grid Image
+
+<figure>
+<img src="../img/grid_image.png">
+</figure>
+
+- グリッド画像を出力する
+- 横方向、縦方向、どちらも可能
+- D2 XY Plot系では <a href="node_xy.md#d2-xy-grid-image">`D2 XY Grid Image`</a> をお使いください。
+
+#### Input
+
+- `max_columns`
+  - 横方向に整列する画像の枚数
+  - `swap_dimensions` が `true` の時は縦方向の枚数
+- `grid_gap`
+  - 画像の間隔
+- `swap_dimensions`
+  - `true`: 縦方向
+  - `false`: 横方向
+- `trigger_count`
+  - 入力画像がここで指定した枚数になったらグリッド画像を出力する
+- `Image count`
+  - 入力した画像の枚数
+- `Reset Images`
+  - 入力した画像を破棄する
+
+
+
+---
+
+### D2 Image Stack
+
+<figure>
+<img src="../img/image_stack.png">
+</figure>
+
+- 入力された複数の画像をバッチにまとめる
+- D2 Grid Image などで使える
+- 最大50個入力まで
+
+
+---
+
+### D2 Image Mask Stack
+
+<figure>
+<img src="../img/image_mask_stack.png">
+</figure>
+
+- 入力された複数の画像とマスクをバッチにまとめる
+- D2 Image Stack にマスクを追加したもの
+
+---
+
+
+### D2 EmptyImage Alpha
+
+<figure>
+<img src="../img/empty_image_alpha.png">
+</figure>
+
+- EmptyImage にαチャンネル（透明度）を追加
+- `output_alpha` を `false` にするとαチャンネルを付与せず RGB（3ch）で出力する
+    - RGB を前提とするノード（Anima ControlNet-LLLite など）に渡せる
+
+
+---
+
+
+### D2 Mosaic Filter
+
+<figure>
+<img src="../img/mosaic.png">
+</figure>
+
+- モザイクフィルターをかける
+- 透明度、明るさ、色の反転などを設定可能
+
+自動モザイクのワークフローについて記事を書きましたので参考にしてください。
+
+> <a href="https://note.com/da2el_ai/n/n79d34b88e0bd" target="_blank">ComfyUIを使った自動モザイクのワークフロー</a>
+
+
+---
+
+
+### D2 Cut By Mask
+
+<figure>
+<img src="../img/cut-by-mask.png">
+</figure>
+
+- マスクで画像をカットする
+- 出力する形状、サイズ、余白などを指定できる
+
+
+#### Input
+
+- `images`: 切り出し元画像
+- `mask`: マスク
+- `cut_type`: 切り取る画像の形状
+    - `mask`: マスクの形状通りに切り取る
+    - `rectangle`: マスク形状から長方形を算出して切り取る
+    - `square_thumb`: 最大サイズの正方形で切り取る。サムネイル向けモード
+- `output_size`: 出力する画像サイズ
+    - `mask_size`: マスクのサイズ
+    - `image_size`: 入力画像のサイズ（入力画像の位置を保持した状態で周囲が透明になる）
+- `round_to`: 切り出す短形の幅・高さを指定単位に切り上げる（初期値 `none`）
+    - `none` / `8px` / `16px` / `32px` / `64px` から選択
+    - `cut_type` が `rectangle` の時のみ有効（`mask` / `square_thumb` では無視）
+    - 8px単位で生成するローカルモデルでエッジがボケるのを防ぐ用途。中心を保ったまま拡張し、元画像の外側には広げない
+- `padding`: マスクエリアを拡張するピクセル数（初期値 0）
+- `min_width`: マスクサイズの最小幅（初期値 0）
+- `min_height`: マスクサイズの最小高さ（初期値 0）
+- `output_alpha`: 出力画像にαチャンネルを含めるか
+
+#### output
+- `image`: マスク領域で切り取った画像
+- `mask`: マスク
+- `rect`: 切り取った短形領域
+
+
+
+---
+
+
+### D2 Paste By Mask
+
+<figure>
+<img src="../img/paste-by-mask.png">
+</figure>
+
+- D2 Paste By Mask で作成したマスクや短形領域を使って画像を合成する
+- ボカし幅、貼り付け形状などが指定できる
+
+#### Input
+
+- `img_base`: 下地になる画像（batch対応）
+- `img_paste`: 貼りつける画像（batch対応）
+- `paste_mode`: img_paste のトリミング方法と貼り付け座標を決める
+    - `mask`: img_paste を mask_opt でマスキングして x=0, y=0 の位置に貼りつける（マスク形状貼り付け）
+    - `rect_full`: img_paste を rect_opt のサイズでトリミングして rect_opt の位置に貼りつける（短形貼り付け）
+    - `rect_position`: img_paste を rect_opt の位置に貼りつける（短形貼り付け）
+    - `rect_pos_mask`: img_paste を mask_opt でマスキングして rect_opt の位置に貼りつける（マスク形状貼り付け）
+- `multi_mode`: img_base, img_paste のどちらか、または両方が複数枚だった時の処理
+    - `pair_last`: img_base, img_paste を先頭から同じインデックスのペアで処理する。片方の数が少ない時は最後の画像が採用される
+    - `pair_only`: pair_lastと同じ。片方の数が少ない時は処理前にエラーを表示して止まる
+    - `cross`: 全ての組み合わせを処理する
+
+input `optional`:
+- `mask_opt`: マスク
+- `rect_opt`: 短形領域
+- `feather`: エッジをボカすpx数（初期値 0）
+
+
+#### output
+
+- `image`: 合成した画像
+
+#### multi_mode について
+
+`pair_last` `pair_only` は `img_base` と `img_paste` の同じ順番の画像でペアとして出力する。
+
+<figure>
+<img src="../img/paste-by-mask_pair.png">
+</figure>
+
+`cross` は全ての組み合わせを出力する。
+
+<figure>
+<img src="../img/paste-by-mask_cross.png">
+</figure>
+
+---
+
+### D2 Create Point
+
+<figure>
+<img src="../img/create_point.png">
+</figure>
+
+- マーカーをドラッグして XY 座標を出力するノード
+- マーカーは `marker_count` で増減し、出力 `x_1` / `y_1` … も連動して増減する
+- ノードに画像をドラッグ＆ドロップすると、キャンバスの背景に表示され `width` / `height` にも反映される
+
+#### Input
+
+- `marker_count`: マーカーの数（1〜16）。出力 `x_N` / `y_N` の数と連動する
+- `mode`
+  - `absolute`: 実際のピクセル座標を出力する
+  - `relative`: 0.0〜1.0 の相対値を出力する
+- `width` / `height`: 座標系のサイズ。キャンバスのアスペクト比もこれで決まる
+- `image`: 背景に表示する画像。空欄なら黒いキャンバスになる
+- `markers`: マーカー座標の JSON。ドラッグすると自動で更新されるので、通常は触らなくてよい
+
+#### Output
+
+- `image`: 指定した画像。画像を指定していない場合は `width` × `height` の黒画像
+- `width` / `height`: 座標系のサイズ
+- `x_1` / `y_1`: マーカー1の座標。`marker_count` が「3」なら `x_2` `y_2` `x_3` `y_3` も出力される
+
+#### mode について
+
+`markers` は mode に関わらず常に相対値（0.0〜1.0）で保持しているため、`absolute` と `relative` を切り替えてもマーカーは動きません。`width` / `height` を変えたときも同じです。
+
+上の画像は同じマーカー位置で mode だけを変えたものです。`relative` の `0.163305` に `width` の `832` を掛けると、`absolute` の `136` になります。
+
+---
+
+### D2 Create Masks
+
+<figure>
+<img src="../img/create_masks.png">
+</figure>
+
+- キャンバス上の長方形をドラッグして、複数のマスクを作るノード
+- 長方形の内側をドラッグすると移動、四隅の白丸をドラッグするとリサイズできる
+- 長方形は `mask_count` で増減し、出力 `mask_1` `mask_2` … も連動して増減する
+- ノードに画像をドラッグ＆ドロップすると、キャンバスの背景に表示され `width` / `height` にも反映される
+
+#### Input
+
+- `mask_count`: マスクの数（1〜16）。出力 `mask_N` の数と連動する
+- `select_mask`: アクティブにするマスクの番号。キャンバスでクリックしたマスクの番号に自動で変わる
+- `width` / `height`: 出力するマスクのサイズ。キャンバスのアスペクト比もこれで決まる
+- `image`: 背景に表示する画像。空欄なら黒いキャンバスになる
+- `masks`: マスクの位置とサイズの JSON。ドラッグすると自動で更新されるので、通常は触らなくてよい
+
+#### Output
+
+- `image`: 指定した画像。画像を指定していない場合は `width` × `height` の黒画像
+- `width` / `height`: マスクのサイズ
+- `mask_1`: マスク1。`mask_count` が「3」なら `mask_2` `mask_3` も出力される
+
+#### アクティブなマスクについて
+
+クリックしたマスクが「アクティブ」になり、いちばん手前に表示されて四隅にリサイズ用の白丸が出ます。
+
+マスクが完全に重なっていると下のマスクをクリックできないので、そのときは `select_mask` で番号を選んでください。逆にクリックでアクティブを変えると `select_mask` も追従します。
+
+---
+
+### D2 Random Point
+
+<figure>
+<img src="../img/random_point.png">
+</figure>
+
+- ランダムな XY 座標を出力するノード
+- min / max を指定することで範囲を限定できる
+
+#### Input
+
+- `width` / `height`: 座標系のサイズ
+- `min_x` / `max_x`: X 座標の範囲
+- `min_y` / `max_y`: Y 座標の範囲
+- `mode`
+  - `absolute`: 実際のピクセル座標を出力する
+  - `relative`: 0.0〜1.0 の相対値を出力する
+- `number_type`: `int` / `float`。`mode` が `absolute` のときだけ効く
+- `seed`: 乱数の種。同じ値なら同じ座標になる
+
+#### Output
+
+- `width` / `height`: 入力した座標系のサイズがそのまま出力される
+- `x` / `y`: ランダムに決まった座標
+
+#### 範囲指定について
+
+`min_x` `max_x` `min_y` `max_y` は、`mode` に関わらず常に 0.0〜1.0 の相対値で指定します。
+
+たとえば `min_x` を `0.25`、`max_x` を `0.75` にすると、中央寄りの範囲だけに座標が出ます。`width` を変えても「中央寄り」という意味は変わりません。
+
+`min` と `max` に同じ値を入れると、その位置に固定されます。
+
+#### number_type について
+
+`mode` が `absolute` のとき、`int` なら `100` のような整数、`float` なら `100.3968` のような小数を出力します。
+
+`relative` は0〜1の範囲なので常に小数です。
+
+---
+
+### D2 Random Mask
+
+<figure>
+<img src="../img/random_mask.png">
+</figure>
+
+- ランダムな長方形のマスクを出力するノード
+- 長方形は `width` / `height` からはみ出さない位置に置かれる
+
+#### Input
+
+- `width` / `height`: 出力するマスクのサイズ
+- `min_width` / `max_width`: 長方形の幅の範囲（ピクセル）
+- `min_height` / `max_height`: 長方形の高さの範囲（ピクセル）
+- `seed`: 乱数の種。同じ値なら同じ長方形になる
+
+#### Output
+
+- `width` / `height`: 入力したマスクのサイズがそのまま出力される
+- `mask`: 長方形の内側が白いマスク
+- `mask_x` / `mask_y`: 長方形の左上の座標
+- `mask_w` / `mask_h`: 長方形の幅と高さ
+
+#### 長方形のサイズについて
+
+`min_width` と `max_width` に同じ値を入れると幅が固定され、位置だけがランダムに動きます。
+
+`min` より `max` が小さいときは入れ替えて扱い、`width` / `height` より大きいサイズを指定したときはマスクのサイズまで縮めます。長方形がマスクの外にはみ出すことはありません。

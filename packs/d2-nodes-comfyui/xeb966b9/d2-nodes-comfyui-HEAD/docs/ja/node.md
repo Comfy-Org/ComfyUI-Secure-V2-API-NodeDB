@@ -1,0 +1,647 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+
+<h1>
+Node
+</h1>
+
+
+## :tomato: Sampler Nodes
+
+
+
+### D2 KSampler / D2 KSampler(Advanced)
+
+<figure>
+<img src="../img/ksampler_3.png">
+</figure>
+
+#### 標準のKSamplerとの違い
+
+- 画像を直接出力する（VAE Decoderが不要）
+- プロンプトを文字列で入力できる
+- A1111方式のLoRA読み込みプロンプトに対応
+    - 例: `<lora:foo.safetensors:1>`
+    - 書式は <a href="node.md#d2-load-lora">`D2 Load Lora`</a> を参照
+    - `D2 KSampler Advanced` に `positive_cond` / `negative_cond` を入力した場合はCLIPにLoRAは適用されません。MODELのみ適用されます。
+- Controlnet専用の入力があり、シンプルに適用できる
+- 生成パラメーターをまとめた `d2_pipe` に対応
+    - `D2 XY Plot` `D2 XY Plot Easy` `D2 XY Plot Easy Mini` から簡単に受け取れる
+    - `D2 Checkpoint Loader` や `D2 Load Diffusion Model Set` から `model` / `clip` / `vae` をまとめて受け取れる
+    - `D2 Save Image Eagle` へ簡単にパラメーターを渡せる
+- プロンプトの重みアルゴリズムを変更できる（weight_interpretation）
+
+#### 注意点
+
+- `d2_pipe` が接続されている場合は `d2_pipe` のパラメーターが優先されます
+- 例えば `D2 KSampler` で **steps:20** を指定して、`D2 XYPlot Easy` で **steps:15** を指定。`d2_pipe` が接続されている状態だと　`D2 XYPlot Easy` の **steps:15** が採用されます。
+- ただし `model` / `clip` / `vae` / `positive_cond` / `negative_cond` は **直接接続した入力が優先**されます（`positive` / `negative` と同じ扱い）。直接接続が無いときだけ `d2_pipe` の値を使います。
+
+#### Input
+
+- 標準のKSamplerと同じもの
+    - `model` / `clip` / `latent_image` / `seed` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise`
+    - `model` / `clip` は `d2_pipe` から渡せるようになったため、いずれも optional（任意接続）です
+- D2 KSampler で追加したもの
+    - `vae`: `d2_pipe` から渡せるため optional（任意接続）です
+    - `cnet_stack`: `D2 Controlnet Loader` 接続用
+    - `d2_pipe`: 生成パラメーターをまとめたもの。`D2 XY Plot` などから受け取る
+    - `preview_method`: 生成時のプレビュー表示方式
+    - `positive` / `negative`: 文字列形式のプロンプト入力
+- D2 KSampler Advanced で追加したもの
+    - `token_normalization` / `weight_interpretation`
+        - プロンプトのウェイト調整方法。D2 KSampler Advancedで利用可能
+        - 利用するには [Advanced CLIP Text Encode](https://github.com/BlenderNeko/ComfyUI_ADV_CLIP_emb/) が必要
+
+
+#### Output
+
+- 標準のKSamplerと同じもの
+    - `LATENT`
+- D2 KSampler で追加したもの
+    - `IMAGE`: 生成画像
+    - `MODEL` / `CLIP`: LoRA適用済み
+    - `positive` / `negative`: Inputのものをそのまま出力
+    - `formatted_positive`: A1111方式のLoRA書式を削除したpositiveプロンプト
+    - `positive_cond` / `negative_cond`: Controlnet適用済みのCONDITIONING
+        - Controlnet の画像は画像全体のものなので、FaceDetailer など画像の一部を切り出して再描画するノードに渡すと、切り出した範囲と Controlnet の位置がずれて画像が崩れることがあります
+    - `d2_pipe`: 生成パラメーターをまとめたもの
+        - D2 KSampler 内で作成した CONDITIONING は `d2_pipe` の `positive_cond` / `negative_cond` には格納されません。入力された値（未入力なら空）がそのまま入ります
+
+
+---
+
+
+### D2 Pipe
+
+<figure>
+<img src="../img/pipe.png">
+</figure>
+
+- `d2_pipe` の内容を変更・取り出すためのノード
+- `d2_pipe` は D2 XY Plot Easy、D2 KSampler、D2 Save Image Eagle などでパラメーターをまとめて渡すためのもの
+- `ckpt_name` / `positive` / `negative` / `seed` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` / `width` / `height` に加え、`model` / `clip` / `vae` / `positive_cond` / `negative_cond` の入出力にも対応しました
+    - これらに直接入力を接続すると `d2_pipe` の該当項目を上書きできます。接続が無ければ `d2_pipe` の値をそのまま出力します
+
+
+---
+
+
+## :tomato: Loader Node
+
+
+### D2 Checkpoint Loader
+
+<img src="../img/checkpoint_loader_2.png">
+
+- モデルファイルのフルパスを出力する Checkpoint Loader
+- ファイル名に「vpred」が入っていたら自動的に v_prediction 設定を適用することが可能
+
+#### Input
+
+- `d2_pipe`
+  - このノード自身では使用しないが、受け取った `d2_pipe` に `model` などを追加する
+- `ckpt_name`
+  - チェックポイント名
+- `auto_vpred`
+  - `true`: ファイル名に「vpred」が入っていたら自動的に v_prediction 設定を適用する
+- `sampling` / `zsnr`
+  - ModelSamplingDiscrete と同じ設定（詳しくは知りません）
+- `multiplier`
+  - RescaleCFG と同じ設定（詳しくは知りません）
+
+#### Output
+
+- `model` / `clip` / `vae`
+    - 従来の CheckpointLoader と同じ。
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Checkpoint 名、ハッシュ、フルパス。
+- `d2_pipe`
+    - `model` / `clip` / `vae` / `ckpt_name` をまとめたもの。`D2 KSampler` へ1本で接続できます。
+
+
+---
+
+
+
+### D2 Load Diffusion Model
+
+<img src="../img/load_diffusion_model.png">
+
+- モデルファイルのフルパスやファイル名を出力する Load Diffusion Model
+
+#### Input
+
+- `d2_pipe`
+  - このノード自身では使用しないが、受け取った `d2_pipe` に `model` などを追加する
+- `unet_name` / `weight_dtype`: 標準の `Load Diffusion Model` と同じです
+
+#### Output
+
+- `model`
+    - 標準の Load Diffusion Model と同じ。
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Checkpoint 名、ハッシュ、フルパス。
+    - 正確には `unet_name` ですが、`D2 Checkpoint Loader` と揃えるために `ckpt_name` にしました
+- `d2_pipe`
+    - `model` / `ckpt_name` をまとめたもの。`D2 KSampler` へ接続できます。
+    - このノードは VAE / CLIP を読み込まないため、`d2_pipe` には `model` のみ含まれます（`clip` / `vae` は別途接続が必要です）
+
+
+---
+
+
+### D2 Load Diffusion Model Set
+
+<img src="../img/load_diffusion_model_set.png?2">
+
+- `Load Diffusion Model` ＋ `Load VAE` ＋ `Load CLIP` を1つにまとめたローダー
+- `model` / `clip` / `vae` をまとめて読み込み、`d2_pipe` として出力できる
+- `D2 KSampler` へ `d2_pipe` 1本で接続すれば、`model` / `clip` / `vae` の個別接続が不要になります
+
+#### Input
+
+- `d2_pipe`
+  - このノード自身では使用しないが、受け取った `d2_pipe` に `model` などを追加する
+- `unet_name` / `weight_dtype`: 標準の `Load Diffusion Model` と同じです
+- `vae_name`: 標準の `Load VAE` と同じです
+- `clip_name` / `clip_type`: 標準の `Load CLIP` と同じです
+
+#### Output
+
+- `model` / `clip` / `vae`
+    - 標準の各ローダーと同じ。
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Diffusion Model 名、ハッシュ、フルパス。
+    - 正確には `unet_name` ですが、`D2 Checkpoint Loader` と揃えるために `ckpt_name` にしました
+- `d2_pipe`
+    - `model` / `clip` / `vae` / `ckpt_name` をまとめたもの。`D2 KSampler` へ1本で接続できます。
+
+
+---
+
+
+### D2 Controlnet Loader
+
+<figure>
+<img src="../img/controlnet_2.png">
+</figure>
+
+- `D2 KSampler` に接続してシンプルなワークフローが作れる Controlnet Loader
+- `controlnet_type` で `StableDiffusion`（通常の Controlnet）と `Anima`（kohya-ss氏の Anima-LLLite）を切り替えられる
+  - `Anima` を使うには [ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite) をインストールしておく必要がある
+
+#### Input
+
+- `controlnet_type`
+  - `StableDiffusion`: 通常の Controlnet
+  - `Anima`: kohya-ss の Anima-LLLite（[ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite) が必要）
+- `cnet_stack`
+  - `D2 Controlnet Loader` 接続用
+
+#### Output
+
+- `cnet_stack`
+  - `D2 KSampler` または `D2 Controlnet Loader` 接続用
+
+
+
+---
+
+
+### D2 Merge Cnet
+
+<figure>
+<img src="../img/merge-cnet.png">
+</figure>
+
+- 複数の `cnet_stack` を1つにまとめるノード
+- `cnet_stack_count` の数だけ入力が増減する
+- 未接続の入力は無視されるので、一部だけ接続した状態でも使える
+- 複数の Controlnet を使ってる状況で、特定の Controlnet だけ無効化したい時などに使う
+
+#### Input
+
+- `cnet_stack_count`
+  - 入力する `cnet_stack` の数（1〜10）
+- `cnet_stack_1` 〜 `cnet_stack_10`
+  - `D2 Controlnet Loader` などの `cnet_stack` を接続する
+
+#### Output
+
+- `cnet_stack`
+  - `D2 KSampler` または `D2 Controlnet Loader` 接続用
+
+
+
+---
+
+
+### D2 Load Lora
+
+<figure>
+<img src="../img/loadlora.png?2">
+</figure>
+
+- テキストでLoraを指定できるLoraローダー
+- model_weight / clip_weight も指定可能
+
+<figure>
+<img src="../img/loadlora_a1111.png">
+</figure>
+
+- StableDiffusion webui A1111 と同じ書式を使うモード（a1111）と、LoRA名を並べるだけのモード（simple）がある
+- 具体的な使い方は<a href="workflow.md">サンプルワークフロー</a>を参照
+
+
+#### Input
+
+- `mode`
+  - `a1111`: StableDiffusion webui A1111と同じ書式が使用可能なモード
+  - `simple`: LoRA名を並べるだけのシンプルなモード。このモードでは output の `STRING` は使わない
+
+#### Output
+
+- `MODEL` / `CLIP`: LoRA適用済みのMODEL、CLIP
+- `prompt`: 入力されたテキストをそのまま出力
+- `formatted_prompt`: LoRA指定部分が削除されたテキスト
+
+
+#### モードによる書式の違い
+
+**mode: a1111**
+`<lora:〜>` と表記する。
+
+```
+<lora:lora_name:1>
+```
+
+**mode: simple**
+前後の装飾は不要
+```
+lora_name:1
+```
+
+#### Weight指定方法
+`{lora_name}:{model_weight}:{clip_weight}` という書式で記述する。
+```
+foo:0.8:1
+```
+clip_weight が指定されていない場合は model_weight と同じ値が適用される。
+下記は同じ意味になる。
+```
+foo:0.8
+foo:0.8:0.8
+```
+weight が指定されていない場合は「1」が適用される
+下記は同じ意味になる。
+```
+foo
+foo:1:1
+```
+
+#### simpleモードで複数のLoRAを指定する方法
+
+改行で区切る
+```
+foo:0.5
+bar
+```
+1行に2種類記述するときは「,」で区切る
+```
+foo:0.5,bar
+```
+
+#### コメントアウト
+「//」または「#」で開始する行は無視されます。
+```
+//foo:0.5
+#bar
+```
+
+
+---
+
+
+## :tomato: Size Node
+
+
+### D2 Get Image Size
+
+<figure>
+<img src="../img/get_image_size.png">
+</figure>
+
+- サイズの出力と表示を両方行う
+
+
+---
+
+
+### D2 Size Selector
+
+<figure>
+<img src="../img/sizeselector_2.png">
+</figure>
+
+- 画像サイズをプリセットから選択できるノード
+- 画像からサイズを取得することも可能
+- 数値の丸め方を `Ceil / Float / None` から選択可能
+
+#### Input
+
+- `images`
+    - 画像からサイズを取得する時に使用
+    - `preset` を `custom` にする必要がある
+- `preset`
+    - サイズのプリセット
+    - この下の `width` `height` や `images` のサイズを使う時は `custom` にする必要がある
+    - プリセットを変更したい時は `/custom_nodes/D2-nodes-ComfyUI/config/sizeselector_config.yaml` を編集
+- `width` / `height`
+    - 縦横サイズ
+    - `preset` を `custom` にする必要がある
+- `swap_dimensions`
+    - width / height を入れ替える
+- `upscale_factor`
+    - 他のリサイズ系ノードに渡す数値。このノードでは何もしない
+- `prescale_factor`
+    - この倍率でリサイズしてから width / height を出力する
+- `round_method`
+    - `Round` : 四捨五入する
+    - `Floor` : 切り落とす
+    - `None` : 何もしない 
+- `batch_size`
+    - empty_latent にセットする batch size
+
+#### Output
+
+- `width / height`
+    - 入力された `width`、`height` に `prescale_factor` を乗算する
+- `upscale_factor` / `prescale_factor`
+    - Input されたものをパススルーする
+- `batch_size`
+    - Input されたものをパススルーする
+- `empty_latent`
+    - 指定されたサイズ、batch size で作成した latent を出力
+
+
+---
+
+### D2 Image Resize
+
+<figure>
+<img src="../img/image_resize_3.png">
+</figure>
+
+- 画像とマスクのリサイズおよび回転
+- 倍率は小数点３位まで指定可能
+- 小数点の四捨五入、切り捨て、切り上げが選択できる
+- アップスケールモデルを使ったアップスケールが可能
+- Latent出力も可能（VAEが必要）
+- 回転は 90 / 180 / 270 度の3種類から選択可能
+
+---
+
+### D2 Resize Calculator
+
+<figure>
+<img src="../img/resize_calc.png">
+</figure>
+
+- 四捨五入、切り捨て、切り上げが選択できる
+
+---
+
+
+
+
+
+## :tomato: Refiner Node
+
+
+
+
+### D2 Refiner Steps
+
+<figure>
+<img src="../img/refiner_steps.png">
+</figure>
+
+- Refiner 用の steps を出力するノード
+
+
+#### Input
+
+- `steps`
+    - 総 step 数
+- `start`
+    - 最初の KSampler の開始する steps
+- `end`
+    - 最初の KSampler の終了する steps
+
+#### Output
+
+- `steps` / `start` / `end`
+    - Input のパススルー
+- `refiner_start`
+    - 2 つめの KSampler の開始する steps
+
+
+---
+
+### D2 Refiner Steps A1111
+
+<figure>
+<img src="../img/refiner_a1111.png">
+</figure>
+
+- img2img で Refiner するために denoise も指定できるノード
+
+
+#### Input
+
+- `steps`
+    - 総 step 数
+- `denoise`
+    - img2img の denoise を指定する
+- `switch_at`
+    - 総 steps 数の何割で次の KSampler に切り替えるか
+
+#### Output
+
+- `steps` /
+    - Input のパススルー
+- `start`
+    - 最初の KSampler の開始 steps
+- `end`
+    - 最初の KSampler の終了 steps
+- `refiner_start`
+    - 2 つめの KSampler の開始する steps
+
+---
+
+
+### D2 Refiner Steps Tester
+
+- steps を確認するためのノード
+
+
+---
+
+
+## :tomato: Other Node
+
+
+### D2 Model and CLIP Merge SDXL
+
+<figure>
+  <img src="../img/merge_sdxl.png">
+</figure>
+
+- ModelMergeSDXL と CLIPMergeSimple を合体させたノード
+- XYPlot で使いやすいように、各 weight をカンマ区切りで指定可能にした
+- この図では `0.85,0.85,1,1,0.4,0.4,1,0.4,0.4,0.4,1,0.4,0.4,0.4,0,0.55,0.85,0.85,0.85,0.85,0.85,0.85,1,1,0.65` を指定している
+
+---
+
+
+### D2 Any Delivery
+
+<figure>
+  <img src="../img/any-delivery.png">
+</figure>
+
+- 複数の要素をまとめて受け渡すことができるノード
+- `D2 Any Delivery` 同士を繋いで、データをパッケージとして受け渡しできる
+- 必要な入出力を `_label` に記入し、動的に追加することができる
+- ComfyUI のアップデートで <a href="https://github.com/Trung0246/ComfyUI-0246" target="_blank">ComfyUI-0246</a> の `Highway` が使えなくなってしまったので作りました
+  - 本家がアップデートしたらそっちを使うほうがいいと思います
+
+#### Input
+
+- `_package`
+  - 他の `D2 Any Delivery` から受け取るパッケージ
+- `_label`
+  - 入出力の定義を記入する
+  - `>width; >height; <width` のように指定する
+  - `>` で始まる項目は input として追加される
+  - `<` で始まる項目は output として追加される
+  - `;` で区切って複数指定可能
+- `_update`
+  - `_label` の内容に従って入出力を更新する
+
+#### Output
+
+- `_package`
+  - 他の D2_AnyDelivery へ渡すパッケージ
+  - input で受け取った値がすべて格納される
+- `_label` で `<` を付けて指定した項目
+  - `_package` から取り出された値が出力される
+
+#### _label 記入例
+
+入力に `width` `height` を追加
+```
+>width; >height
+```
+
+出力に `width` `height` を追加
+```
+<width; <height
+```
+
+入力に `prompt` `seed`、出力に `width` `height` を追加
+```
+>prompt; >seed; <width; <height
+```
+
+---
+
+
+### D2 Preset Selector
+
+<figure>
+  <img src="../img/preset_selector.png">
+</figure>
+
+- 複数パラメータのプリセットをテキストで定義し、プルダウンで1つ選ぶとまとめて出力するノード
+- Checkpoint ごとの推奨 `steps` / `cfg` などをセットで切り替える用途を想定
+- `preset_text` に書式を記入して `_update` を押すと、出力スロットとプルダウンが再構築される
+
+#### Input
+
+- `preset`
+  - プルダウン。選択中のプリセット
+  - `preset_text` の3行目以降のタイトルが選択肢になる
+- `preset_name`
+  - 外部からプリセット名を文字列で受け取る入力（forceInput）
+  - 接続されていて空文字列でなければ、`preset`（プルダウン選択）より優先される
+- `preset_text`
+  - プリセット定義テキスト（書式は後述）
+  - 初期状態でサンプルが入っているので、そのまま試せる
+- `_update`
+  - `preset_text` の内容に従って出力スロットとプルダウンを更新する
+
+#### Output
+
+- `preset_text` の1行目で定義した名前ごとに出力スロットが作られる
+- 選択中のプリセットの値が、2行目で指定した型に変換されて出力される
+
+#### preset_text の書式
+
+```
+steps;cfg
+INT;FLOAT
+Anima;15;1.5
+Illustrious;20;5.0
+```
+
+- 1行目：出力名（`;` 区切り）
+- 2行目：出力の型（`INT` / `FLOAT` / `STRING` / `BOOLEAN`）
+- 3行目以降：`タイトル;値1;値2…`（プリセット1つにつき1行）。タイトル（先頭セル）は必須で、空にするとエラーになる
+
+上の例で `Anima` を選ぶと `steps`=15、`cfg`=1.5 が出力される。
+
+#### 制約
+
+- `STRING` の値に区切り文字 `;` は使えない
+- `preset` プルダウンへの Primitive ノード接続は非対応（ComfyUI の仕様により選択肢が表示されない）。リロード・ワークフロー読込・サブグラフ入力は正常に動作する
+
+---
+
+
+### D2 Save Audio Eagle
+
+<figure>
+  <img src="../img/save_audio_eagle.png">
+</figure>
+
+- オーディオファイルをEagleに送信するノード
+- 従来のフォルダにも二重で保存されるのでドライブ残容量に注意
+
+#### Input
+
+- `audio`
+  - 保存する音声を入力
+- `filename_prefix`
+  - 保存ファイル名
+- `eagle_folder`
+  - Eagleの保存先フォルダ名
+- `format`
+  - FLAC / MP3 / Opus から選択
+- `mp3_quality`
+  - `format` が `mp3` の時に使用するビットレート
+- `opus_quality`
+  - `format` が `Opus` の時に使用するビットレート
+- `memo_text`
+  - Eagleのメモ欄に保存するテキスト
+

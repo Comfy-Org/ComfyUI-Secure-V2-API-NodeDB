@@ -1,0 +1,1116 @@
+from typing import Optional
+from dataclasses import replace
+import os
+import sys
+import re
+from PIL import Image, ImageOps, ImageSequence, ImageFile
+import numpy as np
+from aiohttp import web
+from torchvision import transforms
+import numpy as np
+from transformers import CLIPTokenizer
+
+import folder_paths
+import comfy.sd
+import comfy.samplers
+from comfy_api.latest import io
+from comfy_extras.nodes_model_advanced import RescaleCFG, ModelSamplingDiscrete
+
+from comfy_execution.graph_utils import GraphBuilder
+from comfy_execution.graph import ExecutionBlocker
+# from nodes import common_ksampler, CLIPTextEncode, PreviewImage, LoadImage, SaveImage, ControlNetApplyAdvanced, LoraLoader
+from nodes import common_ksampler, CLIPTextEncode, PreviewImage, LoadImage, SaveImage, LoraLoader
+from comfy_extras.nodes_controlnet import ControlNetInpaintingAliMamaApply
+from server import PromptServer
+from nodes import NODE_CLASS_MAPPINGS as nodes_NODE_CLASS_MAPPINGS
+from nodes import UNETLoader, VAELoader, CLIPLoader
+
+from .modules import util
+from .modules.util import D2_TD2Pipe, D2_TDelivery, AnyType, AnyTypeTuple, AnyFalseList
+from .modules import checkpoint_util
+from .modules.template_util import replace_template
+
+
+
+
+"""
+Controlnet object wrapper
+"""
+class D2_Cnet:
+    def __init__(self, controlnet_type, controlnet_name, image, strength, start_percent, end_percent, mask=None, vae=None):
+        self.controlnet_type = controlnet_type
+        self.controlnet_name = controlnet_name
+        self.image = image
+        self.mask = mask
+        self.vae = vae
+        self.strength = strength
+        self.start_percent = start_percent
+        self.end_percent = end_percent
+
+        # Anima(LLLite)は標準 ControlNet 形式ではないため、ここでは読み込まない。
+        # 重みの読み込みは AnimaLLLiteApply 側が controlnet_name から行う。
+        if controlnet_type == "Anima":
+            self.controlnet_path = None
+            self.controlnet = None
+        else:
+            self.controlnet_path = folder_paths.get_full_path_or_raise("controlnet", controlnet_name)
+            self.controlnet = comfy.controlnet.load_controlnet(self.controlnet_path)
+
+
+
+
+
+"""
+
+D2 KSampler
+positive / negative 入力に文字列が使える KSampler
+
+"""
+class D2_KSampler(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 KSampler",
+            display_name="D2 KSampler",
+            category="D2",
+            is_output_node=True,
+            inputs=[
+                io.Model.Input("model", optional=True),
+                io.Clip.Input("clip", optional=True),
+                io.Vae.Input("vae", optional=True),
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
+                io.Int.Input("steps", default=20, min=1, max=10000),
+                io.Float.Input("cfg", default=7.0, min=0.0, max=100.0, step=0.01),
+                io.Combo.Input("sampler_name", options=comfy.samplers.KSampler.SAMPLERS),
+                io.Combo.Input("scheduler", options=comfy.samplers.KSampler.SCHEDULERS),
+                io.Latent.Input("latent_image"),
+                io.Float.Input("denoise", default=1.0, min=0.0, max=1.0, step=0.01),
+                io.Combo.Input("preview_method", options=["auto", "latent2rgb", "taesd", "vae_decoded_only", "none"]),
+                io.String.Input("positive", default="", multiline=True),
+                io.String.Input("negative", default="", multiline=True),
+                io.Custom("D2_CNET_STACK").Input("cnet_stack", optional=True),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+                io.Latent.Output(display_name="LATENT"),
+                io.Model.Output(display_name="MODEL"),
+                io.Clip.Output(display_name="CLIP"),
+                io.String.Output(display_name="positive"),
+                io.String.Output(display_name="formatted_positive"),
+                io.String.Output(display_name="negative"),
+                io.Conditioning.Output(display_name="positive_cond"),
+                io.Conditioning.Output(display_name="negative_cond"),
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo, io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(cls, seed, steps, cfg, sampler_name, scheduler, latent_image, denoise,
+            preview_method, positive, negative, model=None, clip=None, vae=None, cnet_stack=None, d2_pipe=None) -> io.NodeOutput:
+        return cls._execute_core(
+            model, clip, vae, seed, steps, cfg, sampler_name, scheduler, latent_image, denoise,
+            preview_method, positive, negative,
+            cnet_stack=cnet_stack, d2_pipe=d2_pipe,
+            prompt=cls.hidden.prompt, extra_pnginfo=cls.hidden.extra_pnginfo,
+        )
+
+    # KSampler / KSamplerAdvanced の共通本体。
+    # サブクラス（Advanced）から呼ばれるため hidden は cls.hidden を読まず引数で受け取る。
+    @classmethod
+    def _execute_core(cls, model, clip, vae, seed, steps, cfg, sampler_name, scheduler, latent_image, denoise,
+            preview_method, positive, negative, positive_cond=None, negative_cond=None, cnet_stack=None,
+            d2_pipe:Optional[D2_TD2Pipe]=None, prompt=None, extra_pnginfo=None,
+            add_noise=None, start_at_step=None, end_at_step=None, return_with_leftover_noise=None, sampler_type="regular",
+            token_normalization="none", weight_interpretation="comfy") -> io.NodeOutput:
+
+        util.set_preview_method(preview_method)
+
+        # positive / negative 以外は pipe を優先する
+        # 入力 d2_pipe は直接変更せず、必要に応じてコピーを作成する
+        if d2_pipe is None:
+            d2_pipe = D2_TD2Pipe(
+                positive = positive,
+                negative = negative,
+                seed = seed,
+                steps = steps,
+                cfg = cfg,
+                sampler_name = sampler_name,
+                scheduler = scheduler,
+                denoise = denoise,
+            )
+        else:
+            d2_pipe = D2_TD2Pipe(
+                ckpt_name = d2_pipe.ckpt_name,
+                positive = d2_pipe.positive,
+                negative = d2_pipe.negative,
+                seed = d2_pipe.seed,
+                steps = d2_pipe.steps,
+                cfg = d2_pipe.cfg,
+                sampler_name = d2_pipe.sampler_name,
+                scheduler = d2_pipe.scheduler,
+                denoise = d2_pipe.denoise,
+                width = d2_pipe.width,
+                height = d2_pipe.height,
+                model = d2_pipe.model,
+                clip = d2_pipe.clip,
+                vae = d2_pipe.vae,
+                positive_cond = d2_pipe.positive_cond,
+                negative_cond = d2_pipe.negative_cond,
+            )
+            if positive:
+                d2_pipe.positive = positive
+            if negative:
+                d2_pipe.negative = negative
+            # その他のパラメータが空の場合、ksamplerの引数値を使用
+            if d2_pipe.seed is None:
+                d2_pipe.seed = seed
+            if d2_pipe.steps is None:
+                d2_pipe.steps = steps
+            if d2_pipe.cfg is None:
+                d2_pipe.cfg = cfg
+            if not d2_pipe.sampler_name:
+                d2_pipe.sampler_name = sampler_name
+            if not d2_pipe.scheduler:
+                d2_pipe.scheduler = scheduler
+            if d2_pipe.denoise is None:
+                d2_pipe.denoise = denoise
+        # print("pipe2", d2_pipe)
+
+        # model / clip / vae / positive_cond / negative_cond は既存入力を優先する。
+        # 入力（引数）が None でなければそれで上書きし、None のときだけ pipe の値を使う
+        # （positive / negative と同じ「既存入力を優先」の方針）。
+        if model is not None:
+            d2_pipe.model = model
+        if clip is not None:
+            d2_pipe.clip = clip
+        if vae is not None:
+            d2_pipe.vae = vae
+        if positive_cond is not None:
+            d2_pipe.positive_cond = positive_cond
+        if negative_cond is not None:
+            d2_pipe.negative_cond = negative_cond
+
+        # 以降は pipe に統合された値を使う
+        model = d2_pipe.model
+        clip = d2_pipe.clip
+        vae = d2_pipe.vae
+        positive_cond = d2_pipe.positive_cond
+        negative_cond = d2_pipe.negative_cond
+
+        # lora 適用を試みる
+        lora_params, formatted_positive = D2_LoadLora.get_params_a1111(d2_pipe.positive)
+        lora_model, lora_clip = D2_LoadLora.apply_lora(model, clip, lora_params)
+
+        # コンディショニング作成
+        # コンディショニングが入力されていたらそちらを優先する
+        if positive_cond != None:
+            positive_encoded = positive_cond
+        else:
+            positive_encoded = cls._create_conditioning(lora_clip, formatted_positive, token_normalization, weight_interpretation)
+
+        if negative_cond != None:
+            negative_encoded = negative_cond
+        else:
+            negative_encoded = cls._create_conditioning(lora_clip, d2_pipe.negative, token_normalization, weight_interpretation)
+
+
+        # control net
+        if isinstance(cnet_stack, list):
+            for d2_cnet in cnet_stack:
+                # ControlNetが Animaの場合
+                # Anima は MODEL をラップするため、実際にサンプリングする lora_model に適用する
+                if(d2_cnet.controlnet_type == "Anima"):
+                    lora_model = cls._apply_controlnet_anima(d2_cnet, lora_model)
+                else:
+                    positive_encoded, negative_encoded = cls._apply_controlnet_stablediffusion(
+                        d2_cnet, positive_encoded, negative_encoded
+                    )
+
+        disable_noise = add_noise == "disable"
+        force_full_denoise = return_with_leftover_noise != "enable"
+
+        # KSampler実行
+        latent = common_ksampler(
+            lora_model, d2_pipe.seed, d2_pipe.steps, d2_pipe.cfg, d2_pipe.sampler_name, d2_pipe.scheduler, 
+            positive_encoded, negative_encoded, latent_image, 
+            denoise=d2_pipe.denoise, disable_noise=disable_noise, 
+            start_step=start_at_step, last_step=end_at_step, force_full_denoise=force_full_denoise
+        )[0]
+
+        latent_samples = latent['samples']
+        images = vae.decode(latent_samples)
+
+        if len(images.shape) == 5: #Combine batches
+            images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+
+        # images から width, height を取得して d2_pipe に登録する
+        d2_pipe.width = images.shape[2]
+        d2_pipe.height = images.shape[1]
+
+        results_images = PreviewImage().save_images(images, "d2", prompt, extra_pnginfo)['ui']['images']
+
+        return io.NodeOutput(
+            images, latent, lora_model, lora_clip, d2_pipe.positive, formatted_positive, d2_pipe.negative, positive_encoded, negative_encoded, d2_pipe,
+            ui={"images": results_images},
+        )
+
+
+    @classmethod
+    def _apply_controlnet_stablediffusion(cls, d2_cnet, positive_encoded, negative_encoded):
+        """
+        StableDiffusion の Controlnet の適用
+        """
+        # ControlNetが StableDiffusionの場合
+        # controlnet_conditioning = ControlNetApplyAdvanced().apply_controlnet(
+        controlnet_conditioning = ControlNetInpaintingAliMamaApply().execute(
+            positive = positive_encoded,
+            negative = negative_encoded, 
+            control_net = d2_cnet.controlnet,
+            vae = d2_cnet.vae,
+            image = d2_cnet.image,
+            mask = d2_cnet.mask,
+            strength = d2_cnet.strength,
+            start_percent = d2_cnet.start_percent,
+            end_percent = d2_cnet.end_percent
+        )
+        positive_encoded, negative_encoded = controlnet_conditioning[0], controlnet_conditioning[1]
+
+        return positive_encoded, negative_encoded
+
+
+    @classmethod
+    def _apply_controlnet_anima(cls, d2_cnet, model):
+        """
+        Anima の Controlnet(LLLite) の適用
+        https://github.com/kohya-ss/ComfyUI-Anima-LLLite が必要
+
+        AnimaLLLiteApply は MODEL を model_function_wrapper でラップして返すノードなので、
+        StableDiffusion 系のように conditioning を加工するのではなく MODEL 自体を差し替える。
+        外部クラスの読み込みは _create_conditioning と同様に sys.path 経由で行うが、
+        Anima 側のモジュール名 `nodes` は ComfyUI 本体の `nodes` と衝突するため、
+        importlib でパッケージ（ComfyUI-Anima-LLLite）として読み込む。
+        """
+        try:
+            import importlib
+            custom_nodes_path = str(util.COMFYUI_PATH / "custom_nodes")
+            if custom_nodes_path not in sys.path:
+                sys.path.append(custom_nodes_path)
+            anima_module = importlib.import_module("ComfyUI-Anima-LLLite")
+            AnimaLLLiteApply = anima_module.NODE_CLASS_MAPPINGS["AnimaLLLiteApply"]
+
+            # apply はインスタンスメソッドで戻り値は (MODEL,) のタプル
+            model = AnimaLLLiteApply().apply(
+                model = model,
+                lllite_name = d2_cnet.controlnet_name,
+                image = d2_cnet.image,
+                strength = d2_cnet.strength,
+                start_percent = d2_cnet.start_percent,
+                end_percent = d2_cnet.end_percent,
+                mask = d2_cnet.mask,
+            )[0]
+
+        except (ImportError, AttributeError, ValueError, KeyError) as e:
+            print(f"[D2 KSampler] Error: {e} //////////////" )
+            print("ComfyUI-Anima-LLLite を読み込めませんでした。\nComfyUI-Anima-LLLite をインストールする必要があります。\nhttps://github.com/kohya-ss/ComfyUI-Anima-LLLite")
+
+        return model
+
+
+    @classmethod
+    def _create_conditioning(cls, clip, prompt, token_normalization="none", weight_interpretation="comfy", affect_pooled='disable'):
+        """
+        コンディショニングを作成
+        """
+        if token_normalization != "none" or weight_interpretation != "comfy":
+            # CLIP weight調整
+            try:
+                adv_clip_path = str(util.COMFYUI_PATH / "custom_nodes/ComfyUI_ADV_CLIP_emb")
+                sys.path.append(adv_clip_path)
+                import adv_encode
+                embeddings_final, pooled = adv_encode.advanced_encode(clip, prompt, token_normalization, weight_interpretation, w_max=1.0, apply_to_pooled=affect_pooled=='enable')
+                encoded = [[embeddings_final, {"pooled_output": pooled}]]
+                
+            except (ImportError, AttributeError, ValueError) as e:
+                print(f"[D2 KSampler] Error: {e} //////////////" )
+                print("ComfyUI_ADV_CLIP_emb を読み込めませんでした。\ntoken_normalization, weight_interpretation を変更するには ComfyUI_ADV_CLIP_emb をインストールする必要があります。\nhttps://github.com/BlenderNeko/ComfyUI_ADV_CLIP_emb/")
+                (encoded,) = CLIPTextEncode().encode(clip, prompt)
+
+        else:
+            (encoded,) = CLIPTextEncode().encode(clip, prompt)
+
+        return encoded
+
+"""
+
+D2 KSampler(Advanced)
+positive / negative 入力に文字列が使える KSampler Advanced
+
+"""
+class D2_KSamplerAdvanced(D2_KSampler):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 KSampler(Advanced)",
+            display_name="D2 KSampler(Advanced)",
+            category="D2",
+            is_output_node=True,
+            inputs=[
+                io.Model.Input("model", optional=True),
+                io.Clip.Input("clip", optional=True),
+                io.Vae.Input("vae", optional=True),
+                io.Combo.Input("add_noise", options=["enable", "disable"]),
+                io.Int.Input("noise_seed", default=0, min=0, max=0xffffffffffffffff),
+                io.Int.Input("steps", default=20, min=1, max=10000),
+                io.Float.Input("cfg", default=7.0, min=0.0, max=100.0, step=0.01),
+                io.Combo.Input("sampler_name", options=comfy.samplers.KSampler.SAMPLERS),
+                io.Combo.Input("scheduler", options=comfy.samplers.KSampler.SCHEDULERS),
+                io.Latent.Input("latent_image"),
+                io.Int.Input("start_at_step", default=0, min=0, max=10000),
+                io.Int.Input("end_at_step", default=10000, min=0, max=10000),
+                io.Combo.Input("return_with_leftover_noise", options=["disable", "enable"]),
+                io.Combo.Input("token_normalization", options=["none", "mean", "length", "length+mean"]),
+                io.Combo.Input("weight_interpretation", options=["comfy", "A1111", "compel", "comfy++", "down_weight"]),
+                io.Combo.Input("preview_method", options=["auto", "latent2rgb", "taesd", "vae_decoded_only", "none"]),
+                io.String.Input("positive", default="", multiline=True),
+                io.String.Input("negative", default="", multiline=True),
+                io.Conditioning.Input("positive_cond", optional=True),
+                io.Conditioning.Input("negative_cond", optional=True),
+                io.Custom("D2_CNET_STACK").Input("cnet_stack", optional=True),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+                io.Latent.Output(display_name="LATENT"),
+                io.Model.Output(display_name="MODEL"),
+                io.Clip.Output(display_name="CLIP"),
+                io.String.Output(display_name="positive"),
+                io.String.Output(display_name="formatted_positive"),
+                io.String.Output(display_name="negative"),
+                io.Conditioning.Output(display_name="positive_cond"),
+                io.Conditioning.Output(display_name="negative_cond"),
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo, io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(cls, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, latent_image,
+            start_at_step, end_at_step, return_with_leftover_noise, token_normalization, weight_interpretation,
+            preview_method, positive, negative, model=None, clip=None, vae=None, positive_cond=None, negative_cond=None, cnet_stack=None, d2_pipe=None) -> io.NodeOutput:
+
+        return cls._execute_core(model, clip, vae, noise_seed, steps, cfg, sampler_name, scheduler, latent_image, 1.0,
+            preview_method, positive, negative,
+            positive_cond=positive_cond, negative_cond=negative_cond, cnet_stack=cnet_stack, d2_pipe=d2_pipe,
+            prompt=cls.hidden.prompt, extra_pnginfo=cls.hidden.extra_pnginfo,
+            add_noise=add_noise, start_at_step=start_at_step, end_at_step=end_at_step,
+            return_with_leftover_noise=return_with_leftover_noise,
+            token_normalization=token_normalization, weight_interpretation=weight_interpretation,
+            sampler_type="advanced")
+
+
+
+
+"""
+
+D2_CheckpointLoader
+Checkpointのフルパスを取得できる Checkpoint Loader
+
+"""
+class D2_CheckpointLoader(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Checkpoint Loader",
+            display_name="D2 Checkpoint Loader",
+            category="D2",
+            inputs=[
+                io.Combo.Input("ckpt_name", options=folder_paths.get_filename_list("checkpoints")),
+                io.Boolean.Input("auto_vpred", default=True),
+                io.Combo.Input("sampling", options=["normal", "eps", "v_prediction", "lcm", "x0"]),
+                io.Boolean.Input("zsnr", default=False),
+                io.Float.Input("multiplier", default=0.6, min=0.0, max=1.0, step=0.01),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+            ],
+            outputs=[
+                io.Model.Output(display_name="model"),
+                io.Clip.Output(display_name="clip"),
+                io.Vae.Output(display_name="vae"),
+                io.String.Output(display_name="ckpt_name"),
+                io.String.Output(display_name="ckpt_hash"),
+                io.String.Output(display_name="ckpt_fullpath"),
+                io.String.Output(display_name="sampling"),
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+            ],
+            hidden=[io.Hidden.unique_id, io.Hidden.extra_pnginfo, io.Hidden.prompt],
+        )
+
+    @classmethod
+    def execute(
+            cls,
+            ckpt_name,
+            auto_vpred = True,
+            sampling = "normal",
+            zsnr = False,
+            multiplier = 0.6,
+            d2_pipe = None,
+        ) -> io.NodeOutput:
+        ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+        out = comfy.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+        model = out[0]
+        clip = out[1]
+        vae = out[2]
+
+        # vpred対応準備
+        model_sampling = ModelSamplingDiscrete()
+        rescale_cfg = RescaleCFG()
+
+        if auto_vpred and "vpred" in ckpt_name.lower():
+            sampling = "v_prediction"
+            model = model_sampling.patch(model, "v_prediction", zsnr)[0]
+            model = rescale_cfg.patch(model, multiplier)[0]
+
+        elif sampling != "normal":
+            model = model_sampling.patch(model, sampling, zsnr)[0]
+            model = rescale_cfg.patch(model, multiplier)[0]
+
+        hash = checkpoint_util.get_file_hash(ckpt_path)
+        ckpt_name = os.path.basename(ckpt_name)
+
+        # 入力 d2_pipe があればその値を引き継ぎ、無ければ新規作成する。
+        # 元インスタンスを変更しないよう replace でコピーしてから、このノードが読み込んだ値で上書きする
+        d2_pipe = D2_TD2Pipe() if d2_pipe is None else replace(d2_pipe)
+        d2_pipe.ckpt_name = ckpt_name
+        d2_pipe.model = model
+        d2_pipe.clip = clip
+        d2_pipe.vae = vae
+
+        return io.NodeOutput(model, clip, vae, ckpt_name, hash, ckpt_path, sampling, d2_pipe)
+
+
+
+"""
+
+D2_LoadDiffusionModel
+Checkpointのフルパスを取得できる Load Diffusion Model
+
+"""
+class D2_LoadDiffusionModel(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Load Diffusion Model",
+            display_name="D2 Load Diffusion Model",
+            category="D2",
+            inputs=[
+                io.Combo.Input("unet_name", options=folder_paths.get_filename_list("diffusion_models")),
+                io.Combo.Input("weight_dtype", options=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"]),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+            ],
+            outputs=[
+                io.Model.Output(display_name="model"),
+                io.String.Output(display_name="ckpt_name"),
+                io.String.Output(display_name="ckpt_hash"),
+                io.String.Output(display_name="ckpt_fullpath"),
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, unet_name, weight_dtype, d2_pipe = None) -> io.NodeOutput:
+        ckpt_path = folder_paths.get_full_path("diffusion_models", unet_name)
+        hash = checkpoint_util.get_file_hash(ckpt_path)
+        ckpt_name = os.path.basename(unet_name)
+
+        # V3 では V1 クラス UNETLoader を継承できないため、インスタンス経由で呼ぶ（挙動は同一）
+        out = UNETLoader().load_unet(unet_name, weight_dtype)
+        model = out[0]
+
+        # 入力 d2_pipe があればその値を引き継ぎ、無ければ新規作成する（元インスタンスは replace でコピー）
+        d2_pipe = D2_TD2Pipe() if d2_pipe is None else replace(d2_pipe)
+        d2_pipe.ckpt_name = ckpt_name
+        d2_pipe.model = model
+
+        return io.NodeOutput(model, ckpt_name, hash, ckpt_path, d2_pipe)
+
+
+
+"""
+
+D2_LoadDiffusionModelSet
+Load Diffusion Model + Load VAE + Load CLIP を1つにまとめたローダー。
+model / clip / vae をまとめて読み込み、最後に d2_pipe も出力する。
+
+"""
+class D2_LoadDiffusionModelSet(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        # VAE / CLIP の選択肢は本体ノードの定義から取得し、ComfyUI のバージョン差に追従する
+        vae_options = VAELoader.vae_list(VAELoader)
+        clip_type_options = CLIPLoader.INPUT_TYPES()["required"]["type"][0]
+
+        return io.Schema(
+            node_id="D2 Load Diffusion Model Set",
+            display_name="D2 Load Diffusion Model Set",
+            category="D2",
+            inputs=[
+                io.Combo.Input("unet_name", options=folder_paths.get_filename_list("diffusion_models")),
+                io.Combo.Input("weight_dtype", options=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"]),
+                io.Combo.Input("vae_name", options=vae_options),
+                io.Combo.Input("clip_name", options=folder_paths.get_filename_list("text_encoders")),
+                io.Combo.Input("clip_type", options=clip_type_options),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+            ],
+            outputs=[
+                io.Model.Output(display_name="model"),
+                io.Clip.Output(display_name="clip"),
+                io.Vae.Output(display_name="vae"),
+                io.String.Output(display_name="ckpt_name"),
+                io.String.Output(display_name="ckpt_hash"),
+                io.String.Output(display_name="ckpt_fullpath"),
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, unet_name, weight_dtype, vae_name, clip_name, clip_type, d2_pipe = None) -> io.NodeOutput:
+        ckpt_path = folder_paths.get_full_path("diffusion_models", unet_name)
+        hash = checkpoint_util.get_file_hash(ckpt_path)
+        ckpt_name = os.path.basename(unet_name)
+
+        # V3 では V1 クラスを継承できないため、いずれもインスタンス経由で呼ぶ（挙動は同一）
+        model = UNETLoader().load_unet(unet_name, weight_dtype)[0]
+        vae = VAELoader().load_vae(vae_name)[0]
+        clip = CLIPLoader().load_clip(clip_name, clip_type)[0]
+
+        # 入力 d2_pipe があればその値を引き継ぎ、無ければ新規作成する（元インスタンスは replace でコピー）
+        d2_pipe = D2_TD2Pipe() if d2_pipe is None else replace(d2_pipe)
+        d2_pipe.ckpt_name = ckpt_name
+        d2_pipe.model = model
+        d2_pipe.clip = clip
+        d2_pipe.vae = vae
+
+        return io.NodeOutput(model, clip, vae, ckpt_name, hash, ckpt_path, d2_pipe)
+
+
+
+"""
+
+D2 Controlnet Loader
+D2 Ksampler専用のcontrolnetローダー
+
+"""
+class D2_ControlnetLoader(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Controlnet Loader",
+            display_name="D2 Controlnet Loader",
+            category="D2",
+            inputs=[
+                io.Combo.Input("controlnet_type", options=["StableDiffusion", "Anima"]),
+                io.Combo.Input("controlnet_name", options=folder_paths.get_filename_list("controlnet")),
+                io.Image.Input("image"),
+                io.Float.Input("strength", default=1.0, min=0.0, max=10.0, step=0.001),
+                io.Float.Input("start_percent", default=0.0, min=0.0, max=1.0, step=0.001),
+                io.Float.Input("end_percent", default=1.0, min=0.0, max=1.0, step=0.001),
+                io.Mask.Input("mask", optional=True),
+                io.Vae.Input("vae", optional=True),
+                io.Custom("D2_CNET_STACK").Input("cnet_stack", optional=True),
+            ],
+            outputs=[
+                io.Custom("D2_CNET_STACK").Output(display_name="cnet_stack"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, controlnet_type, controlnet_name, image, strength, start_percent, end_percent, mask=None, vae=None, cnet_stack=None) -> io.NodeOutput:
+        d2_cnet = D2_Cnet(
+            controlnet_type, controlnet_name, image, strength, start_percent, end_percent, mask, vae
+        )
+
+        if isinstance(cnet_stack, list):
+            cnet_stack.append(d2_cnet)
+        else:
+            cnet_stack = [d2_cnet]
+
+        return io.NodeOutput(cnet_stack)
+
+
+
+"""
+
+D2 Merge Cnet
+    複数の cnet_stack を1本にマージするノード
+
+"""
+class D2_MergeCnet(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Merge Cnet",
+            display_name="D2 Merge Cnet",
+            category="D2",
+            inputs=[
+                io.Int.Input("cnet_stack_count", default=2, min=1, max=10, step=1),
+            ],
+            outputs=[
+                io.Custom("D2_CNET_STACK").Output(display_name="cnet_stack"),
+            ],
+            # JS が cnet_stack_1..N を addInput で動的追加するため **kwargs で受ける
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, cnet_stack_count, **kwargs) -> io.NodeOutput:
+        # 上流のリストを書き換えないよう新しいリストに詰め直す
+        merged_stack = []
+
+        for i in range(1, cnet_stack_count + 1):
+            cnet_stack = kwargs.get(f"cnet_stack_{i}")
+            if isinstance(cnet_stack, list):
+                merged_stack.extend(cnet_stack)
+
+        if len(merged_stack) == 0:
+            return io.NodeOutput(None)
+
+        return io.NodeOutput(merged_stack)
+
+
+
+"""
+
+D2 Load Lora
+    Loraの指定をテキストで行うノード
+
+"""
+class D2_LoadLora(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Load Lora",
+            display_name="D2 Load Lora",
+            category="D2",
+            inputs=[
+                io.Model.Input("model"),
+                io.Clip.Input("clip"),
+                io.String.Input("prompt", multiline=True),
+                io.Combo.Input("mode", options=["a1111", "simple"]),
+                io.Combo.Input("insert_lora", options=["CHOOSE"] + folder_paths.get_filename_list("loras")),
+            ],
+            outputs=[
+                io.Model.Output(display_name="MODEL"),
+                io.Clip.Output(display_name="CLIP"),
+                io.String.Output(display_name="prompt"),
+                io.String.Output(display_name="formatted_prompt"),
+            ],
+        )
+
+    ######
+    @classmethod
+    def execute(cls, model, clip, prompt, mode, insert_lora) -> io.NodeOutput:
+        if mode == "simple":
+            processed_params = cls.get_params_simple(prompt)
+            formatted_prompt = ""
+        else:
+            processed_params, formatted_prompt = cls.get_params_a1111(prompt)
+
+        model, clip = cls.apply_lora(model, clip, processed_params)
+
+        return io.NodeOutput(model, clip, prompt, formatted_prompt)
+
+    ######
+    @classmethod
+    def apply_lora(cls, model, clip, lora_params):
+        """
+        Loraを適用する
+
+        - lora_param: {lora_path}:{strength_model}:{strength_clip}
+        strength_clip が存在しない場合は strength_model と同じ値が適用される
+        strength_model が存在しない場合は strength_model / strength_clip 両方に「1」が適用される
+        """
+        for lora_param in lora_params:
+
+            # パラメータを分割
+            parts = lora_param.split(':')
+            lora_name = parts[0].strip()
+            
+            # strength_model と strength_clip の設定
+            if len(parts) > 1:
+                strength_model = float(parts[1].strip())
+            else:
+                strength_model = 1.0
+                
+            if len(parts) > 2:
+                strength_clip = float(parts[2].strip())
+            else:
+                strength_clip = strength_model
+                
+            # LoraLoader を使用して lora を適用
+            lora_loader = LoraLoader()
+            model, clip = lora_loader.load_lora(model, clip, lora_name, strength_model, strength_clip)
+
+        return model, clip
+
+    # シンプルモード
+    @classmethod
+    def get_params_simple(cls, lora_text):
+        """
+        LoRAパラメーターを返す
+        lora_text は下記のフォーマットのテキスト
+        -----------
+        {lora_name}:{strength_model}:{strength_clip}
+        {lora_name}:{strength_model}:{strength_clip},{lora_name}:{strength_model}:{strength_clip}
+        -----------
+        先頭が「#」または「//」で始まるものはコメントとして無視する
+        """
+        processed_params = []
+
+        # 入力文字列を改行で分割
+        params = lora_text.strip().split('\n')
+
+        # 文字列を検索して置換
+        for lora_param in params:
+            
+            # コメント行をスキップ
+            if lora_param.startswith('#') or lora_param.startswith('//') or not lora_param.strip():
+                continue
+
+            # カンマで分割して処理対象リストに追加
+            sub_params = lora_param.split(',')
+            for sub_param in sub_params:
+                if sub_param.strip():  # 空でない場合のみ追加
+                    processed_params.append(sub_param.strip())
+
+        return processed_params
+
+    # A1111モード
+    @classmethod
+    def get_params_a1111(cls, lora_text):
+        """
+        LoRAパラメーターを返す
+        lora_text は下記のフォーマットのテキスト
+        A1111のようにプロンプトの中に <〜> でLoRAパラメータが記載されている
+        -----------
+        promptA, promptB, promptC,
+        <lora:{lora_name}>, promptX,
+        <lora:{lora_name}:{strength_model}>
+        <lora:{lora_name}:{strength_model}:{strength_clip}>
+        promptY,
+        -----------
+        """
+        processed_params = []
+
+        # <> で囲まれたLoRAパラメータを検索
+        pattern = r'<lora:([^>]+)>'
+        matches = re.findall(pattern, lora_text, re.IGNORECASE)
+        
+        # マッチした各パラメータを処理
+        for match in matches:
+            # print(match)
+            # 空白を削除して processed_params に追加
+            processed_params.append(match.strip())
+        
+        # lora_text から <match> を削除
+        cleaned_text = re.sub(pattern, '', lora_text, flags=re.IGNORECASE)
+
+        return processed_params, cleaned_text
+
+
+
+
+"""
+
+D2 D2 Pipe
+
+"""
+class D2_Pipe(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Pipe",
+            display_name="D2 Pipe",
+            category="D2",
+            inputs=[
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+                io.String.Input("ckpt_name", force_input=True, optional=True),
+                io.String.Input("positive", force_input=True, optional=True),
+                io.String.Input("negative", force_input=True, optional=True),
+                io.Int.Input("seed", force_input=True, optional=True),
+                io.Int.Input("steps", force_input=True, optional=True),
+                io.Float.Input("cfg", force_input=True, optional=True),
+                io.String.Input("sampler_name", force_input=True, optional=True),
+                io.String.Input("scheduler", force_input=True, optional=True),
+                io.Float.Input("denoise", force_input=True, optional=True),
+                io.Int.Input("width", force_input=True, optional=True),
+                io.Int.Input("height", force_input=True, optional=True),
+                io.Model.Input("model", optional=True),
+                io.Clip.Input("clip", optional=True),
+                io.Vae.Input("vae", optional=True),
+                io.Conditioning.Input("positive_cond", optional=True),
+                io.Conditioning.Input("negative_cond", optional=True),
+            ],
+            outputs=[
+                io.Custom("D2_TD2Pipe").Output(display_name="d2_pipe"),
+                io.String.Output(display_name="ckpt_name"),
+                io.String.Output(display_name="positive"),
+                io.String.Output(display_name="negative"),
+                io.Int.Output(display_name="seed"),
+                io.Int.Output(display_name="steps"),
+                io.Float.Output(display_name="cfg"),
+                io.String.Output(display_name="sampler_name"),
+                io.String.Output(display_name="scheduler"),
+                io.Float.Output(display_name="denoise"),
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                io.Model.Output(display_name="model"),
+                io.Clip.Output(display_name="clip"),
+                io.Vae.Output(display_name="vae"),
+                io.Conditioning.Output(display_name="positive_cond"),
+                io.Conditioning.Output(display_name="negative_cond"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, d2_pipe=None, ckpt_name = None, positive = None, negative = None, seed = None, steps = None, cfg = None, sampler_name = None, scheduler = None, denoise = None, width = None, height = None, model = None, clip = None, vae = None, positive_cond = None, negative_cond = None) -> io.NodeOutput:
+
+        # d2_pipeがNoneの場合、デフォルト値で新しいインスタンスを作成
+        if d2_pipe is None:
+            d2_pipe = D2_TD2Pipe()
+        else:
+            # d2_pipeのコピーを作成して元のインスタンスを変更しないようにする
+            d2_pipe = D2_TD2Pipe(
+                ckpt_name = d2_pipe.ckpt_name,
+                positive = d2_pipe.positive,
+                negative = d2_pipe.negative,
+                seed = d2_pipe.seed,
+                steps = d2_pipe.steps,
+                cfg = d2_pipe.cfg,
+                sampler_name = d2_pipe.sampler_name,
+                scheduler = d2_pipe.scheduler,
+                denoise = d2_pipe.denoise,
+                width = d2_pipe.width,
+                height = d2_pipe.height,
+                model = d2_pipe.model,
+                clip = d2_pipe.clip,
+                vae = d2_pipe.vae,
+                positive_cond = d2_pipe.positive_cond,
+                negative_cond = d2_pipe.negative_cond,
+            )
+
+        # 個別のパラメータがNoneでない場合、d2_pipeの値を上書き
+        if ckpt_name:
+            d2_pipe.ckpt_name = ckpt_name
+        if positive:
+            d2_pipe.positive = positive
+        if negative:
+            d2_pipe.negative = negative
+        if seed != None:
+            d2_pipe.seed = seed
+        if steps != None:
+            d2_pipe.steps = steps
+        if cfg != None:
+            d2_pipe.cfg = cfg
+        if sampler_name:
+            d2_pipe.sampler_name = sampler_name
+        if scheduler:
+            d2_pipe.scheduler = scheduler
+        if denoise != None:
+            d2_pipe.denoise = denoise
+        if width != None:
+            d2_pipe.width = width
+        if height != None:
+            d2_pipe.height = height
+        if model is not None:
+            d2_pipe.model = model
+        if clip is not None:
+            d2_pipe.clip = clip
+        if vae is not None:
+            d2_pipe.vae = vae
+        if positive_cond is not None:
+            d2_pipe.positive_cond = positive_cond
+        if negative_cond is not None:
+            d2_pipe.negative_cond = negative_cond
+
+        return io.NodeOutput(d2_pipe, d2_pipe.ckpt_name, d2_pipe.positive, d2_pipe.negative, d2_pipe.seed, d2_pipe.steps, d2_pipe.cfg, d2_pipe.sampler_name, d2_pipe.scheduler, d2_pipe.denoise, d2_pipe.width, d2_pipe.height, d2_pipe.model, d2_pipe.clip, d2_pipe.vae, d2_pipe.positive_cond, d2_pipe.negative_cond)
+
+
+
+"""
+
+D2 Any Delivery
+
+"""
+class D2_AnyDelivery(io.ComfyNode):
+    # 可変出力ノード。JS が addOutput(name, "*") で出力を動的に増やすため、
+    # ComfyUI の出力型検証（RETURN_TYPES[slot]）が宣言数を超えても落ちないよう、
+    # _RETURN_TYPES / _RETURN_NAMES を AnyTypeTuple にする（範囲外は AnyType("") を返す）。
+    # V3 では GET_SCHEMA が `_RETURN_TYPES is None` のときだけ schema.outputs から
+    # 構築するので、ここでクラス属性として事前設定すると上書きされない。
+    # その際 _OUTPUT_IS_LIST / _OUTPUT_TOOLTIPS も同じ if ブロックで構築されるため併せて設定する。
+    # _OUTPUT_IS_LIST は固定長 tuple だと merge_result_data の zip で動的出力が切り捨てられるため、
+    # 常に False を返す AnyFalseList を使う（詳細は util.AnyFalseList）。
+    _RETURN_TYPES = AnyTypeTuple(("D2_TDelivery", ))
+    _RETURN_NAMES = AnyTypeTuple(("_package", ))
+    _OUTPUT_IS_LIST = AnyFalseList()
+    _OUTPUT_TOOLTIPS = (None, )
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Any Delivery",
+            display_name="D2 Any Delivery",
+            category="D2",
+            inputs=[
+                io.Custom("D2_TDelivery").Input("_package", optional=True),
+                io.String.Input("_label", default="", optional=True),
+                io.Custom("D2_BUTTON").Input("_update", optional=True),
+            ],
+            outputs=[
+                io.Custom("D2_TDelivery").Output(display_name="_package"),
+            ],
+            hidden=[io.Hidden.prompt],
+            # JS が addInput(name, "*") で増やす動的入力を **kwargs で受けるため
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, _package=None, _label="", _update=None, **kwargs) -> io.NodeOutput:
+        # _packageがNoneの場合は新しいインスタンスを作成
+        if _package is None:
+            _package = D2_TDelivery()
+        
+        # kwargsの値を_packageに統合
+        for key, value in kwargs.items():
+            _package.package[key] = value
+        
+        # _labelを解析して出力項目を特定
+        output_items = []
+        for item in _label.split(';'):
+            item = item.strip()
+            if item.startswith('<'):
+                output_items.append(item[1:])  # '<'を除去
+        
+        # 出力用の辞書を作成
+        result = {"_package": _package}
+        
+        # _packageから必要な出力項目を取り出す
+        for item in output_items:
+            if item in _package.package:
+                result[item] = _package.package[item]
+
+        return io.NodeOutput(*result.values())
+
+
+
+"""
+
+D2 Preset Selector
+複数パラメータのプリセットをテキストで定義し、プルダウンで1つ選ぶとまとめて出力する
+
+"""
+class D2_PresetSelector(io.ComfyNode):
+    # 出力は preset_text の解析で決まる動的スロット（JS が addOutput で増やす）。
+    # 可変出力対応は D2_AnyDelivery と同方式: _RETURN_TYPES/_RETURN_NAMES を AnyTypeTuple、
+    # _OUTPUT_IS_LIST を AnyFalseList にして事前設定する（GET_SCHEMA の上書きを回避）。
+    _RETURN_TYPES = AnyTypeTuple(())
+    _RETURN_NAMES = AnyTypeTuple(())
+    _OUTPUT_IS_LIST = AnyFalseList()
+    _OUTPUT_TOOLTIPS = ()
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Preset Selector",
+            display_name="D2 Preset Selector",
+            category="D2",
+            inputs=[
+                # 選択肢は JS が options.values へ動的に流し込む（サーバー側は空のまま）
+                io.Combo.Input("preset", options=[]),
+                io.String.Input("preset_text", multiline=True, default="cfg;steps\nFLOAT;INT\nAnima;2;15\nIllustrious;5;20"),
+                io.String.Input("preset_name", force_input=True, optional=True),
+                io.Custom("D2_BUTTON").Input("_update", optional=True),
+            ],
+            outputs=[],
+        )
+
+    # preset は動的 COMBO のため、登録済みリスト（空）との照合をスキップする
+    # （validate_inputs の引数に preset を含めると ComfyUI がその input の既定照合をスキップする）
+    @classmethod
+    def validate_inputs(cls, preset):
+        return True
+
+    """
+    型名に応じて値をキャストする。INT/FLOAT 変換失敗時は、どのプリセット・列かが分かるエラーを出す
+    """
+    @staticmethod
+    def _cast_value(type_name, raw, preset_title, col_name):
+        if type_name == "BOOLEAN":
+            return raw.strip().lower() in ("true", "1", "yes", "on")
+        try:
+            if type_name == "INT":
+                return int(raw)
+            if type_name == "FLOAT":
+                return float(raw)
+            return str(raw)
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"D2 Preset Selector: プリセット '{preset_title}' の '{col_name}' 列の値 '{raw}' を {type_name} に変換できません"
+            )
+
+    @classmethod
+    def execute(cls, preset="", preset_text="", preset_name=None, _update=None, **kwargs) -> io.NodeOutput:
+        # 空行を除いた行を取得
+        lines = [line for line in preset_text.splitlines() if line.strip() != ""]
+
+        # 名前行・型行・プリセット行が揃っていなければ出力なし
+        if len(lines) < 3:
+            return io.NodeOutput()
+
+        names = [n.strip() for n in lines[0].split(";")]
+        types = [t.strip() for t in lines[1].split(";")]
+        preset_rows = lines[2:]
+
+        # 外部からpreset_nameが指定されていたらそちらを優先する（空文字列は未指定扱い）
+        target_name = preset_name if preset_name else preset
+
+        # 選択中のプリセット行を探す（先頭セル＝タイトル）
+        target = None
+        for row in preset_rows:
+            cells = [c.strip() for c in row.split(";")]
+            # 先頭セル（タイトル）が空の行はマッチ対象にしない
+            if cells and cells[0] and cells[0] == target_name:
+                target = cells
+                break
+
+        # 一致するプリセットがない（テキスト変更後など）→ 出力なし
+        if target is None:
+            return io.NodeOutput()
+
+        values = target[1:]
+
+        result = []
+        for i, name in enumerate(names):
+            type_name = types[i] if i < len(types) else "STRING"
+            raw = values[i] if i < len(values) else ""
+            result.append(cls._cast_value(type_name, raw, target_name, name))
+
+        return io.NodeOutput(*result)
+
+
+
+NODE_CLASS_MAPPINGS = {
+    "D2 KSampler": D2_KSampler,
+    "D2 KSampler(Advanced)": D2_KSamplerAdvanced,
+    "D2 Checkpoint Loader": D2_CheckpointLoader,
+    "D2 Load Diffusion Model": D2_LoadDiffusionModel,
+    "D2 Load Diffusion Model Set": D2_LoadDiffusionModelSet,
+    "D2 Controlnet Loader": D2_ControlnetLoader,
+    "D2 Merge Cnet": D2_MergeCnet,
+    "D2 Load Lora": D2_LoadLora,
+    "D2 Pipe": D2_Pipe,
+    "D2 Any Delivery": D2_AnyDelivery,
+    "D2 Preset Selector": D2_PresetSelector,
+}

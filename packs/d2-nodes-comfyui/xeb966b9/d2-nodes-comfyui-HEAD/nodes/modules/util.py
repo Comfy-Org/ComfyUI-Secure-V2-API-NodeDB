@@ -1,0 +1,310 @@
+from dataclasses import dataclass, field
+from typing import Literal, Optional
+import os
+from pathlib import Path
+import yaml
+# import math
+import re
+import glob
+import shutil
+import random
+from PIL import Image
+import numpy as np
+import torch
+import latent_preview
+from pathlib import Path
+
+from comfy.cli_args import args
+
+
+
+MAX_RESOLUTION = 16384
+MAX_SEED = 0xffffffffffffffff
+LINE_BREAK = "Line break"
+SEPARATOR = ["Comma + Space", "Comma", "Line break", "Semicolon", "Space", "None"]
+# separator ラベル → 実際の区切り文字。
+# 末尾のエイリアスは旧ワークフロー（旧 SEPARATOR / 旧 D2 Tag Report）の後方互換用。
+SEPARATOR_CHARS = {
+    "Comma + Space": ", ",
+    "Comma": ",",
+    "Semicolon": ";",
+    "Line break": "\n",
+    "Space": " ",
+    "None": "",
+    # 旧表記エイリアス
+    ",": ",",
+    ";": ";",
+    "newline": "\n",   # 旧 D2 Tag Report
+    "comma": ", ",     # 旧 D2 Tag Report（旧実装は ", " で結合していた）
+}
+
+# delete_comment の type。先頭が全種類を消す既定値
+COMMENT_TYPES = ["# + // + /**/", "# only", "// only", "/* */ only", "None"]
+COMMENT_TYPE_ALL = COMMENT_TYPES[0]
+COMMENT_TYPE_NONE = "None"
+
+D2_MODULE_PATH = Path(__file__)
+D2_ROOT_PATH = D2_MODULE_PATH.parent.parent.parent.absolute()
+D2_WEB_PATH = D2_ROOT_PATH / "web"
+COMFYUI_PATH = D2_ROOT_PATH.parent.parent.absolute()
+
+
+@dataclass
+class D2_TAnnotation:
+    title: str
+    values: list
+
+D2_TXyStatus = Literal["INIT", "FINISH", ""]
+
+@dataclass
+class D2_TD2Pipe:
+    ckpt_name: str = ""
+    positive: str = ""
+    negative: str = ""
+    seed: Optional[int] = None
+    steps: Optional[int] = None
+    cfg: Optional[float] = None
+    sampler_name: str  = ""
+    scheduler: str  = ""
+    denoise: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    # MODEL / CLIP / VAE などのオブジェクト系。型は ComfyUI のランタイムオブジェクトのため Optional[object]
+    model: Optional[object] = None
+    clip: Optional[object] = None
+    vae: Optional[object] = None
+    positive_cond: Optional[object] = None
+    negative_cond: Optional[object] = None
+
+@dataclass
+class D2_TGridPipe:
+    x_annotation: D2_TAnnotation
+    y_annotation: D2_TAnnotation
+    status: D2_TXyStatus
+
+@dataclass
+class D2_TDelivery:
+    package: dict = field(default_factory=dict)
+
+@dataclass
+class D2_TMossItem:
+    # MOSS-Image レイアウトのアイテム1件（JSON にそのまま入る dict）
+    item: dict
+    # 元のマスクのサイズ。D2 Create Moss Prompt でアイテム間のサイズ一致を確かめるのに使う
+    width: int
+    height: int
+
+
+"""
+XY Plot のラベルと値を Eagle メモ用テキストに整形する
+D2_XYGridImage の memo 出力で使用する
+"""
+def format_xyplot_memo(x_annotation:Optional[D2_TAnnotation], y_annotation:Optional[D2_TAnnotation]) -> str:
+    lines = []
+    for axis_label, annotation in (("X", x_annotation), ("Y", y_annotation)):
+        if annotation is None:
+            continue
+        lines.append("-----------")
+        lines.append(f"{axis_label}: {annotation.title}")
+        lines.extend(str(value) for value in annotation.values)
+        lines.append("")
+    return "\n".join(lines)
+
+
+
+"""
+seed値を作る
+"""
+def create_seed(num = 0):
+    int_num = int(num)
+    return random.randrange(MAX_SEED) if int_num == -1 else int_num
+
+
+"""
+入出力をANYにするもの
+"""
+class AnyType(str):
+    def __ne__(self, __value: object) -> bool:
+        return False
+
+
+"""
+任意個数の出力に対応する RETURN_TYPES / RETURN_NAMES 用 tuple
+範囲外インデックスでは AnyType("") を返すので、出力スロットが宣言数を超えても IndexError にならない
+"""
+class AnyTypeTuple(tuple):
+    def __new__(cls, types):
+        return super().__new__(cls, types)
+
+    def __getitem__(self, index):
+        if index >= len(self):
+            return AnyType("")
+        item = super().__getitem__(index)
+        if isinstance(item, str):
+            return AnyType(item)
+        return item
+
+
+"""
+可変出力ノードの OUTPUT_IS_LIST 用。常に False を無限に供給するイテラブル。
+
+V3 ノードでは OUTPUT_IS_LIST が classproperty として常に存在し、execution.py の
+merge_result_data が `zip(range(len(results[0])), obj.OUTPUT_IS_LIST)` で出力を組み立てる。
+固定長の tuple を渡すと zip が短い方で止まり、宣言数を超える動的出力（JS の addOutput）が
+切り捨てられて None になる。__iter__ で False を無限に返せば zip は結果数ぶんだけ回り、
+全出力が非リスト扱いで通る。
+（V3 のフロントエンド向け output_is_list は schema.outputs から別途作られるため、この
+イテラブルが object_info の JSON 化に使われることはない。consumer は merge のみ。）
+"""
+class AnyFalseList:
+    def __iter__(self):
+        while True:
+            yield False
+
+    def __getitem__(self, index):
+        return False
+
+
+"""
+separator ラベルを実際の区切り文字へ変換する。
+未知の値はその文字列自体を区切りとして使う（フォールバック）。
+"""
+def get_separator_str(separator):
+    return SEPARATOR_CHARS.get(separator, separator)
+
+
+"""
+リストを文字結合する
+"""
+def list_to_text(list, separator):
+    return get_separator_str(separator).join(list)
+
+
+"""
+設定ファイルを読み込む
+ファイルがなければ見本を複製する
+"""
+def load_config(config_path:Path, sample_path:Path):
+    if not os.path.exists(config_path):
+        shutil.copy2(sample_path, config_path)
+
+    with open(config_path, "r", encoding="utf-8") as file:
+        return yaml.safe_load(file)
+
+
+
+"""
+ルートディレクトリ取得
+"""
+def get_root_path() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+
+"""
+設定ファイルのフルパスを取得
+"""
+def get_config_path(filename) -> Path:
+    config_path = get_root_path() / 'config'
+    return config_path / filename
+
+"""
+ファイルリスト取得
+extension はカンマ区切りで複数パターンを指定できる（例 "*.png, *.jpg, *.webp"）。
+include_subfolders=True なら ** でサブフォルダも再帰的に対象にする。
+folder に直接 ** を書いても効くよう glob は常に recursive=True で呼ぶ。
+"""
+def get_files(folder, extension, sort_by="Name", order_by="A-Z", include_subfolders=False) -> list[str]:
+    # カンマ区切りで複数パターンを受け付ける。空なら全ファイル対象
+    patterns = [e.strip() for e in extension.split(",") if e.strip()] or ["*.*"]
+
+    file_list = []
+    for pattern in patterns:
+        if include_subfolders:
+            search_pattern = os.path.join(folder, "**", pattern)
+        else:
+            search_pattern = os.path.join(folder, pattern)
+        file_list.extend(glob.glob(search_pattern, recursive=True))
+
+    # 絶対パスに変換。extension="*.*" 等でサブフォルダ自身がヒットするのでファイルのみ残す。
+    # 複数パターンが同じファイルにマッチすることがあるので重複を除く（順序保持）
+    file_list = list(dict.fromkeys(os.path.abspath(file) for file in file_list if os.path.isfile(file)))
+
+    # sort_byに基づいてソート。Name はフルパスで並べてフォルダごとにまとまるようにする
+    if sort_by == "Name":
+        file_list = sorted(file_list)
+    elif sort_by == "Date":
+        file_list = sorted(file_list, key=lambda x: os.path.getmtime(x))
+    elif sort_by == "Random":
+        random.shuffle(file_list)
+
+    # order_byに基づいて順序を反転（Randomの場合は適用しない）
+    if order_by == "Z-A" and sort_by != "Random":
+        file_list.reverse()
+
+    return file_list
+
+
+"""
+画像プレビューのモード切り替え
+"""
+def set_preview_method(method):
+    if method == 'auto' or method == 'LatentPreviewMethod.Auto':
+        args.preview_method = latent_preview.LatentPreviewMethod.Auto
+    elif method == 'latent2rgb' or method == 'LatentPreviewMethod.Latent2RGB':
+        args.preview_method = latent_preview.LatentPreviewMethod.Latent2RGB
+    elif method == 'taesd' or method == 'LatentPreviewMethod.TAESD':
+        args.preview_method = latent_preview.LatentPreviewMethod.TAESD
+    else:
+        args.preview_method = latent_preview.LatentPreviewMethod.NoPreviews
+
+
+"""
+コメントを削除
+"""
+def delete_comment(text, type):
+    """
+    text のコメント行を消す
+    type: "# only" なら行頭が「#」の行を消す
+    type: "// only" なら行頭が「//」の行を消す
+    type: "/* */ only" なら「/* 〜 */」を消す。これは複数行にも対応する
+    type: "# + // + /**/" なら上記3つを全て実行する
+    type: "None" ならなにもしない
+    """
+    result_text = text
+
+    if type == "None": return text
+
+    if type == "# only" or type == "# + // + /**/":
+        # 行頭が # のコメント行を削除（行頭の空白は考慮しない）
+        result_text = re.sub(r'^#.*$', '', result_text, flags=re.MULTILINE)
+    
+    if type == "// only" or type == "# + // + /**/":
+        # 行頭が // のコメント行を削除（行頭の空白は考慮しない）
+        result_text = re.sub(r'^//.*$', '', result_text, flags=re.MULTILINE)
+    
+    if type == "/* */ only" or type == "# + // + /**/":
+        # /* */ コメントを削除（複数行対応）
+        result_text = re.sub(r'/\*.*?\*/', '', result_text, flags=re.DOTALL)
+    
+    # # 空行が連続する場合、1つの空行にまとめる
+    # result_text = re.sub(r'\n\s*\n+', '\n\n', result_text)
+    
+    # # 先頭と末尾の余分な改行を削除
+    # result_text = result_text.strip()
+
+    return result_text
+
+
+"""
+d2_pipe からA1111形式の生成パラメーターメモを作成
+"""
+def format_a1111_parameter(d2_pipe:D2_TD2Pipe|None):
+    if d2_pipe is None:
+        return ""
+
+    template = "{positive}\n\nNegative prompt:{negative}\nSteps: {steps}, Sampler: {sampler_name} {scheduler}, CFG scale: {cfg}, Seed: {seed}, Size: {width}x{height}, Model: {ckpt_name}"
+    formatted = template.format(
+        **{k: (v if v is not None else "") for k, v in vars(d2_pipe).items()}
+    )    
+    return formatted

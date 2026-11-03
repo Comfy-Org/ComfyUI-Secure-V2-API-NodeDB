@@ -1,0 +1,754 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+<h1>
+D2 Nodes ComfyUI
+</h1>
+
+<strong>D2 Nodes ComfyUI</strong> は「ちょっと便利」「シンプル」「汎用性を失わない」をテーマに制作しているカスタムノード集です。
+
+- 汎用性の高い XY Plot
+- Checkpoint の系統ごとにクオリティタグを自動切り替えするワークフロー
+- 自由に枚数を設定できる Queue ボタン
+- その他、様々な「ちょっとだけ便利なノード」があります
+
+## :exclamation: NOTICE
+
+### 不要なカスタムノード
+過去に制作した下記のカスタムノードをインストール済みの方は削除してください。
+
+- [ComfyUI-d2-size-selector](https://github.com/da2el-ai/ComfyUI-d2-size-selector)
+- [ComfyUI-d2-steps](https://github.com/da2el-ai/ComfyUI-d2-steps)
+- [ComfyUI-d2-xyplot-utils](https://github.com/da2el-ai/ComfyUI-d2-xyplot-utils)
+
+
+## :tomato: Nodes
+
+- <a href="node.md#d2-ksampler--d2-ksampleradvanced">`D2 KSampler / D2 KSampler(Advanced)`</a>
+  - プロンプトを STRING で入力・出力する KSampler
+
+- <a href="node.md#d2-pipe">`D2 Pipe`</a>
+  - D2 XYPlot Easy、D2 KSampler、D2 Send Eagle で使う d2_pipe の変更、取得をするノード
+
+### Loader
+
+- <a href="node.md#D2-Checkpoint-Loader">`D2 Checkpoint Loader`</a>
+  - モデルファイルのフルパスを出力する Checkpoint Loader
+- <a href="node.md#D2-Load-Diffusion-Model">`D2 Load Diffusion Model`</a>
+  - モデルファイルのフルパスを出力する Load Diffusion Model
+- <a href="node.md#D2-Load-Diffusion-Model-Set">`D2 Load Diffusion Model Set`</a>
+  - Load Diffusion Model ＋ Load VAE ＋ Load CLIP を1つにまとめたローダー
+- <a href="node.md#D2-Controlnet-Loader">`D2 Controlnet Loader`</a>
+  - D2 KSampler に接続してシンプルなワークフローが作れる Controlnet Loader。Anima-LLLite にも対応
+- <a href="node.md#D2-Merge-Cnet">`D2 Merge Cnet`</a>
+  - 複数の `cnet_stack` を1つにまとめる
+- <a href="node.md#D2-Load-Lora">`D2 Load Lora`</a>
+  - テキストで指定するLoraローダー
+
+### Size
+
+- <a href="node.md#D2-Get-Image-Size">`D2 Get Image Size`</a>
+  - 画像サイズの表示と取得
+- <a href="node.md#D2-Size-Slector">`D2 Size Slector`</a>
+  - プリセットから選択できる画像サイズ、Empty latent 出力ノード
+  - 画像からサイズを取得することも可能
+- <a href="node.md#D2-Image-Resize">`D2 Image Resize`</a>
+  - 小数点３位まで指定可能な画像リサイズ
+  - 四捨五入、切り捨て、切り上げが選択できる
+- <a href="node.md#D2-Resize-Calculator">`D2 Resize Calculator`</a>
+  - 計算した数値は必ず8の倍数になる画像サイズ計算ノード
+  - 四捨五入、切り捨て、切り上げが選択できる
+
+### Refiner
+- <a href="node.md#D2-Refiner-Steps">`D2 Refiner Steps`</a>
+  - Refiner 用の steps を出力する
+- <a href="node.md#D2-Refiner-Steps-A1111">`D2 Refiner Steps A1111`</a>
+  - img2img で Refiner するために denoise も指定できる
+- <a href="node.md#D2-Refiner-Steps-Tester">`D2 Refiner Steps Tester`</a>
+  - steps を確認するためのノード
+
+### Other Node
+
+- <a href="node.md#D2-Model-and-CLIP-Merge-SDXL">`D2 Model and CLIP Merge SDXL`</a>
+  - ModelMergeSDXL と CLIPMergeSimple を合体させたノード
+- <a href="node.md#D2-Any-Delivery">`D2 Any Delivery`</a>
+  - 複数の要素をまとめて運ぶためのノード。ComfyUI-0246 の Highway 下位互換
+- <a href="node.md#D2-Preset-Selector">`D2 Preset Selector`</a>
+  - 複数パラメータのプリセットをテキストで定義し、プルダウンでまとめて出力
+- <a href="node.md#D2-Save-Audio-Eagle">`D2 Save Audio Eagle`</a>
+  - 音声ファイルをEagleに保存
+
+
+### Text
+
+- <a href="node_text.md#D2-Regex-Replace">`D2 Regex Replace`</a>
+  - 複数条件の指定が可能なテキスト置換ノード
+- <a href="node_text.md#D2-Regex-Switcher">`D2 Regex Switcher`</a>
+  - 入力テキストによって出力テキストを切り替えるノード
+  - 文字列結合も行える
+- <a href="node_text.md#D2-Multi-Output">`D2 Multi Output`</a>
+  - SEED / STRING / INT / FLOAT をリスト出力する
+- <a href="node_text.md#D2-List-To-String">`D2 List To String`</a>
+  - 配列を文字列に変換する
+- <a href="node_text.md#D2-Text-Concat">`D2 Text Concat`</a>
+  - 入力数を調整できるテキスト結合ノード
+- <a href="node_text.md#D2-Filename-Template">`D2 Filename Template`</a>
+  - ファイルネームを作る
+- <a href="node_text.md#D2-Token-Counter">`D2 Token Counter`</a>
+  - プロンプトのトークンを数える
+- <a href="node_text.md#D2-Prompt">`D2 Prompt`</a>
+  - テキストのコメントを削除やトークン数の表示があるテキストノード
+- <a href="node_text.md#D2-Prompt-Sanitizer">`D2 Prompt Sanitizer`</a>
+  - プロンプト文字列を整形する（`_` を空白に変換、カンマ後に空白を挿入）
+- <a href="node_text.md#D2-Convert-NAI-Prompt">`D2 Convert NAI Prompt`</a>
+  - StableDiffusion と NovelAI のプロンプトの weight を相互変換する
+- <a href="node_text.md#D2-Moss-Item">`D2 Moss Item / D2 Moss Prompt`</a>
+  - MOSS-Image のレイアウトプロンプト（JSON）をマスクから作る
+- <a href="node_text.md#D2-Load-Text">`D2 Load Text`</a>
+  - テキストファイルを読み込む汎用ノード
+- <a href="node_text.md#D2-Load-CSV">`D2 Load CSV`</a>
+  - CSV / TSV を読み込み、行・列の範囲を指定して取り出す
+- <a href="node_text.md#D2-Save-Caption">`D2 Save Caption`</a>
+  - タグを整形して学習用キャプションファイルを保存する
+- <a href="node_text.md#D2-Tag-Report">`D2 Tag Report`</a>
+  - フォルダー内キャプションのタグ出現頻度を集計し、除外タグリストを作る
+
+### Image
+
+- <a href="node_image.md#D2-Preview-Image">`D2 Preview Image`</a>
+  - ギャラリー機能付き画像プレビュー
+- <a href="node_image.md#D2-Save-Image">`D2 Save Image`</a>
+  - ギャラリー機能付き画像保存
+- <a href="node_image.md#D2-Save-Image-Eagle">`D2 Save Image Eagle`</a>
+  - `D2 Save Image` にEagle登録機能を付けたもの
+- <a href="node_image.md#D2-Send-File-Eagle">`D2 Send File Eagle`</a>
+  - 与えられたパスのファイルをEagleに登録する
+- <a href="node_image.md#D2-Load-Image">`D2 Load Image`</a>
+  - 画像からプロンプトを取得できる Load Image
+  - StableDiffusion webui A1111、NovelAI で作成した画像にも対応
+  - マスクエディターを開くボタンが付いてる
+- <a href="node_image.md#D2-Load-Folder-Images">`D2 Load Folder Images`</a>
+  - フォルダ内の画像を全て読み込む
+- <a href="node_image.md#D2-Folder-Image-Queue">`D2 Folder Image Queue`</a>
+  - フォルダ内の画像パスを順次出力する
+  - 自動で画像枚数分のキューを実行する
+- <a href="node_image.md#D2-Grid-Image">`D2 Grid Image`</a>
+  - グリッド画像を生成
+- <a href="node_image.md#D2-Image-Stack">`D2 Image Stack`</a>
+  - 複数の画像をバッチにまとめる
+- <a href="node_image.md#D2-Image-Mask-Stack">`D2 Image Mask Stack`</a>
+  - 複数の画像とマスクをバッチにまとめる
+- <a href="node_image.md#D2-EmptyImage-Alpha">`D2 EmptyImage Alpha`</a>
+  - αチャンネル（透明度）付きの EmptyImage を出力
+- <a href="node_image.md#D2-Mosaic-Filter">`D2 Mosaic Filter`</a>
+  - 画像にモザイクフィルターをかける
+- <a href="node_image.md#D2-Cut-By-Mask">`D2 Cut By Mask`</a>
+  - マスクを使って画像をカットする
+- <a href="node_image.md#D2-Paste-By-Mask">`D2 Paste By Mask`</a>
+  - マスクを使って画像をペーストする
+- <a href="node_image.md#D2-Create-Point">`D2 Create Point`</a>
+  - マーカーをドラッグして XY 座標を出力する
+- <a href="node_image.md#D2-Create-Masks">`D2 Create Masks`</a>
+  - 長方形をドラッグして複数のマスクを出力する
+- <a href="node_image.md#D2-Random-Point">`D2 Random Point`</a>
+  - ランダムな XY 座標を出力する
+- <a href="node_image.md#D2-Random-Mask">`D2 Random Mask`</a>
+  - ランダムな長方形のマスクを出力する
+
+
+### XY Plot
+
+- <a href="node_xy.md#D2-XY-Plot-Easy">`D2 XY Plot Easy`</a>
+  - D2 KSampler の項目に限定し、ワークフローをシンプルにした XY Plot ノード
+- <a href="node_xy.md#D2-XY-Plot">`D2 XY Plot`</a>
+  - 汎用的な XY Plot ノード
+  - 必要な回数の Queue を自動的に実行する
+- <a href="node_xy.md#D2-XY-Grid-Image">`D2 XY Grid Image`</a>
+  - グリッド画像を生成するノード
+- <a href="node_xy.md#D2-XY-List-Collector">`D2 XY List Collector`</a>
+  - XY Plot のループ実行中にデータを蓄積し、最後に配列として出力する
+- <a href="node_xy.md#D2-XY-Prompt-SR">`D2 XY Prompt SR`</a>
+  - テキストを検索・置換してリストで返す。D2 XY Plotの前に置くタイプ
+- <a href="node_xy.md#D2-XY-Prompt-SR2">`D2 XY Prompt SR2`</a>
+  - テキストを検索・置換してリストで返す。D2 XY Plotの後に置くタイプ
+- <a href="node_xy.md#D2-XY-Seed">`D2 XY Seed`</a>
+  - SEED のリストを出力する
+- <a href="node_xy.md#D2-XY-Seed2">`D2 XY Seed2`</a>
+  - 指定した個数の SEED のリストを出力する
+- <a href="node_xy.md#D2-XY-Model-List">`D2 XY Model List`</a>
+  - Checkpoint / Lora のリストを出力する
+- <a href="node_xy.md#D2-XY-Folder-Images">`D2 XY Folder Images`</a>
+  - フォルダ内ファイルのリストを出力する
+- <a href="node_xy.md#D2-XY-Upload-Image">`D2 XY Upload Image`</a>
+  - 複数画像をドラッグ・ドロップでアップロードする
+- <a href="node_xy.md#D2-XY-Annotation">`D2 XY Annotation`</a>
+  - D2 Grid Image で表示する見出しテキストを作成
+- <a href="node_xy.md#D2-XY-List-To-Plot">`D2 XY List To Plot`</a>
+  - 配列を D2 XY Plot 用リストに変換する
+- <a href="node_xy.md#D2-XY-String-To-Plot">`D2 XY String To Plot`</a>
+  - 改行を含むテキストを `D2 XY Plot` 用リストに変換する
+
+
+
+### Float Palet
+
+- <a href="node_float.md#D2-Queue-Button">`D2 Queue Button`</a>
+  - 指定した枚数（Batch count）を生成するボタン
+- <a href="node_float.md#Prompt-convert-dialog">`Prompt convert dialog`</a>
+  - NovelAI と StableDiffusion の weight を相互変換するダイアログ
+- <a href="node_float.md#D2-Progress-Preview">`D2 Progress Preview`</a>
+  - 生成中の画像を表示するパレット
+
+
+
+
+## :blossom: Changelog
+
+
+**2026.10.31**
+
+- `D2_ConvertNaiPrompt`: StableDiffusion と NovelAI のプロンプトの weight を相互変換するノードを新規追加
+- `Prompt convert dialog`: マイナス weight のタグを削除する `Remove negative` を追加。方式の表記を `number` / `brace` に変更
+- `Prompt convert dialog`: 数値方式で `::` の閉じ忘れ・マイナス weight が正しく変換されない問題を修正。SD → NAI で閉じ `::` の前に空白を入れるように変更
+
+**2026.10.27**
+
+- `D2_KSampler`: ドキュメントに `positive_cond` / `negative_cond` 出力と `d2_pipe` の CONDITIONING についての注意点を追記
+
+**2026.10.19**
+
+- `D2_MossItem` / `D2_MossPrompt`: MOSS-Image のレイアウトプロンプト（JSON）をマスクから作るノードを新規追加
+- `D2_PromptSanitizer`: `D2 Prompt` と同じコメント削除を行う `comment_type` を追加
+
+**2026.09.22**
+
+- `D2_RandomPoint`: ランダムな XY 座標を出力するノードを新規追加
+- `D2_RandomMask`: ランダムな長方形のマスクを出力するノードを新規追加
+
+**2026.09.20**
+
+- `D2_CreateMasks`: キャンバス上の長方形をドラッグして複数のマスクを出力するノードを新規追加
+
+**2026.09.15**
+
+- `D2_TagReport`: タグ辞書を指定して集計から除外する `exclude_tags` を追加。辞書に無いタグだけが残るので、カンマ忘れや空白ミスなど誤って入力したプロンプトを炙り出せる
+
+**2026.09.09**
+
+- `D2_MergeCnet`: 複数の `cnet_stack` を1つにまとめるノードを新規追加
+
+**2026.08.26**
+
+- `D2_CreatePoint`: マーカーをドラッグして XY 座標を出力するノードを新規追加
+
+**2026.07.27**
+
+- `D2_XYListCollector`: XY Plot のループ実行中にデータを蓄積し、最後に配列として出力するノードを新規追加
+- Text 系ノード（`D2_RegexSwitcher` / `D2_Prompt` / `D2_LoadCSV` など）: ノードメニューのカテゴリを `D2` から `D2/Text` に変更
+
+**2026.07.25**
+
+- `D2_LoadCSV`: CSV / TSV を読み込み、行・列の範囲を指定して取り出すノードを新規追加
+- `D2_SaveCaption`: 除外タグの比較で括弧のエスケープ（`\(` `\)` `\[` `\]`）と素の括弧を同一視するように修正
+- `D2_SaveCaption`: 出力タグの括弧エスケープを外す `remove_escape` を追加
+- `D2_SaveCaption`: `replace_underscore` を `word_separator`（`underscore` / `space` / `none`）に変更。単語区切りをスペース・アンダースコアのどちらにも統一できるように
+
+**2026.07.24**
+
+- `D2_TextConcat`: 入力数を調整できるテキスト結合ノードを新規追加
+- `D2_ListToString` / `D2_RegexSwitcher` / `D2_TagReport`: 区切り文字（separator）の選択肢の表記を統一（`Comma + Space` / `Comma` / `Line break` / `Semicolon` / `Space` / `None`）。旧ワークフローの値も引き続き動作する
+- `D2_PromptSanitizer`: 改行の変換（`newline_mode`）、重複タグの削除（`remove_duplicate_tags`）、末尾カンマの削除（`strip_trailing_comma`）を追加
+
+**2026.07.19**
+
+- `D2_LoadText` / `D2_SaveCaption` / `D2_TagReport`: 学習用キャプションを編集するノードを新規追加
+- `D2_FolderImageQueue` / `D2_LoadFolderImages` / `D2_XYFolderImages`: サブフォルダー内の画像も対象にする `include_subfolders` を追加（`folder` に `**` を直接書いても可）
+- `D2_FolderImageQueue` / `D2_LoadFolderImages` / `D2_XYFolderImages`: `extension` を `*.png, *.jpg, *.webp` のようにカンマ区切りで複数指定できるように
+
+**2026.07.01**
+
+- `D2_XYGridImage`: 生成パラメーターの一覧をテキストで出力する `memo` 出力を追加（`D2 Save Image Eagle` の `memo_text` 接続用）
+- `D2_CheckpointLoader` / `D2_LoadDiffusionModel` / `D2_LoadDiffusionModelSet`: 入力に `d2_pipe` を追加（`D2_XYPlotEasy` 併用時などに受け取った pipe に `model` などを合流できるように）
+
+**2026.06.27**
+
+- `D2_LoadDiffusionModelSet`: 新規追加（Load Diffusion Model ＋ Load VAE ＋ Load CLIP を合体）
+- `D2_TD2Pipe`: `model` / `clip` / `vae` / `positive_cond` / `negative_cond` を持てるように拡張
+- `D2_KSampler` / `D2_KSamplerAdvanced`: `model` / `clip` / `vae` を optional 化し、`d2_pipe` 1本だけでも接続できるように
+- `D2_CheckpointLoader` / `D2_LoadDiffusionModel` / `D2_LoadDiffusionModelSet`: 出力に `d2_pipe` を追加
+- `D2_Pipe`: `model` / `clip` / `vae` / `positive_cond` / `negative_cond` の入出力に対応
+
+**2026.06.26**
+
+- `D2_XYPlotEasy` / `D2_XYPlotEasyMini`: Diffusion モデルの選択項目 `unet_name` を追加。`ckpt_name` / `unet_name` のどちらを使うか選ぶ `ckpt_type` を追加。出力にも追加 `ckpt_type` を追加。
+- `D2_ImageResize`: `use_tiled_vae` を `True` にして 3D VAE（qwen_image_vae 等）を使うとエラーになる不具合を修正
+
+**2026.06.18**
+
+- `D2_QueueButton`: 画面上部のアクションバーへドラッグ＆ドロップで収納できるように
+- `D2_QueueButton`: Batch count を変更すると1手前の値が反映される不具合を修正
+
+**2026.06.15**
+
+- `D2_CutByMask`: 切り出す短形を8px等の単位に切り上げる `round_to` を追加
+- `D2_EmptyImageAlpha`: αチャンネルを付与せず RGB 出力する `output_alpha` を追加
+
+**2026.06.10**
+
+- `D2_PromptSanitizer`: 余分なカンマを整理する `remove_extra_comma` を追加
+
+**2026.06.08**
+
+- `D2_PromptSanitizer`: 新規追加
+
+**2026.06.03**
+
+- `D2_ControlnetLoader` / `D2_KSampler`: MASK入力に対応
+
+**2026.05.29**
+
+- `D2_PresetSelector`: 新規追加
+- `D2_PresetSelector`: `preset_name` 入力を追加（外部からプリセットを切り替え可能に）。`preset_text` に初期サンプルを追加
+- `D2_ControlnetLoader` / `D2_KSampler`: kohya-ss の Anima-LLLite に対応。`controlnet_type` 入力を追加（要 [ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite)）
+
+**2026.04.13**
+
+- `D2_SaveAudioEagle`: 新規追加
+
+**2026.03.09**
+
+- `D2_XY_ModelList`: "diffusion_models" のリスト取得に対応
+
+**2026.03.03**
+
+- `D2 KSampler` / `D2 KSampler Advanced`: d2_pipe の内容が空っぽだった時にKSamplerの値を反映するように修正
+
+**2026.0２.13**
+
+- `D2 Prompt`: トークン数のカウントを無効化できるようにトグルスイッチに変更
+- `D2 Load Diffusion Model`: 新規追加
+
+**2026.01.16**
+
+- `D2 XYPlot Easy Mini`: `D2 XYPlot Easy` ワークフローを読み込んで実行したときにエラーになる時があるのを修正
+
+**2025.10.25**
+
+- `D2_FilenameTemplate`: ファイル名に使えない`:`を`_`に変換するオプションを追加
+
+**2025.10.13**
+
+- `Prompt Convert`: プロンプトをコピーしたらダイアログを閉じるように変更
+
+**2025.10.09**
+
+- `D2_SaveImage` / `D2_SaveImageEagle`: JPEG / WEBP形式はワークフローを保存しないように変更。ワークフローやフロンプトが長くなるとExif容量オーバーで保存できないため
+
+**2025.09.22**
+
+- `D2_KSampler`: positive, negative にプロンプトが指定された場合、d2_pipe 内の positive, negative を上書きするように変更
+
+**2025.09.14**
+
+- `D2_SaveImage` / `D2_SaveImageEagle`: A1111方式の生成パラメーターをメタデータに追加
+- `D2_SaveImageEagle`: d2_pipe が接続されている時はA1111方式のメモを自動で作成するように変更
+- `D2_LoadImage`: "Save Image With Prompt", "Save Image w/Metadata" で保存したプロンプトの出力に対応
+
+**2025.08.20**
+
+- `D2_FilenameTemplate` / `D2_FilenameTemplate2`: 配列、辞書、オブジェクトからの取得に対応
+- `D2_FilenameTemplate` / `D2_FilenameTemplate2`: プリセット機能を追加
+- `D2_KSampler` / `D2_KSamplerAdvanced`: d2_pipe に width / height を登録
+
+**2025.08.10**
+
+- `D2 Any Delivery`: を追加
+
+**2025.08.09**
+
+- `D2_KSampler`: Qwen-Image の latent に対応
+
+**2025.08.07**
+
+- `D2_SaveImageEagle` / `D2_SendFileEagle`: 新規追加
+
+**2025.08.06**
+
+- `D2_FilenameTemplate` / `D2_FilenameTemplate2`: 入力項目の増減機能を追加。seed追加
+- サンプルワークフローをいくつか更新
+
+**2025.08.05**
+
+- `D2_SaveImage`: WEBP、アニメーションWEBP、JPEG形式に対応
+
+**2025.07.19**
+
+- `D2_CheckpointList` / `D2_LoraList`: 削除
+- `D2_ImageResize`: 回転機能を追加。マスクも対応
+
+**2025.06.22**
+
+- `D2_SaveImage`: 新規追加
+
+**2025.06.19**
+
+- `D2_PromptConvert`: NovelAI4の新しいウェイト方式に対応
+
+<details>
+<summary><strong>2025.05.02</strong></summary>
+
+- `D2_ProgressPreview`: 新規追加。
+- `D2_XYUploadImage`: 新規追加。
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.30</strong></summary>
+
+- `D2_FolderImageQueue` `D2_FolderImages` `D2_LoadFolderImages`: ソート機能を追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.28</strong></summary>
+
+- `D2_FolderImageQueue`: 開始番号を `1` から `0` に変更
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.24</strong></summary>
+
+- `D2_FilenameTemplate2`: 新規追加。`D2_FilenameTemplate` の複数行対応版
+- `D2 EmptyImage Alpha` 色の指定を red green blue に変更。色見本も追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.22</strong></summary>
+
+- `D2_CutByMask`: 最大サイズの正方形でカットするモード `square_thumb` を追加
+- `D2_XYFolderImages` / `D2_LoadFolderImages`: 毎回画像リストを更新するように変更。画像枚数の表示を追加
+- `D2_LoadImage`: A1111で作成したPNG画像のプロンプトが出力されない不具合を修正
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.18</strong></summary>
+
+- `D2_KSamplerAdvanced`: プロンプトのウェイトを調整するパラメーター `weight_interpretation` `token_normalization` を追加
+  - 利用するには [Advanced CLIP Text Encode](https://github.com/BlenderNeko/ComfyUI_ADV_CLIP_emb/) が必要です。
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.16</strong></summary>
+
+- `D2_Prompt`: LoRA挿入ボタンを追加
+- `D2_KSampler` / `D2_KSamplerAdvanced`: A1111方式のLoRA読み込みプロンプトに対応。KSampler内部でLoRA読み込みをする
+- `D2_LoadLora`: outputの `prompt` はA1111方式のLoRA読み込みプロンプトを消さずに出力するように変更。従来のものは `formatted_prompt` に名称変更
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.14</strong></summary>
+
+- `D2 Cut By Mask`: 新規追加
+- `D2 Paste By Mask`: 新規追加
+- `D2 XY Model List`: アップスケーラーモデルに対応
+- `D2 KSampler Advanced`: 出力に d2_pipe を追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.09</strong></summary>
+
+- `D2_LoadImage`: ファイル名とファイルパスの出力を追加
+- `D2_FilenameTemplate`: `format`にツールチップを追加（マウスホバーで表示）
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.06</strong></summary>
+
+- `D2 Image Mask Stack`: 新規追加
+- `D2 Mosaic Filter`: 新規追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.04.02</strong></summary>
+
+- `D2 Prompt`: 新規追加
+- `D2 Delete Comment`: `D2 Prompt`に統合
+
+</details>
+
+
+<details>
+<summary><strong>2025.03.31</strong></summary>
+
+- `D2 Token Counter`: 新規追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.03.25</strong></summary>
+
+- コメントアウトのショートカットキー（ctrl + /）を追加
+- `D2 XYPlot Easy Mini`: `D2 XYPlot Easy` の出力スロット制限バージョンを追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.03.23</strong></summary>
+
+- `D2 Delete Comment`: 新規追加
+- `D2 Load Lora`: A1111フォーマットを利用可能にするオプションを追加
+- `D2 Model List`: A1111フォーマットで取得するオプションを追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.02.27</strong></summary>
+
+- `D2 Load Lora`: 新規追加
+- `D2 Multi Output`: x_list/ylist 出力を追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.02.23</strong></summary>
+
+- `D2 Model and CLIP Merge SDXL`: checkpointのマージノードを追加
+
+</details>
+
+
+<details>
+<summary><strong>2025.01.20</strong></summary>
+
+- `D2 XY Seed2`: 新規追加
+- `D2 XY Plot / D2 XY Plot Easy`: XYプロットの開始位置を指定可能にした
+- `D2 XY Plot / D2 XY Plot Easy`: XYプロットの予想残り時間の表示を追加
+- `D2 Regex Replace`: 置換文字列に空白を指定可能にした
+
+</details>
+
+
+<details>
+<summary><strong>2024.12.28</strong></summary>
+
+- `D2 Pipe`: 新規追加
+- `D2_KSampler / D2_XYPlotEasy`: xy_pipe の名前を d2_pipe に変更
+
+</details>
+
+
+<details>
+<summary><strong>2024.12.18</strong></summary>
+
+- `D2 Filename Template`: 新規追加
+- `D2 Grid Image`: グリッド画像出力のトリガーを画像枚数で指定できるようにした
+
+</details>
+
+
+<details>
+<summary><strong>2024.12.16</strong></summary>
+
+- `D2 XY String To Plot`: 新規追加
+- `D2 XY Grid Image`: ラベルの改行に対応
+- `D2 XY Grid Image`: ラベル出力の ON/OFF を選択可能にした
+- `D2 XY Prompt SR`: 改行を含むテキストに対応
+- `D2 XY Plot Easy`: seed で `-1` を指定した時に `x/y_annotation` にランダム値を登録するように変更
+
+</details>
+
+
+<details>
+<summary><strong>2024.12.14</strong></summary>
+
+- `D2 KSampler`: `D2 XY Plot Easy` と接続するための `xy_pipe` を追加
+- `D2 XY Grid Image`: `D2 XY Plot`、`D2 XY Plot Easy` と接続するための `grid_pip` を追加
+- `D2 XY Plot Easy`: を新規追加
+- `D2 XY Model List`: ファイル名、日付ソートを追加。Sampler、Schedulerのリスト取得に対応。
+
+</details>
+
+
+<details>
+<summary><strong>2024.12.05</strong></summary>
+
+- `D2 KSampler` / `D2 KSampler` に Conditioning 出力を追加
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.27</strong></summary>
+
+- `D2 Preview Image` を新規追加
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.23</strong></summary>
+
+- `D2 Model List` を新規追加
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.21</strong></summary>
+
+- `D2 Checkpoint Loader`: Vpred（v_prediction）に関する設定を追加
+- `D2 Image Resize`: Latentを出力できるように変更した
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.20</strong></summary>
+
+- `D2 Image Resize`: アップスケールモデル（SwinIR_4xなど）を使えるようにした
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.18</strong></summary>
+
+- 一気にたくさん追加しました
+- `D2 Controlnet Loader`、`D2 Get Image Size`、`D2 Grid Image`、`D2 Image Stack`、`D2 List To String`、`D2 Load Folder Images`
+- XY Plot 関係も追加しました
+- `D2 XY Annotation`、`D2 XY Checkpoint List`、`D2 XY Folder Images`、`D2 Grid Image`、`D2 XY List To Plot`、`D2 XY Lora List`、`D2 XY Plot`、`D2 XY Prompt SR`、`D2 XY Prompt SR2`、`D2 XY Seed`
+- 既存のノードも変更してるので詳細はコミット履歴を参照してください
+
+</details>
+
+
+<details>
+<summary><strong>2024.11.02</strong></summary>
+
+- `D2 Regex Switcher`: 入力テキストの確認用テキストエリアの表示・非表示切り替えを追加
+
+</details>
+
+
+<details>
+<summary><strong>2024.10.28</strong></summary>
+
+- `Prompt convert`: NovelAI と StableDiffusion のプロンプトを相互変換するダイアログを追加
+- `D2 Folder Image Queue`: 画像生成枚数が同じにならない不具合を修正
+
+</details>
+
+
+<details>
+<summary><strong>2024.10.26</strong></summary>
+
+- `D2 EmptyImage Alpha` を新規追加
+- `D2 Image Resize` を新規追加
+- `D2 Resize Calculator` を新規追加
+
+</details>
+
+
+<details>
+<summary><strong>2024.10.24</strong></summary>
+
+- `D2 Regex Replace` を新規追加
+- `D2 Folder Image Queue` を新規追加
+- `D2 Load Image`: 画像パスの入力を追加
+- `D2 KSampler(Advanced)`: Input に Positive / Negative Conditioning を追加
+
+</details>
+
+
+<details>
+  <summary><strong>2024.10.19</strong></summary>
+
+- `D2 Queue Button` を追加
+
+</details>
+
+
+<details>
+  <summary><strong>2024.10.18</strong></summary>
+
+- `D2 Size Selector`: 画像からサイズ取得できる機能を追加
+- `D2 Size Selector`: リサイズの方法を「四捨五入」と「切り落とし」から選択可能にした
+
+</details>
+
+
+<details>
+<summary><strong>2024.10.14</strong></summary>
+
+- `D2 Load Image`: Exif データのない画像（クリップボードからのペーストなど）の時にエラーになるのを修正
+
+</details>
+
+
+<details>
+  <summary><strong>2024.10.11</strong></summary>
+
+- `D2 Regex Switcher`: 文字列を結合する時に挟む文字を指定できるようにした
+
+</details>
+
+
+<details>
+  <summary><strong>2024.10.10</strong></summary>
+
+- `D2 Load Image`: "Open Mask Editor"ボタンを追加
+
+</details>
+
+<details>
+  <summary><strong>2024.10.08</strong></summary>
+  
+  - `D2 Load Image`: 新規追加
+
+</details>
+
+<details>
+  <summary><strong>2024.10.03</strong></summary>
+
+- `D2 Regex Switcher`: 検索にマッチしても素通りする不具合を修正
+
+</details>
+
+
+<details>
+  <summary><strong>2024.10.02</strong></summary>
+
+- 既存のノードを統合して作成
+
+</details>
+
+

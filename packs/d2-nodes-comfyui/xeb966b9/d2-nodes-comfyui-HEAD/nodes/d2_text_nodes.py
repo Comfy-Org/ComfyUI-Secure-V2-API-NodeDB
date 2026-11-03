@@ -1,0 +1,1040 @@
+# from typing import Optional
+# import torch
+import os
+import json
+import re
+# import random
+# from PIL import Image, ImageOps, ImageSequence, ImageFile
+# import numpy as np
+from aiohttp import web
+# from torchvision import transforms
+# import numpy as np
+from transformers import CLIPTokenizer
+from datetime import datetime
+
+import folder_paths
+from comfy_api.latest import io
+# import comfy.sd
+# import comfy.samplers
+# from comfy_extras.nodes_model_advanced import RescaleCFG, ModelSamplingDiscrete
+
+# from comfy_execution.graph_utils import GraphBuilder
+# from comfy_execution.graph import ExecutionBlocker
+# from nodes import common_ksampler, CLIPTextEncode, PreviewImage, LoadImage, SaveImage, ControlNetApplyAdvanced, LoraLoader
+from server import PromptServer
+# from nodes import NODE_CLASS_MAPPINGS as nodes_NODE_CLASS_MAPPINGS
+
+from .modules import util
+from .modules import caption_util
+from .modules import text_util
+from .modules import csv_util
+from .modules import moss_util
+from .modules import nai_prompt_util
+from .modules.util import AnyType, delete_comment, D2_TMossItem
+# from .modules import checkpoint_util
+# from .modules import pnginfo_util
+# from .modules import grid_image_util
+from .modules.template_util import replace_template
+
+
+
+"""
+
+D2 RegexSwitcher
+正規表現で検索して文字列を結合・出力するノード
+
+"""
+class D2_RegexSwitcher(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Regex Switcher",
+            display_name="D2 Regex Switcher",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("text", force_input=True, multiline=True, default=""),
+                io.String.Input("regex_and_output", multiline=True, default="pony\n--\nscore_9,\n--\n--\nhighres, high quality,"),
+                io.Combo.Input("pre_delim", options=["Comma", "Line break", "None"]),
+                io.Combo.Input("suf_delim", options=["Comma", "Line break", "None"]),
+                io.Combo.Input("show_text", options=["False", "True"]),
+                io.String.Input("text_check", multiline=True),
+                io.String.Input("prefix", force_input=True, multiline=True, default="", optional=True),
+                io.String.Input("suffix", force_input=True, multiline=True, default="", optional=True),
+            ],
+            outputs=[
+                io.String.Output(display_name="combined_text"),
+                io.String.Output(display_name="prefix"),
+                io.String.Output(display_name="suffix"),
+                io.Int.Output(display_name="index"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, text, regex_and_output, pre_delim, suf_delim, show_text="True", text_check="", prefix="", suffix="") -> io.NodeOutput:
+        """
+        正規表現に基づいてテキストをマッチングし、結果を結合して返す関数。
+
+        Args:
+            text (str): マッチング対象のテキスト
+            regex_and_output (str): 正規表現とその出力のペアを "--" で区切った文字列
+            prefix (str): 結果の前に付加するテキスト
+            suffix (str): 結果の後に付加するテキスト
+
+        Returns:
+            dict: UI用のテキストと結果のタプルを含む辞書
+        """
+        # optional 未接続時は V1 同様 空文字列として扱う（出力が None にならないように）
+        if prefix is None:
+            prefix = ""
+        if suffix is None:
+            suffix = ""
+
+        regex_output_list, default_output = D2_RegexSwitcher.get_regex_list(regex_and_output)
+        match_text, match_index = D2_RegexSwitcher.get_mach_text(regex_output_list, default_output, text)
+
+        # 文字列を結合
+        parts = []
+        if prefix:
+            parts.append(prefix)
+            parts.append(util.get_separator_str(pre_delim))
+        parts.append(match_text)
+        if suffix:
+            parts.append(util.get_separator_str(suf_delim))
+            parts.append(suffix)
+
+        combined_text = "".join(parts)
+
+        return io.NodeOutput(
+            combined_text, prefix, suffix, match_index,
+            ui={"text": (text,)},
+        )
+
+    """
+    該当文字列と該当indexを取得
+    """
+    @staticmethod
+    def get_mach_text(regex_output_list, default_output, text):
+        # 各正規表現をチェックし、マッチしたら対応する出力を返す
+        for index, item in enumerate(regex_output_list):
+            # match_text = re.sub(item["regex"], item["output"], text, flags=re.IGNORECASE)
+            # if match_text != text:
+            if re.search(item["regex"], text, re.IGNORECASE):
+                return item["output"], index
+
+        # マッチしなかった場合はデフォルト出力を返す
+        return default_output, -1
+
+    """
+    regex_and_output を -- で分割し、ペアにする
+    """
+    @staticmethod
+    def get_regex_list(text:str):
+        pairs = text.split('--')
+        regex_output_list = []
+        default_output = None
+
+        # ペアをリストに整理する
+        for i in range(0, len(pairs), 2):
+            if i + 1 < len(pairs):
+                regex = pairs[i].strip()
+                output = pairs[i+1].strip()
+                if regex:
+                    regex_output_list.append({
+                        'regex': regex,
+                        'output': output
+                    })
+                else:
+                    default_output = output
+
+        return regex_output_list, default_output
+
+
+
+"""
+
+D2 RegexReplace
+正規表現で文字列置換
+
+"""
+class D2_RegexReplace(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Regex Replace",
+            display_name="D2 Regex Replace",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("text", force_input=True, multiline=True, default=""),
+                io.Combo.Input("mode", options=["Tag", "Advanced"]),
+                io.String.Input("regex_replace", multiline=True, default=""),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, text, mode="Tag", regex_replace="") -> io.NodeOutput:
+        if not text or not regex_replace:
+            return io.NodeOutput(text)
+
+        replace_pairs = D2_RegexReplace._parse_regex_replace(regex_replace)
+
+        if mode == "Tag":
+            result_text = D2_RegexReplace._repalace_tag(text, replace_pairs)
+        else:
+            result_text = D2_RegexReplace._repalace_advanced(text, replace_pairs)
+
+        return io.NodeOutput(result_text)
+
+
+    @classmethod
+    def _repalace_tag(cls, result_text, replace_pairs):
+        """
+        result_text をカンマまたは改行で分割し、分割した要素に対して置換を行う
+        置換後に空（または空白文字のみ）の要素は除外する
+        """
+        try:
+            # カンマまたは改行で分割して、各要素をトリム
+            tags = [tag.strip() for tag in re.split('[,\n]', result_text)]
+            # 空の要素を削除
+            tags = [tag for tag in tags if tag]
+
+            # 各タグに対して正規表現による置換を適用
+            new_tags = []
+            for tag in tags:
+                new_tag = tag
+                for search_pattern, replace_pattern in replace_pairs:
+                    try:
+                        new_tag = re.sub(search_pattern, replace_pattern, new_tag)
+                    except re.error as e:
+                        return f"Regex error in tag '{tag}': {str(e)}"
+
+                # 置換後のタグが空でない場合のみ追加
+                if new_tag.strip():
+                    new_tags.append(new_tag)
+
+            # カンマ区切りで結合して返す
+            return ', '.join(new_tags)
+
+        except Exception as e:
+            return f"Error during tag replacement: {str(e)}"
+
+
+    @classmethod
+    def _repalace_advanced(cls, result_text, replace_pairs):
+        """
+        result_text 全体を正規表現で置換する
+        """
+        for search_pattern, replace_pattern in replace_pairs:
+            try:
+                result_text = re.sub(search_pattern, replace_pattern, result_text, flags=re.DOTALL | re.MULTILINE)
+            except re.error as e:
+                return {"result": (f"Regex error: {str(e)}",)}
+            except Exception as e:
+                return {"result": (f"Error during replacement: {str(e)}",)}
+
+        return result_text
+
+
+    @classmethod
+    def _parse_regex_replace(cls, regex_replace):
+        """
+        検索条件と置換文字のペアを作成
+        """
+        if not regex_replace.strip():
+            return []
+
+        parts = [p.strip("\n\t") for p in regex_replace.split('--')]
+        pairs = []
+
+        for i in range(0, len(parts), 2):
+            search = parts[i]
+            if search:  # 検索文字があれば
+                replace = parts[i + 1] if i + 1 < len(parts) else ""
+                pairs.append((search, replace))
+
+        return pairs
+
+
+
+"""
+
+D2 MultiOutput
+数値、文字列、SEEDのリストを出力するノード
+
+"""
+class D2_MultiOutput(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Multi Output",
+            display_name="D2 Multi Output",
+            category="D2/Text",
+            inputs=[
+                # 入力タイプ
+                io.Combo.Input("type", options=["FLOAT", "INT", "STRING", "SEED"]),
+                # プロンプト
+                io.String.Input("parameter", multiline=True),
+                # seed 生成ボタン（JS の D2_BUTTON ウィジェット。値は使わない）
+                io.Custom("D2_BUTTON").Input("create_seed", optional=True),
+            ],
+            outputs=[
+                io.Custom("LIST").Output(display_name="LIST"),
+                io.String.Output(display_name="x / y_list"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, type, parameter, create_seed=None) -> io.NodeOutput:
+
+        # 入力文字列を改行で分割
+        param_options = parameter.strip().split('\n')
+
+        # 出力リスト
+        output_list = []
+
+        # 文字列を検索して置換
+        for option in param_options:
+            if type == "INT" or type == "SEED":
+                output_list.append(int(option))
+            elif type == "FLOAT":
+                output_list.append(float(option))
+            else:
+                output_list.append(option)
+
+        return io.NodeOutput(output_list, parameter)
+
+
+
+
+"""
+
+TokenCounter
+トークン化と計数を行うユーティリティクラス
+
+"""
+class TokenCounter:
+    def __init__(self):
+        # 明示的に初期化
+        self.tokenizer = None
+        self.loaded_tokenizer_name = None
+
+    def load_tokenizer(self, clip_name):
+        """正しいCLIPトークナイザーを読み込む"""
+        if clip_name == "ViT-L/14":
+            tokenizer_name = "openai/clip-vit-large-patch14"
+        elif clip_name == "ViT-B/32":
+            tokenizer_name = "openai/clip-vit-base-patch32"
+        elif clip_name == "ViT-B/16":
+            tokenizer_name = "openai/clip-vit-base-patch16"
+        else:
+            raise ValueError(f"Unknown CLIP model: {clip_name}")
+
+        # 新しいトークナイザーが必要な場合のみロードする
+        if self.tokenizer is None or self.loaded_tokenizer_name != tokenizer_name:
+            try:
+                self.tokenizer = CLIPTokenizer.from_pretrained(tokenizer_name)
+                self.loaded_tokenizer_name = tokenizer_name
+                # print(f"Loaded CLIP tokenizer: {tokenizer_name}")
+            except Exception as e:
+                print(f"Error loading tokenizer {tokenizer_name}: {e}")
+                # フォールバックとしてデフォルトのCLIPトークナイザーを試す
+                self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+                self.loaded_tokenizer_name = "openai/clip-vit-large-patch14"
+                print("Loaded fallback tokenizer: openai/clip-vit-large-patch14")
+
+        # トークナイザーが正しくロードされたことを確認
+        if self.tokenizer is None:
+            raise ValueError("Failed to load tokenizer")
+
+    def count_tokens(self, text, clip_name="ViT-L/14"):
+        """
+        テキストをトークン化して、トークン数とトークン化された結果を返す
+        """
+        # トークナイザーをロード
+        self.load_tokenizer(clip_name)
+
+        # トークナイザーが正しくロードされていることを確認
+        if self.tokenizer is None:
+            raise ValueError("Tokenizer is not loaded")
+
+        # テキストをトークン化
+        tokens = self.tokenizer.encode(text)
+        token_count = len(tokens)
+
+        # トークン化の詳細結果を取得
+        tokenized_words = []
+        for word in text.split():
+            word_tokens = self.tokenizer.encode(" " + word if word != text.split()[0] else word)
+            # BPEトークナイザーの場合は先頭に特殊トークンが付くことがあるので除去
+            if len(word_tokens) > 0 and word_tokens[0] == self.tokenizer.bos_token_id:
+                word_tokens = word_tokens[1:]
+
+            # トークンIDからテキスト表現に変換
+            token_texts = [self.tokenizer.decode([t]) for t in word_tokens]
+
+            tokenized_words.append({
+                "word": word,
+                "token_count": len(word_tokens),
+                "tokens": token_texts
+            })
+
+        # 人間が読みやすい形式でトークン化結果を整形
+        result_text = f"合計トークン数: {token_count}\n\n"
+        result_text += "トークン化された単語:\n"
+        for item in tokenized_words:
+            result_text += f"「{item['word']}」({item['token_count']}トークン): {', '.join(item['tokens'])}\n"
+
+        # 特殊トークンとその意味について説明
+        result_text += "\n特殊トークン情報:\n"
+        special_tokens = {
+            self.tokenizer.bos_token: "文章の開始",
+            self.tokenizer.eos_token: "文章の終了",
+            self.tokenizer.pad_token: "パディング",
+            self.tokenizer.unk_token: "未知のトークン"
+        }
+        for token, description in special_tokens.items():
+            if token:  # Noneでないことを確認
+                result_text += f"{token}: {description}\n"
+
+        return (token_count, result_text)
+
+
+"""
+
+D2 TokenCounter
+プロンプトのトークンを数える
+
+"""
+class D2_TokenCounter(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Token Counter",
+            display_name="D2 Token Counter",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("text", multiline=True),
+                io.Combo.Input("clip_name", options=["ViT-L/14", "ViT-B/32", "ViT-B/16"], default="ViT-L/14"),
+            ],
+            outputs=[
+                io.Int.Output(display_name="token_count"),
+                io.String.Output(display_name="tokenized_result"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, text, clip_name) -> io.NodeOutput:
+        """
+        テキストをトークン化して、トークン数とトークン化された結果を返す
+        """
+        # V3 はステートレスなので TokenCounter は execute 内で生成する（V1 の self.token_counter 相当）
+        token_count, tokenized_result = TokenCounter().count_tokens(text, clip_name)
+        return io.NodeOutput(token_count, tokenized_result)
+
+
+"""
+プロンプトのトークンカウンターをAPIで用意
+D2/token-counter/get-count
+という形式でリクエストが届く
+"""
+@PromptServer.instance.routes.post("/D2/token-counter/get-count")
+async def route_d2_token_counter_get_count(request):
+    count = 0
+    try:
+        data = await request.json()
+        prompt = data.get("prompt", "")
+        comment_type = data.get("comment_type", "")
+        new_prompt = delete_comment(prompt, comment_type)
+        token_counter = TokenCounter()
+        count, _ = token_counter.count_tokens(new_prompt)
+    except Exception as e:
+        print(f"Error in token counter API: {str(e)}")
+        count = 0
+
+    # JSON応答を返す
+    json_data = json.dumps({"count": count})
+    return web.Response(text=json_data, content_type='application/json')
+
+
+
+"""
+
+D2 Prompt
+トークン計算機能とコメント削除機能がついたテキスト入力
+
+"""
+class D2_Prompt(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Prompt",
+            display_name="D2 Prompt",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("prompt", multiline=True),
+                io.Combo.Input("comment_type", options=util.COMMENT_TYPES),
+                io.Combo.Input("insert_lora", options=["CHOOSE"] + folder_paths.get_filename_list("loras")),
+                io.Boolean.Input("token_count", default=False),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, prompt, comment_type, insert_lora="", token_count=False) -> io.NodeOutput:
+        new_prompt = delete_comment(prompt, comment_type)
+        return io.NodeOutput(new_prompt)
+
+
+
+"""
+
+D2 List To String
+
+"""
+class D2_ListToString(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 List To String",
+            display_name="D2 List To String",
+            category="D2/Text",
+            inputs=[
+                io.Custom("LIST").Input("LIST"),
+                io.Combo.Input("separator", options=util.SEPARATOR, default=util.LINE_BREAK),
+            ],
+            outputs=[
+                io.String.Output(display_name="STRING"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, LIST, separator) -> io.NodeOutput:
+        output = util.list_to_text(LIST, separator)
+        return io.NodeOutput(output)
+
+
+"""
+
+D2 Text Concat
+入力数を調整できるテキスト結合ノード
+
+"""
+class D2_TextConcat(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Text Concat",
+            display_name="D2 Text Concat",
+            category="D2/Text",
+            inputs=[
+                io.Int.Input("text_count", default=3, min=1, max=50, step=1),
+                io.Combo.Input("separator", options=util.SEPARATOR, default="Comma + Space"),
+                io.Boolean.Input("skip_empty", default=True),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+            ],
+            # JS が text_1..text_N を addInput で動的追加するため **kwargs で受ける
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, text_count, separator="Comma + Space", skip_empty=True, **kwargs) -> io.NodeOutput:
+        texts = []
+        for i in range(1, text_count + 1):
+            text = kwargs.get(f"text_{i}")
+            if text is None:
+                continue
+            if skip_empty:
+                # 前後の空白・改行を除去し、空になったものはスキップ
+                text = text.strip()
+                if text == "":
+                    continue
+            texts.append(text)
+
+        output = util.get_separator_str(separator).join(texts)
+        return io.NodeOutput(output)
+
+
+"""
+
+D2 Filename Template
+
+"""
+class D2_FilenameTemplate(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        tooltip = "Datetime -- %date:{yyyy/MM/dd/hh/mm/ss}%\n" \
+                  "Node param -- %node:{id}.{key}%\n" \
+                  "arg_1-3 -- %arg_1%\n" \
+                  "Delete .safetensors -- %arg_1:ckpt_name"
+
+        return io.Schema(
+            node_id="D2 Filename Template",
+            display_name="D2 Filename Template",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("format", tooltip=tooltip),
+                io.Int.Input("arg_count", default=3, min=1, max=50, step=1),
+                io.Boolean.Input("normalization", default=True),
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
+            ],
+            outputs=[
+                io.String.Output(display_name="STRING"),
+            ],
+            hidden=[io.Hidden.prompt],
+            # arg_1..arg_N は JS が動的に追加する未宣言入力。V1 の **kwargs と同様に
+            # 受け取るため accept_all_inputs を有効化する。
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, format, arg_count, normalization, seed, **kwargs) -> io.NodeOutput:
+
+        args = {}
+
+        for i in range(1, arg_count + 1):
+            key = f"arg_{i}"
+            arg = kwargs.get(key)
+            if arg is not None:
+                args[key] = arg
+
+        text = replace_template(format, args, cls.hidden.prompt, normalization)
+        return io.NodeOutput(text)
+
+
+
+"""
+
+D2 Filename Template2
+
+"""
+class D2_FilenameTemplate2(D2_FilenameTemplate):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        tooltip = "Datetime -- %date:{yyyy/MM/dd/hh/mm/ss}%\n" \
+                  "Node param -- %node:{id}.{key}%\n" \
+                  "arg_1-3 -- %arg_1%\n" \
+                  "Delete .safetensors -- %arg_1:ckpt_name"
+
+        return io.Schema(
+            node_id="D2 Filename Template2",
+            display_name="D2 Filename Template2",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("format", tooltip=tooltip, multiline=True),
+                io.Int.Input("arg_count", default=3, min=1, max=50, step=1),
+                io.Boolean.Input("normalization", default=True),
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
+            ],
+            outputs=[
+                io.String.Output(display_name="STRING"),
+            ],
+            hidden=[io.Hidden.prompt],
+            accept_all_inputs=True,
+        )
+
+
+"""
+
+D2 Prompt Sanitizer
+
+"""
+class D2_PromptSanitizer(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Prompt Sanitizer",
+            display_name="D2 Prompt Sanitizer",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("prompt", force_input=True),
+                io.Boolean.Input("underscore_to_space", default=True),
+                io.Boolean.Input("space_after_comma", default=True),
+                io.Boolean.Input("remove_extra_comma", default=True),
+                io.Boolean.Input("protect_lora", default=True),
+                io.Boolean.Input("protect_score", default=True),
+                io.Combo.Input("newline_mode", options=text_util.NEWLINE_MODES, default="keep"),
+                io.Boolean.Input("remove_duplicate_tags", default=False),
+                io.Boolean.Input("strip_trailing_comma", default=False),
+                # 既存ワークフローのウィジェット値は並び順で復元されるため、後から足す入力は末尾に置く
+                io.Combo.Input("comment_type", options=util.COMMENT_TYPES, default=util.COMMENT_TYPE_NONE),
+            ],
+            outputs=[
+                io.String.Output(display_name="prompt"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, prompt, underscore_to_space=True, space_after_comma=True, remove_extra_comma=True, protect_lora=True, protect_score=True, newline_mode="keep", remove_duplicate_tags=False, strip_trailing_comma=False, comment_type=util.COMMENT_TYPE_NONE) -> io.NodeOutput:
+        # 改行変換で行頭の # や // が行頭でなくなる前に消す
+        prompt = delete_comment(prompt, comment_type)
+        text = text_util.sanitize_prompt(
+            prompt,
+            underscore_to_space=underscore_to_space,
+            space_after_comma=space_after_comma,
+            remove_extra_comma=remove_extra_comma,
+            protect_lora=protect_lora,
+            protect_score=protect_score,
+            newline_mode=newline_mode,
+            remove_duplicate_tags=remove_duplicate_tags,
+            strip_trailing_comma=strip_trailing_comma,
+        )
+        return io.NodeOutput(text)
+
+
+
+
+"""
+
+D2 Convert NAI Prompt
+StableDiffusion 方式と NovelAI 方式のプロンプト weight を相互変換する
+
+"""
+class D2_ConvertNaiPrompt(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Convert NAI Prompt",
+            display_name="D2 Convert NAI Prompt",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("prompt", force_input=True),
+                io.Combo.Input("convert", options=nai_prompt_util.CONVERT_TYPES, default="sd_to_nai"),
+                io.Combo.Input("mode", options=nai_prompt_util.MODES, default="number"),
+                io.Boolean.Input("remove_negative", default=True),
+            ],
+            outputs=[
+                io.String.Output(display_name="prompt"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, prompt, convert="sd_to_nai", mode="number", remove_negative=True) -> io.NodeOutput:
+        if convert == "sd_to_nai":
+            text = nai_prompt_util.convert_to_nai(prompt, mode)
+        else:
+            text = nai_prompt_util.convert_to_sd(prompt, mode, remove_negative)
+        return io.NodeOutput(text)
+
+
+
+
+"""
+
+D2 Load Text
+テキストファイルを読み込む汎用ノード
+キャプション編集ではファイルパスを D2 Folder Image Queue から受け取る想定
+
+"""
+class D2_LoadText(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Load Text",
+            display_name="D2 Load Text",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("file_path", default=""),
+                io.Boolean.Input("encode_to_utf8", default=False),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+                io.String.Output(display_name="file_path"),
+            ],
+        )
+
+    # 同じ file_path でも外部アプリでファイルが更新されたら再読込させるため mtime を返す。
+    # 返り値が前回と変わると ComfyUI がキャッシュを無効化し execute を再実行する。
+    @classmethod
+    def fingerprint_inputs(cls, file_path="", encode_to_utf8=False):
+        if file_path and os.path.isfile(file_path):
+            return os.path.getmtime(file_path)
+        return file_path
+
+    @classmethod
+    def execute(cls, file_path="", encode_to_utf8=False) -> io.NodeOutput:
+        text = caption_util.load_text_file(file_path, encode_to_utf8)
+        return io.NodeOutput(text, file_path)
+
+
+"""
+
+D2 Load CSV
+CSV / TSV を読み込み、行・列の範囲を指定して取り出すノード
+
+"""
+class D2_LoadCSV(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Load CSV",
+            display_name="D2 Load CSV",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("file_path", default=""),
+                io.Combo.Input("file_type", options=["csv", "tsv"], default="csv"),
+                io.Boolean.Input("encode_to_utf8", default=False),
+                io.Combo.Input("output_mode", options=["list", "csv"], default="csv"),
+                io.String.Input("row_index", default=""),
+                io.String.Input("column_index", default=""),
+                io.Boolean.Input("use_doublequote", default=False),
+            ],
+            outputs=[
+                io.AnyType.Output(display_name="output"),
+                io.Int.Output(display_name="lines_count"),
+                io.String.Output(display_name="file_path"),
+            ],
+        )
+
+    # 同じ file_path でも外部アプリでファイルが更新されたら再読込させるため mtime を返す。
+    @classmethod
+    def fingerprint_inputs(cls, file_path="", file_type="csv", encode_to_utf8=False, output_mode="csv", row_index="", column_index="", use_doublequote=False):
+        if file_path and os.path.isfile(file_path):
+            return os.path.getmtime(file_path)
+        return file_path
+
+    @classmethod
+    def execute(cls, file_path="", file_type="csv", encode_to_utf8=False, output_mode="csv", row_index="", column_index="", use_doublequote=False) -> io.NodeOutput:
+        text = caption_util.load_text_file(file_path, encode_to_utf8)
+        # row_index / column_index が壊れた書式なら csv_util が ValueError を投げ、
+        # ワークフローの実行が停止する（誤った結果を流さない）。
+        output, lines_count = csv_util.load_csv(
+            text,
+            file_type=file_type,
+            output_mode=output_mode,
+            row_index=row_index,
+            column_index=column_index,
+            use_doublequote=use_doublequote,
+        )
+        return io.NodeOutput(output, lines_count, file_path)
+
+
+"""
+
+D2 Save Caption
+タグ整形をしてキャプションファイルを保存するノード
+保存先は base_filename の拡張子を extension に置換したパス
+
+"""
+class D2_SaveCaption(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Save Caption",
+            display_name="D2 Save Caption",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("base_filename", default=""),
+                io.String.Input("text", force_input=True, multiline=True, default=""),
+                io.String.Input("extension", default="txt"),
+                io.String.Input("exclude_tags", multiline=True, default=""),
+                io.String.Input("prepend_tags", default=""),
+                io.Combo.Input("word_separator", options=["underscore", "space", "none"], default="underscore"),
+                io.Boolean.Input("remove_escape", default=True),
+                io.Boolean.Input("trailing_comma", default=False),
+                io.Boolean.Input("ignore_case", default=True),
+                io.Boolean.Input("backup", default=True),
+                io.Boolean.Input("dry_run", default=False),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+                io.String.Output(display_name="file_path"),
+            ],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, base_filename="", text="", extension="txt", exclude_tags="", prepend_tags="", word_separator="underscore", remove_escape=True, trailing_comma=False, ignore_case=True, backup=True, dry_run=False) -> io.NodeOutput:
+        formatted = caption_util.format_caption(
+            text,
+            exclude_tags=exclude_tags,
+            prepend_tags=prepend_tags,
+            word_separator=word_separator,
+            trailing_comma=trailing_comma,
+            ignore_case=ignore_case,
+            remove_escape=remove_escape,
+        )
+        save_path = caption_util.save_caption(base_filename, formatted, extension, backup, dry_run)
+        return io.NodeOutput(formatted, save_path)
+
+
+"""
+
+D2 Tag Report
+フォルダ内キャプションのタグ出現頻度を集計し、除外タグリストを作るノード
+get_tags ボタンで集計結果を text に表示し、ユーザーが編集して exclude_tags に渡す
+exclude_tags にタグ辞書を指定すると、辞書に載っていないタグだけを集計する
+（カンマ忘れ・空白ミスなど誤って入力したプロンプトを炙り出す用途）
+
+"""
+class D2_TagReport(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Tag Report",
+            display_name="D2 Tag Report",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("folder", default=""),
+                io.Boolean.Input("include_subfolders", default=False),
+                io.String.Input("extension", default="txt"),
+                io.Combo.Input("order_by", options=["count_9-0", "count_0-9", "tag_a-z", "tag_z-a"], default="count_9-0"),
+                io.Boolean.Input("without_count", default=False),
+                io.String.Input("exclude_tags", default=""),
+                io.Combo.Input("output_type", options=["remove_comment", "output_comment"], default="remove_comment"),
+                io.Combo.Input("separator", options=["Line break", "Comma + Space"], default="Line break"),
+                io.Custom("D2_BUTTON").Input("get_tags", optional=True),
+                io.String.Input("text", multiline=True, default=""),
+            ],
+            outputs=[
+                io.String.Output(display_name="text"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, folder="", include_subfolders=False, extension="txt", order_by="count_9-0", without_count=False, exclude_tags="", output_type="remove_comment", separator="Line break", get_tags=None, text="") -> io.NodeOutput:
+        # exclude_tags は Get tags ボタン（集計）でのみ使うため、実行時は参照しない
+        # separator ラベルを実際の区切り文字へ変換して渡す（caption_util は comfy 非依存のため util を import しない）
+        result = caption_util.format_tag_report(text, output_type, util.get_separator_str(separator))
+        return io.NodeOutput(result)
+
+
+"""
+フォルダ内キャプションのタグを集計してレポートを返す
+D2/tag-report/get-tags に下記の JSON を POST する
+{ folder, extension, include_subfolders, order_by, without_count, exclude_tags }
+exclude_tags（タグ辞書）は数MBになりうるので、URLクエリではなく POST ボディで受け取る
+"""
+@PromptServer.instance.routes.post("/D2/tag-report/get-tags")
+async def route_d2_tag_report_get_tags(request):
+    try:
+        data = await request.json()
+        folder = data.get('folder', '')
+        extension = data.get('extension', '')
+        include_subfolders = data.get('include_subfolders', False)
+        order_by = data.get('order_by', 'count_9-0')
+        without_count = data.get('without_count', False)
+        exclude_tags = data.get('exclude_tags', '')
+
+        # 辞書（パス or 貼り付けテキスト）を比較キーの集合にする
+        exclude_keys = caption_util.load_tag_dictionary(exclude_tags)
+
+        files = util.get_files(folder, f"*.{extension}", include_subfolders=include_subfolders)
+        items = caption_util.count_tags(files, order_by, exclude_keys)
+        report = caption_util.build_tag_report(items, without_count)
+    except Exception as e:
+        print(f"[D2 Tag Report] 集計に失敗しました: {e}")
+        report = ""
+
+    # JSON応答を返す
+    json_data = json.dumps({"report": report})
+    return web.Response(text=json_data, content_type='application/json')
+
+
+
+"""
+
+D2 Moss Item
+マスクから MOSS-Image のレイアウトアイテム1件を作る
+
+"""
+class D2_MossItem(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Moss Item",
+            display_name="D2 Moss Item",
+            category="D2/Text",
+            inputs=[
+                io.Mask.Input("mask"),
+                io.Combo.Input("label", options=moss_util.LABELS, default=moss_util.LABEL_OBJECT),
+                io.String.Input("caption", default="", multiline=True),
+                # 複数行欄を2つ置くと高さが均等に割られ caption が狭くなるため1行にする。
+                # 改行は \n の2文字で書くか、外部ノードをつないで入れる
+                io.String.Input("text", default=""),
+            ],
+            outputs=[
+                io.Custom("D2_MOSS_ITEM").Output(display_name="moss_item"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, mask, label, caption="", text="") -> io.NodeOutput:
+        bbox = moss_util.mask_to_bbox(mask)
+        # text は描かせる文字なので # などを残す。コメント削除は caption だけ
+        caption = delete_comment(caption, util.COMMENT_TYPE_ALL)
+        item = moss_util.build_item(label, caption, text, bbox)
+        height, width = mask.shape[-2:]
+        return io.NodeOutput(D2_TMossItem(item=item, width=int(width), height=int(height)))
+
+
+
+"""
+
+D2 Moss Prompt
+複数の moss_item をまとめて MOSS-Image のレイアウトプロンプト（JSON）を作る
+
+"""
+class D2_MossPrompt(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Moss Prompt",
+            display_name="D2 Moss Prompt",
+            category="D2/Text",
+            inputs=[
+                io.String.Input("meta", default=""),
+                io.String.Input("canvas_type", default="single"),
+                io.String.Input("summary_caption", default="", multiline=True),
+                io.Int.Input("item_count", default=2, min=1, max=50, step=1),
+            ],
+            outputs=[
+                io.String.Output(display_name="prompt"),
+            ],
+            # JS が moss_item_1..N を addInput で動的追加するため **kwargs で受ける
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, meta, canvas_type, summary_caption, item_count, **kwargs) -> io.NodeOutput:
+        moss_items = []
+        for i in range(1, item_count + 1):
+            moss_item = kwargs.get(f"moss_item_{i}")
+            if isinstance(moss_item, D2_TMossItem):
+                moss_items.append(moss_item)
+
+        moss_util.check_item_sizes([(m.width, m.height) for m in moss_items])
+        summary_caption = delete_comment(summary_caption, util.COMMENT_TYPE_ALL)
+        prompt = moss_util.build_prompt(meta, canvas_type, summary_caption, [m.item for m in moss_items])
+        return io.NodeOutput(prompt)
+
+
+NODE_CLASS_MAPPINGS = {
+    "D2 Regex Switcher": D2_RegexSwitcher,
+    "D2 Regex Replace": D2_RegexReplace,
+    "D2 Token Counter": D2_TokenCounter,
+    "D2 Multi Output": D2_MultiOutput,
+    "D2 List To String": D2_ListToString,
+    "D2 Text Concat": D2_TextConcat,
+    "D2 Filename Template": D2_FilenameTemplate,
+    "D2 Filename Template2": D2_FilenameTemplate2,
+    "D2 Prompt": D2_Prompt,
+    "D2 Prompt Sanitizer": D2_PromptSanitizer,
+    "D2 Convert NAI Prompt": D2_ConvertNaiPrompt,
+    "D2 Load Text": D2_LoadText,
+    "D2 Load CSV": D2_LoadCSV,
+    "D2 Save Caption": D2_SaveCaption,
+    "D2 Tag Report": D2_TagReport,
+    "D2 Moss Item": D2_MossItem,
+    "D2 Moss Prompt": D2_MossPrompt,
+}

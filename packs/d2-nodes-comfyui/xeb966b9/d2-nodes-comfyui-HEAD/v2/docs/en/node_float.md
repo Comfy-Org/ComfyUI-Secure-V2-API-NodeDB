@@ -1,0 +1,65 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+
+# Node
+
+
+## :tomato: Float Palet
+
+### D2 Queue Button
+
+<figure>
+<img src="../img/queue_button.png">
+</figure>
+
+- Button to generate specified number of images (Batch count)
+- Can be moved by dragging the left edge of the palette (drag handle)
+- Drag the palette and drop it onto the actionbar at the top of the screen to dock it there
+- Drag the handle slightly out of the dock to return it to a floating (free-moving) state
+- The docked/floating state is remembered and restored on the next launch
+
+<figure>
+<img src="../img/queue_button_setting.png">
+</figure>
+
+- Configure visibility in ComfyUI settings under `D2` category
+- Number of images can also be set from settings screen
+- Separate numbers with comma (,)
+
+---
+
+### Prompt convert dialog
+
+<figure>
+<img src="../img/prompt_convert_dialog.png">
+</figure>
+
+- Dialog for converting weights between NovelAI and StableDiffusion
+- Switch between `number` (numeric format `1.2::aaa ::`) and `brace` (brace format `{{aaa}}`)
+- When `Remove negative` is ON, tags with a negative weight are removed in NovelAI → StableDiffusion numeric conversion (ON by default)
+- Uses the same conversion rules as <a href="node_text.md#D2-Convert-NAI-Prompt">`D2 Convert NAI Prompt`</a>
+- Open from `Prompt convert` button
+- Hidden by default
+- Enable display by activating `settings > D2 > Show prompt convert button`
+
+---
+
+### D2 Progress Preview
+
+<figure>
+<img src="../img/progress-preview.png">
+</figure>
+
+- Displays images during generation and after generation
+- Images after generation can be clicked to launch a gallery (Lightbox style)
+- Targets all output nodes, so content may sometimes be duplicated
+- Enable display by activating `settings > D2 > Show progress preview` (shown by default)

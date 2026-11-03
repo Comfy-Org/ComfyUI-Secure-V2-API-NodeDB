@@ -1,0 +1,619 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+
+# Node
+
+## :tomato: Sampler Nodes
+
+### D2 KSampler / D2 KSampler(Advanced)
+
+<figure>
+<img src="../img/ksampler_3.png">
+</figure>
+
+#### Differences from standard KSampler
+
+- Directly outputs images (VAE Decoder not required)
+- Can input prompts in STRING format
+- Supports A1111-style LoRA loading prompts
+    - Example: `<lora:foo.safetensors:1>`
+    - For format, refer to <a href="node.md#d2-load-lora">`D2 Load Lora`</a>
+    - Note: When inputting `positive_cond` / `negative_cond` to `D2 KSampler Advanced`, LoRA will not be applied to CLIP. It will only be applied to MODEL.
+- Has dedicated Controlnet input for simple application
+- Supports `d2_pipe` which consolidates generation parameters
+    - Can easily receive from `D2 XY Plot`, `D2 XY Plot Easy`, `D2 XY Plot Easy Mini`
+    - Can collectively receive `model` / `clip` / `vae` from `D2 Checkpoint Loader` or `D2 Load Diffusion Model Set`
+    - Can easily pass parameters to `D2 Save Image Eagle`
+- Can change prompt weight algorithm (weight_interpretation)
+
+#### Notes
+
+- When `d2_pipe` is connected, `d2_pipe` parameters take priority
+- For example, if you specify **steps:20** in `D2 KSampler` and **steps:15** in `D2 XYPlot Easy`, with `d2_pipe` connected, **steps:15** from `D2 XYPlot Easy` will be used.
+- However, `model` / `clip` / `vae` / `positive_cond` / `negative_cond` give priority to **directly connected inputs** (same handling as `positive` / `negative`). The `d2_pipe` values are used only when there is no direct connection.
+
+#### Input
+
+- Same as standard KSampler
+    - `model` / `clip` / `latent_image` / `seed` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise`
+    - `model` / `clip` can now be passed via `d2_pipe`, so both are optional
+- Added in D2 KSampler
+    - `vae`: optional, since it can be passed via `d2_pipe`
+    - `cnet_stack`: For connecting to `D2 Controlnet Loader`
+    - `d2_pipe`: Consolidated generation parameters. Received from nodes like `D2 XY Plot`
+    - `preview_method`: Preview display method during generation
+    - `positive` / `negative`: Prompts in STRING format
+- Added in D2 KSampler Advanced
+    - `token_normalization` / `weight_interpretation`
+        - Methods for adjusting prompt weights. Available in D2 KSampler Advanced
+        - Requires [Advanced CLIP Text Encode](https://github.com/BlenderNeko/ComfyUI_ADV_CLIP_emb/) to use
+
+#### Output
+
+- Same as standard KSampler
+    - `LATENT`
+- Added in D2 KSampler
+    - `IMAGE`: Generated image
+    - `MODEL` / `CLIP`: With LoRA applied
+    - `positive` / `negative`: Input passthrough
+    - `formatted_positive`: Positive prompt with A1111-style LoRA format removed
+    - `positive_cond` / `negative_cond`: CONDITIONING with Controlnet applied
+        - Since the Controlnet image covers the whole image, passing these to nodes that crop and redraw part of the image (such as FaceDetailer) may misalign the cropped area and the Controlnet, which can break the image
+    - `d2_pipe`: Consolidated generation parameters
+        - The CONDITIONING created inside D2 KSampler is not stored in `positive_cond` / `negative_cond` of `d2_pipe`. The input values (empty if not connected) are passed through as is
+
+---
+
+
+
+### D2 Pipe
+
+<figure>
+<img src="../img/pipe.png">
+</figure>
+
+- A node for modifying and extracting the contents of `d2_pipe`
+- `d2_pipe` is used to pass parameters collectively in nodes such as D2 XY Plot Easy, D2 KSampler, and D2 Save Image Eagle
+- In addition to `ckpt_name` / `positive` / `negative` / `seed` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` / `width` / `height`, it now also supports input/output of `model` / `clip` / `vae` / `positive_cond` / `negative_cond`
+    - Connecting a direct input to these overwrites the corresponding item in `d2_pipe`. If there is no connection, the `d2_pipe` value is passed through as is
+
+
+---
+
+## :tomato: Loader Node
+
+### D2 Checkpoint Loader
+
+<img src="../img/checkpoint_loader_2.png">
+
+- A Checkpoint Loader that outputs the full path of model files
+- Can automatically apply v_prediction settings when the filename contains "vpred"
+
+#### Input
+
+- `d2_pipe`
+  - Not used by this node itself, but adds `model` and others to the received `d2_pipe`
+- `ckpt_name`
+  - Checkpoint name
+- `auto_vpred`
+  - `true`: Automatically applies v_prediction settings if the filename contains "vpred"
+- `sampling` / `zsnr`
+  - Same settings as ModelSamplingDiscrete (details unknown)
+- `multiplier`
+  - Same settings as RescaleCFG (details unknown)
+
+#### Output
+
+- `model` / `clip` / `vae`
+    - Same as the conventional CheckpointLoader.
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Checkpoint name, hash, and full path.
+- `d2_pipe`
+    - Consolidates `model` / `clip` / `vae` / `ckpt_name`. Can be connected to `D2 KSampler` with a single wire.
+
+
+---
+
+
+### D2 Load Diffusion Model
+
+<img src="../img/load_diffusion_model.png">
+
+- A Load Diffusion Model that outputs the full path and filename of model files
+
+#### Input
+
+- `d2_pipe`
+  - Not used by this node itself, but adds `model` and others to the received `d2_pipe`
+- `unet_name` / `weight_dtype`: Same as the standard `Load Diffusion Model`
+
+#### Output
+
+- `model`
+    - Same as the standard Load Diffusion Model.
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Checkpoint name, hash, and full path.
+    - Although it's technically `unet_name`, it has been named `ckpt_name` to align with `D2 Checkpoint Loader`
+- `d2_pipe`
+    - Consolidates `model` / `ckpt_name`. Can be connected to `D2 KSampler`.
+    - Since this node does not load VAE / CLIP, `d2_pipe` contains only `model` (`clip` / `vae` need to be connected separately)
+
+
+---
+
+
+### D2 Load Diffusion Model Set
+
+<img src="../img/load_diffusion_model_set.png?2">
+
+- A loader that combines `Load Diffusion Model` + `Load VAE` + `Load CLIP` into one
+- Loads `model` / `clip` / `vae` together and can output them as `d2_pipe`
+- By connecting a single `d2_pipe` wire to `D2 KSampler`, individual connections for `model` / `clip` / `vae` become unnecessary
+
+#### Input
+
+- `d2_pipe`
+  - Not used by this node itself, but adds `model` and others to the received `d2_pipe`
+- `unet_name` / `weight_dtype`: Same as the standard `Load Diffusion Model`
+- `vae_name`: Same as the standard `Load VAE`
+- `clip_name` / `clip_type`: Same as the standard `Load CLIP`
+
+#### Output
+
+- `model` / `clip` / `vae`
+    - Same as each standard loader.
+- `ckpt_name` / `ckpt_hash` / `ckpt_fullpath`
+    - Diffusion Model name, hash, and full path.
+    - Although it's technically `unet_name`, it has been named `ckpt_name` to align with `D2 Checkpoint Loader`
+- `d2_pipe`
+    - Consolidates `model` / `clip` / `vae` / `ckpt_name`. Can be connected to `D2 KSampler` with a single wire.
+
+
+---
+
+### D2 Controlnet Loader
+
+<figure>
+<img src="../img/controlnet_2.png">
+</figure>
+
+- Controlnet Loader that creates simple workflows when connected to `D2 KSampler`
+- `controlnet_type` switches between `StableDiffusion` (standard Controlnet) and `Anima` (kohya-ss's Anima-LLLite)
+  - To use `Anima`, you need to install [ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite) beforehand
+
+#### Input
+
+- `controlnet_type`
+  - `StableDiffusion`: Standard Controlnet
+  - `Anima`: kohya-ss's Anima-LLLite (requires [ComfyUI-Anima-LLLite](https://github.com/kohya-ss/ComfyUI-Anima-LLLite))
+- `cnet_stack`
+  - For connecting to `D2 Controlnet Loader`
+
+#### Output
+
+- `cnet_stack`
+  - For connecting to `D2 KSampler` or `D2 Controlnet Loader`
+
+
+---
+
+
+### D2 Merge Cnet
+
+<figure>
+<img src="../img/merge-cnet.png">
+</figure>
+
+- A node that merges multiple `cnet_stack` into one
+- The number of inputs increases or decreases according to `cnet_stack_count`
+- Unconnected inputs are ignored, so you can use it with only some of them connected
+- Useful when you are using several Controlnets and want to disable only a specific one
+
+#### Input
+
+- `cnet_stack_count`
+  - Number of `cnet_stack` inputs (1-10)
+- `cnet_stack_1` - `cnet_stack_10`
+  - Connect the `cnet_stack` from `D2 Controlnet Loader` etc.
+
+#### Output
+
+- `cnet_stack`
+  - For connecting to `D2 KSampler` or `D2 Controlnet Loader`
+
+
+
+---
+
+
+### D2 Load Lora
+
+<figure>
+<img src="../img/loadlora.png?2">
+</figure>
+
+- A Lora loader that allows specifying Lora through text
+- model_weight / clip_weight can also be specified
+
+<figure>
+<img src="../img/loadlora_a1111.png">
+</figure>
+
+- There are two modes: one that uses the same format as StableDiffusion webui A1111 (a1111), and one that simply lists LoRA names (simple)
+- For specific usage, refer to the <a href="workflow.md">sample workflow</a>
+
+
+#### Input
+
+- `mode`
+  - `a1111`: Mode that allows using the same format as StableDiffusion webui A1111
+  - `simple`: Simple mode that just lists LoRA names. In this mode, the `STRING` output is not used
+
+#### Output
+
+- `MODEL` / `CLIP`: MODEL and CLIP with LoRA applied
+- `prompt`: Outputs the input text as is
+- `formatted_prompt`: Text with LoRA specification parts removed
+
+#### Format differences based on mode
+
+**mode: a1111**
+Expressed as `<lora:~>`.
+
+```
+<lora:lora_name:1>
+```
+
+**mode: simple**
+No decorations needed before or after
+```
+lora_name:1
+```
+
+#### How to specify Weight
+Write in the format `{lora_name}:{model_weight}:{clip_weight}`.
+```
+foo:0.8:1
+```
+If clip_weight is not specified, the same value as model_weight is applied.
+The following have the same meaning.
+```
+foo:0.8
+foo:0.8:0.8
+```
+If weight is not specified, "1" is applied
+The following have the same meaning.
+```
+foo
+foo:1:1
+```
+
+#### How to specify multiple LoRAs in simple mode
+
+Separate with line breaks
+```
+foo:0.5
+bar
+```
+When writing two types in one line, separate with ","
+```
+foo:0.5,bar
+```
+
+#### Comments
+Lines that start with "//" or "#" are ignored.
+```
+//foo:0.5
+#bar
+```
+
+
+---
+
+## :tomato: Size Node
+
+### D2 Get Image Size
+
+<figure>
+<img src="../img/get_image_size.png">
+</figure>
+
+- Both outputs and displays size
+
+---
+
+### D2 Size Selector
+
+<figure>
+<img src="../img/sizeselector_2.png">
+</figure>
+
+- Node for selecting image size from presets
+- Can also get size from images
+- Rounding method can be selected from `Ceil / Float / None`
+
+#### Input
+
+- `images`
+    - Used when getting size from images
+    - `preset` must be set to `custom`
+- `preset`
+    - Size presets
+    - Must be set to `custom` when using `width` `height` below or image sizes
+    - Edit `/custom_nodes/D2-nodes-ComfyUI/config/sizeselector_config.yaml` to modify presets
+- `width` / `height`
+    - Width/height dimensions
+    - `preset` must be set to `custom`
+- `swap_dimensions`
+    - Swap width/height
+- `upscale_factor`
+    - Value passed to other resize nodes. Does nothing in this node
+- `prescale_factor`
+    - Output width/height after resizing by this factor
+- `round_method`
+    - `Round`: Round to nearest
+    - `Floor`: Round down
+    - `None`: No rounding
+- `batch_size`
+    - Batch size to set for empty_latent
+
+#### Output
+
+- `width / height`
+    - Input `width`, `height` multiplied by `prescale_factor`
+- `upscale_factor` / `prescale_factor`
+    - Passthrough of input
+- `batch_size`
+    - Passthrough of input
+- `empty_latent`
+    - Outputs latent created with specified size and batch size
+
+---
+
+### D2 Image Resize
+
+<figure>
+<img src="../img/image_resize_3.png">
+</figure>
+
+- Image and mask resizing and rotation
+- Precision up to 3 decimal places for scaling
+- Can select rounding, floor, or ceiling for decimal handling
+- Capable of upscaling using upscale models
+- Latent output is also possible (requires VAE)
+- Rotation options: 90 / 180 / 270 degrees
+
+---
+
+### D2 Resize Calculator
+
+<figure>
+<img src="../img/resize_calc.png">
+</figure>
+
+- Can select rounding, floor, or ceiling
+
+---
+
+
+
+## :tomato: Refiner Node
+
+### D2 Refiner Steps
+
+<figure>
+<img src="../img/refiner_steps.png">
+</figure>
+
+- Node for outputting steps for Refiner
+
+#### Input
+
+- `steps`
+    - Total step count
+- `start`
+    - Starting steps for first KSampler
+- `end`
+    - Ending steps for first KSampler
+
+#### Output
+
+- `steps` / `start` / `end`
+    - Input passthrough
+- `refiner_start`
+    - Starting steps for second KSampler
+
+---
+
+### D2 Refiner Steps A1111
+
+<figure>
+<img src="../img/refiner_a1111.png">
+</figure>
+
+- Node that can specify denoise for Refiner in img2img
+
+#### Input
+
+- `steps`
+    - Total step count
+- `denoise`
+    - Specify denoise for img2img
+- `switch_at`
+    - What percentage of total steps to switch to next KSampler
+
+#### Output
+
+- `steps`
+    - Input passthrough
+- `start`
+    - Starting steps for first KSampler
+- `end`
+    - Ending steps for first KSampler
+- `refiner_start`
+    - Starting steps for second KSampler
+
+---
+
+### D2 Refiner Steps Tester
+
+- Node for checking steps
+
+
+---
+
+
+## :tomato: Merge Node
+
+
+### D2 Model and CLIP Merge SDXL
+
+<figure>
+  <img src="../img/merge_sdxl.png">
+</figure>
+
+- A node that combines ModelMergeSDXL and CLIPMergeSimple
+- Allows comma-separated weight specifications for easier use with XYPlot
+- In this figure, `0.85,0.85,1,1,0.4,0.4,1,0.4,0.4,0.4,1,0.4,0.4,0.4,0,0.55,0.85,0.85,0.85,0.85,0.85,0.85,1,1,0.65` is specified
+
+---
+
+### D2 Any Delivery
+
+<figure>
+  <img src="../img/any-delivery.png">
+</figure>
+
+- A node that can pass multiple elements together
+- Connect `D2 Any Delivery` nodes to pass data as a package
+- You can dynamically add necessary inputs and outputs by writing them in `_label`
+- Created because <a href="https://github.com/Trung0246/ComfyUI-0246" target="_blank">ComfyUI-0246</a>'s `Highway` became unusable with ComfyUI updates
+  - It's probably better to use the original if it gets updated
+
+#### Input
+
+- `_package`
+  - Package received from other `D2 Any Delivery` nodes
+- `_label`
+  - Define inputs and outputs
+  - Specified like `>width; >height; <width`
+  - Items starting with `>` are added as inputs
+  - Items starting with `<` are added as outputs
+  - Multiple items can be specified separated by `;`
+- `_update`
+  - Update inputs and outputs according to the content of `_label`
+
+#### Output
+
+- `_package`
+  - Package to pass to other D2_AnyDelivery nodes
+  - All values received in inputs are stored
+- Items specified with `<` in `_label`
+  - Values extracted from `_package` are output
+
+#### _label Examples
+
+Add `width` `height` to inputs
+```
+>width; >height
+```
+
+Add `width` `height` to outputs
+```
+<width; <height
+```
+
+Add `prompt` `seed` to inputs, `width` `height` to outputs
+```
+>prompt; >seed; <width; <height
+```
+
+---
+
+
+### D2 Preset Selector
+
+<figure>
+  <img src="../img/preset_selector.png">
+</figure>
+
+- A node that defines presets of multiple parameters as text and outputs a whole set by picking one from a dropdown
+- Intended for switching sets of recommended `steps` / `cfg` etc. per Checkpoint
+- Enter the format into `preset_text` and press `_update` to rebuild the output slots and the dropdown
+
+#### Input
+
+- `preset`
+  - Dropdown. The currently selected preset
+  - The titles from line 3 onward of `preset_text` become the choices
+- `preset_name`
+  - Input that receives a preset name as a string from outside (forceInput)
+  - When connected and not an empty string, it takes priority over `preset` (the dropdown selection)
+- `preset_text`
+  - Preset definition text (format described below)
+  - A sample is filled in by default, so you can try it as is
+- `_update`
+  - Updates the output slots and the dropdown according to `preset_text`
+
+#### Output
+
+- An output slot is created for each name defined on line 1 of `preset_text`
+- The values of the selected preset are converted to the types specified on line 2 and output
+
+#### preset_text Format
+
+```
+steps;cfg
+INT;FLOAT
+Anima;15;1.5
+Illustrious;20;5.0
+```
+
+- Line 1: output names (separated by `;`)
+- Line 2: output types (`INT` / `FLOAT` / `STRING` / `BOOLEAN`)
+- Line 3 onward: `title;value1;value2…` (one line per preset). The title (first cell) is required; leaving it empty causes an error
+
+In the example above, selecting `Anima` outputs `steps`=15 and `cfg`=1.5.
+
+#### Constraints
+
+- The separator `;` cannot be used inside `STRING` values
+- Connecting a Primitive node to the `preset` dropdown is not supported (due to a ComfyUI limitation, the choices are not shown). Reloading, loading a workflow, and subgraph inputs all work normally
+
+---
+
+
+### D2 Save Audio Eagle
+
+<figure>
+  <img src="../img/save_audio_eagle.png">
+</figure>
+
+- A node that sends audio files to Eagle
+- Note that files are also saved to the regular folder, so be mindful of drive space
+
+#### Input
+
+- `audio`
+  - Audio to save
+- `filename_prefix`
+  - Filename for saving
+- `eagle_folder`
+  - Destination folder name in Eagle
+- `format`
+  - Choose from FLAC / MP3 / Opus
+- `mp3_quality`
+  - Bitrate used when `format` is `mp3`
+- `opus_quality`
+  - Bitrate used when `format` is `Opus`
+- `memo_text`
+  - Text to save in Eagle's memo field

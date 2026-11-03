@@ -1,0 +1,648 @@
+<img src="../img/title.jpg" style="max-width:100%">
+
+
+
+<a href="../en/index.md">English</a> | <a href="../ja/index.md">日本語</a> | <a href="../zh/index.md">繁体中文</a>
+
+- <a href="index.md">Top</a>
+- <a href="node.md">Node</a> / <a href="node_image.md">Image Node</a> / <a href="node_text.md">Text Node</a> / <a href="node_xy.md">XYPlot Node</a> / <a href="node_float.md">Float Palet</a>
+- <a href="workflow.md">Workflow</a>
+
+
+
+<h1>
+Node
+</h1>
+
+
+
+## :tomato: Text Node
+
+
+
+
+### D2 Regex Replace
+
+<figure>
+  <img src="../img/regex_replace_2.png">
+</figure>
+
+- 正規表現を使って置換ができる
+- 複数の条件を指定できる
+- 正規表現によるマッチ文字列の再利用ができる（\1、\2 など）
+- 対象文字列を「タグ単位」と「全体」で指定できる
+
+#### Input
+
+- `text`
+    - 検索対象文字列
+- `mode`
+  - `Tag`: `text` を改行と「,」で分解し、個別に置換する
+  - `Advanced`: `text` をまとめて置換する
+- `regex_and_output`
+    - 検索文字列と出力文字列の一覧
+    - 下記のフォーマットで記入する
+    - 出力文字列に何も記載されてない時はマッチした部分を削除する
+    - 個数に上限は無い
+
+```
+検索文字 1
+--
+出力文字列 1
+--
+検索文字 2
+--
+出力文字列 2
+```
+
+#### Output
+
+- `text`
+    - 置換処理をしたテキスト
+
+#### Sample
+
+Pony系列のクオリティタグを削除するサンプル。
+
+Mode: `Tag`
+
+Input text
+```
+score_9, score_8_up, (score_7_up, score_6_up:0.8) , rating_explicit, source_anime, BREAK
+1girl, swimsuit
+```
+Regex Replace
+```
+.*(score_|rating_|source_).*
+--
+--
+BREAK
+--
+
+```
+
+Output text
+```
+1girl, swimsuit
+```
+
+
+---
+
+
+
+
+### D2 Regex Switcher
+
+  <img src="../img/regex_switcher_1.png">
+
+- 入力テキストを正規表現で検索し、該当したテキストを出力
+- 主な目的は Checkpoint 毎のクオリティタグの切り替え
+- 入力した `text` の中に合致する文字列を発見すると、対象文字列と、何番目に合致したか（0 から開始）を出力する
+- 上の画像では `ioliPonyMixV4.safetensors` を受け取り、検索条件 `pony` に合致したので `score_9` が出力されている
+- 最初の検索条件に合致したので `index` は `0` が出力される
+- 全ての条件に合致しないと `-1` が出力される
+- 文字列の前方結合、後方結合もできる。
+
+#### Input
+
+- `text`
+    - 検索対象文字列
+- `prefix`
+    - 前方に結合する文字列
+- `suffix`
+    - 後方に結合する文字列
+- `regex_and_output`
+    - 検索文字列と出力文字列の一覧
+    - 下記のフォーマットで記入する
+- `pre_delim`
+    - `prefix` と `regex_and_output` を接続する時に挟む文字
+    - `Comma`: `,` / `Line break`: 改行 / `None`: 何も挟まない
+- `suf_delim`
+    - `suffix` と `regex_and_output` を接続する時に挟む文字
+
+```
+検索文字 1（正規表現も使用可能）
+--
+出力文字列 1
+--
+検索文字 2（正規表現も使用可能）
+--
+出力文字列 2
+--
+--
+合致するものが無い時に出力する文字
+```
+
+#### Output
+
+- `combined_text`
+    - `prefix` + 出力文字列 + `suffix` を結合した文字列
+- `prefix` / `suffix`
+    - Input のパススルー
+
+#### 使用例
+
+  <img src="../img/regex_switcher_2.png">
+
+この例では合致した番号（`index`）を [Easy Use](https://github.com/yolain/ComfyUI-Easy-Use) の Text Index Switch に渡して切り替えている。
+
+合致しないと `-1` になってしまうので、全ての文字列に合致する正規表現 `.+` を使ってデフォルト出力の代わりにしている。
+
+
+---
+
+
+### D2 Multi Output
+
+<figure>
+  <img src="../img/multi_2.png">
+</figure>
+
+- seed や cfg など汎用的なパラメータをリスト出力するノード
+
+#### Input
+
+- `type`
+    - `FLOAT`: 浮動小数点数。CFG など
+    - `INT`: 整数。steps など
+    - `STRING`: 文字列。sampler など
+    - `SEED`: 乱数生成ボタンで seed 値を入力できる
+- `Add Random`
+    - 入力欄に乱数を追加する
+    - `type` が `SEED` の時だけ表示される
+
+### Output
+
+- `LIST`
+  - 改行で分解して配列で出力する
+- `x/y_list`
+  - 普通の改行区切りテキスト
+  - `D2 XY Plot`、`D2 XY Plot Easy`、`D2 XY Plot Easy Mini` で使用する
+
+
+---
+
+### D2 List To String
+
+<figure>
+  <img src="../img/list_to_string.png">
+</figure>
+
+- 配列（LIST）を1つの文字列に結合するノード
+- `separator` で区切り文字を選択する
+
+#### Input
+
+- `separator`
+    - `Comma + Space`: `, ` で結合
+    - `Comma`: `,` で結合
+    - `Line break`: 改行で結合
+    - `Semicolon`: `;` で結合
+    - `Space`: 半角スペースで結合
+    - `None`: 区切り文字なしで結合
+
+---
+
+### D2 Text Concat
+
+<figure>
+  <img src="../img/text_concat.png">
+</figure>
+
+- 入力数を調整できるテキスト結合ノード
+- `text_count` で入力欄を増減し、`text_1` 〜 `text_N` に接続したテキストを結合する
+- `separator` は `D2 List To String` と共通
+
+#### Input
+
+- `text_count`
+    - 入力欄の数を増減する（1〜50）
+- `separator`
+    - `Comma + Space`: `, ` で結合
+    - `Comma`: `,` で結合
+    - `Line break`: 改行で結合
+    - `Semicolon`: `;` で結合
+    - `Space`: 半角スペースで結合
+    - `None`: 区切り文字なしで結合
+- `skip_empty`
+    - `true` のとき、未接続や空（空白・改行のみ）の入力をスキップして結合する
+    - 余計な区切り文字（`, , `）が入るのを防ぐ
+
+---
+
+### D2 Filename Template / D2 Filename Template2
+
+<figure>
+  <img src="../img/filename_template_2.png">
+</figure>
+
+- 日付や他のノードのパラメーターを取り込んで文字列テンプレートを作るためのノード
+- `D2 Filename Template2` は複数行対応版です
+- 配列、辞書、オブジェクトから値を取得することも可能
+- Stable Diffusion webui A1111風のメタデータ書式など、よく使う書式をプリセット登録が可能
+  - `custom_nodes/d2-nodes-comfyui/config/template_config.yaml` を編集することで追加可能
+
+
+#### Input
+
+- `arg_{数字}`
+  - 他のノードから値を取り込む
+- `format`
+    - `%date:{yyyy/MM/dd/hh/mm/ss}%`
+      - `yyyy`: 年
+      - `MM`: 月
+      - `dd`: 日
+      - `hh`: 時
+      - `mm`: 分
+      - `ss`: 秒
+    - `%{ノード名}.{key}%`
+      - ノード名と、項目名を指定して値を取得する
+      - 例：`%Empty Latent Image.width%`: Empty Latent Image のノードから width を取得
+    - `%node:{id}.{key}%`
+      - ノードIDと、項目名を指定して値を取得する
+      - 例：`%node:8.width%`: ID 8 のノードから width を取得
+    - `%arg_{数字}%`
+      - 入力した値を埋め込む
+    - `%arg_{数字}:ckpt_name%`
+      - チェックポイント名から `.safetensors` を除外したものを埋め込む
+    - `%arg_{数字}:preset.{プリセット名}%`
+      - プリセットは `custom_nodes/d2-nodes-comfyui/config/template_config.yaml` を編集することで追加可能
+    - `%exec_{数字}[{index}]%`
+      - `arg_{数字}` に入力された**配列**から `{index}` の値を取得
+    - `%exec_{数字}['{key}']%`
+      - `arg_{数字}` に入力された**辞書**から `{key}` の値を取得
+    - `%exec_{数字}.{key}%`
+      - `arg_{数字}` に入力された**オブジェクト**から `{key}` の値を取得
+- `arg_count`
+  - 入力項目の増減
+- `normalization`
+  - ファイル名に使えない`:`を`_`に変換する
+
+<figure>
+  <img src="../img/filename_template_3.png">
+  <figucaption>`arg_N`に接続したノード情報や、ノード名などを使って取得している</figucaption>
+</figure>
+
+<figure>
+  <img src="../img/filename_template_4.png">
+  <figucaption>生成パラメーターをまとめたオブジェクト `d2_pipe` から `steps`,`sampler_name` を取得している</figucaption>
+</figure>
+
+<figure>
+  <img src="../img/filename_template_5.png?3">
+  <figucaption>`arg_1` に入力された値をプリセット `a1111` を使って出力している。チェックポイント名を追加するために `D2 Pipe` を使用</figucaption>
+</figure>
+
+---
+
+### D2 Prompt
+
+<figure>
+  <img src="../img/prompt_2.png?2">
+</figure>
+
+- `CHOOSE`ボタンからLoRAを選択し、A1111方式のLoRAプロンプトを挿入できる
+- テキスト内のコメントを削除する
+- 行頭「#」、行頭「//」、「/\*」〜「\*/」の間が対象
+- トークン数を下部に表示（`token_count` が `true` の時に動作する）
+- トークン数の計測のCLIPは"ViT-L/14"を使用。他のCLIPを使いたい時は `D2 Token Counter` をご利用ください
+
+
+#### コメントアウトのショートカットキーについて
+
+- 全てのテキストボックスでコメントアウトのショートカットキー（ctrl + /）が使用可能
+- ショートカットキーは `Settings > D2 > shortcutKey` で変更可能
+- 無効にしたい場合は上記の内容を削除する
+
+
+---
+
+### D2 Prompt Sanitizer
+
+<figure>
+  <img src="../img/prompt_sanitizer_2.png">
+</figure>
+
+- プロンプト文字列を整形するノード
+- `_`（アンダースコア）を半角スペースに変換する（`long_hair` → `long hair`）
+- `,`（カンマ）の後に必ず半角スペースを1つ入れ、前後の余分な空白を整理する（`a ,  b` → `a, b`）
+- 連続した余分なカンマをまとめ、行頭のカンマを削除する（`a,, ,b` → `a, b`）
+- 改行の変換、重複タグの削除、コメントの削除もできる
+- 各処理は個別に ON / OFF できる
+
+#### Input
+
+- `underscore_to_space`：`_` を半角スペースに変換する
+- `space_after_comma`：カンマ前後の空白を整理し `, ` に統一する（改行は保持）
+- `remove_extra_comma`：連続した余分なカンマ（`,,` / `, ,`）を1つにまとめ、行頭のカンマを削除する（改行は保持）
+- `protect_lora`：`<...>` で囲まれた LoRA 表記などを変換対象から保護する（`<lora:my_lora:1>` のアンダースコアを残す）
+- `protect_score`：Pony 系の品質タグ `score_9` / `score_8_up` などを変換対象から保護する
+- `newline_mode`：改行の変換方式
+    - `keep`：何もしない（改行を保持）
+    - `add_comma`：各行末に `,` を追加する（改行は保持。空行・既に `,` で終わる行には追加しない）
+    - `to_comma`：改行を `,` に変換して1行にまとめる
+    - `to_space`：改行を半角スペースに変換する
+    - `remove`：改行を削除する（`1girl\nsmile` → `1girlsmile`。日本語テキストの結合向け）
+- `remove_duplicate_tags`：重複したタグを削除する（先に出てきたものを残す。`_` と半角スペースの違い・大文字小文字は無視して比較する）
+- `strip_trailing_comma`：文字列全体の末尾にあるカンマを削除する（`add_comma` との併用向け）
+- `comment_type`：削除するコメントの書き方。`D2 Prompt` と同じ
+    - `# + // + /**/`：行頭が `#` の行、行頭が `//` の行、`/*` 〜 `*/` の間（複数行可）を削除する
+    - `# only` / `// only` / `/* */ only`：それぞれの書き方だけを削除する
+    - `None`：何もしない（初期値）
+
+> 処理は「コメント削除 → 重複タグ削除 → 改行変換 → アンダースコア変換 → 余分なカンマ除去 → カンマ整形 → 末尾カンマ削除」の順で行われる。`remove_duplicate_tags` で残る `,,` は `remove_extra_comma` が掃除するので、両方 ON にしておくときれいに整う。
+
+---
+
+### D2 Convert NAI Prompt
+
+<figure>
+  <img src="../img/convert_nai_prompt.png">
+</figure>
+
+- StableDiffusion と NovelAI のプロンプトの weight を相互変換するノード
+- <a href="node_float.md#Prompt-convert-dialog">`Prompt convert dialog`</a> と同じ変換をワークフロー内で行える
+- weight の範囲は改行で区切られる（改行をまたいで変換しない）
+- 重複したカンマや空白の整形は行わない。必要なら `D2 Prompt Sanitizer` を後ろにつなぐ
+
+#### Input
+
+- `prompt`：変換するプロンプト（入力専用）
+- `convert`：変換の向き
+    - `sd_to_nai`：StableDiffusion 方式 → NovelAI 方式
+    - `nai_to_sd`：NovelAI 方式 → StableDiffusion 方式
+- `mode`：NovelAI 側の weight の書き方
+    - `number`：数値方式（`1.2::aaa ::`）
+    - `brace`：ブレース方式（`{{aaa}}` / `[[aaa]]`）。weight が 0 以下のタグはブレースで表せないため、そのタグだけ数値方式で出力する
+- `remove_negative`：`nai_to_sd` かつ `number` のときだけ有効。マイナス weight のタグを削除する
+    - 削除したタグの前後のカンマは残る（`-2::aaa::, 1.2::bbb::` → `, (bbb:1.2)`）
+    - weight が 0 のタグは削除しない（0 でも生成結果に影響があるため）
+
+#### 数値方式の変換ルール
+
+- `sd_to_nai` では閉じ `::` の前に必ず半角スペースを入れる（`(aaa5:1.2)` → `1.2::aaa5 ::`）。`aaa5::` の `5::` が weight の開始と誤解釈されるのを防ぐため
+- `nai_to_sd` では `::` の閉じ忘れにも対応する。閉じ忘れた weight は、次の weight の開始か行末までを範囲とする
+    - `1.2::blonde hair, 1.3::from side::` → `(blonde hair:1.2), (from side:1.3)`
+    - `1.2::aaa, bbb::` → `(aaa, bbb:1.2)`（複数タグをまとめた指定はそのまま）
+- マイナス weight は `(aaa:-2)` のように数値の前にマイナスを付ける
+
+---
+
+### D2 Moss Item / D2 Moss Prompt
+
+<figure>
+  <img src="../img/moss_prompt.png">
+</figure>
+
+- 画像生成モデル [MOSS-Image](https://github.com/OpenMOSS/MOSS-Image) のレイアウトプロンプト（JSON 形式）を作るノード
+- マスクの範囲を、要素を置く位置（bbox）として使う
+- bbox の座標（キャンバス中心が原点のピクセル座標）を自動で計算するので、手で計算する必要がない。解像度を変えても配置が追従する
+- `D2 Create Masks` → `D2 Moss Item` → `D2 Moss Prompt` の順につないで使う
+- MOSS-Image のレイアウトプロンプトは実験的機能なので、[USERGUIDE](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md) に書かれている項目だけに対応している
+
+#### D2 Moss Item
+
+- レイアウトの要素1つ分を作る
+- マスクの中で値のある範囲を囲む長方形を bbox にする。マスクが空のときはキャンバス全体を bbox にする
+
+##### Input
+
+- `mask`：要素を置く範囲のマスク
+- `label`：要素の種類
+    - `object`：物や人物などを描かせる
+    - `text`：文字を描かせる
+- `caption`：要素の見た目の説明（大きさ・スタイル・位置など）
+    - `D2 Prompt` と同じ書き方でコメントアウトできる（行頭の `#` / `//`、`/*` 〜 `*/`）
+- `text`：描かせる文字。`label` が `text` のときだけ使う
+    - 改行したいときは `\n` と入力するか、または他のノード（`D2 Prompt` など）を接続する
+
+##### Output
+
+- `moss_item`：要素1つ分のデータ。`D2 Moss Prompt` に接続する
+
+#### D2 Moss Prompt
+
+- 画像全体の説明と、複数の `moss_item` をまとめて JSON 文字列のプロンプトにする
+
+##### Input
+
+- `meta`：画像の種類を表すタグ。カンマ区切りで複数入力できる
+    - 例：`poster` / `photograph` / `illustration, anime`
+- `canvas_type`：通常は `single` のままでよい
+- `summary_caption`：画像全体のシーンや画風の説明
+    - `caption` と同じくコメントアウトできる
+- `item_count`：`moss_item` の入力数
+- `moss_item_{数字}`：`D2 Moss Item` を接続する
+
+##### Output
+
+- `prompt`：レイアウトプロンプトの JSON 文字列。テキストエンコーダーに接続する
+
+> `meta` / `canvas_type` / `summary_caption` は、空欄にすると JSON から省略される。
+
+---
+
+### D2 Token Counter
+
+<figure>
+  <img src="../img/token_counter.png">
+</figure>
+
+- プロンプトのトークンを数える
+
+---
+
+### D2 Load Text
+
+<figure>
+  <img src="../img/load_text.png">
+</figure>
+
+- テキストファイルを読み込む汎用ノード
+- 学習用キャプションの一括編集では、`D2 Folder Image Queue` で `*.txt` のパスを取得して読み込む用途で使う
+
+#### Input
+
+- `file_path`
+  - 読み込むテキストファイルのフルパス
+- `encode_to_utf8`
+  - `true`: 文字コードを自動判別して utf-8 に変換して読み込む
+  - `false`: 変換しない（utf-8 として読み込む）
+
+#### Output
+
+- `text`
+  - ファイルの中身（整形せずそのまま。ファイルが存在しない場合は空文字）
+- `file_path`
+  - 入力した `file_path` をそのまま出力（`D2 Save Caption` の `base_filename` に渡す用）
+
+---
+
+### D2 Load CSV
+
+<figure>
+  <img src="../img/load_csv.png">
+</figure>
+
+- CSV / TSV ファイルを読み込み、行・列の範囲を指定して取り出すノード
+- プロンプトのようにカンマを含むデータは、ダブルクォートされている前提（標準的な CSV エスケープ）
+- 巨大なファイルでもメモリを抑えるため、出力は1つにし `output_mode` で形式を切り替える
+
+#### Input
+
+- `file_path`
+  - 読み込むファイルのフルパス
+- `file_type`
+  - `csv`: カンマ区切り / `tsv`: タブ区切り。入力ファイルの区切り文字
+- `encode_to_utf8`
+  - `true`: 文字コードを自動判別して utf-8 に変換して読み込む
+- `output_mode`
+  - `list`: 2次元配列で出力
+  - `csv`: 改行＋カンマ区切りのテキストで出力
+- `row_index` / `column_index`
+  - 出力する行・列の範囲（1スタート）。無指定（空）で全て
+  - `3`: 3行（列）目のみ
+  - `2-`: 2行（列）目から最後まで
+  - `-4`: 1〜4行（列）目
+  - `2-4`: 2〜4行（列）目
+  - 壊れた書式（`0`・`2--4`・非数値など）はエラーで実行を停止する（誤ったデータを流さないため）
+- `use_doublequote`
+  - `output_mode:csv` のとき、全セルをダブルクォートする
+  - `false` にすると素のカンマ結合になり、カンマを含むセルは区切りが失われる（`"AAA,BBB","XXX,YYY"` → `AAA,BBB,XXX,YYY`）
+
+#### Output
+
+- `output`
+  - 選択範囲のデータ。`output_mode` により2次元配列またはテキスト
+- `lines_count`
+  - 選択範囲の行数
+- `file_path`
+  - 入力した `file_path` をそのまま出力
+
+---
+
+### D2 Save Caption
+
+<figure>
+  <img src="../img/save_caption_2.png">
+</figure>
+
+- タグを整形してキャプションファイルを保存するノード
+- `base_filename` の拡張子を `extension` に置き換えたパスに保存する（例 `d:/images/aaa.jpg` → `d:/images/aaa.txt`）
+- 整形は「分割 → 前後空白除去 → 区切り統一 → エスケープ除去 → 除外 → 重複除去 → 先頭追加 → 末尾カンマ」の順で行う
+
+#### Input
+
+- `base_filename`
+  - 保存先の元パス。`D2 Folder Image Queue` の `image_path` や `D2 Load Text` の `file_path` を受け取る
+  - 空の場合はエラーで停止する（意図しない場所への保存を防ぐため）
+- `text`
+  - キャプション本文（`WD14 Tagger` や `D2 Load Text` から）
+- `extension`
+  - 保存するファイルの拡張子（例 `txt`）
+- `exclude_tags`
+  - 除外するタグ。カンマ・改行の両方で区切る
+  - `regex/パターン/` と書くと正規表現にマッチしたタグを除外する（除外専用）
+  - 括弧のエスケープは無視して比較する（プロンプトの `rem_\(re:zero\)` を除外タグ `rem_(re:zero)` で除外できる）
+- `prepend_tags`
+  - 先頭に追加するタグ。カンマ区切り。既に存在するタグは追加しない
+- `word_separator`
+  - 単語区切りを統一する（`blue eyes` と `blue_hair` の混在を揃える）
+  - `underscore`（デフォルト）: スペースを `_` に統一（`blue eyes` → `blue_eyes`）
+  - `space`: `_` をスペースに統一（`blue_hair` → `blue hair`）
+  - `none`: 変換しない
+- `remove_escape`
+  - `true`: 出力タグから括弧のエスケープ（`\(` `\)` `\[` `\]`）を外す（`rem_\(re:zero\)` → `rem_(re:zero)`）。学習用キャプション向け
+- `trailing_comma`
+  - `true`: 末尾にカンマを追加
+- `ignore_case`
+  - `true`: 除外の判定で大文字小文字を無視する
+- `backup`
+  - `true`: 同名ファイルがあれば旧ファイルを `.bak` にリネームしてから保存
+- `dry_run`
+  - `true`: 変換結果のプレビュー用。ファイルに保存せず、整形結果を `text` 出力で確認する
+
+#### Output
+
+- `text`
+  - 整形後のキャプション
+- `file_path`
+  - 保存先のフルパス（`dry_run` 時は保存予定のパス）
+
+---
+
+### D2 Tag Report
+
+<figure>
+  <img src="../img/tag_report.png">
+</figure>
+
+- `D2 Save Caption` の `exclude_tags`（除外タグ） に繋ぐ除外タグリストを作成するためのノード
+- 指定フォルダー内のキャプションからタグの出現頻度を集計し、除外タグリストを作る
+  - `Get tags` ボタンで集計結果を `text` に表示する
+  - ユーザーは残す・消すを編集し、`D2 Save Caption` の `exclude_tags` に渡す
+- 行頭に `//` または `#` を付けるとコメント行になる
+- `exclude_tags` にタグ辞書を指定すると、**辞書に載っていないタグだけ**を集計する
+  - カンマ忘れ（`blue eyes twintails`）や空白ミス（`blondehair`）など、誤って入力したプロンプトを炙り出せる
+- `D2 Tag Report` `D2 Save Caption` の使い方はこちらの記事をご覧ください
+  - https://note.com/da2el_ai/n/ne1fc9b3bea89?app_launch=false
+
+#### Input
+
+- `folder`
+  - キャプションファイルのあるフォルダー（フルパス）
+- `include_subfolders`
+  - `true`: サブフォルダーも対象にする
+- `extension`
+  - 対象とする拡張子（例 `txt`）
+- `order_by`
+  - `count_9-0`: 出現回数の多い順
+  - `count_0-9`: 出現回数の少ない順
+  - `tag_a-z`: タグ名順（A→Z）
+  - `tag_z-a`: タグ名順（Z→A）
+- `without_count`
+  - `true`: レポートに出現回数を表示しない
+- `exclude_tags`
+  - 集計から除外するタグ辞書のファイルパス（フルパス）
+  - 辞書の中身ではなく、辞書ファイルのパスを指定することに注意
+- `output_type`
+  - `remove_comment`: コメント行を削除して残りを出力（消したいタグをコメントでマークする運用）
+  - `output_comment`: コメント行のみを出力（消したいタグだけコメント化する運用）
+- `separator`
+  - `newline`: 改行区切りで出力（`regex/パターン/` などカンマを含むエントリが壊れないため推奨）
+  - `comma`: カンマ＋空白の1行で出力
+
+#### Output
+
+- `text`
+  - 編集後のタグリスト（`D2 Save Caption` の `exclude_tags` に渡す）
+
+#### exclude_tags について
+
+- 辞書に掲載されていないタグ＝**誤入力の疑いがあるタグ**をあぶり出すための機能
+- 辞書に載っているタグは集計されないので、辞書に無いタグだけがレポートに残る
+- 対応する辞書の書式は3種類。いずれも1カラム目をタグとして読む
+  - タグだけのリスト
+
+    ```csv
+    1girl
+    solo
+    ```
+
+  - 見出し行の無い形式（ComfyUI Custom Scripts など）
+
+    ```csv
+    1girl,4114588
+    solo,3426446
+    ```
+
+  - 見出し行のある形式（ComfyUI Auto Complete Plus など）
+
+    ```csv
+    tag,category,count,alias
+    1girl,0,4974288,"女の子,女性,少女"
+    ```
+
+- 大文字小文字、スペースとアンダースコアの違い（`long hair` と `long_hair`）、括弧のエスケープ（`\(` と `(`）は区別せずに照合する
+- **注意**: `Get tags` ボタンはワークフロー実行前に動くため、他のノードから接続した値は読み取れない。辞書は必ずこの欄にパスを直接書いて指定する

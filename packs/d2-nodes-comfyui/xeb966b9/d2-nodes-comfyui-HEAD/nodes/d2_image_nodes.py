@@ -1,0 +1,1695 @@
+from typing import Optional
+import torch
+import torch.nn.functional as F
+import os
+import json
+import random
+from PIL import Image, ImageOps, ImageSequence, ImageFile
+from PIL.PngImagePlugin import PngInfo
+import numpy as np
+from aiohttp import web
+from torchvision import transforms
+
+import folder_paths
+# import comfy.sd
+# import comfy.samplers
+from comfy_extras.nodes_model_advanced import RescaleCFG, ModelSamplingDiscrete
+from comfy.cli_args import args
+
+from comfy_execution.graph_utils import GraphBuilder
+from comfy_execution.graph import ExecutionBlocker
+# from nodes import common_ksampler, CLIPTextEncode, PreviewImage, LoadImage, SaveImage, ControlNetApplyAdvanced, LoraLoader
+from nodes import LoadImage, SaveImage
+from server import PromptServer
+# from nodes import NODE_CLASS_MAPPINGS as nodes_NODE_CLASS_MAPPINGS
+
+from .modules import util
+from .modules import pnginfo_util
+from .modules import grid_image_util
+from .modules import image_util
+from .modules import mask_util
+from .modules import template_util
+from .modules.eagle_api import EagleAPI, send_to_eagle
+from .modules import marker_util
+from .modules import mask_rect_util
+from .modules import random_util
+from .modules.util import AnyType, AnyTypeTuple, AnyFalseList, D2_TD2Pipe
+from comfy_api.latest import io
+
+
+
+"""
+
+D2 Save Image
+画像クリックでポップアップする Save Image
+複数フォーマット対応（png / jpeg / webp / アニメーションwebp）
+
+"""
+class D2_SaveImage(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        tooltip = "Datetime -- %date:{yyyy/MM/dd/hh/mm/ss}%\n" \
+                  "Node param -- %{Node title}.{key}%\n" \
+                  "Node param -- %node:{id}.{key}%"
+
+        return io.Schema(
+            node_id="D2 Save Image",
+            display_name="D2 Save Image",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.String.Input("filename_prefix", default="%date:yyyyMMdd-hhmmss%", tooltip=tooltip),
+                io.Boolean.Input("preview_only", default=False),
+                io.Combo.Input("format", options=["png", "webp", "jpeg", "animated_webp"]),
+                io.Boolean.Input("lossless", default=True),
+                io.Int.Input("quality", default=80, min=0, max=100),
+                io.Float.Input("fps", default=6.0, min=0.01, max=1000.0, step=0.01),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+                io.Custom("D2_BUTTON").Input("popup_image", optional=True),
+            ],
+            outputs=[
+                io.Custom("LIST").Output(display_name="filenames"),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            is_output_node=True,
+        )
+
+    # 保存処理の本体。サブクラス（D2_SaveImageEagle）からも再利用するため classmethod ヘルパーに分離。
+    # 戻り値は (file_paths, a1111_param, ui_dict)。prompt/extra_pnginfo は hidden を呼び出し側から渡す。
+    @classmethod
+    def _save_images(cls, images, d2_pipe=None, filename_prefix="ComfyUI", preview_only=False, format="png", lossless=True, quality=80, fps=6.0, prompt=None, extra_pnginfo=None):
+        # プレビューモードか保存モードかの設定
+        if preview_only == True:
+            # 保存せずプレビューのみ
+            output_dir = folder_paths.get_temp_directory()
+            node_type = "temp"
+            prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+            compress_level = 1
+        else:
+            # 保存
+            output_dir = folder_paths.get_output_directory()
+            node_type = "output"
+            prefix_append = ""
+            compress_level = 4
+
+
+        # プレフィックスのテンプレート処理
+        filename_prefix = template_util.replace_template(filename_prefix, {}, prompt)
+
+        # ファイル名プレフィックスの設定
+        filename_prefix += prefix_append
+
+        # 保存先フォルダとファイル名の取得
+        full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, output_dir, images[0].shape[1], images[0].shape[0])
+
+        # 結果を格納するリスト
+        results = []
+        # 保存したファイルのフルパスを格納するリスト
+        file_paths = []
+
+        # 画像をPIL形式に変換
+        pil_images = []
+        for image in images:
+            i = 255. * image.cpu().numpy()
+            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+            pil_images.append(img)
+
+        # d2_pipe からA1111形式の生成パラメーターメモを作成
+        a1111_param = util.format_a1111_parameter(d2_pipe)
+
+        # アニメーションwebpの場合
+        if format == "animated_webp":
+            # ファイル名の設定
+            file = f"{filename}_{counter:05}_.webp"
+            file_path = os.path.join(full_output_folder, file)
+
+            # アニメーションwebpとして保存
+            file_path = image_util.save_image_animated_webp(
+                pil_images, file_path, fps, lossless, quality,
+                prompt=prompt,
+                extra_pnginfo=extra_pnginfo,
+            )
+
+            # 結果リストに追加
+            results.append({
+                "filename": file,
+                "subfolder": subfolder,
+                "type": node_type
+            })
+
+            # ファイルパスリストに追加
+            file_paths.append(file_path)
+            # アニメーションフラグを設定
+            animated = True
+
+        # 静止画の場合（単一画像または複数画像を個別に保存）
+        else:
+            for i, img in enumerate(pil_images):
+                # ファイル名の設定
+                file = f"{filename}_{counter:05}_.{format}"
+                file_path = os.path.join(full_output_folder, file)
+
+                # 各画像形式で保存
+                image_util.save_image(
+                    format, img, file_path, compress_level, lossless, quality,
+                    prompt=prompt,
+                    extra_pnginfo=extra_pnginfo,
+                    a1111_param=a1111_param
+                )
+
+                # 結果リストに追加
+                results.append({
+                    "filename": file,
+                    "subfolder": subfolder,
+                    "type": node_type
+                })
+
+                # ファイルパスリストに追加
+                file_paths.append(file_path)
+                counter += 1
+
+            # アニメーションフラグを設定
+            animated = False
+
+        # (ファイルパス, A1111メモ, UI辞書) を返す
+        return file_paths, a1111_param, {
+            "images": results,
+            "animated": (animated,)
+        }
+
+    @classmethod
+    def execute(cls, images, d2_pipe=None, filename_prefix="ComfyUI", preview_only=False, format="png", lossless=True, quality=80, fps=6.0, popup_image=None) -> io.NodeOutput:
+        file_paths, a1111_param, ui = cls._save_images(
+            images, d2_pipe, filename_prefix, preview_only, format, lossless, quality, fps,
+            prompt=cls.hidden.prompt, extra_pnginfo=cls.hidden.extra_pnginfo,
+        )
+        return io.NodeOutput(file_paths, ui=ui)
+
+
+"""
+
+D2 Save Image Eagle
+画像を保存してEagleに送信
+
+"""
+class D2_SaveImageEagle(D2_SaveImage):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        tooltip = "Datetime -- %date:{yyyy/MM/dd/hh/mm/ss}%\n" \
+                  "Node param -- %{Node title}.{key}%\n" \
+                  "Node param -- %node:{id}.{key}%"
+
+        return io.Schema(
+            node_id="D2 Save Image Eagle",
+            display_name="D2 Save Image Eagle",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.String.Input("filename_prefix", default="%date:yyyyMMdd-hhmmss%", tooltip=tooltip),
+                io.Boolean.Input("preview_only", default=False),
+                io.Combo.Input("format", options=["png", "webp", "jpeg", "animated_webp"]),
+                io.Boolean.Input("lossless", default=True),
+                io.Int.Input("quality", default=80, min=0, max=100),
+                io.Float.Input("fps", default=6.0, min=0.01, max=1000.0, step=0.01),
+                io.String.Input("eagle_folder", default=""),
+                io.String.Input("memo_text", default=""),
+                io.Custom("D2_TD2Pipe").Input("d2_pipe", optional=True),
+                io.Custom("D2_BUTTON").Input("popup_image", optional=True),
+            ],
+            outputs=[
+                io.Custom("LIST").Output(display_name="filenames"),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, images, d2_pipe=None, filename_prefix="ComfyUI", preview_only=False, format="png", lossless=True, quality=80, fps=6.0, eagle_folder="", memo_text="", popup_image=None) -> io.NodeOutput:
+        eagle_api = EagleAPI()
+        # EagleフォルダIDを取得
+        folder_id = eagle_api.find_or_create_folder(eagle_folder)
+
+        # 親の保存処理を再利用（file_paths と a1111_param を取得）
+        file_paths, a1111_param, ui = cls._save_images(
+            images, d2_pipe, filename_prefix, preview_only, format, lossless, quality, fps,
+            prompt=cls.hidden.prompt, extra_pnginfo=cls.hidden.extra_pnginfo,
+        )
+
+        # A1111方式の生成メモ
+        if a1111_param != None and a1111_param != "":
+            memo_text = a1111_param + "\n\n" + memo_text
+
+        for single_path in file_paths:
+            send_to_eagle(eagle_api, folder_id, single_path, memo_text)
+
+        return io.NodeOutput(file_paths, ui=ui)
+
+"""
+
+D2 Send File Eagle
+指定されたパスのファイルを Eagleに送信
+
+"""
+class D2_SendFileEagle(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Send File Eagle",
+            display_name="D2 Send File Eagle",
+            category="D2/Image",
+            inputs=[
+                io.AnyType.Input("file_path"),
+                io.String.Input("eagle_folder", default=""),
+                io.String.Input("memo_text", multiline=True),
+            ],
+            outputs=[],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, file_path, eagle_folder="", memo_text="") -> io.NodeOutput:
+        eagle_api = EagleAPI()
+        # EagleフォルダIDを取得
+        folder_id = eagle_api.find_or_create_folder(eagle_folder)
+
+        if isinstance(file_path, str):
+            send_to_eagle(eagle_api, folder_id, file_path, memo_text)
+        elif isinstance(file_path, list):
+            for single_path in file_path:
+                send_to_eagle(eagle_api, folder_id, single_path, memo_text)
+        else:
+            raise ValueError(f"Unsupported file_path type: {type(file_path)}")
+
+        return io.NodeOutput()
+
+
+
+"""
+
+D2 Prewview Image
+画像クリックでポップアップする Preview Image
+
+"""
+class D2_PreviewImage(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Preview Image",
+            display_name="D2 Preview Image",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.Custom("D2_BUTTON").Input("popup_image", optional=True),
+            ],
+            outputs=[],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, images, popup_image=None) -> io.NodeOutput:
+        # V3 では V1 クラス SaveImage を継承できないため、インスタンスに temp 設定をして呼ぶ（挙動は同一）
+        saver = SaveImage()
+        saver.output_dir = folder_paths.get_temp_directory()
+        saver.type = "temp"
+        saver.prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+        saver.compress_level = 1
+        res = saver.save_images(images)
+        return io.NodeOutput(ui=res["ui"])
+
+
+
+"""
+
+D2 Load Image
+プロンプト出力できる Load Image
+
+"""
+class D2_LoadImage(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+        return io.Schema(
+            node_id="D2 Load Image",
+            display_name="D2 Load Image",
+            category="D2/Image",
+            inputs=[
+                io.Combo.Input("image", options=sorted(files), upload=io.UploadType.image),
+                io.String.Input("image_path", force_input=True, optional=True),
+                io.Custom("D2_BUTTON").Input("editor", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+                io.Mask.Output(display_name="MASK"),
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                io.String.Output(display_name="positive"),
+                io.String.Output(display_name="negative"),
+                io.String.Output(display_name="filename"),
+                io.String.Output(display_name="filepath"),
+                io.String.Output(display_name="pnginfo"),
+            ],
+        )
+
+    # V3 では V1 クラス LoadImage を継承できないため、継承で得ていた IS_CHANGED / VALIDATE_INPUTS を再定義する。
+    # 既定照合スキップのため引数に image を含める（image は input_dir のファイル combo）。
+    @classmethod
+    def fingerprint_inputs(cls, image, image_path=None, editor=None):
+        return LoadImage.IS_CHANGED(image)
+
+    @classmethod
+    def validate_inputs(cls, image):
+        return LoadImage.VALIDATE_INPUTS(image)
+
+    @classmethod
+    def execute(cls, image, image_path=None, editor=None) -> io.NodeOutput:
+        if image_path != None:
+            image = image_path.strip()
+
+        # get_annotated_filepath が input/output/temp 外のパスを拒否するようになったため、
+        # 管理内のファイルだけ注釈付きパスとして解決し、管理外は絶対パスをそのまま使う
+        if folder_paths.exists_annotated_filepath(image):
+            image_path = folder_paths.get_annotated_filepath(image)
+        else:
+            image_path = image
+
+        # 標準 LoadImage と同じ変換処理（folder_paths を経由しない移植版）
+        output_images, output_masks = image_util.load_image_from_path(image_path)
+
+        with Image.open(image_path) as img:
+            width = img.size[0]
+            height = img.size[1]
+            prompt = pnginfo_util.get_prompt(img)
+            pnginfo = pnginfo_util.get_pnginfo(img)
+
+        filename = os.path.basename(image_path)
+
+        return io.NodeOutput(output_images, output_masks, width, height, prompt["positive"], prompt["negative"], filename, image_path, pnginfo)
+
+
+"""
+
+D2 Load Folder Images
+フォルダ内画像読み込んで渡す
+
+"""
+class D2_LoadFolderImages(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Load Folder Images",
+            display_name="D2 Load Folder Images",
+            category="D2/Image",
+            inputs=[
+                io.String.Input("folder", default=""),
+                io.String.Input("extension", default="*.*"),
+                io.Boolean.Input("include_subfolders", default=False),
+                io.Combo.Input("sort_by", options=["Name", "Date", "Random"], default="Name"),
+                io.Combo.Input("order_by", options=["A-Z", "Z-A"], default="A-Z"),
+                io.Custom("D2_SIMPLE_TEXT").Input("image_count", optional=True),
+                io.Custom("D2_SEED").Input("queue_seed", optional=True),
+                io.Custom("D2_BUTTON").Input("refresh_btn", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="images"),
+                io.Int.Output(display_name="image_count"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, folder="", extension="*.*", include_subfolders=False, sort_by="Name", order_by="A-Z", image_count=None, queue_seed=None, refresh_btn=None) -> io.NodeOutput:
+        files = util.get_files(folder, extension, sort_by, order_by, include_subfolders)
+        image_list = []
+        base_size = None
+        base_file = None
+
+        for img_path in files:
+            # 管理外フォルダの絶対パスを扱うため、標準 LoadImage ではなく移植版で読み込む
+            output_images, output_masks = image_util.load_image_from_path(img_path)
+
+            # IMAGE バッチは全画像が同サイズ必須。torch.cat で分かりにくく落ちる前に、
+            # どのファイルが不一致かを明示して止める
+            size = (output_images.shape[2], output_images.shape[1])
+            if base_size is None:
+                base_size = size
+                base_file = img_path
+            elif size != base_size:
+                raise ValueError(
+                    f"D2 Load Folder Images: image size mismatch. "
+                    f"'{img_path}' is {size[0]}x{size[1]}, but '{base_file}' is {base_size[0]}x{base_size[1]}. "
+                    f"All images in the folder must be the same size."
+                )
+
+            image_list.append(output_images)
+
+        image_batch = torch.cat(image_list, dim=0)
+
+        return io.NodeOutput(
+            image_batch, len(files),
+            ui={"image_count": (len(files),)},
+        )
+
+
+"""
+
+D2 Image Stack
+
+"""
+class D2_ImageStack(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Image Stack",
+            display_name="D2 Image Stack",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("image_count", default=3, min=1, max=50, step=1),
+            ],
+            outputs=[
+                io.Image.Output(display_name="images"),
+            ],
+            # JS が image_1..image_N を addInput で動的追加するため **kwargs で受ける
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, image_count, **kwargs) -> io.NodeOutput:
+
+        image_list = []
+        
+        for i in range(1, image_count + 1):
+            image = kwargs.get(f"image_{i}")
+            if image is not None:
+                image_list.append(image)
+
+        if len(image_list) > 0:
+            # 各画像のチャンネル数を確認
+            channels = [img.shape[-1] for img in image_list]
+            if len(set(channels)) > 1:
+                # すべての画像を同じチャンネル数に変換
+                target_channels = max(set(channels))  # 最大のチャンネル数を使用
+                for i in range(len(image_list)):
+                    if image_list[i].shape[-1] != target_channels:
+                        if target_channels == 4 and image_list[i].shape[-1] == 3:
+                            image_list[i] = image_util.convert_to_rgba_or_rgb(image_list[i], "rgba")
+                        elif target_channels == 3 and image_list[i].shape[-1] == 4:
+                            # RGBA -> RGB に変換（アルファチャンネルを削除）
+                            image_list[i] = image_util.convert_to_rgba_or_rgb(image_list[i], "rgb")
+            
+            image_batch = torch.cat(image_list, dim=0)
+            return io.NodeOutput(image_batch)
+
+        return io.NodeOutput(None)
+
+
+
+"""
+
+D2 Image and Mask Stack
+
+"""
+class D2_ImageMaskStack(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Image Mask Stack",
+            display_name="D2 Image Mask Stack",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("image_count", default=3, min=1, max=50, step=1),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+                io.Mask.Output(display_name="MASK"),
+            ],
+            # JS が image_1/mask_1..N を addInput で動的追加するため **kwargs で受ける
+            accept_all_inputs=True,
+        )
+
+    @classmethod
+    def execute(cls, image_count, **kwargs) -> io.NodeOutput:
+
+        image_list = []
+        mask_list = []
+        
+        for i in range(1, image_count + 1):
+            image = kwargs.get(f"image_{i}")
+            mask = kwargs.get(f"mask_{i}")
+            if image is not None and mask is not None:
+                image_list.append(image)
+                mask_list.append(mask)
+
+        if len(image_list) > 0:
+            # 各画像のチャンネル数を確認
+            channels = [img.shape[-1] for img in image_list]
+            if len(set(channels)) > 1:
+                # すべての画像を同じチャンネル数に変換
+                target_channels = max(set(channels))  # 最大のチャンネル数を使用
+                for i in range(len(image_list)):
+                    if image_list[i].shape[-1] != target_channels:
+                        if target_channels == 4 and image_list[i].shape[-1] == 3:
+                            # RGB -> RGBA に変換（アルファチャンネルを1.0で追加）
+                            image_list[i] = image_util.convert_to_rgba_or_rgb(image_list[i], "rgba")
+                        elif target_channels == 3 and image_list[i].shape[-1] == 4:
+                            # RGBA -> RGB に変換（アルファチャンネルを削除）
+                            image_list[i] = image_util.convert_to_rgba_or_rgb(image_list[i], "rgb")
+            
+            image_batch = torch.cat(image_list, dim=0)
+            mask_batch = torch.cat(mask_list, dim=0)
+
+            return io.NodeOutput(image_batch, mask_batch)
+
+        return io.NodeOutput(None, None)
+
+
+
+"""
+
+D2 Folder Image Queue
+フォルダ内画像の枚数分キューを送る
+
+"""
+class D2_FolderImageQueue(io.ComfyNode):
+    # V1 は self.files / self.is_finished をインスタンスに保持し、ComfyUI が obj を
+    # CacheKeySetID（ノードID）でキャッシュ・実行間で再利用することでキューを進めていた。
+    # V3 の execute は classmethod でインスタンス状態を持てないため、unique_id を
+    # キーにしたクラス辞書で同等の永続状態を持つ（ノードごとに独立、プロセス内で永続）。
+    # 特に sort_by="Random" のとき、キュー進行中に files を読み直すと並びが変わってしまうので
+    # files をキャッシュして同一バッチ内の順序を固定する意味がある。
+    # （is_finished は V1 でも書き込むだけで誰も読まない vestigial 状態。互換のため残す）
+    _queue_state = {}
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Folder Image Queue",
+            display_name="D2 Folder Image Queue",
+            category="D2/Image",
+            inputs=[
+                io.String.Input("folder", default=""),
+                io.String.Input("extension", default="*.*"),
+                io.Boolean.Input("include_subfolders", default=False),
+                io.Int.Input("start_at", default=0, min=0),
+                io.Boolean.Input("auto_queue", default=True),
+                io.Combo.Input("sort_by", options=["Name", "Date", "Random"], default="Name"),
+                io.Combo.Input("order_by", options=["A-Z", "Z-A"], default="A-Z"),
+                io.Custom("D2_SIMPLE_TEXT").Input("image_count", optional=True),
+                io.Custom("D2_SEED").Input("queue_seed", optional=True),
+                io.Custom("D2_PROGRESS_BAR").Input("progress_bar", optional=True),
+                io.Custom("D2_BUTTON").Input("refresh_btn", optional=True),
+            ],
+            outputs=[
+                io.String.Output(display_name="image_path"),
+                io.Int.Output(display_name="image_count"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(cls, folder="", extension="*.*", include_subfolders=False, start_at=0, auto_queue=True, sort_by="Name", order_by="A-Z", image_count=None, queue_seed=None, progress_bar=None, refresh_btn=None) -> io.NodeOutput:
+        state = cls._queue_state.setdefault(cls.hidden.unique_id, {"files": [], "is_finished": False})
+
+        if len(state["files"]) <= 0:
+            state["files"] = util.get_files(folder, extension, sort_by, order_by, include_subfolders)
+            state["is_finished"] = False
+
+        image_path = state["files"][start_at]
+        image_count = len(state["files"])
+
+        if len(state["files"]) <= start_at + 1:
+            state["is_finished"] = True
+            state["files"] = []
+
+        return io.NodeOutput(
+            image_path, image_count,
+            ui={
+                "image_count": (image_count,),
+                "start_at": (start_at,),
+            },
+        )
+
+
+
+
+
+"""
+対象画像枚数を取得
+D2/folder-image-queue/get_image_count?folder=****&extension=***
+という形式でリクエストが届く
+"""
+@PromptServer.instance.routes.get("/D2/folder-image-queue/get_image_count")
+async def route_d2_folder_image_get_image_count(request):
+    try:
+        folder = request.query.get('folder')
+        extension = request.query.get('extension')
+        include_subfolders = request.query.get('include_subfolders') == 'true'
+        files = util.get_files(folder, extension, include_subfolders=include_subfolders)
+
+        image_count = len(files)
+    except:
+        image_count = 0
+
+    # JSON応答を返す
+    json_data = json.dumps({"image_count":image_count})
+    return web.Response(text=json_data, content_type='application/json')
+
+
+
+"""
+
+D2 EmptyImage Alpha
+αチャンネル（透明度）付き画像作成
+
+"""
+class D2_EmptyImageAlpha(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 EmptyImage Alpha",
+            display_name="D2 EmptyImage Alpha",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("width", default=512, min=1, max=util.MAX_RESOLUTION, step=1),
+                io.Int.Input("height", default=512, min=1, max=util.MAX_RESOLUTION, step=1),
+                io.Int.Input("batch_size", default=1, min=1, max=4096),
+                io.Int.Input("red", default=0, min=0, max=255, step=1),
+                io.Int.Input("green", default=0, min=0, max=255, step=1),
+                io.Int.Input("blue", default=0, min=0, max=255, step=1),
+                io.Float.Input("alpha", default=1.0, min=0, max=1.0, step=0.001),
+                io.Boolean.Input("output_alpha", default=True, optional=True),
+                io.Custom("D2_COLOR_CANVAS").Input("sample", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, width, height, batch_size=1, red=0, green=0, blue=0, alpha=1.0, output_alpha=True, sample=None) -> io.NodeOutput:
+        r = torch.full([batch_size, height, width, 1], red / 255.0)
+        g = torch.full([batch_size, height, width, 1], green / 255.0)
+        b = torch.full([batch_size, height, width, 1], blue / 255.0)
+        # output_alpha が False の時はαチャンネルを付与せず RGB(3ch) で出力する
+        # （RGB前提のノード = Anima ControlNet-LLLite 等にそのまま渡せる）
+        if output_alpha == False:
+            return io.NodeOutput(torch.cat((r, g, b), dim=-1))
+        # アルファチャンネル追加
+        a = torch.full([batch_size, height, width, 1], alpha)
+        # RGBAを結合
+        return io.NodeOutput(torch.cat((r, g, b, a), dim=-1))
+
+
+"""
+
+D2 Grid Image
+
+"""
+class D2_GridImage(io.ComfyNode):
+
+    TITLE_HEIGHT = 64
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Grid Image",
+            display_name="D2 Grid Image",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.Int.Input("max_columns", default=3),
+                io.Int.Input("grid_gap", default=0),
+                io.Boolean.Input("swap_dimensions", default=False),
+                io.Int.Input("trigger_count", default=1, min=1, step=1),
+                io.String.Input("title_text", optional=True),
+                io.Int.Input("font_size", default=24, optional=True),
+                io.Custom("D2_SIMPLE_TEXT").Input("count", optional=True),
+                io.Custom("D2_BUTTON").Input("reset", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="images"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(cls, images, max_columns, grid_gap, swap_dimensions, trigger_count, title_text="", font_size=24, count=None, reset=None) -> io.NodeOutput:
+        unique_id = cls.hidden.unique_id
+        # 画像をスタックして個数を取得
+        image_count = D2_GridImage_ImageStocker.add_image(unique_id, images)
+
+        if image_count >= trigger_count:
+            # グリッド画像作成
+            grid_image = cls.create_grid_image(
+                max_columns = max_columns,
+                image_batch = D2_GridImage_ImageStocker.get_images(unique_id),
+                grid_gap = grid_gap,
+                swap_dimensions = swap_dimensions
+            )
+
+            # タイトル結合
+            finish_image = cls.create_grid_title_image(grid_image, title_text, font_size)
+            finish_image = image_util.pil2tensor(finish_image)
+            D2_GridImage_ImageStocker.reset_images(unique_id)
+
+            return io.NodeOutput(finish_image, ui={"image_count": (image_count,)})
+        else:
+            return io.NodeOutput(ExecutionBlocker(None), ui={"image_count": (image_count,)})
+
+    """
+    グリッド＋タイトル画像作成
+    """
+    @classmethod
+    def create_grid_title_image(cls, grid_image, title_text, font_size) -> Image.Image:
+        # タイトル画像
+        if len(title_text) >= 1:
+            annotation_data = grid_image_util.AnnotationData(
+                column_texts = [""],
+                row_texts = [title_text],
+                font_size = font_size
+            )
+            title_max_width = grid_image.size[0] - (grid_image_util.PADDING * 2)
+            title_img = grid_image_util._get_text_image(annotation_data, title_text, title_max_width)
+            title_height = grid_image_util.PADDING * 2 + title_img.size[1]
+        else:
+            title_img = Image.new('RGB', (0, 0), color=0xffffff)
+            title_height = 0
+
+        finish_height = title_height + grid_image.size[1]
+        finish_img = Image.new('RGB', (grid_image.size[0], finish_height), color=0xffffff)
+        finish_img.paste(title_img, (grid_image_util.PADDING, grid_image_util.PADDING))
+        finish_img.paste(grid_image, (0, title_height))
+        
+        return finish_img
+
+
+    """
+    グリッド画像作成
+    """
+    @classmethod
+    def create_grid_image(cls, image_batch, max_columns, grid_gap, swap_dimensions) -> Image.Image:
+        # テンソルからPIL Imageへの変換
+        # チャンネルの位置を修正（permute使用）
+        image_batch = image_batch.permute(0, 3, 1, 2)
+        to_pil = transforms.ToPILImage()
+        images = [to_pil(img) for img in image_batch]
+
+        if swap_dimensions:
+            grid_data = grid_image_util.create_grid_by_rows(
+                images = images,
+                gap = grid_gap,
+                max_rows = max_columns,
+            )
+        else:
+            grid_data = grid_image_util.create_grid_by_columns(
+                images = images,
+                gap = grid_gap,
+                max_columns = max_columns,
+            )
+
+        return grid_data.image
+
+"""
+D2 GridImage で使う、画像格納クラス
+"""
+class D2_GridImage_ImageStocker:
+    images = {}
+
+    @classmethod
+    def get_count(cls, id:int) -> int:
+        if id not in cls.images or cls.images[id] is None:
+            return 0
+        return cls.images[id].size(0)
+    
+    @classmethod
+    def get_images(cls, id:int) -> Optional[torch.Tensor]:
+        return cls.images[id]
+
+    @classmethod
+    def add_image(cls, id:int, image:torch.Tensor) -> int:
+        if id in cls.images and cls.images[id] != None:
+            cls.images[id] = torch.cat((cls.images[id], image), dim=0)
+        else:
+            cls.images[id] = image
+        
+        return cls.get_count(id)
+
+    @classmethod
+    def reset_images(cls, id:int) -> None:
+        if id in cls.images:
+            del cls.images[id]
+
+
+"""
+D2_GrodImage のストック画像をリセットする
+D2/grid_image/reset_image_count?id=***
+"""
+@PromptServer.instance.routes.get("/D2/grid_image/reset_image_count")
+async def route_d2_grid_image_reset_image_count(request):
+    id = request.query.get('id')
+    D2_GridImage_ImageStocker.reset_images(id)
+    count = D2_GridImage_ImageStocker.get_count(id)
+
+    # JSON応答を返す
+    json_data = json.dumps({"image_count":count})
+    return web.Response(text=json_data, content_type='application/json')
+
+
+
+"""
+
+D2 Mosaic Filter
+モザイクをかける
+
+"""
+class D2_MosaicFilter(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Mosaic Filter",
+            display_name="D2 Mosaic Filter",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.Int.Input("dot_size", default=20, min=1, max=512),
+                io.Combo.Input("color_mode", options=["average", "original"]),
+                io.Float.Input("opacity", default=1, min=0, max=1),
+                io.Int.Input("brightness", default=0, min=-100, max=100),
+                io.Boolean.Input("invert_color", default=False),
+            ],
+            outputs=[
+                io.Image.Output(display_name="IMAGE"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, images, dot_size, color_mode, opacity, brightness, invert_color) -> io.NodeOutput:
+        """
+        images の画像を全てモザイク処理する
+        dot_size: ドットの大きさ
+        color_mode: ドットの色
+            average=ドット領域の平均的な色 / original=ドット領域の中央の色 
+        opacity: モザイクを重ねる時の透明度
+        brightness: モザイクの明るさ。初期値:0 / -100=真っ黒 / 100=真っ白
+        invert_color: 色を反転する 
+        """
+        
+        # 結果を格納するリスト
+        result_images = []
+        
+        # 各画像を処理
+        for image in images:
+            # 元の画像をコピー
+            original_image = image.clone()
+            
+            # モザイク処理を適用
+            mosaic_image = image_util.apply_mosaic_to_image(
+                image, 
+                dot_size, 
+                color_mode, 
+                brightness, 
+                invert_color
+            )
+            
+            # 元の画像とモザイク画像をopacityに基づいてブレンド
+            if opacity < 1.0:
+                mosaic_image = opacity * mosaic_image + (1 - opacity) * original_image
+            
+            # 処理した画像を結果リストに追加
+            result_images.append(mosaic_image)
+
+        # すべての画像を結合して返す
+        return io.NodeOutput(torch.stack(result_images))
+
+
+
+
+class D2_CutByMask(io.ComfyNode):
+    """
+    マスクから画像を切り出すノード
+    class名: D2_CutByMask
+
+    input require:
+    - images: 切り出し元画像
+    - mask: マスク
+    - cut_type: 切り取る画像の形状
+        - mask: マスクの形状通りに切り取る
+        - rectangle: マスク形状から長方形を算出して切り取る
+    - output_size: 出力する画像サイズ
+        - mask_size: マスクのサイズ
+        - image_size: 入力画像のサイズ（入力画像の位置を保持した状態で周囲が透明になる）
+        - square_thumb: サムネイル用途。マスクエリアを中心に最大サイズの正方形を切り取る。padding, min_width/height は無視される
+    - round_to: 切り出す矩形の幅・高さを指定単位に切り上げる（none / 8px / 16px / 32px / 64px）
+        - cut_type が rectangle の時のみ有効。中心を保ったまま拡張し、元画像の外側には広げない
+
+    input optional:
+    - padding: マスクエリアを拡張するピクセル数（初期値 0）
+    - min_width: マスクサイズの最小幅（初期値 0）
+    - min_height: マスクサイズの最小高さ（初期値 0）
+    - output_alpha: 出力画像にαチャンネルを含めるか
+
+    output:
+    - image: マスク領域で切り取った画像
+    - mask: マスク
+    - rect: 切り取った座標(x, y, width, height)
+    """
+    
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Cut By Mask",
+            display_name="D2 Cut By Mask",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("images"),
+                io.Mask.Input("mask"),
+                io.Combo.Input("cut_type", options=["mask", "rectangle", "square_thumb"]),
+                io.Combo.Input("output_size", options=["mask_size", "image_size"]),
+                io.Combo.Input("round_to", options=["none", "8px", "16px", "32px", "64px"], optional=True),
+                io.Int.Input("padding", default=0, min=0, max=1000, optional=True),
+                io.Int.Input("min_width", default=0, min=0, max=10000, optional=True),
+                io.Int.Input("min_height", default=0, min=0, max=10000, optional=True),
+                io.Boolean.Input("output_alpha", default=True, optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+                io.Mask.Output(display_name="mask"),
+                io.Int.Output(display_name="rect"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, images, mask, cut_type, output_size, round_to="none", padding=0, min_width=0, min_height=0, output_alpha=True) -> io.NodeOutput:
+        # ComfyUIでの画像形状: [batch, height, width, channels]
+        # マスク形状: [batch, height, width] または [height, width]
+        
+        # 画像形状チェック - ComfyUI形式を確認
+        batch_size = images.shape[0]
+        height = images.shape[1]
+        width = images.shape[2]
+        channels = images.shape[3]
+        
+        # ユーティリティ関数を使用してマスクを調整
+        mask = mask_util.adjust_mask_dimensions(mask)
+        mask = mask_util.check_mask_image_compatibility(mask, height, width)
+        
+        # マスクのある範囲を取得（非ゼロの部分）
+        mask_np = mask.cpu().numpy()
+        non_zero_indices = np.nonzero(mask_np)
+        
+
+        if cut_type == "square_thumb":
+            # 正方形サムネイルモードの時は正方形でマスクを作成する
+            size = min(width, height)
+
+            if len(non_zero_indices[0]) == 0:
+                # マスクがない時は中心に正方形マスクを作成
+                rect = [(width - size) // 2, (height - size) // 2, size, size]
+                mask = mask_util.create_rectangle_mask(rect[3], rect[2], rect[0], rect[1], width, height)
+            else:
+                # マスクから矩形領域を作成 (paddingなどは適用しない元々のマスク範囲)
+                # この関数は [x_min, y_min, rect_width, rect_height] を返す
+                mask_rect = mask_util.create_rectangle_from_mask(mask_np, width, height, padding=0, min_width=0, min_height=0)
+                # 取得した矩形から中心座標を計算
+                center_x = mask_rect[0] + mask_rect[2] // 2
+                center_y = mask_rect[1] + mask_rect[3] // 2
+                # 正方形
+                rect = [
+                    center_x - (size // 2),
+                    center_y - (size // 2),
+                    size, size
+                ]
+                # 画像範囲内に収まるように調整
+                rect = mask_util.adjust_rectangle_to_area(rect, width, height)
+
+        elif len(non_zero_indices[0]) == 0:
+            # マスクが空の場合、画像全体を矩形として扱う
+            mask = mask_util.create_rectangle_mask(height, width, 0, 0, width, height)
+            rect = [0, 0, width, height]
+            cut_type = "rectangle"
+        else:
+            # マスクから矩形領域を作成
+            rect = mask_util.create_rectangle_from_mask(mask_np, width, height, padding, min_width, min_height)
+
+            # 中心座標を計算（矩形の検証に必要）
+            y_min_nz, y_max_nz = non_zero_indices[0].min(), non_zero_indices[0].max()
+            x_min_nz, x_max_nz = non_zero_indices[1].min(), non_zero_indices[1].max()
+            center_x = (x_min_nz + x_max_nz) // 2
+            center_y = (y_min_nz + y_max_nz) // 2
+            # 矩形領域を検証
+            rect = mask_util.validate_rectangle(rect, center_x, center_y, width, height, min_width, min_height)
+
+        # round_to 指定時、矩形サイズを指定単位に切り上げる（cut_type == "rectangle" のみ）
+        # mask / square_thumb では影響しない。元画像の外側には広げない
+        if cut_type == "rectangle" and round_to != "none":
+            multiple = int(round_to.replace("px", ""))
+            rect = mask_util.round_up_rect_to_multiple(rect, multiple, width, height)
+
+        # 矩形領域を取得 (この部分は共通化)
+        x_min, y_min, rect_width, rect_height = rect
+        
+        # バッチ処理のための出力準備
+        output_images = []
+        
+        for b in range(batch_size):
+            # 2. & 3. マスクと画像のクローンを作成し、矩形領域でトリミング
+            
+            # 入力画像の取得 [height, width, channels]
+            img = images[b]
+            
+            # マスクのクローン作成とトリミング [rect_height, rect_width]
+            mask_crop = mask[y_min:y_min+rect_height, x_min:x_min+rect_width].clone()
+            
+            # 画像のクローン作成とトリミング [rect_height, rect_width, channels]
+            img_crop = img[y_min:y_min+rect_height, x_min:x_min+rect_width].clone()
+            
+            # デバッグ情報を表示
+            
+            # 4. cut_type に基づいて処理
+            if cut_type == "mask":
+                # マスクを画像に適用
+                img_crop = mask_util.apply_mask_to_image(img_crop, mask_crop)
+            else:  # rectangle
+                # 長方形領域を切り出す - 領域外は透明にする
+                if channels != 4:  # 既にRGBA
+                    # RGBをRGBAに変換
+                    # 新しいRGBA画像を作成
+                    rgba_img = torch.zeros((rect_height, rect_width, 4), dtype=img.dtype, device=img.device)
+                    rgba_img[:, :, :3] = img_crop  # RGB部分をコピー
+                    rgba_img[:, :, 3] = 1.0  # 矩形領域は完全不透明に
+                    img_crop = rgba_img
+            
+            # 5. output_size に基づいて出力画像を生成
+            if output_size == "mask_size":
+                # トリミングした画像をそのまま使用
+                output_img = img_crop
+                output_mask = mask_crop
+            else:  # image_size
+                # 元の画像サイズに合わせた透明な画像を生成
+                # RGBかRGBAかに関わらず、出力は必ずRGBAにする
+                output_img = torch.zeros((height, width, 4), 
+                                         dtype=img.dtype, device=img.device)
+                
+                # 切り抜いた画像を適切な位置に配置
+                output_img[y_min:y_min+rect_height, x_min:x_min+rect_width, :] = img_crop
+                
+                output_mask = mask
+            
+            if output_alpha == False:
+                output_img = image_util.convert_to_rgba_or_rgb(output_img, "rgb")
+
+            output_images.append(output_img)
+        
+        # 出力を適切な形式に変換
+        output_tensor = torch.stack(output_images, dim=0)
+        rect_tensor = torch.tensor(rect, dtype=torch.int32)
+
+        # ComfyUI 標準仕様の [1, H, W] に戻して返す
+        final_mask = output_mask if output_size == "mask_size" else mask
+        if final_mask.ndim == 2:
+            final_mask = final_mask.unsqueeze(0)
+
+        return io.NodeOutput(output_tensor, final_mask, rect_tensor)
+
+
+class D2_PasteByMask(io.ComfyNode):
+    """
+    マスクと領域を指定して画像を結合するノード
+
+    input require:
+    - img_base: 下地になる画像（batch対応）
+    - img_paste: 貼りつける画像（batch対応）
+    - paste_mode: img_paste のトリミング方法と貼り付け座標を決める
+        - mask: img_paste を mask_opt でマスキングして x=0, y=0 の位置に貼りつける（マスク形状貼り付け）
+        - rect_full: img_paste を rect_opt のサイズでトリミングして rect_opt の位置に貼りつける（短形貼り付け）
+        - rect_position: img_paste を rect_opt の位置に貼りつける（短形貼り付け）
+        - rect_pos_mask: img_paste を mask_opt でマスキングして rect_opt の位置に貼りつける（マスク形状貼り付け）
+    - multi_mode: img_base, img_paste のどちらか、または両方が複数枚だった時の処理
+        - pair_last: img_base, img_paste を先頭から同じインデックスのペアで処理する。片方の数が少ない時は最後の画像が採用される
+        - pair_only: pair_lastと同じ。片方の数が少ない時は処理前にエラーを表示して止まる
+        - cross: 全ての組み合わせを処理する
+
+    input optional:
+    - mask_opt: D2_CutByMaskが出力する mask
+    - rect_opt: D2_CutByMaskが出力する rect
+    - feather: 貼りつける時にエッジをボカす px数（初期値 0）
+
+    output:
+    - image: 合成した画像
+    """
+    
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Paste By Mask",
+            display_name="D2 Paste By Mask",
+            category="D2/Image",
+            inputs=[
+                io.Image.Input("img_base"),
+                io.Image.Input("img_paste"),
+                io.Combo.Input("paste_mode", options=["mask", "rect_full", "rect_position", "rect_pos_mask"]),
+                io.Combo.Input("multi_mode", options=["pair_last", "pair_only", "cross"]),
+                # MASK はソケット専用型のため V1 の forceInput/default は no-op（落とす）
+                io.Mask.Input("mask_opt", optional=True),
+                # INT は widget 型なので forceInput でソケット入力に強制する（rect は CutByMask の出力）
+                io.Int.Input("rect_opt", force_input=True, optional=True),
+                io.Int.Input("feather", default=0, min=0, max=100, optional=True),
+                io.Combo.Input("feather_type", options=["simple", "distance"], default="simple", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, img_base, img_paste, paste_mode, multi_mode, mask_opt=None, rect_opt=None, feather=0, feather_type="simple") -> io.NodeOutput:
+        """
+        マスクと領域を指定して画像を結合する
+
+        Args:
+            img_base (torch.Tensor): 下地になる画像 [batch, height, width, channels]
+            img_paste (torch.Tensor): 貼りつける画像 [batch, height, width, channels]
+            paste_mode (str): 貼りつける方法
+            multi_mode (str): 複数画像の処理方法
+            mask_opt (torch.Tensor, optional): マスク [height, width] or [batch, height, width]
+            rect_opt (torch.Tensor, optional): 矩形領域 [x, y, width, height]
+            feather (int, optional): エッジをぼかすピクセル数
+            feather_type (str, optional): フェザリングのタイプ ("simple" または "distance")
+
+        Returns:
+            torch.Tensor: 合成した画像 [batch, height, width, channels]
+        """
+        # 入力のチェックと調整
+        batch_size_base = img_base.shape[0]
+        batch_size_paste = img_paste.shape[0]
+        
+        base_height = img_base.shape[1]
+        base_width = img_base.shape[2]
+        base_channels = img_base.shape[3]
+        
+        paste_height = img_paste.shape[1]
+        paste_width = img_paste.shape[2]
+        paste_channels = img_paste.shape[3]
+        
+        # マスクの調整（必要な場合）
+        if mask_opt is not None:
+            mask_opt = mask_util.adjust_mask_dimensions(mask_opt)
+        
+        # rect_opt の検証（ない場合は初期値を設定）
+        if rect_opt is None or len(rect_opt) != 4:
+            rect_opt = torch.tensor([0, 0, paste_width, paste_height])
+        
+        x, y, rect_width, rect_height = rect_opt.tolist()
+        
+        # マルチモードに応じたバッチ処理の準備
+        if multi_mode == "pair_only" and batch_size_base != batch_size_paste:
+            raise ValueError(f"In 'pair_only' mode, both base ({batch_size_base}) and paste ({batch_size_paste}) images must have the same batch size")
+        
+        output_images = []
+        
+        # 処理するバッチペアを決定
+        if multi_mode == "cross":
+            # 全ての組み合わせを処理
+            batch_pairs = [(b, p) for b in range(batch_size_base) for p in range(batch_size_paste)]
+        else:  # pair_last または pair_only
+            # 同じインデックスのペアで処理し、少ない方の最後を繰り返す
+            batch_pairs = []
+            for i in range(max(batch_size_base, batch_size_paste)):
+                base_idx = min(i, batch_size_base - 1)
+                paste_idx = min(i, batch_size_paste - 1)
+                batch_pairs.append((base_idx, paste_idx))
+        
+        # 各ペアを処理
+        for base_idx, paste_idx in batch_pairs:
+            # 各バッチの画像を取得
+            img_base_single = img_base[base_idx]  # [height, width, channels]
+            img_paste_single = img_paste[paste_idx]  # [height, width, channels]
+            
+            # 処理モードに応じた画像合成を行う
+            result_img = cls._process_image_pair(
+                img_base_single, img_paste_single,
+                paste_mode, mask_opt, rect_opt,
+                feather, feather_type, base_height, base_width
+            )
+
+            output_images.append(result_img)
+
+        # 出力を適切な形式に変換
+        output_tensor = torch.stack(output_images, dim=0)
+        return io.NodeOutput(output_tensor)
+
+    @classmethod
+    def _process_image_pair(cls, img_base, img_paste, paste_mode, mask_opt, rect_opt, feather, feather_type, base_height, base_width):
+        """
+        1ペアの画像処理を行う
+        
+        Args:
+            img_base (torch.Tensor): 下地画像 [height, width, channels]
+            img_paste (torch.Tensor): 貼り付け画像 [height, width, channels]
+            paste_mode (str): 貼りつける方法
+            mask_opt (torch.Tensor): マスク
+            rect_opt (torch.Tensor): 矩形領域
+            feather (int): エッジをぼかすピクセル数
+            feather_type (str): フェザリングのタイプ
+            base_height (int): 下地画像の高さ
+            base_width (int): 下地画像の幅
+            
+        Returns:
+            torch.Tensor: 合成した画像 [height, width, channels]
+        """
+        # ベース画像をRGBAに変換（必要な場合）
+        img_base_rgba = image_util.convert_to_rgba_or_rgb(img_base, "rgba")
+        
+        # 貼り付け画像の準備と変換
+        img_paste_rgba = image_util.convert_to_rgba_or_rgb(img_paste, "rgba")
+        
+        # 矩形情報を取得
+        x, y, rect_width, rect_height = rect_opt.tolist()
+        
+        # paste_modeに応じた処理
+        if paste_mode == "mask":
+            output_img = cls._process_mode_mask(
+                img_base_rgba, img_paste_rgba, mask_opt,
+                base_height, base_width, feather, feather_type
+            )
+        elif paste_mode == "rect_full":
+            output_img = cls._process_mode_rect_full(
+                img_base_rgba, img_paste_rgba, x, y, rect_width, rect_height,
+                base_height, base_width, feather, feather_type
+            )
+        elif paste_mode == "rect_position":
+            output_img = cls._process_mode_rect_position(
+                img_base_rgba, img_paste_rgba, x, y,
+                base_height, base_width, feather, feather_type
+            )
+        elif paste_mode == "rect_pos_mask":
+            output_img = cls._process_mode_rect_pos_mask(
+                img_base_rgba, img_paste_rgba, mask_opt, x, y,
+                base_height, base_width, feather, feather_type
+            )
+        else:
+            raise ValueError(f"Unknown paste mode: {paste_mode}")
+        return output_img
+
+
+    @classmethod
+    def _process_mode_mask(cls, img_base_rgba, img_paste_rgba, mask_opt, base_height, base_width, feather, feather_type):
+        """マスクモード - マスクでマスキングして x=0, y=0 の位置に貼りつける"""
+        if mask_opt is None:
+            raise ValueError("Mask is required for 'mask' paste mode")
+        
+        # マスクと画像の互換性をチェック
+        mask_for_paste = mask_util.check_mask_image_compatibility(mask_opt, img_paste_rgba.shape[0], img_paste_rgba.shape[1])
+
+        # マスクをフェザリング（必要な場合）
+        if feather > 0:
+            # 元のマスク形状を保持してフェザリング
+            alpha_mask_feathered = mask_util.apply_feathering(mask_for_paste.clone(), feather, feather_type)
+        else:
+            alpha_mask_feathered = mask_for_paste.clone() # フェザリングしない場合は元のマスク
+
+        # 共通のアルファブレンディング処理を呼び出す
+        # img_paste_rgba はマスキングせず、alpha_mask_feathered で形状を制御
+        output_img = mask_util.alpha_blend_paste(img_base_rgba, img_paste_rgba, alpha_mask_feathered, 0, 0)
+        
+        return output_img
+    
+    @classmethod
+    def _process_mode_rect_full(cls, img_base_rgba, img_paste_rgba, x, y, rect_width, rect_height,
+                              base_height, base_width, feather, feather_type):
+        """短形フルモード - 貼り付けエリアのマスクを作り x=0, y=0 に貼りつける"""
+        # img_paste の寸法を取得
+        paste_height, paste_width = img_paste_rgba.shape[0], img_paste_rgba.shape[1]
+        
+        # 矩形サイズが有効かチェック
+        if rect_width <= 0 or rect_height <= 0:
+            print(f"Warning: Invalid rectangle dimensions: {rect_width}x{rect_height}")
+            return img_base_rgba
+            
+        # img_paste サイズのマスクを作成
+        paste_mask = mask_util.create_rectangle_mask(
+            height=paste_height,
+            width=paste_width,
+            x=x,
+            y=y,
+            rect_width=rect_width,
+            rect_height=rect_height,
+        )
+        
+        # マスクをフェザリング（必要な場合）
+        if feather > 0:
+            paste_mask = mask_util.apply_feathering(paste_mask, feather, feather_type)
+        
+        # 共通のアルファブレンディング処理を呼び出す
+        output_img = mask_util.alpha_blend_paste(img_base_rgba, img_paste_rgba, paste_mask, 0, 0)
+        
+        return output_img
+
+    @classmethod
+    def _process_mode_rect_position(cls, img_base_rgba, img_paste_rgba, x, y,
+                                  base_height, base_width, feather, feather_type):
+        """
+        矩形位置モード - img_paste を rect_opt の位置に貼りつける
+        img_paste_rgba はトリミング済みを想定
+        """
+        # 貼り付け画像の寸法
+        paste_height, paste_width = img_paste_rgba.shape[0], img_paste_rgba.shape[1]
+
+        # フェザリング用のマスクを作成 (貼り付け画像のサイズで)
+        paste_mask = mask_util.create_rectangle_mask(
+            height=paste_height,
+            width=paste_width,
+            x=0,
+            y=0,
+            rect_width=paste_width,
+            rect_height=paste_height,
+        )
+
+        # マスクをフェザリング（必要な場合）
+        if feather > 0:
+            paste_mask = mask_util.apply_feathering(paste_mask, feather, feather_type)
+
+        # 共通のアルファブレンディング処理を呼び出す
+        # 元の img_paste_rgba と paste_mask を使用し、rect_opt の x, y に貼り付け
+        output_img = mask_util.alpha_blend_paste(img_base_rgba, img_paste_rgba, paste_mask, x, y)
+
+        return output_img
+
+    @classmethod
+    def _process_mode_rect_pos_mask(cls, img_base_rgba, img_paste_rgba, mask_opt, x, y,
+                                   base_height, base_width, feather, feather_type):
+        """
+        矩形位置マスクモード - img_paste を mask_opt でマスキングして rect_opt の位置に貼りつける
+        img_paste_rgba はトリミング済みを想定
+        """
+        if mask_opt is None:
+            raise ValueError("Mask is required for 'rect_pos_mask' paste mode")
+
+        # マスクと画像の互換性をチェック
+        mask_for_paste = mask_util.check_mask_image_compatibility(mask_opt, img_paste_rgba.shape[0], img_paste_rgba.shape[1])
+
+        # マスクをフェザリング（必要な場合）
+        if feather > 0:
+             # 元のマスク形状を保持してフェザリング
+            alpha_mask_feathered = mask_util.apply_feathering(mask_for_paste.clone(), feather, feather_type)
+        else:
+            alpha_mask_feathered = mask_for_paste.clone() # フェザリングしない場合は元のマスク
+
+        # 共通のアルファブレンディング処理を呼び出す
+        # img_paste_rgba はマスキングせず、alpha_mask_feathered で形状を制御し、rect_opt の x, y に貼り付け
+        output_img = mask_util.alpha_blend_paste(img_base_rgba, img_paste_rgba, alpha_mask_feathered, x, y)
+
+        return output_img
+
+"""
+
+D2 Create Point
+キャンバス上のマーカーをドラッグして XY 座標を指定する
+
+"""
+class D2_CreatePoint(io.ComfyNode):
+    # 可変出力ノード。JS が addOutput(name, "*") で x_2 以降を動的に増やすため、
+    # 出力型検証（RETURN_TYPES[slot]）が宣言数を超えても落ちないよう AnyTypeTuple を使う。
+    # V3 では GET_SCHEMA が `_RETURN_TYPES is None` のときだけ schema から構築するので、
+    # クラス属性で事前設定すれば上書きされない。_OUTPUT_IS_LIST は固定長 tuple だと
+    # merge_result_data の zip で動的出力が切り捨てられるため AnyFalseList にする。
+    # 詳細は .claude/knowledge.md 2026-06-13「可変出力ノード」および D2_AnyDelivery を参照。
+    _RETURN_TYPES = AnyTypeTuple(("IMAGE", "INT", "INT", "*", "*"))
+    _RETURN_NAMES = AnyTypeTuple(("image", "width", "height", "x_1", "y_1"))
+    _OUTPUT_IS_LIST = AnyFalseList()
+    _OUTPUT_TOOLTIPS = (None, None, None, None, None)
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+        return io.Schema(
+            node_id="D2 Create Point",
+            display_name="D2 Create Point",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("marker_count", default=1, min=1, max=marker_util.MAX_MARKER_COUNT),
+                io.Combo.Input("mode", options=marker_util.MODES, default=marker_util.MODE_ABSOLUTE),
+                io.Int.Input("width", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                io.Int.Input("height", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                # image は required に置く必要がある。フロントエンドの Comfy.UploadImage 拡張は
+                # input.required しか走査せず、optional に置くと IMAGEUPLOAD が合成されない
+                # （＝ノードへの画像ドラッグ＆ドロップ・ペースト・アップロードボタンが付かない）。
+                io.Combo.Input("image", options=[""] + sorted(files), default="", upload=io.UploadType.image),
+                # ウィジェットは required 群 → optional 群の順に生成され、宣言順が効くのは群の中だけ。
+                # image が required の末尾、canvas / markers が optional の先頭なので表示順は保たれる。
+                io.Custom("D2_MARKER_CANVAS").Input("canvas", optional=True),
+                io.String.Input("markers", multiline=True, default="[]", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                io.AnyType.Output(display_name="x_1"),
+                io.AnyType.Output(display_name="y_1"),
+            ],
+        )
+
+    # image は空欄可で、JS のアップロードで増えたファイルも受ける必要がある。
+    # 引数名に image を含めると ComfyUI が既定の combo 照合をスキップする。
+    @classmethod
+    def validate_inputs(cls, image):
+        return True
+
+    # 同名ファイルを再アップロードすると入力シグネチャが変わらず、
+    # outputs キャッシュが古い画像を返し続けるため mtime で無効化する。
+    @classmethod
+    def fingerprint_inputs(cls, marker_count, mode, width, height, image="", canvas=None, markers="[]"):
+        if not image:
+            return ""
+
+        image_path = image_util.resolve_input_image_path(image)
+        if not os.path.isfile(image_path):
+            # 存在チェックとエラー通知は execute に任せる（ここではファイル名の変化だけ拾う）
+            return image
+
+        return os.path.getmtime(image_path)
+
+    @classmethod
+    def execute(cls, marker_count, mode, width, height, image="", canvas=None, markers="[]") -> io.NodeOutput:
+        output_image = image_util.load_canvas_image(image, width, height, "D2 Create Point")
+        marker_list = marker_util.parse_markers(markers, marker_count)
+        coords = marker_util.markers_to_outputs(marker_list, width, height, mode)
+
+        # 出力数は戻り値タプルの長さで決まる（RETURN_TYPES の長さには依存しない）
+        return io.NodeOutput(output_image, width, height, *coords)
+
+
+"""
+
+D2 Create Masks
+キャンバス上の長方形をドラッグして複数のマスクを作る
+
+"""
+class D2_CreateMasks(io.ComfyNode):
+    # 可変出力ノード。JS が addOutput("mask_N", "MASK") で mask_2 以降を動的に増やすため、
+    # 出力型検証（RETURN_TYPES[slot]）が宣言数を超えても落ちないよう AnyTypeTuple を使う。
+    # 詳細は .claude/knowledge.md 2026-06-13「可変出力ノード」および D2_CreatePoint を参照。
+    _RETURN_TYPES = AnyTypeTuple(("IMAGE", "INT", "INT", "MASK"))
+    _RETURN_NAMES = AnyTypeTuple(("image", "width", "height", "mask_1"))
+    _OUTPUT_IS_LIST = AnyFalseList()
+    _OUTPUT_TOOLTIPS = (None, None, None, None)
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+        return io.Schema(
+            node_id="D2 Create Masks",
+            display_name="D2 Create Masks",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("mask_count", default=1, min=1, max=mask_rect_util.MAX_MASK_COUNT),
+                # アクティブなマスクの番号。完全に重なったマスクを掴めないときの選択手段で、
+                # キャンバスのクリックと双方向に同期する。バックエンドでは使わない。
+                io.Int.Input("select_mask", default=1, min=1, max=mask_rect_util.MAX_MASK_COUNT),
+                io.Int.Input("width", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                io.Int.Input("height", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                # image は required に置く必要がある。フロントエンドの Comfy.UploadImage 拡張は
+                # input.required しか走査せず、optional に置くと IMAGEUPLOAD が合成されない
+                # （＝ノードへの画像ドラッグ＆ドロップ・ペースト・アップロードボタンが付かない）。
+                io.Combo.Input("image", options=[""] + sorted(files), default="", upload=io.UploadType.image),
+                # ウィジェットは required 群 → optional 群の順に生成され、宣言順が効くのは群の中だけ。
+                io.Custom("D2_MASK_CANVAS").Input("canvas", optional=True),
+                io.String.Input("masks", multiline=True, default="[]", optional=True),
+            ],
+            outputs=[
+                io.Image.Output(display_name="image"),
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                io.Mask.Output(display_name="mask_1"),
+            ],
+        )
+
+    # image は空欄可で、JS のアップロードで増えたファイルも受ける必要がある。
+    # 引数名に image を含めると ComfyUI が既定の combo 照合をスキップする。
+    @classmethod
+    def validate_inputs(cls, image):
+        return True
+
+    # 同名ファイルを再アップロードすると入力シグネチャが変わらず、
+    # outputs キャッシュが古い画像を返し続けるため mtime で無効化する。
+    @classmethod
+    def fingerprint_inputs(cls, mask_count, select_mask, width, height, image="", canvas=None, masks="[]"):
+        if not image:
+            return ""
+
+        image_path = image_util.resolve_input_image_path(image)
+        if not os.path.isfile(image_path):
+            # 存在チェックとエラー通知は execute に任せる（ここではファイル名の変化だけ拾う）
+            return image
+
+        return os.path.getmtime(image_path)
+
+    @classmethod
+    def _rect_to_mask(cls, rect, width, height):
+        """相対矩形を、矩形内が 1.0 の MASK テンソルにする"""
+        mask = torch.zeros((1, height, width), dtype=torch.float32)
+        x0, y0, x1, y1 = mask_rect_util.rect_to_pixels(rect, width, height)
+        mask[:, y0:y1, x0:x1] = 1.0
+        return mask
+
+    @classmethod
+    def execute(cls, mask_count, select_mask, width, height, image="", canvas=None, masks="[]") -> io.NodeOutput:
+        output_image = image_util.load_canvas_image(image, width, height, "D2 Create Masks")
+        rects = mask_rect_util.parse_masks(masks, mask_count)
+        mask_tensors = [cls._rect_to_mask(rect, width, height) for rect in rects]
+
+        # 出力数は戻り値タプルの長さで決まる（RETURN_TYPES の長さには依存しない）
+        return io.NodeOutput(output_image, width, height, *mask_tensors)
+
+
+"""
+
+D2 Random Point
+ランダムな XY 座標を1つ出力する
+
+"""
+class D2_RandomPoint(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Random Point",
+            display_name="D2 Random Point",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("width", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                io.Int.Input("height", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                # min / max は mode に関わらず常に相対値。まず relative で計算してから absolute へ写すので、
+                # mode や width / height を変えても「範囲」の意味が変わらない。
+                io.Float.Input("min_x", default=0.0, min=0.0, max=1.0, step=0.01),
+                io.Float.Input("max_x", default=1.0, min=0.0, max=1.0, step=0.01),
+                io.Float.Input("min_y", default=0.0, min=0.0, max=1.0, step=0.01),
+                io.Float.Input("max_y", default=1.0, min=0.0, max=1.0, step=0.01),
+                io.Combo.Input("mode", options=random_util.MODES, default=random_util.MODE_ABSOLUTE),
+                # relative のときは無視される（int に丸めると 0 か 1 にしかならないため）
+                io.Combo.Input("number_type", options=random_util.NUMBER_TYPES, default=random_util.NUMBER_TYPE_INT),
+                # control_after_generate を付けるとフロントエンドが Queue のたびに seed を書き換える。
+                # ランダムノードはこれが無いと入力シグネチャが変わらず、outputs キャッシュが返り続ける。
+                # fixed を選べば同じ結果を再現できる。
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff, control_after_generate=True),
+            ],
+            outputs=[
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                # 実際の型は mode / number_type で変わるので * にする。
+                # こうすれば設定を切り替えても配線が切れず、INT 入力にも FLOAT 入力にも挿せる。
+                io.AnyType.Output(display_name="x"),
+                io.AnyType.Output(display_name="y"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, seed, width, height, min_x, max_x, min_y, max_y, mode, number_type) -> io.NodeOutput:
+        # グローバルの random を触ると他ノードの結果まで引きずられるのでインスタンスを作る
+        rng = random.Random(seed)
+
+        rel_x = random_util.random_relative(rng, min_x, max_x)
+        rel_y = random_util.random_relative(rng, min_y, max_y)
+
+        x = random_util.to_point_value(rel_x, width, mode, number_type)
+        y = random_util.to_point_value(rel_y, height, mode, number_type)
+
+        return io.NodeOutput(width, height, x, y)
+
+
+"""
+
+D2 Random Mask
+ランダムな長方形のマスクを1枚出力する
+
+"""
+class D2_RandomMask(io.ComfyNode):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="D2 Random Mask",
+            display_name="D2 Random Mask",
+            category="D2/Image",
+            inputs=[
+                io.Int.Input("width", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                io.Int.Input("height", default=1024, min=8, max=util.MAX_RESOLUTION, step=8),
+                # 長方形の寸法はピクセル単位。既定は min = max = 512 なので位置だけがランダムに動く。
+                # width / height と違って 8 の倍数に縛る理由がないので step は 1。
+                io.Int.Input("min_width", default=512, min=1, max=util.MAX_RESOLUTION),
+                io.Int.Input("max_width", default=512, min=1, max=util.MAX_RESOLUTION),
+                io.Int.Input("min_height", default=512, min=1, max=util.MAX_RESOLUTION),
+                io.Int.Input("max_height", default=512, min=1, max=util.MAX_RESOLUTION),
+                # D2 Random Point と同じ理由で control_after_generate を付ける
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff, control_after_generate=True),
+            ],
+            outputs=[
+                # width / height は入力のスループット（D2 Create Masks と同じ扱い）。
+                # ランダムに決まった長方形の実値は mask_* のほうで返す。
+                io.Int.Output(display_name="width"),
+                io.Int.Output(display_name="height"),
+                io.Mask.Output(display_name="mask"),
+                io.Int.Output(display_name="mask_x"),
+                io.Int.Output(display_name="mask_y"),
+                io.Int.Output(display_name="mask_w"),
+                io.Int.Output(display_name="mask_h"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, seed, width, height, min_width, max_width, min_height, max_height) -> io.NodeOutput:
+        # グローバルの random を触ると他ノードの結果まで引きずられるのでインスタンスを作る
+        rng = random.Random(seed)
+
+        rect = random_util.random_rect(rng, width, height, min_width, max_width, min_height, max_height)
+
+        mask = torch.zeros((1, height, width), dtype=torch.float32)
+        mask[:, rect["y"]:rect["y"] + rect["h"], rect["x"]:rect["x"] + rect["w"]] = 1.0
+
+        return io.NodeOutput(width, height, mask, rect["x"], rect["y"], rect["w"], rect["h"])
+
+
+
+NODE_CLASS_MAPPINGS = {
+    "D2 Create Point": D2_CreatePoint,
+    "D2 Create Masks": D2_CreateMasks,
+    "D2 Random Point": D2_RandomPoint,
+    "D2 Random Mask": D2_RandomMask,
+    "D2 Send File Eagle": D2_SendFileEagle,
+    "D2 Save Image Eagle": D2_SaveImageEagle,
+    "D2 Save Image": D2_SaveImage,
+    "D2 Preview Image": D2_PreviewImage,
+    "D2 Load Image": D2_LoadImage,
+    "D2 Folder Image Queue": D2_FolderImageQueue,
+    "D2 EmptyImage Alpha": D2_EmptyImageAlpha,
+    "D2 Grid Image": D2_GridImage,
+    "D2 Image Stack": D2_ImageStack,
+    "D2 Image Mask Stack": D2_ImageMaskStack,
+    "D2 Load Folder Images": D2_LoadFolderImages,
+    "D2 Mosaic Filter": D2_MosaicFilter,
+    "D2 Cut By Mask": D2_CutByMask,
+    "D2 Paste By Mask": D2_PasteByMask,
+}
