@@ -2,15 +2,6 @@ import torch
 import torchvision.transforms.v2 as T
 import torch.nn.functional as F
 from .utils import expand_mask
-from ._v2 import custom, io, sdk
-
-
-_CLIPSEG_WEIGHT = sdk.HuggingFaceWeight(
-    repo_id="Kijai/clipseg-rd64-refined-fp16",
-    filename="model.safetensors",
-    folder="detection",
-    sha256="3bfcd7b05b526f849cf18c3102fed42c48ef396377b8e11b777a691029ca1295",
-)
 
 class LoadCLIPSegModels:
     @classmethod
@@ -90,60 +81,6 @@ class ApplyCLIPSeg:
 SEG_CLASS_MAPPINGS = {
     "ApplyCLIPSeg+": ApplyCLIPSeg,
     "LoadCLIPSegModels+": LoadCLIPSegModels,
-}
-
-
-async def _load_clipseg_v2(cls):
-    model = await sdk.ctx().models.load_clipseg(
-        _CLIPSEG_WEIGHT.catalogue_name
-    )
-    return io.NodeOutput(model)
-
-
-async def _apply_clipseg_v2(
-    cls, clip_seg, image, prompt, threshold, smooth, dilate, blur
-):
-    image_value = await image.raw()
-    mask = await clip_seg.predict_mask(
-        image, prompt, use_accelerator=False
-    )
-    outputs = await mask.raw()
-    outputs = outputs > threshold
-    if smooth > 0:
-        if smooth % 2 == 0:
-            smooth += 1
-        outputs = T.functional.gaussian_blur(outputs, smooth)
-    outputs = outputs.float()
-    if dilate != 0:
-        outputs = expand_mask(outputs, dilate, True)
-    if blur > 0:
-        if blur % 2 == 0:
-            blur += 1
-        outputs = T.functional.gaussian_blur(outputs, blur)
-    outputs = F.interpolate(
-        outputs.unsqueeze(1),
-        size=(image_value.shape[1], image_value.shape[2]),
-        mode="bicubic",
-    ).squeeze(1)
-    return io.NodeOutput(await sdk.MaskRef._from_raw(outputs))
-
-
-SEG_CLASS_MAPPINGS = {
-    "LoadCLIPSegModels+": custom(
-        "LoadCLIPSegModels+",
-        _load_clipseg_v2,
-        module=__name__,
-        class_name="LoadCLIPSegModelsV2",
-        permissions=("models",),
-        required_weights=(_CLIPSEG_WEIGHT,),
-    ),
-    "ApplyCLIPSeg+": custom(
-        "ApplyCLIPSeg+",
-        _apply_clipseg_v2,
-        module=__name__,
-        class_name="ApplyCLIPSegV2",
-        permissions=("raw",),
-    ),
 }
 
 SEG_NAME_MAPPINGS = {

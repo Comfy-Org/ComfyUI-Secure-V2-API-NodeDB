@@ -1,11 +1,6 @@
-"""Small conversion runtime shared by the Essentials V2 mirror.
+"""Frozen schema plumbing for all 85 pinned Essentials node identities.
 
-Schemas are frozen from the pinned V1 snapshot in ``_schemas.json``. The
-adapter below is only for nodes whose purpose is ordinary value/tensor
-computation: it materializes refs in the guest, invokes the unchanged upstream
-method, and wraps tensor outputs back into refs. Nodes that operate on live
-models, CLIP, VAE, assets, or application UI use explicit closed SDK methods
-instead and never enter this adapter.
+Only standard library and public SDK imports are used.
 """
 from __future__ import annotations
 
@@ -16,7 +11,7 @@ import pathlib
 import sys
 from typing import Any, Awaitable, Callable
 
-from comfy_api.v0_0_3 import io, sdk
+from comfy_api.latest import io, sdk
 
 
 SCHEMAS = json.loads(pathlib.Path(__file__).with_name("_schemas.json").read_text())
@@ -175,160 +170,3 @@ def schema_for(node_id: str) -> io.Schema:
     )
 
 
-async def materialize(value: Any) -> Any:
-    if isinstance(value, sdk.TensorRef):
-        return await value.raw()
-    if isinstance(value, sdk.ValueRef):
-        return await value.value()
-    if isinstance(value, list):
-        return [await materialize(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple([await materialize(item) for item in value])
-    if isinstance(value, dict):
-        return {key: await materialize(item) for key, item in value.items()}
-    return value
-
-
-async def wrap_output(value: Any, io_type: str, is_list: bool = False) -> Any:
-    if value is None or isinstance(value, sdk.Ref):
-        return value
-    if is_list:
-        return [await wrap_output(item, io_type) for item in value]
-    if io_type == "IMAGE":
-        return await sdk.ImageRef._from_raw(value)
-    if io_type == "MASK":
-        return await sdk.MaskRef._from_raw(value)
-    if io_type == "LATENT":
-        return await sdk.LatentRef.from_value(value)
-    if io_type == "CONDITIONING":
-        return await sdk.CondRef.from_value(value)
-    if io_type == "AUDIO":
-        return await sdk.AudioRef.from_value(value)
-    return value
-
-
-async def node_output(node_id: str, result: Any) -> io.NodeOutput:
-    ui_result = None
-    if isinstance(result, dict):
-        ui_result = result.get("ui")
-        values = result.get("result", ())
-    else:
-        values = result
-    if values is None:
-        values = ()
-    elif not isinstance(values, (tuple, list)):
-        values = (values,)
-
-    declared = SCHEMAS[node_id]["outputs"]
-    if len(values) != len(declared):
-        raise RuntimeError(
-            f"{node_id} returned {len(values)} outputs; schema declares "
-            f"{len(declared)}"
-        )
-    wrapped = [
-        await wrap_output(value, output["type"], output["is_list"])
-        for value, output in zip(values, declared, strict=True)
-    ]
-    return io.NodeOutput(*wrapped, ui=ui_result)
-
-
-def _needs_raw(node_id: str) -> bool:
-    definition = SCHEMAS[node_id]
-    input_types = {
-        item["type"] for item in definition["inputs"]
-        if isinstance(item["type"], str)
-    }
-    output_types = {item["type"] for item in definition["outputs"]}
-    return bool((input_types | output_types) & _RAW_TYPES)
-
-
-def adapt(
-    node_id: str,
-    legacy_class: type,
-    *,
-    method: str | None = None,
-    permissions: tuple[str, ...] | None = None,
-) -> type[io.ComfyNode]:
-    """Create a V2 class around one unchanged, guest-safe legacy method."""
-    definition = SCHEMAS[node_id]
-    legacy_method = method or definition["method"]
-
-    def define_schema(cls) -> io.Schema:
-        return schema_for(node_id)
-
-    async def execute(cls, **kwargs: Any) -> io.NodeOutput:
-        converted = {
-            name: await materialize(value) for name, value in kwargs.items()
-        }
-        for hidden in definition.get("hidden", []):
-            name = hidden.lower()
-            converted[name] = getattr(cls.hidden, name)
-        instance = legacy_class()
-        result = getattr(instance, legacy_method)(**converted)
-        if inspect.isawaitable(result):
-            result = await result
-        return await node_output(node_id, result)
-
-    requested = permissions
-    if requested is None:
-        requested = ("raw",) if _needs_raw(node_id) else ()
-    generated = type(
-        f"{legacy_class.__name__}V2",
-        (io.ComfyNode,),
-        {
-            "__module__": legacy_class.__module__,
-            "SDK_REFS": True,
-            "SDK_PERMISSIONS": tuple(requested),
-            "define_schema": classmethod(define_schema),
-            "execute": classmethod(execute),
-        },
-    )
-    module = sys.modules.get(legacy_class.__module__)
-    if module is not None:
-        setattr(module, generated.__name__, generated)
-    return generated
-
-
-def custom(
-    node_id: str,
-    execute: Callable[..., Awaitable[io.NodeOutput]],
-    *,
-    module: str,
-    class_name: str,
-    permissions: tuple[str, ...] = (),
-    required_weights: tuple[sdk.HuggingFaceWeight, ...] = (),
-) -> type[io.ComfyNode]:
-    """Create a V2 class for an explicit closed-boundary implementation."""
-
-    def define_schema(cls) -> io.Schema:
-        return schema_for(node_id)
-
-    generated = type(
-        class_name,
-        (io.ComfyNode,),
-        {
-            "__module__": module,
-            "SDK_REFS": True,
-            "SDK_PERMISSIONS": tuple(permissions),
-            "SDK_REQUIRED_WEIGHTS": tuple(required_weights),
-            "define_schema": classmethod(define_schema),
-            "execute": classmethod(execute),
-        },
-    )
-    owner = sys.modules.get(module)
-    if owner is not None:
-        setattr(owner, class_name, generated)
-    return generated
-
-
-__all__ = [
-    "SCHEMAS",
-    "adapt",
-    "custom",
-    "io",
-    "materialize",
-    "node_output",
-    "schema_for",
-    "sdk",
-    "wrap_output",
-]

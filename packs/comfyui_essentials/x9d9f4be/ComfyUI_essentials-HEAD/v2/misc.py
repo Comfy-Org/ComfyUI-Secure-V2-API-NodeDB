@@ -1,10 +1,9 @@
 import math
 import torch
 from .utils import AnyType
+import comfy.model_management
+from nodes import MAX_RESOLUTION
 import time
-from ._v2 import adapt, custom, io, materialize, sdk
-
-MAX_RESOLUTION = io.MAX_RESOLUTION
 
 any = AnyType("*")
 
@@ -307,10 +306,9 @@ class SimpleCondition:
     CATEGORY = "essentials/utilities"
 
     def execute(self, evaluate, on_true, on_false=None):
+        from comfy_execution.graph import ExecutionBlocker
         if not evaluate:
-            # Conversion provenance only. SimpleConditionV2 below is the
-            # registered implementation and emits a broker-safe block result.
-            return (on_false,)
+            return (on_false if on_false is not None else ExecutionBlocker(None),)
 
         return (on_true,)
 
@@ -465,7 +463,7 @@ class RemoveLatentMask:
 
 class SDXLEmptyLatentSizePicker:
     def __init__(self):
-        self.device = torch.device("cpu")
+        self.device = comfy.model_management.intermediate_device()
 
     @classmethod
     def INPUT_TYPES(s):
@@ -574,140 +572,3 @@ MISC_NAME_MAPPINGS = {
     "SimpleMathSlider+": "🔧 Simple Math Slider",
     "SimpleMathSliderLowRes+": "🔧 Simple Math Slider low-res",
 }
-
-
-async def _simple_condition_v2(cls, evaluate, on_true, on_false=None):
-    if evaluate:
-        return io.NodeOutput(on_true)
-    if on_false is not None:
-        return io.NodeOutput(on_false)
-    return io.NodeOutput(block_execution="SimpleCondition evaluated false")
-
-
-async def _console_debug_v2(cls, value, prefix="Value:"):
-    value = await materialize(value)
-    print(f"\033[96m{prefix} {value}\033[0m")
-    return io.NodeOutput()
-
-
-async def _debug_tensor_shape_v2(cls, tensor):
-    tensor = await materialize(tensor)
-    shapes = []
-
-    def visit(value):
-        if isinstance(value, dict):
-            for item in value.values():
-                visit(item)
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                visit(item)
-        elif hasattr(value, "shape"):
-            shapes.append(list(value.shape))
-
-    visit(tensor)
-    print(f"\033[96mShapes found: {shapes}\033[0m")
-    return io.NodeOutput()
-
-
-async def _model_compile_v2(cls, model, fullgraph, dynamic, mode):
-    compiled = await model.patch(
-        "compile",
-        backend="inductor",
-        mode=mode,
-        fullgraph=fullgraph,
-        dynamic=dynamic,
-        scope="whole",
-        dynamic_vram="preserve",
-        default_mode="explicit",
-    )
-    return io.NodeOutput(compiled)
-
-
-async def _empty_latent_v2(
-    cls, resolution, batch_size, width_override=0, height_override=0
-):
-    width, height = resolution.split(" ")[0].split("x")
-    width = width_override if width_override > 0 else int(width)
-    height = height_override if height_override > 0 else int(height)
-    latent = {"samples": torch.zeros([batch_size, 4, height // 8, width // 8])}
-    return io.NodeOutput(await sdk.LatentRef.from_value(latent), width, height)
-
-
-async def _display_any_v2(cls, input, mode):
-    input = await materialize(input)
-    if mode == "tensor shape":
-        shapes = []
-
-        def visit(value):
-            if isinstance(value, dict):
-                for item in value.values():
-                    visit(item)
-            elif isinstance(value, (list, tuple)):
-                for item in value:
-                    visit(item)
-            elif hasattr(value, "shape"):
-                shapes.append(list(value.shape))
-
-        visit(input)
-        input = shapes
-    text = str(input)
-    return io.NodeOutput(text, ui={"text": text})
-
-
-async def _slider_low_res_v2(cls, value, min, max, rounding):
-    result = min + 0.1 * value * (max - min)
-    if rounding > 0:
-        result = round(result, rounding)
-    return io.NodeOutput(result, int(result))
-
-
-async def _boolean_v2(cls, value):
-    return io.NodeOutput(bool(value))
-
-
-_V2 = {
-    "BatchCount+": adapt("BatchCount+", BatchCount),
-    "ConsoleDebug+": custom(
-        "ConsoleDebug+", _console_debug_v2, module=__name__,
-        class_name="ConsoleDebugV2", permissions=("raw",),
-    ),
-    "DebugTensorShape+": custom(
-        "DebugTensorShape+", _debug_tensor_shape_v2, module=__name__,
-        class_name="DebugTensorShapeV2", permissions=("raw",),
-    ),
-    "DisplayAny": custom(
-        "DisplayAny", _display_any_v2, module=__name__,
-        class_name="DisplayAnyV2", permissions=("raw",),
-    ),
-    "ModelCompile+": custom(
-        "ModelCompile+", _model_compile_v2, module=__name__,
-        class_name="ModelCompileV2",
-    ),
-    "RemoveLatentMask+": adapt("RemoveLatentMask+", RemoveLatentMask),
-    "SDXLEmptyLatentSizePicker+": custom(
-        "SDXLEmptyLatentSizePicker+", _empty_latent_v2, module=__name__,
-        class_name="SDXLEmptyLatentSizePickerV2", permissions=("raw",),
-    ),
-    "SimpleComparison+": adapt("SimpleComparison+", SimpleComparison),
-    "SimpleCondition+": custom(
-        "SimpleCondition+", _simple_condition_v2, module=__name__,
-        class_name="SimpleConditionV2",
-    ),
-    "SimpleMath+": adapt("SimpleMath+", SimpleMath),
-    "SimpleMathDual+": adapt("SimpleMathDual+", SimpleMathDual),
-    "SimpleMathCondition+": adapt("SimpleMathCondition+", SimpleMathCondition),
-    "SimpleMathBoolean+": custom(
-        "SimpleMathBoolean+", _boolean_v2, module=__name__,
-        class_name="SimpleMathBooleanV2",
-    ),
-    "SimpleMathFloat+": adapt("SimpleMathFloat+", SimpleMathFloat),
-    "SimpleMathInt+": adapt("SimpleMathInt+", SimpleMathInt),
-    "SimpleMathPercent+": adapt("SimpleMathPercent+", SimpleMathPercent),
-    "SimpleMathSlider+": adapt("SimpleMathSlider+", SimpleMathSlider),
-    "SimpleMathSliderLowRes+": custom(
-        "SimpleMathSliderLowRes+", _slider_low_res_v2, module=__name__,
-        class_name="SimpleMathSliderLowResV2",
-    ),
-}
-
-MISC_CLASS_MAPPINGS = _V2

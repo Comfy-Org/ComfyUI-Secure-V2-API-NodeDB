@@ -1,24 +1,18 @@
+from nodes import SaveImage
 import torch
 import torchvision.transforms.v2 as T
-from ._image_ops import common_upscale
-from ._v2 import adapt, custom, io, sdk
+import random
+import folder_paths
+import comfy.utils
+from .image import ImageExpandBatch
 from .utils import AnyType
 import numpy as np
 import scipy
 from PIL import Image
+from nodes import MAX_RESOLUTION
 import math
 
-MAX_RESOLUTION = io.MAX_RESOLUTION
 any = AnyType("*")
-
-
-def _accelerator_device(current):
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    mps = getattr(torch.backends, "mps", None)
-    if mps is not None and mps.is_available():
-        return torch.device("mps")
-    return current
 
 class MaskBlur:
     @classmethod
@@ -39,11 +33,10 @@ class MaskBlur:
         if amount == 0:
             return (mask,)
 
-        original_device = mask.device
         if "gpu" == device:
-            mask = mask.to(_accelerator_device(original_device))
+            mask = mask.to(comfy.model_management.get_torch_device())
         elif "cpu" == device:
-            mask = mask.to("cpu")
+            mask = mask.to('cpu')
 
         if amount % 2 == 0:
             amount+= 1
@@ -54,7 +47,7 @@ class MaskBlur:
         mask = T.functional.gaussian_blur(mask.unsqueeze(1), amount).squeeze(1)
 
         if "gpu" == device or "cpu" == device:
-            mask = mask.to(original_device)
+            mask = mask.to(comfy.model_management.intermediate_device())
 
         return(mask,)
 
@@ -85,7 +78,12 @@ class MaskFlip:
 
         return(mask,)
 
-class MaskPreview:
+class MaskPreview(SaveImage):
+    def __init__(self):
+        self.output_dir = folder_paths.get_temp_directory()
+        self.type = "temp"
+        self.prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+        self.compress_level = 4
 
     @classmethod
     def INPUT_TYPES(s):
@@ -99,7 +97,7 @@ class MaskPreview:
 
     def execute(self, mask, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
         preview = mask.reshape((-1, 1, mask.shape[-2], mask.shape[-1])).movedim(1, -1).expand(-1, -1, -1, 3)
-        return (preview,)
+        return self.save_images(preview, filename_prefix, prompt, extra_pnginfo)
 
 class MaskBatch:
     @classmethod
@@ -117,7 +115,7 @@ class MaskBatch:
 
     def execute(self, mask1, mask2):
         if mask1.shape[1:] != mask2.shape[1:]:
-            mask2 = common_upscale(mask2.unsqueeze(1).expand(-1,3,-1,-1), mask1.shape[2], mask1.shape[1], upscale_method='bicubic', crop='center')[:,0,:,:]
+            mask2 = comfy.utils.common_upscale(mask2.unsqueeze(1).expand(-1,3,-1,-1), mask1.shape[2], mask1.shape[1], upscale_method='bicubic', crop='center')[:,0,:,:]
 
         return (torch.cat((mask1, mask2), dim=0),)
 
@@ -137,40 +135,7 @@ class MaskExpandBatch:
     CATEGORY = "essentials/mask batch"
 
     def execute(self, mask, size, method):
-        orig_size = mask.shape[0]
-        if orig_size == size:
-            return (mask,)
-        if size <= 1:
-            return (mask[:size],)
-        if "expand" in method:
-            out = torch.empty(
-                [size] + list(mask.shape)[1:],
-                dtype=mask.dtype,
-                device=mask.device,
-            )
-            if size < orig_size:
-                scale = (orig_size - 1) / (size - 1)
-                for index in range(size):
-                    out[index] = mask[min(round(index * scale), orig_size - 1)]
-            else:
-                scale = orig_size / size
-                for index in range(size):
-                    out[index] = mask[
-                        min(math.floor((index + 0.5) * scale), orig_size - 1)
-                    ]
-        elif "all" in method:
-            out = mask.repeat(
-                [math.ceil(size / orig_size)] + [1] * (mask.ndim - 1)
-            )[:size]
-        elif "first" in method:
-            out = mask[:size] if size < orig_size else torch.cat(
-                [mask[:1].repeat(size - orig_size, 1, 1), mask], dim=0
-            )
-        else:
-            out = mask[:size] if size < orig_size else torch.cat(
-                [mask, mask[-1:].repeat(size - orig_size, 1, 1)], dim=0
-            )
-        return (out,)
+        return (ImageExpandBatch().execute(mask.unsqueeze(1).expand(-1,3,-1,-1), size, method)[0][:,0,:,:],)
 
 
 class MaskBoundingBox:
@@ -201,7 +166,7 @@ class MaskBoundingBox:
 
         # resize the image if it's not the same size as the mask
         if image_optional.shape[1:] != mask.shape[1:]:
-            image_optional = common_upscale(image_optional.permute([0,3,1,2]), mask.shape[2], mask.shape[1], upscale_method='bicubic', crop='center').permute([0,2,3,1])
+            image_optional = comfy.utils.common_upscale(image_optional.permute([0,3,1,2]), mask.shape[2], mask.shape[1], upscale_method='bicubic', crop='center').permute([0,2,3,1])
 
         # match batch size
         if image_optional.shape[0] < mask.shape[0]:
@@ -611,31 +576,6 @@ MASK_CLASS_MAPPINGS = {
     "MaskExpandBatch+": MaskExpandBatch,
     "MaskFromBatch+": MaskFromBatch,
 }
-
-
-async def _mask_preview_v2(cls, mask):
-    value = await mask.raw()
-    preview = value.reshape(
-        (-1, 1, value.shape[-2], value.shape[-1])
-    ).movedim(1, -1).expand(-1, -1, -1, 3)
-    image = await sdk.ImageRef._from_raw(preview)
-    ui_value = await sdk.ctx().ui.preview_images(image)
-    return io.NodeOutput(image, ui=ui_value)
-
-
-_V2 = {
-    node_id: adapt(node_id, legacy_class)
-    for node_id, legacy_class in MASK_CLASS_MAPPINGS.items()
-    if node_id != "MaskPreview+"
-}
-_V2["MaskPreview+"] = custom(
-    "MaskPreview+",
-    _mask_preview_v2,
-    module=__name__,
-    class_name="MaskPreviewV2",
-    permissions=("raw", "ui"),
-)
-MASK_CLASS_MAPPINGS = _V2
 
 MASK_NAME_MAPPINGS = {
     "MaskBlur+": "🔧 Mask Blur",

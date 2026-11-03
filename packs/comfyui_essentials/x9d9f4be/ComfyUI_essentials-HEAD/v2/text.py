@@ -1,11 +1,8 @@
 import os
 import torch
+from nodes import MAX_RESOLUTION
 import torchvision.transforms.v2 as T
 from .utils import FONTS_DIR
-from ._v2 import custom, io, node_output, sdk
-from io import BytesIO
-
-MAX_RESOLUTION = io.MAX_RESOLUTION
 
 class DrawText:
     @classmethod
@@ -38,11 +35,7 @@ class DrawText:
     def execute(self, text, font, size, color, background_color, shadow_distance, shadow_blur, shadow_color, horizontal_align, vertical_align, offset_x, offset_y, direction, img_composite=None):
         from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageFilter
 
-        font_source = (
-            BytesIO(font) if isinstance(font, (bytes, bytearray))
-            else os.path.join(FONTS_DIR, font)
-        )
-        font = ImageFont.truetype(font_source, size)
+        font = ImageFont.truetype(os.path.join(FONTS_DIR, font), size)
 
         lines = text.split("\n")
         if direction == "rtl":
@@ -113,31 +106,6 @@ class DrawText:
 
 TEXT_CLASS_MAPPINGS = {
     "DrawText+": DrawText,
-}
-
-
-async def _draw_text_v2(cls, font, img_composite=None, **kwargs):
-    asset = await sdk.ctx().assets.resolve("essentials_fonts", font)
-    font_content = await sdk.ctx().assets.read_bytes(asset)
-    image_value = (
-        None if img_composite is None else await img_composite.raw()
-    )
-    result = DrawText().execute(
-        font=font_content,
-        img_composite=image_value,
-        **kwargs,
-    )
-    return await node_output("DrawText+", result)
-
-
-TEXT_CLASS_MAPPINGS = {
-    "DrawText+": custom(
-        "DrawText+",
-        _draw_text_v2,
-        module=__name__,
-        class_name="DrawTextV2",
-        permissions=("raw", "assets"),
-    )
 }
 
 TEXT_NAME_MAPPINGS = {

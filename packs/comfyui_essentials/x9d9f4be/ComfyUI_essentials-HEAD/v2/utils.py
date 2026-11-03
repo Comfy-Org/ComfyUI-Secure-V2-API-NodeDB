@@ -2,12 +2,17 @@ import torch
 import numpy as np
 import scipy
 import os
-import math
 #import re
 from pathlib import Path
+import folder_paths
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
-LUTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "luts")
+
+SCRIPT_DIR = Path(__file__).parent
+folder_paths.add_model_folder_path("luts", (SCRIPT_DIR / "luts").as_posix())
+folder_paths.add_model_folder_path(
+    "luts", (Path(folder_paths.models_dir) / "luts").as_posix()
+)
 
 # from https://github.com/pythongosssss/ComfyUI-Custom-Scripts
 class AnyType(str):
@@ -45,25 +50,18 @@ def expand_mask(mask, expand, tapered_corners):
 
     return torch.stack(out, dim=0)
 
-def parse_string_to_list(s, *, max_items=4096):
-    """Parse Essentials' comma/range syntax without unbounded expansion.
-
-    The upstream parser loops forever for a zero range step and can allocate
-    without limit for a tiny step.  Valid existing inputs keep their numerical
-    behaviour, while malformed/non-finite values and oversized grids fail
-    closed inside the guest.
-    """
+def parse_string_to_list(s):
     elements = s.split(',')
     result = []
 
     def parse_number(s):
         try:
-            value = float(s) if '.' in s else int(s)
+            if '.' in s:
+                return float(s)
+            else:
+                return int(s)
         except ValueError:
             return 0
-        if not math.isfinite(float(value)):
-            raise ValueError(f"non-finite number: {s!r}")
-        return value
 
     def decimal_places(s):
         if '.' in s:
@@ -73,31 +71,19 @@ def parse_string_to_list(s, *, max_items=4096):
     for element in elements:
         element = element.strip()
         if '...' in element:
-            try:
-                start, rest = element.split('...', 1)
-                end, step = rest.rsplit('+', 1)
-            except ValueError as exc:
-                raise ValueError(f"invalid number range: {element!r}") from exc
+            start, rest = element.split('...')
+            end, step = rest.split('+')
             decimals = decimal_places(step)
             start = parse_number(start)
             end = parse_number(end)
             step = parse_number(step)
-            if step == 0:
-                raise ValueError(f"number range step must not be zero: {element!r}")
             current = start
             if (start > end and step > 0) or (start < end and step < 0):
                 step = -step
-            compare = ((lambda value: value <= end)
-                       if step > 0 else (lambda value: value >= end))
-            while compare(current):
-                if len(result) >= max_items:
-                    raise ValueError(
-                        f"number grid exceeds {max_items} values")
+            while current <= end:
                 result.append(round(current, decimals))
                 current += step
         else:
-            if len(result) >= max_items:
-                raise ValueError(f"number grid exceeds {max_items} values")
             result.append(round(parse_number(element), decimal_places(element)))
 
     return result

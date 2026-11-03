@@ -1,35 +1,14 @@
 import os
+import comfy.samplers
+import comfy.sample
 import torch
+from nodes import common_ksampler, CLIPTextEncode
+from comfy.utils import ProgressBar
 from .utils import expand_mask, FONTS_DIR, parse_string_to_list
-from ._v2 import SCHEMAS, adapt, custom, io, node_output, sdk
 import torchvision.transforms.v2 as T
 import torch.nn.functional as F
 import logging
-import math
-from io import BytesIO
-
-
-def _combo_values(node_id, name):
-    for definition in SCHEMAS[node_id]["inputs"]:
-        if definition["name"] == name and isinstance(definition["type"], list):
-            return tuple(definition["type"])
-    raise RuntimeError(f"{node_id} has no frozen combo {name}")
-
-
-SAMPLER_NAMES = _combo_values(
-    "KSamplerVariationsWithNoise+", "sampler_name"
-)
-SCHEDULER_NAMES = _combo_values(
-    "KSamplerVariationsWithNoise+", "scheduler"
-)
-
-
-class ProgressBar:
-    def __init__(self, total):
-        self.total = total
-
-    def update(self, amount):
-        return None
+import folder_paths
 
 # From https://github.com/BlenderNeko/ComfyUI_Noise/
 def slerp(val, low, high):
@@ -59,8 +38,8 @@ class KSamplerVariationsWithNoise:
                     "main_seed": ("INT:seed", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                     "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
                     "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01}),
-                    "sampler_name": (SAMPLER_NAMES, ),
-                    "scheduler": (SCHEDULER_NAMES, ),
+                    "sampler_name": (comfy.samplers.KSampler.SAMPLERS, ),
+                    "scheduler": (comfy.samplers.KSampler.SCHEDULERS, ),
                     "positive": ("CONDITIONING", ),
                     "negative": ("CONDITIONING", ),
                     "variation_strength": ("FLOAT", {"default": 0.17, "min": 0.0, "max": 1.0, "step":0.01, "round": 0.01}),
@@ -134,8 +113,8 @@ class KSamplerVariationsStochastic:
                     "noise_seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                     "steps": ("INT", {"default": 25, "min": 1, "max": 10000}),
                     "cfg": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 100.0, "step":0.1, "round": 0.01}),
-                    "sampler": (SAMPLER_NAMES, ),
-                    "scheduler": (SCHEDULER_NAMES, ),
+                    "sampler": (comfy.samplers.KSampler.SAMPLERS, ),
+                    "scheduler": (comfy.samplers.KSampler.SCHEDULERS, ),
                     "positive": ("CONDITIONING", ),
                     "negative": ("CONDITIONING", ),
                     "variation_seed": ("INT:seed", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
@@ -254,7 +233,7 @@ class SamplerSelectHelper:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            **{s: ("BOOLEAN", { "default": False }) for s in SAMPLER_NAMES},
+            **{s: ("BOOLEAN", { "default": False }) for s in comfy.samplers.KSampler.SAMPLERS},
         }}
 
     RETURN_TYPES = ("STRING", )
@@ -271,7 +250,7 @@ class SchedulerSelectHelper:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            **{s: ("BOOLEAN", { "default": False }) for s in SCHEDULER_NAMES},
+            **{s: ("BOOLEAN", { "default": False }) for s in comfy.samplers.KSampler.SCHEDULERS},
         }}
 
     RETURN_TYPES = ("STRING", )
@@ -287,10 +266,10 @@ class SchedulerSelectHelper:
 class LorasForFluxParams:
     @classmethod
     def INPUT_TYPES(s):
-        optional_loras = ["none"]
+        optional_loras = ['none'] + folder_paths.get_filename_list("loras")
         return {
             "required": {
-                "lora_1": ([], {"tooltip": "The name of the LoRA."}),
+                "lora_1": (folder_paths.get_filename_list("loras"), {"tooltip": "The name of the LoRA."}),
                 "strength_model_1": ("STRING", { "multiline": False, "dynamicPrompts": False, "default": "1.0" }),
             },
             #"optional": {
@@ -364,10 +343,11 @@ class FluxSamplerParams:
     def execute(self, model, conditioning, latent_image, seed, sampler, scheduler, steps, guidance, max_shift, base_shift, denoise, loras=None):
         import random
         import time
-
-        # This legacy implementation is retained only as conversion provenance.
-        # FluxSamplerParamsV2 below is the registered implementation; all host
-        # operations it needs go through refs and the sample/model brokers.
+        from comfy_extras.nodes_custom_sampler import Noise_RandomNoise, BasicScheduler, BasicGuider, SamplerCustomAdvanced
+        from comfy_extras.nodes_latent import LatentBatch
+        from comfy_extras.nodes_model_advanced import ModelSamplingFlux, ModelSamplingAuraFlow
+        from node_helpers import conditioning_set_values
+        from nodes import LoraLoader
 
         is_schnell = model.model.model_type == comfy.model_base.ModelType.FLOW
 
@@ -540,7 +520,7 @@ class PlotParameters:
     FUNCTION = "execute"
     CATEGORY = "essentials/sampling"
 
-    def execute(self, images, params, order_by, cols_value, cols_num, add_prompt, add_params, font_content=None):
+    def execute(self, images, params, order_by, cols_value, cols_num, add_prompt, add_params):
         from PIL import Image, ImageDraw, ImageFont
         import math
         import textwrap
@@ -580,13 +560,7 @@ class PlotParameters:
         width = images.shape[2]
         out_image = []
 
-        font_source = (
-            BytesIO(font_content) if font_content is not None
-            else os.path.join(FONTS_DIR, 'ShareTechMono-Regular.ttf')
-        )
-        font = ImageFont.truetype(
-            font_source, min(48, int(32*(width/1024)))
-        )
+        font = ImageFont.truetype(os.path.join(FONTS_DIR, 'ShareTechMono-Regular.ttf'), min(48, int(32*(width/1024))))
         text_padding = 3
         line_height = font.getmask('Q').getbbox()[3] + font.getmetrics()[1] + text_padding*2
         char_width = font.getbbox('M')[2]+1 # using monospace font
@@ -821,458 +795,6 @@ SAMPLING_CLASS_MAPPINGS = {
     "LorasForFluxParams+": LorasForFluxParams,
     "ModelSamplingSD3Advanced+": ModelSamplingSD3Advanced,
 }
-
-
-async def _ksampler_variations_with_noise_v2(
-    cls, model, latent_image, main_seed, steps, cfg, sampler_name,
-    scheduler, positive, negative, variation_strength, variation_seed,
-    denoise
-):
-    if main_seed == variation_seed:
-        variation_seed += 1
-    end_at_step = int(steps)
-    start_at_step = round(end_at_step - end_at_step * denoise)
-    latent = await latent_image.value()
-    samples = latent["samples"]
-    batch_size, _channels, height, width = samples.shape
-    generator = torch.Generator(device="cpu").manual_seed(int(main_seed))
-    base_noise = torch.randn(
-        (1, 4, height, width),
-        dtype=torch.float32,
-        device="cpu",
-        generator=generator,
-    ).repeat(batch_size, 1, 1, 1)
-    generator = torch.Generator(device="cpu").manual_seed(
-        int(variation_seed)
-    )
-    variation_noise = torch.randn(
-        (batch_size, 4, height, width),
-        dtype=torch.float32,
-        device="cpu",
-        generator=generator,
-    )
-    mixed_noise = slerp(variation_strength, base_noise, variation_noise)
-    sigma = await model.sampling_sigma_delta(
-        steps=steps,
-        sampler_name=sampler_name,
-        scheduler=scheduler,
-        start_step=start_at_step,
-        end_step=end_at_step,
-        denoise=1.0,
-    )
-    work = latent.copy()
-    work["samples"] = samples.clone() + mixed_noise.to(samples) * sigma
-    if "noise_mask" in latent:
-        noise_mask = KSamplerVariationsWithNoise().prepare_mask(
-            latent["noise_mask"], samples.shape
-        )
-        work["samples"] = (
-            noise_mask * work["samples"] + (1 - noise_mask) * samples
-        )
-        work["noise_mask"] = expand_mask(
-            latent["noise_mask"].clone(), 5, True
-        )
-    work_ref = await sdk.LatentRef.from_value(work)
-    output = await sdk.ctx().sample(
-        latent=work_ref,
-        steps=steps,
-        model=model,
-        positive=positive,
-        negative=negative,
-        cfg=cfg,
-        seed=main_seed,
-        sampler_name=sampler_name,
-        scheduler=scheduler,
-        denoise=1.0,
-        disable_noise=True,
-        start_step=start_at_step,
-        last_step=end_at_step,
-        force_full_denoise=True,
-    )
-    return io.NodeOutput(output)
-
-
-async def _ksampler_variations_stochastic_v2(
-    cls, model, latent_image, noise_seed, steps, cfg, sampler, scheduler,
-    positive, negative, variation_seed, variation_strength, cfg_scale
-):
-    end_at_step = max(int(steps * (1 - variation_strength)), 1)
-    latent = await latent_image.value()
-    batch_size = latent["samples"].shape[0]
-    work = latent.copy()
-    work["samples"] = latent["samples"][0].unsqueeze(0)
-    stage_one = await sdk.ctx().sample(
-        latent=await sdk.LatentRef.from_value(work),
-        steps=steps,
-        model=model,
-        positive=positive,
-        negative=negative,
-        cfg=cfg,
-        seed=noise_seed,
-        sampler_name=sampler,
-        scheduler=scheduler,
-        denoise=1.0,
-        disable_noise=False,
-        start_step=0,
-        last_step=end_at_step,
-        force_full_denoise=False,
-    )
-    if batch_size > 1:
-        stage_value = await stage_one.value()
-        stage_value = stage_value.copy()
-        stage_value["samples"] = stage_value["samples"].clone().repeat(
-            batch_size, 1, 1, 1
-        )
-        stage_one = await sdk.LatentRef.from_value(stage_value)
-    output = await sdk.ctx().sample(
-        latent=stage_one,
-        steps=steps,
-        model=model,
-        positive=positive,
-        negative=negative,
-        cfg=max(cfg * cfg_scale, 1.0),
-        seed=variation_seed,
-        sampler_name="dpmpp_2m_sde",
-        scheduler=scheduler,
-        denoise=1.0,
-        disable_noise=True,
-        start_step=end_at_step,
-        last_step=steps,
-        force_full_denoise=True,
-    )
-    return io.NodeOutput(output)
-
-
-async def _text_encode_for_sampler_v2(cls, text, clip):
-    import re
-
-    prompts = re.sub(r"[-*=~]{4,}\n", "---\n", text).split("---\n")
-    text_values = []
-    encoded = []
-    for prompt in prompts:
-        prompt = prompt.strip()
-        if prompt:
-            text_values.append(prompt)
-            encoded.append(await clip.encode(prompt))
-    return io.NodeOutput({"text": text_values, "encoded": encoded})
-
-
-async def _plot_parameters_v2(cls, images, **kwargs):
-    image_value = await images.raw()
-    asset = await sdk.ctx().assets.resolve(
-        "essentials_fonts", "ShareTechMono-Regular.ttf"
-    )
-    font_content = await sdk.ctx().assets.read_bytes(asset)
-    result = PlotParameters().execute(
-        images=image_value,
-        font_content=font_content,
-        **kwargs,
-    )
-    return await node_output("PlotParameters+", result)
-
-
-async def _guidance_timestepping_v2(
-    cls, model, value, start_at, end_at
-):
-    return io.NodeOutput(await model.patch(
-        "guidance_timestepping",
-        value=value,
-        start_at=start_at,
-        end_at=end_at,
-    ))
-
-
-async def _model_sampling_sd3_v2(
-    cls, model, shift, cut_off, shift_multiplier
-):
-    return io.NodeOutput(await model.patch(
-        "sd3_advanced_sampling",
-        shift=shift,
-        cut_off=cut_off,
-        shift_multiplier=shift_multiplier,
-    ))
-
-
-def _selected_names(value, choices, fallback):
-    if value == "*":
-        selected = list(choices)
-    elif value.startswith("!"):
-        excluded = {
-            item.strip("! ")
-            for item in value.replace("\n", ",").split(",")
-        }
-        selected = [item for item in choices if item not in excluded]
-    else:
-        selected = [
-            item.strip()
-            for item in value.replace("\n", ",").split(",")
-            if item.strip() in choices
-        ]
-    return selected or [fallback]
-
-
-def _checked_numeric_grid(name, values, lower, upper, *, integral=False):
-    checked = []
-    for value in values:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypeError(f"{name} values must be numbers")
-        number = float(value)
-        if not math.isfinite(number) or not lower <= number <= upper:
-            raise ValueError(
-                f"{name} values must be finite and in [{lower}, {upper}]"
-            )
-        if integral:
-            if not number.is_integer():
-                raise ValueError(f"{name} values must be whole numbers")
-            checked.append(int(number))
-        else:
-            checked.append(value)
-    if not checked:
-        raise ValueError(f"{name} grid is empty")
-    return checked
-
-
-async def _conditioning_with_guidance(conditioning, guidance):
-    if isinstance(conditioning, sdk.CondRef):
-        value = await conditioning.value()
-    else:
-        value = conditioning
-    output = []
-    for tensor, metadata in value:
-        metadata = metadata.copy()
-        metadata["guidance"] = guidance
-        output.append([tensor, metadata])
-    return await sdk.CondRef.from_value(output)
-
-
-async def _conditioning_variants(conditioning):
-    if isinstance(conditioning, sdk.ValueRef):
-        conditioning = await conditioning.value()
-    if isinstance(conditioning, dict) and "encoded" in conditioning:
-        prompts = list(conditioning.get("text", []))
-        encoded = list(conditioning["encoded"])
-    else:
-        prompts = []
-        encoded = [conditioning]
-    output = []
-    for item in encoded:
-        output.append(
-            item if isinstance(item, sdk.CondRef)
-            else await sdk.CondRef.from_value(item)
-        )
-    return prompts, output
-
-
-async def _batch_latents(latents):
-    if len(latents) == 1:
-        return latents[0]
-    values = [await item.value() for item in latents]
-    output = values[0].copy()
-    sample_batches = [item["samples"] for item in values]
-    output["samples"] = torch.cat(sample_batches, dim=0)
-    batch_index = []
-    for item, samples in zip(values, sample_batches, strict=True):
-        batch_index.extend(
-            item.get("batch_index", list(range(samples.shape[0])))
-        )
-    output["batch_index"] = batch_index
-    return await sdk.LatentRef.from_value(output)
-
-
-async def _flux_sampler_params_v2(
-    cls, model, conditioning, latent_image, seed, sampler, scheduler,
-    steps, guidance, max_shift, base_shift, denoise, loras=None
-):
-    import random
-    import time
-
-    is_schnell = await model.is_flow()
-    noise_values = [
-        random.randint(0, 999999) if "?" in item else int(item)
-        for item in seed.replace("\n", ",").split(",")
-        if item.strip()
-    ]
-    if not noise_values:
-        noise_values = [random.randint(0, 999999)]
-    noise_values = _checked_numeric_grid(
-        "seed", noise_values, 0, (1 << 64) - 1, integral=True
-    )
-    sampler_values = _selected_names(sampler, SAMPLER_NAMES, "ipndm")
-    scheduler_values = _selected_names(
-        scheduler, SCHEDULER_NAMES, "simple"
-    )
-    if not steps:
-        steps = "4" if is_schnell else "20"
-    step_values = _checked_numeric_grid(
-        "steps", parse_string_to_list(steps), 1, 10000, integral=True
-    )
-    denoise_values = _checked_numeric_grid(
-        "denoise", parse_string_to_list(denoise or "1.0"), 0, 1
-    )
-    guidance_values = _checked_numeric_grid(
-        "guidance", parse_string_to_list(guidance or "3.5"), -1000, 1000
-    )
-    if is_schnell:
-        max_shift_values = [0]
-        base_shift_values = _checked_numeric_grid(
-            "base_shift", parse_string_to_list(base_shift or "1.0"), 0, 100
-        )
-    else:
-        max_shift_values = _checked_numeric_grid(
-            "max_shift", parse_string_to_list(max_shift or "1.15"), 0, 100
-        )
-        base_shift_values = _checked_numeric_grid(
-            "base_shift", parse_string_to_list(base_shift or "0.5"), 0, 100
-        )
-
-    prompts, conditioning_values = await _conditioning_variants(conditioning)
-    latent_value = await latent_image.value()
-    width = int(latent_value["samples"].shape[3] * 8)
-    height = int(latent_value["samples"].shape[2] * 8)
-
-    lora_names = [] if not loras else list(loras.get("loras", []))
-    lora_strengths = [] if not loras else list(loras.get("strengths", []))
-    first_strengths = lora_strengths[0] if lora_strengths else [0]
-    first_strengths = _checked_numeric_grid(
-        "LoRA strength", first_strengths, -100, 100
-    )
-    total = (
-        len(conditioning_values) * len(noise_values)
-        * len(max_shift_values) * len(base_shift_values)
-        * len(guidance_values) * len(sampler_values)
-        * len(scheduler_values) * len(step_values)
-        * len(denoise_values) * len(first_strengths)
-    )
-    if not 1 <= total <= 4096:
-        raise ValueError(
-            "Flux sampler parameter grid must contain 1 to 4096 samples"
-        )
-    current = 0
-    outputs = []
-    params = []
-    for lora_strength in first_strengths:
-        patched_model = model
-        lora_name = None
-        if lora_names:
-            lora_name = lora_names[0]
-            asset = await sdk.ctx().assets.resolve("loras", lora_name)
-            patched_model, _rank = await model.apply_dit_block_lora(
-                asset, float(lora_strength), []
-            )
-        for condition_index, condition in enumerate(conditioning_values):
-            prompt = (
-                prompts[condition_index]
-                if condition_index < len(prompts) else None
-            )
-            for noise_seed in noise_values:
-                for maximum_shift in max_shift_values:
-                    for minimum_shift in base_shift_values:
-                        work_model = await patched_model.patch(
-                            "flux_sampler_sampling",
-                            max_shift=float(maximum_shift),
-                            base_shift=float(minimum_shift),
-                            width=width,
-                            height=height,
-                        )
-                        for guide in guidance_values:
-                            guided = await _conditioning_with_guidance(
-                                condition, guide
-                            )
-                            for sampler_name in sampler_values:
-                                for scheduler_name in scheduler_values:
-                                    for step_count in step_values:
-                                        for denoise_value in denoise_values:
-                                            current += 1
-                                            started = time.monotonic()
-                                            latent = await sdk.ctx().sample(
-                                                latent=latent_image,
-                                                steps=int(step_count),
-                                                model=work_model,
-                                                positive=guided,
-                                                negative=guided,
-                                                cfg=1.0,
-                                                seed=int(noise_seed),
-                                                sampler_name=sampler_name,
-                                                scheduler=scheduler_name,
-                                                denoise=float(denoise_value),
-                                            )
-                                            elapsed = time.monotonic() - started
-                                            outputs.append(latent)
-                                            params.append({
-                                                "time": elapsed,
-                                                "seed": noise_seed,
-                                                "width": width,
-                                                "height": height,
-                                                "sampler": sampler_name,
-                                                "scheduler": scheduler_name,
-                                                "steps": step_count,
-                                                "guidance": guide,
-                                                "max_shift": maximum_shift,
-                                                "base_shift": minimum_shift,
-                                                "denoise": denoise_value,
-                                                "prompt": prompt,
-                                                "lora": lora_name,
-                                                "lora_strength": (
-                                                    lora_strength
-                                                    if lora_name else 0
-                                                ),
-                                            })
-                                            if total > 1:
-                                                await sdk.ctx().progress.update(
-                                                    current, total
-                                                )
-    if not outputs:
-        raise ValueError("Flux sampler parameter grid is empty")
-    return io.NodeOutput(await _batch_latents(outputs), params)
-
-
-_SAMPLING_CUSTOM = {
-    "KSamplerVariationsStochastic+": (
-        _ksampler_variations_stochastic_v2,
-        "KSamplerVariationsStochasticV2",
-        ("sample", "raw"),
-    ),
-    "KSamplerVariationsWithNoise+": (
-        _ksampler_variations_with_noise_v2,
-        "KSamplerVariationsWithNoiseV2",
-        ("sample", "raw"),
-    ),
-    "FluxSamplerParams+": (
-        _flux_sampler_params_v2,
-        "FluxSamplerParamsV2",
-        ("sample", "raw", "assets"),
-    ),
-    "GuidanceTimestepping+": (
-        _guidance_timestepping_v2, "GuidanceTimesteppingV2", ()
-    ),
-    "PlotParameters+": (
-        _plot_parameters_v2,
-        "PlotParametersV2",
-        ("raw", "assets"),
-    ),
-    "TextEncodeForSamplerParams+": (
-        _text_encode_for_sampler_v2,
-        "TextEncodeForSamplerParamsV2",
-        (),
-    ),
-    "ModelSamplingSD3Advanced+": (
-        _model_sampling_sd3_v2, "ModelSamplingSD3AdvancedV2", ()
-    ),
-}
-_V2 = {
-    node_id: adapt(node_id, legacy_class)
-    for node_id, legacy_class in SAMPLING_CLASS_MAPPINGS.items()
-    if node_id not in _SAMPLING_CUSTOM
-}
-for _node_id, (_execute, _class_name, _permissions) in _SAMPLING_CUSTOM.items():
-    _V2[_node_id] = custom(
-        _node_id,
-        _execute,
-        module=__name__,
-        class_name=_class_name,
-        permissions=_permissions,
-    )
-SAMPLING_CLASS_MAPPINGS = _V2
 
 SAMPLING_NAME_MAPPINGS = {
     "KSamplerVariationsStochastic+": "🔧 KSampler Stochastic Variations",
