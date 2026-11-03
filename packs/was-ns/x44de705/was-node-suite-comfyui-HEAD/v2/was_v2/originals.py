@@ -4,12 +4,14 @@ The build extracts each block by name from the pinned file (the line ranges are 
 it byte for byte. The module-level names they use are bound here: TEXT_TYPE and is_force_input with the original's
 default configuration (WAS_Node_Suite.py:309-319), TextTokens from tokens.py (the original's class, for a guest).
 """
+import hashlib
+import math
 import random
 import re
 
 import numpy as np
 import torch
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from .tokens import TextTokens
 
@@ -1289,3 +1291,380 @@ class WAS_Text_Random_Line:
         random.seed(seed)
         choice = random.choice(lines)
         return (choice, )
+
+
+# --- WAS_Node_Suite.py:476-481
+def image2seed(image):
+    image_data = image.tobytes()
+    hash_object = hashlib.sha256(image_data)
+    hash_digest = hash_object.digest()
+    seed = int.from_bytes(hash_digest[:4], byteorder='big')
+    return seed
+
+
+# --- WAS_Node_Suite.py:13211-13233
+class WAS_Image_Size_To_Number:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            }
+        }
+
+    RETURN_TYPES = ("NUMBER", "NUMBER", "FLOAT", "FLOAT", "INT", "INT")
+    RETURN_NAMES = ("width_num", "height_num", "width_float", "height_float", "width_int", "height_int")
+    FUNCTION = "image_width_height"
+
+    CATEGORY = "WAS Suite/Number/Operations"
+
+    def image_width_height(self, image):
+        image = tensor2pil(image)
+        if image.size:
+            return( image.size[0], image.size[1], float(image.size[0]), float(image.size[1]), image.size[0], image.size[1] )
+        return ( 0, 0, 0, 0, 0, 0)
+
+
+# --- WAS_Node_Suite.py:13238-13266
+class WAS_Latent_Size_To_Number:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "samples": ("LATENT",),
+            }
+        }
+
+    RETURN_TYPES = ("NUMBER", "NUMBER", "FLOAT", "FLOAT", "INT", "INT")
+    RETURN_NAMES = ("tensor_w_num","tensor_h_num","tensor_w_float","tensor_h_float","tensor_w_int","tensor_h_int")
+    FUNCTION = "latent_width_height"
+
+    CATEGORY = "WAS Suite/Number/Operations"
+
+    def latent_width_height(self, samples):
+        size_dict = {}
+        i = 0
+        for tensor in samples['samples'][0]:
+            if not isinstance(tensor, torch.Tensor):
+                cstr(f'Input should be a torch.Tensor').error.print()
+            shape = tensor.shape
+            tensor_height = shape[-2]
+            tensor_width = shape[-1]
+            size_dict.update({i:[tensor_width, tensor_height]})
+        return ( size_dict[0][0], size_dict[0][1], float(size_dict[0][0]), float(size_dict[0][1]), size_dict[0][0], size_dict[0][1] )
+
+
+# --- WAS_Node_Suite.py:3718-3791
+class WAS_Image_Grid_Image_Batch:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "border_width": ("INT", {"default":3, "min": 0, "max": 100, "step":1}),
+                "number_of_columns": ("INT", {"default":6, "min": 1, "max": 24, "step":1}),
+                "max_cell_size": ("INT", {"default":256, "min":32, "max":2048, "step":1}),
+                "border_red": ("INT", {"default":0, "min": 0, "max": 255, "step":1}),
+                "border_green": ("INT", {"default":0, "min": 0, "max": 255, "step":1}),
+                "border_blue": ("INT", {"default":0, "min": 0, "max": 255, "step":1}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "smart_grid_image"
+
+    CATEGORY = "WAS Suite/Image/Process"
+
+    def smart_grid_image(self, images, number_of_columns=6, max_cell_size=256, add_border=False, border_red=255, border_green=255, border_blue=255, border_width=3):
+
+        cols = number_of_columns
+        border_color = (border_red, border_green, border_blue)
+
+        images_resized = []
+        max_row_height = 0
+
+        for tensor_img in images:
+            img = tensor2pil(tensor_img)
+            img_w, img_h = img.size
+            aspect_ratio = img_w / img_h
+
+            if img_w > img_h:
+                cell_w = min(img_w, max_cell_size)
+                cell_h = int(cell_w / aspect_ratio)
+            else:
+                cell_h = min(img_h, max_cell_size)
+                cell_w = int(cell_h * aspect_ratio)
+
+            img_resized = img.resize((cell_w, cell_h))
+
+            if add_border:
+                img_resized = ImageOps.expand(img_resized, border=border_width // 2, fill=border_color)
+
+            images_resized.append(img_resized)
+            max_row_height = max(max_row_height, cell_h)
+
+        max_row_height = int(max_row_height)
+        total_images = len(images_resized)
+        rows = math.ceil(total_images / cols)
+
+        grid_width = cols * max_cell_size + (cols - 1) * border_width
+        grid_height = rows * max_row_height + (rows - 1) * border_width
+
+        new_image = Image.new('RGB', (grid_width, grid_height), border_color)
+
+        for i, img in enumerate(images_resized):
+            x = (i % cols) * (max_cell_size + border_width)
+            y = (i // cols) * (max_row_height + border_width)
+
+            img_w, img_h = img.size
+            paste_x = x + (max_cell_size - img_w) // 2
+            paste_y = y + (max_row_height - img_h) // 2
+
+            new_image.paste(img, (paste_x, paste_y, paste_x + img_w, paste_y + img_h))
+
+        if add_border:
+            new_image = ImageOps.expand(new_image, border=border_width, fill=border_color)
+
+        return (pil2tensor(new_image), )
+
+
+# --- WAS_Node_Suite.py:4756-4797
+class WAS_Image_Batch:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+            },
+            "optional": {
+                "images_a": ("IMAGE",),
+                "images_b": ("IMAGE",),
+                "images_c": ("IMAGE",),
+                "images_d": ("IMAGE",),
+                # "images_e": ("IMAGE",),
+                # "images_f": ("IMAGE",),
+                # Theoretically, an infinite number of image input parameters can be added.
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "image_batch"
+    CATEGORY = "WAS Suite/Image"
+
+    def _check_image_dimensions(self, tensors, names):
+        reference_dimensions = tensors[0].shape[1:]  # Ignore batch dimension
+        mismatched_images = [names[i] for i, tensor in enumerate(tensors) if tensor.shape[1:] != reference_dimensions]
+
+        if mismatched_images:
+            raise ValueError(f"WAS Image Batch Warning: Input image dimensions do not match for images: {mismatched_images}")
+
+    def image_batch(self, **kwargs):
+        batched_tensors = [kwargs[key] for key in kwargs if kwargs[key] is not None]
+        image_names = [key for key in kwargs if kwargs[key] is not None]
+
+        if not batched_tensors:
+            raise ValueError("At least one input image must be provided.")
+
+        self._check_image_dimensions(batched_tensors, image_names)
+        batched_tensors = torch.cat(batched_tensors, dim=0)
+        return (batched_tensors,)
+
+
+# --- WAS_Node_Suite.py:6903-6929
+class WAS_Images_To_RGB:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_to_rgb"
+
+    CATEGORY = "WAS Suite/Image"
+
+    def image_to_rgb(self, images):
+
+        if len(images) > 1:
+            tensors = []
+            for image in images:
+                tensors.append(pil2tensor(tensor2pil(image).convert('RGB')))
+            tensors = torch.cat(tensors, dim=0)
+            return (tensors, )
+        else:
+            return (pil2tensor(tensor2pil(images).convert("RGB")), )
+
+
+# --- WAS_Node_Suite.py:7756-7783
+class WAS_Tensor_Batch_to_Image:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images_batch": ("IMAGE",),
+                "batch_image_number": ("INT", {"default": 0, "min": 0, "max": 64, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "tensor_batch_to_image"
+
+    CATEGORY = "WAS Suite/Latent/Transform"
+
+    def tensor_batch_to_image(self, images_batch=[], batch_image_number=0):
+
+        count = 0
+        for _ in images_batch:
+            if batch_image_number == count:
+                return (images_batch[batch_image_number].unsqueeze(0), )
+            count = count+1
+
+        cstr(f"Batch number `{batch_image_number}` is not defined, returning last image").error.print()
+        return (images_batch[-1].unsqueeze(0), )
+
+
+# --- WAS_Node_Suite.py:7834-7872
+class WAS_Mask_To_Image:
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+                    "required": {
+                        "masks": ("MASK",),
+                    }
+                }
+
+    CATEGORY = "WAS Suite/Image/Masking"
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("IMAGES",)
+
+    FUNCTION = "mask_to_image"
+
+    def mask_to_image(self, masks):
+        if masks.ndim == 4:
+            # If input has shape [N, C, H, W]
+            tensor = masks.permute(0, 2, 3, 1)
+            tensor_rgb = torch.cat([tensor] * 3, dim=-1)
+            return (tensor_rgb,)
+        elif masks.ndim == 3:
+            # If Input has shape [N, H, W]
+            tensor = masks.unsqueeze(-1)
+            tensor_rgb = torch.cat([tensor] * 3, dim=-1)
+            return (tensor_rgb, )
+        elif masks.ndim == 2:
+            # If input has shape [H, W]
+            tensor = masks.unsqueeze(0).unsqueeze(-1)
+            tensor_rgb = torch.cat([tensor] * 3, dim=-1)
+            return (tensor_rgb,)
+        else:
+            cstr("Invalid input shape. Expected [N, C, H, W] or [H, W].").error.print()
+            return masks
+
+
+# --- WAS_Node_Suite.py:8828-8850
+class WAS_Mask_Combine_Batch:
+
+    def __init__(self):
+        self.WT = WAS_Tools_Class()
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+                    "required": {
+                        "masks": ("MASK",),
+                    },
+                }
+
+    CATEGORY = "WAS Suite/Image/Masking"
+
+    RETURN_TYPES = ("MASK",)
+
+    FUNCTION = "combine_masks"
+
+    def combine_masks(self, masks):
+        combined_mask = torch.sum(torch.stack([mask.unsqueeze(0) for mask in masks], dim=0), dim=0)
+        combined_mask = torch.clamp(combined_mask, 0, 1)  # Ensure values are between 0 and 1
+        return (combined_mask, )
+
+
+# --- WAS_Node_Suite.py:9770-9791
+class WAS_Image_To_Seed:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+                    "images": ("IMAGE",),
+                }
+            }
+
+    RETURN_TYPES = ("INT",)
+    OUTPUT_IS_LIST = (True,)
+
+    FUNCTION = "image_to_seed"
+    CATEGORY = "WAS Suite/Image/Analyze"
+
+    def image_to_seed(self, images):
+
+        seeds = []
+        for image in images:
+            image = tensor2pil(image)
+            seeds.append(image2seed(image))
+
+        return (seeds, )
+
+
+# --- WAS_Node_Suite.py:6143-6173
+class WAS_Image_Blank:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "width": ("INT", {"default": 512, "min": 8, "max": 4096, "step": 1}),
+                "height": ("INT", {"default": 512, "min": 8, "max": 4096, "step": 1}),
+                "red": ("INT", {"default": 255, "min": 0, "max": 255, "step": 1}),
+                "green": ("INT", {"default": 255, "min": 0, "max": 255, "step": 1}),
+                "blue": ("INT", {"default": 255, "min": 0, "max": 255, "step": 1}),
+            }
+        }
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "blank_image"
+
+    CATEGORY = "WAS Suite/Image"
+
+    def blank_image(self, width, height, red, green, blue):
+
+        # Ensure multiples
+        width = (width // 8) * 8
+        height = (height // 8) * 8
+
+        # Blend image
+        blank = Image.new(mode="RGB", size=(width, height),
+                          color=(red, green, blue))
+
+        return (pil2tensor(blank), )

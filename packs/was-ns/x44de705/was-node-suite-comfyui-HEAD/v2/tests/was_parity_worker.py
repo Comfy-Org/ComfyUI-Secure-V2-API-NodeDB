@@ -172,9 +172,9 @@ def _standin(name, run, input_types, return_types, output_node=False):
     return type(f'AMYStandin_{name}', (), attrs)
 
 
-def _test_image(self, width, height, batch, seed):
+def _test_image(self, width, height, batch, seed, channels=3):
     generator = torch.Generator().manual_seed(seed)
-    return (torch.rand((batch, height, width, 3), generator=generator),)
+    return (torch.rand((batch, height, width, channels), generator=generator),)
 
 
 def _probe(self, label='', **values):
@@ -200,7 +200,8 @@ STANDINS = {
                              lambda: {'required': {'width': ('INT', {'default': 16, 'min': 1, 'max': 512}),
                                                    'height': ('INT', {'default': 12, 'min': 1, 'max': 512}),
                                                    'batch': ('INT', {'default': 1, 'min': 1, 'max': 8}),
-                                                   'seed': ('INT', {'default': 0, 'min': 0, 'max': 2 ** 31})}},
+                                                   'seed': ('INT', {'default': 0, 'min': 0, 'max': 2 ** 31})},
+                                      'optional': {'channels': ('INT', {'default': 3, 'min': 1, 'max': 4})}},
                              ('IMAGE',)),
     'AMYProbe': _standin(
         'AMYProbe', _probe,

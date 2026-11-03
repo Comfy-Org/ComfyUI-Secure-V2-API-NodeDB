@@ -337,6 +337,62 @@ CASES += [
 ]
 
 
+# ---- phase B batch 2 (r3): tensor nodes (masks come from core's ImagePadForOutpaint)
+def mask_from(image_id='2', node_id='30'):
+    return node(node_id, 'ImagePadForOutpaint', image=[image_id, 0], left=0, top=8, right=8, bottom=0, feathering=6)
+
+
+def test_image(node_id, width=16, height=12, batch=1, seed=0, channels=3):
+    return node(node_id, 'AMYTestImage', width=width, height=height, batch=batch, seed=seed, channels=channels)
+
+
+CASES += [
+    case('image-size-to-number', g(image(width=40, height=24), node('11', 'Image Size to Number', image=['2', 0]),
+                                   probe(**outs('11', number=0, text=1, number_float=2, number_int=3)),
+                                   probe_at('98', number=['11', 4], text=['11', 5]))),
+    case('latent-size-to-number', g(node('20', 'EmptyLatentImage', width=96, height=64, batch_size=2),
+                                    node('11', 'Latent Size to Number', samples=['20', 0]),
+                                    probe(**outs('11', number=0, text=1, number_float=2, number_int=3)),
+                                    probe_at('98', number=['11', 4], text=['11', 5]))),
+    case('image-batch', g(image(seed=1), test_image('5', batch=2, seed=9),
+                          node('11', 'Image Batch', images_a=['2', 0], images_c=['5', 0]), probe(image=['11', 0]))),
+    case('image-batch-size-mismatch-error', g(image(seed=1), test_image('5', width=20, seed=9),
+                                              node('11', 'Image Batch', images_a=['2', 0], images_b=['5', 0]),
+                                              probe(image=['11', 0])), expect='error'),
+    case('image-batch-no-input-error', g(node('11', 'Image Batch'), probe(image=['11', 0])), expect='error'),
+    case('images-to-rgb-rgba-batch', g(test_image('5', batch=2, seed=3, channels=4),
+                                       node('11', 'Images to RGB', images=['5', 0]), probe(image=['11', 0]))),
+    case('images-to-rgb-single', g(image(seed=4), node('11', 'Images to RGB', images=['2', 0]),
+                                   probe(image=['11', 0]))),
+    case('tensor-batch-to-image', g(image(batch=3, seed=5),
+                                    node('11', 'Tensor Batch to Image', images_batch=['2', 0], batch_image_number=1),
+                                    probe(image=['11', 0]))),
+    case('tensor-batch-to-image-out-of-range', g(image(batch=3, seed=5),
+                                                 node('11', 'Tensor Batch to Image', images_batch=['2', 0],
+                                                      batch_image_number=7),
+                                                 probe(image=['11', 0]))),
+    case('convert-masks-to-images', g(image(batch=2, seed=6), mask_from(),
+                                      node('11', 'Convert Masks to Images', masks=['30', 1]),
+                                      probe(image=['11', 0]))),
+    case('masks-combine-batch', g(image(batch=3, seed=7), mask_from(),
+                                  node('11', 'Masks Combine Batch', masks=['30', 1]), probe(files=['11', 0]))),
+    case('image-to-seed', g(image(batch=2, seed=8), node('11', 'Image to Seed', images=['2', 0]),
+                            probe(number=['11', 0]))),
+    case('image-blank', g(node('11', 'Image Blank', width=37, height=20, red=10, green=200, blue=30),
+                          probe(image=['11', 0]))),
+    case('create-grid-wide', g(image(batch=5, width=24, height=16, seed=9),
+                               node('11', 'Create Grid Image from Batch', images=['2', 0], border_width=3,
+                                    number_of_columns=2, max_cell_size=32, border_red=255, border_green=0,
+                                    border_blue=0),
+                               probe(image=['11', 0]))),
+    case('create-grid-tall', g(test_image('5', width=12, height=30, batch=3, seed=10),
+                               node('11', 'Create Grid Image from Batch', images=['5', 0], border_width=0,
+                                    number_of_columns=4, max_cell_size=48, border_red=0, border_green=0,
+                                    border_blue=255),
+                               probe(image=['11', 0]))),
+]
+
+
 def run_side(side):
     out = WORK / side
     out.mkdir(parents=True, exist_ok=True)

@@ -3,7 +3,7 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 35 of the 220 registered node ids are converted. The other 185 are registered with their real schemas and refuse
+Status: 45 of the 220 registered node ids are converted. The other 175 are registered with their real schemas and refuse
 with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
 so core never calls its validate_inputs), when it runs. The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
@@ -17,6 +17,9 @@ Converted:
   the Latent, Lora, VAE, Text, Model and Conditioning Input Switches, Text List, Text List to Text, Text List
   Concatenate, Text String, Text Multiline (Code Compatible), Text Parse Tokens, Text Compare, Text String Truncate and
   Text Random Line.
+- Round 3: Image Size to Number, Latent Size to Number, Create Grid Image from Batch, Image Batch, Images to RGB,
+  Tensor Batch to Image, Convert Masks to Images, Masks Combine Batch, Image to Seed and Image Blank. Their tensors
+  reach the guest as raw values and leave as raw values.
 
 ## How the conversion is built
 
@@ -75,6 +78,8 @@ every registered id against the original. A tampered output must turn the compar
 - Text Parse Tokens re-runs on every prompt, as the original (its IS_CHANGED returns NaN).
 - The engine-object switches (Latent, Lora, VAE, Model and Conditioning Input Switch) take handles and return the
   chosen one unchanged, as the original returned the chosen object.
+- Masks Combine Batch: the original's `__init__` only builds the pack's filter toolbox (WAS_Tools_Class,
+  WAS_Node_Suite.py:1022-2456), which `combine_masks` never uses. V2 creates the instance without it.
 - Schemas of refused nodes come from the default configuration:
   - the style menus (no styles.json) and the history loaders (no history database);
   - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on

@@ -61,14 +61,30 @@ _PURE = {
     "Text Compare": ("WAS_Text_Compare", "text_compare"),
     "Text String Truncate": ("WAS_Text_String_Truncate", "truncate_string"),
     "Text Random Line": ("WAS_Text_Random_Line", "text_random_line"),
+    # phase B batch 2 (r3): tensors arrive and leave as raw values (the guest's values mode)
+    "Image Size to Number": ("WAS_Image_Size_To_Number", "image_width_height"),
+    "Latent Size to Number": ("WAS_Latent_Size_To_Number", "latent_width_height"),
+    "Create Grid Image from Batch": ("WAS_Image_Grid_Image_Batch", "smart_grid_image"),
+    "Image Batch": ("WAS_Image_Batch", "image_batch"),
+    "Images to RGB": ("WAS_Images_To_RGB", "image_to_rgb"),
+    "Tensor Batch to Image": ("WAS_Tensor_Batch_to_Image", "tensor_batch_to_image"),
+    "Convert Masks to Images": ("WAS_Mask_To_Image", "mask_to_image"),
+    "Masks Combine Batch": ("WAS_Mask_Combine_Batch", "combine_masks"),
+    "Image to Seed": ("WAS_Image_To_Seed", "image_to_seed"),
+    "Image Blank": ("WAS_Image_Blank", "blank_image"),
 }
+# WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
+# toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
+_SKIP_INIT = {"Masks Combine Batch"}
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
 _ALWAYS_CHANGED = {"Text Parse Tokens"}
 
 
-def _pure_execute(class_name, function):
+def _pure_execute(class_name, function, construct=True):
     def execute(cls, **kwargs):
-        return _node_output(getattr(getattr(originals, class_name)(), function)(**kwargs))
+        original = getattr(originals, class_name)
+        instance = original() if construct else original.__new__(original)
+        return _node_output(getattr(instance, function)(**kwargs))
     return execute
 
 
@@ -280,7 +296,8 @@ _PASS_THROUGH_REFS = {"Latent Input Switch", "Lora Input Switch", "VAE Input Swi
 
 _CONVERTED = {}
 for _node_id, (_class_name, _function) in _PURE.items():
-    _CONVERTED[_node_id] = {"execute": classmethod(_pure_execute(_class_name, _function))}
+    _CONVERTED[_node_id] = {"execute": classmethod(_pure_execute(_class_name, _function,
+                                                                 construct=_node_id not in _SKIP_INIT))}
     if _node_id in _ALWAYS_CHANGED:
         _CONVERTED[_node_id]["fingerprint_inputs"] = classmethod(_always_changed)
     if _node_id in _PASS_THROUGH_REFS:
