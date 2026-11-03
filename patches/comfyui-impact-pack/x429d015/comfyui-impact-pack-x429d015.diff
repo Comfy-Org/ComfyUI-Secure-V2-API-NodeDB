@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,70 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `429d0159ad429e64d2b3916e6e7be9c22d025c3c`.
@@ -27,9 +27,10 @@
 +They are brokered into the managed model catalogue and reused after the first
 +verified download.
 +
-+Impact Subpack's tensor-only YOLOv8x person/face recipe is assembled and run
-+inside this isolated pack runtime using the exact `ultralytics==8.3.162`
-+dependency. Core only resolves and parses the SafeTensors asset.
++Impact Subpack's Ultralytics detectors are rebuilt and run inside this isolated
++pack runtime with `ultralytics==8.4.198` from the pack's dependency profile
++(see "Fidelity repair r1" below). Core only resolves and parses the SafeTensors
++asset.
 +
 +`secure-nodes.json` is the authoritative sealed schema/permission census. The
 +operational classification and representative real-guest behavior are enforced
@@ -45,6 +46,31 @@
 +LatentReceiver / latent.remote remains **policy edit (reviewed)**: the available managed input-file catalogue is recursive and any-extension, broader than the original top-level .latent/.latent.png UI. Read authority and existing grants are unchanged. Incompatible selections can fail to load. Current webassets rejects kind=file refresh, though selected packdb can fill object_info. No matching deployment or original UI/file-error parity is claimed; managed empty/directory diagnostic differences remain unqualified.
 +
 +Manifest uses the original indent-1 format with only the five intended field changes against main, after dropping the withdrawn ONNX grant; no whole-file reindent. The proof preserves input manifest bytes after checking encoded values. Stubs remain unchanged pending a qualified canonical pair. Source-only SDK checks, exact canonical replays, independent review and actual Guest/graph/model/browser qualification remain distinct. Root alone publishes changed files with Git modes.
++
++## Fidelity repair r1 - Ultralytics detectors
++
++- Impact Subpack's UltralyticsDetectorProvider now returns descriptors that name a weight in the host's
++  Ultralytics catalogues (catalogue, name, menu value). Impact v2 reads that weight only through the engine,
++  with `assets.load_state_dict(..., return_metadata=True)`. That is a converted safetensors state dict, whose
++  metadata carries the checkpoint's `top_class`, architecture `yaml`, class `names` and `train_args`.
++- `_ultralytics_detector.py` rebuilds the model from that yaml and loads the state dict strictly. It sets the
++  model up the way Ultralytics' `load_checkpoint` and `Model._load` set up a loaded checkpoint (FP32, args,
++  task, names, predictor overrides such as imgsz), then runs Ultralytics' own predictor.
++- Detection, SEG building, dilation, cropping and label filtering are upstream code, copied verbatim. The
++  sources are Impact Subpack `subcore.py`/`utils.py` and Impact Pack `SEGSLabelFilter`; line ranges and file
++  hashes are in the module header. They serve BboxDetectorSEGS, BboxDetectorCombined, SegmDetectorSEGS,
++  SegmDetectorCombined, and the detailers and pipes that take a detector.
++- No pickle is parsed in the pack. A pickle-format name (.pt) loads only if the engine translates it to its
++  converted safetensors file. Without that translation, or without the Ultralytics metadata, loading fails
++  with a named `DetectorWeightError`.
++- Replaced: the fixed yolov8x recipe, its own letterbox and NMS, and the integer-rounded SEG boxes.
++- SEG values are upstream's. Masks travel as (1, h, w) float32 tensors, the confidence as a float and the
++  bbox as a tuple of floats, because numpy values cannot cross the guest wire. Image batches of more than one
++  image are refused, as before.
++- The detector module is imported only on the detector path, so the pack's other nodes load without its
++  dependency profile.
++- `tests/test_detector_repair_r1.py` is the lane-gate parity test: synthetic models and images, original
++  Impact Subpack code against these handlers.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,456 +1,13 @@
@@ -36059,7 +36085,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,6899 @@
+@@ -0,0 +1,6749 @@
 +"""Secure Nodes 2.0 conversion for the pinned Impact Pack snapshot.
 +
 +The upstream pack combines ordinary value, mask, image, SEGS and pipe
@@ -37365,155 +37391,35 @@
 +    return (prediction > 0.5).float().cpu()
 +
 +
-+_ULTRALYTICS_MODELS: dict[str, tuple[Any, tuple[str, ...], int]] = {}
++_ULTRALYTICS_KINDS = {"impact.ultralytics_bbox": "bbox", "impact.ultralytics_segm": "segm"}
++
++
++def _ultralytics_kind(value: Any) -> str | None:
++    """'bbox' or 'segm' for an Impact Subpack Ultralytics detector descriptor, else None."""
++    if isinstance(value, dict):
++        return _ULTRALYTICS_KINDS.get(value.get("secure_kind"))
++    return None
 +
 +
 +def _is_ultralytics_detector(value: Any) -> bool:
-+    return (
-+        isinstance(value, dict)
-+        and value.get("secure_kind") == "impact.ultralytics_bbox"
-+    )
++    return _ultralytics_kind(value) == "bbox"
 +
 +
-+def _ultralytics_recipe(value: Any) -> dict[str, Any]:
-+    if not _is_ultralytics_detector(value):
-+        raise TypeError(
-+            "BBOX_DETECTOR must be a Secure Nodes Ultralytics recipe")
-+    weight = value.get("weight")
-+    architecture = value.get("architecture")
-+    classes = value.get("classes")
-+    input_size = value.get("input_size")
-+    if (
-+        not isinstance(weight, str)
-+        or not weight.endswith(".safetensors")
-+        or ".." in PurePosixPath(weight).parts
-+        or architecture != "yolov8x"
-+        or not isinstance(classes, list)
-+        or not classes
-+        or len(classes) > 256
-+        or not all(isinstance(item, str) and item for item in classes)
-+        or isinstance(input_size, bool)
-+        or not isinstance(input_size, int)
-+        or not 64 <= input_size <= 2048
-+    ):
-+        raise ValueError("Ultralytics detector recipe is invalid")
-+    return value
++async def _ultralytics_model(detector: Any) -> tuple[Any, Any]:
++    # Imported here rather than at module import: only the detector path needs the pack's dependency profile
++    # (ultralytics, cv2), and every other node must still load without it.
++    from . import _ultralytics_detector
++
++    if not _ultralytics_detector.is_descriptor(detector, _ultralytics_kind(detector)):
++        raise TypeError("an Impact Subpack Ultralytics detector must name its catalogue and weight")
++    return _ultralytics_detector, await _ultralytics_detector.load_detector(_ctx(), detector)
 +
 +
-+async def _load_ultralytics_model(
-+    recipe: dict[str, Any],
-+) -> tuple[Any, tuple[str, ...], int]:
-+    weight = str(recipe["weight"])
-+    cached = _ULTRALYTICS_MODELS.get(weight)
-+    if cached is not None:
-+        return cached
-+
-+    # The state dict is parsed by the host's SafeTensors reader and arrives as
-+    # tensors. Architecture construction and all YOLO behavior stay here in
-+    # the sandboxed pack runtime; repository code/config is never downloaded.
-+    asset = await _ctx().assets.resolve("detection", weight)
-+    state = await _ctx().assets.load_state_dict(asset)
-+    try:
-+        from ultralytics.nn.tasks import DetectionModel
-+    except ImportError as error:
-+        raise RuntimeError(
-+            "Ultralytics detector recipes require the pack's pinned "
-+            "ultralytics dependency"
-+        ) from error
-+    normalized = {}
-+    for key, tensor in state.items():
-+        if not isinstance(key, str) or not key.startswith("model."):
-+            raise ValueError(
-+                "Ultralytics SafeTensors keys must use the fixed model prefix")
-+        normalized[key.removeprefix("model.")] = tensor.detach().cpu()
-+    classes = tuple(str(item) for item in recipe["classes"])
-+    model = DetectionModel(
-+        "yolov8x.yaml", ch=3, nc=len(classes), verbose=False)
-+    model.load_state_dict(normalized, strict=True)
-+    model.names = {index: name for index, name in enumerate(classes)}
-+    model.eval().requires_grad_(False)
-+    result = model, classes, int(recipe["input_size"])
-+    _ULTRALYTICS_MODELS[weight] = result
-+    return result
-+
-+
-+def _letterbox(
-+    pixels: torch.Tensor, size: int,
-+) -> tuple[torch.Tensor, float, int, int]:
-+    height, width = map(int, pixels.shape[1:3])
-+    scale = min(float(size) / height, float(size) / width)
-+    resized_height = max(1, min(size, round(height * scale)))
-+    resized_width = max(1, min(size, round(width * scale)))
-+    source = pixels[..., :3].movedim(-1, 1).float()
-+    source = torch.nn.functional.interpolate(
-+        source, size=(resized_height, resized_width), mode="bilinear",
-+        align_corners=False,
-+    )
-+    pad_x = (size - resized_width) // 2
-+    pad_y = (size - resized_height) // 2
-+    padded = torch.nn.functional.pad(
-+        source,
-+        (pad_x, size - resized_width - pad_x,
-+         pad_y, size - resized_height - pad_y),
-+        value=114.0 / 255.0,
-+    )
-+    return padded, scale, pad_x, pad_y
-+
-+
-+async def _ultralytics_detect(
-+    detector: Any, image: Any, threshold: float, max_detections: int = 4096,
-+) -> list[list[dict[str, Any]]]:
-+    recipe = _ultralytics_recipe(detector)
++async def _ultralytics_pixels(image: Any) -> torch.Tensor:
 +    pixels = _image4(await _raw(image))
-+    if not 1 <= int(pixels.shape[0]) <= 64:
-+        raise ValueError("Ultralytics detector batch must be in [1, 64]")
-+    confidence = float(threshold)
-+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
-+        raise ValueError("Ultralytics threshold must be in [0, 1]")
-+    limit = int(max_detections)
-+    if not 1 <= limit <= 4096:
-+        raise ValueError("Ultralytics max detections must be in [1, 4096]")
-+    model, classes, size = await _load_ultralytics_model(recipe)
-+    network_input, scale, pad_x, pad_y = _letterbox(pixels, size)
-+    device = next(model.parameters()).device
-+    network_input = network_input.to(device)
-+    try:
-+        from ultralytics.utils.ops import non_max_suppression
-+    except ImportError as error:
-+        raise RuntimeError("Ultralytics NMS is unavailable") from error
-+    with torch.inference_mode():
-+        prediction = model(network_input)
-+        if isinstance(prediction, (tuple, list)):
-+            prediction = prediction[0]
-+        selected = non_max_suppression(
-+            prediction,
-+            conf_thres=confidence,
-+            iou_thres=0.7,
-+            max_det=limit,
-+            nc=len(classes),
-+        )
-+    height, width = map(int, pixels.shape[1:3])
-+    output: list[list[dict[str, Any]]] = []
-+    for batch_result in selected:
-+        current = []
-+        for row in batch_result.detach().cpu():
-+            left, top, right, bottom, score, class_index = row[:6].tolist()
-+            left = max(0.0, min(float(width), (left - pad_x) / scale))
-+            right = max(0.0, min(float(width), (right - pad_x) / scale))
-+            top = max(0.0, min(float(height), (top - pad_y) / scale))
-+            bottom = max(0.0, min(float(height), (bottom - pad_y) / scale))
-+            index = int(class_index)
-+            if right <= left or bottom <= top or not 0 <= index < len(classes):
-+                continue
-+            current.append({
-+                "label": classes[index],
-+                "score": float(score),
-+                "box": [left, top, right, bottom],
-+            })
-+        output.append(current)
-+    if len(output) != int(pixels.shape[0]):
-+        raise RuntimeError("Ultralytics detector returned the wrong batch size")
-+    return output
++    if pixels.shape[0] != 1:
++        raise ValueError("Impact Ultralytics detectors accept one image at a time")
++    return pixels
 +
 +
 +async def _onnx_detector_provider(model_name, **_kwargs):
@@ -37568,53 +37474,12 @@
 +    return (height, width), result
 +
 +
-+async def _ultralytics_detector_segs_value(
-+    detector: Any, image: Any, threshold: float, dilation: int,
-+    crop_factor: float, drop_size: int, labels: str,
-+) -> tuple[tuple[int, int], list[SEG]]:
-+    pixels = _image4(await _raw(image))
-+    if pixels.shape[0] != 1:
-+        raise ValueError("Impact Ultralytics detectors accept one image at a time")
-+    height, width = map(int, pixels.shape[1:3])
-+    detections = (await _ultralytics_detect(
-+        detector, image, threshold))[0]
-+    wanted = {part.strip() for part in str(labels).split(",") if part.strip()}
-+    result: list[SEG] = []
-+    minimum = max(1, int(drop_size))
-+    for detection in detections:
-+        confidence = float(detection["score"])
-+        left_value, top_value, right_value, bottom_value = detection["box"]
-+        left = max(0, min(width, math.floor(float(left_value))))
-+        top = max(0, min(height, math.floor(float(top_value))))
-+        right = max(0, min(width, math.ceil(float(right_value))))
-+        bottom = max(0, min(height, math.ceil(float(bottom_value))))
-+        if right - left <= minimum or bottom - top <= minimum:
-+            continue
-+        label = str(detection["label"])
-+        if wanted and "all" not in wanted and label not in wanted:
-+            continue
-+        bbox = (left, top, right, bottom)
-+        crop = _expand_box(bbox, float(crop_factor), width, height)
-+        crop_left, crop_top, crop_right, crop_bottom = crop
-+        mask = torch.zeros((
-+            1, crop_bottom - crop_top, crop_right - crop_left,
-+        ), dtype=torch.float32)
-+        mask[
-+            :, top - crop_top:bottom - crop_top,
-+            left - crop_left:right - crop_left,
-+        ] = 1.0
-+        mask = _dilate(mask, int(dilation))
-+        result.append(SEG(
-+            None, mask, confidence, crop, bbox, label, None))
-+    return (height, width), result
-+
-+
 +async def _bbox_detector_combined(bbox_detector, image, threshold, dilation,
 +                                  **_kwargs):
 +    if _is_ultralytics_detector(bbox_detector):
-+        segs = await _ultralytics_detector_segs_value(
-+            bbox_detector, image, threshold, dilation, 1.0, 1, "all")
-+        return _one(_combined_mask_value(segs))
++        runtime, yolo = await _ultralytics_model(bbox_detector)
++        return _one(runtime.detect_combined(
++            yolo, "bbox", await _ultralytics_pixels(image), threshold, dilation))
 +    if _onnx_detector.is_recipe(bbox_detector):
 +        segs = await _onnx_detector_segs_value(
 +            bbox_detector, image, threshold, dilation, 1.0, 1, "all")
@@ -37630,12 +37495,12 @@
 +    labels="all", detailer_hook=None, **_kwargs,
 +):
 +    if _is_ultralytics_detector(bbox_detector):
-+        segs = await _ultralytics_detector_segs_value(
-+            bbox_detector, image, threshold, dilation, crop_factor,
-+            drop_size, labels,
-+        )
-+        return _one(await _detailer_hook_post_detection(
-+            segs, detailer_hook))
++        runtime, yolo = await _ultralytics_model(bbox_detector)
++        segs = runtime.to_v2_segs(runtime.detect_segs(
++            yolo, "bbox", await _ultralytics_pixels(image), threshold, dilation,
++            crop_factor, drop_size), SEG)
++        segs = await _detailer_hook_post_detection(segs, detailer_hook)
++        return _one(runtime.label_filter(segs, labels))
 +    if _onnx_detector.is_recipe(bbox_detector):
 +        segs = await _onnx_detector_segs_value(
 +            bbox_detector, image, threshold, dilation, crop_factor,
@@ -37657,6 +37522,10 @@
 +async def _segm_detector_combined(
 +    segm_detector, image, threshold, dilation, **_kwargs,
 +):
++    if _ultralytics_kind(segm_detector) == "segm":
++        runtime, yolo = await _ultralytics_model(segm_detector)
++        return _one(runtime.detect_combined(
++            yolo, "segm", await _ultralytics_pixels(image), threshold, dilation))
 +    # A converted provider must expose a closed data recipe. The current
 +    # CLIPSeg provider is mask-native, so it can safely satisfy segmentation
 +    # consumers without invoking a detector callback object.
@@ -37668,6 +37537,13 @@
 +    segm_detector, image, threshold, dilation, crop_factor, drop_size,
 +    labels="all", detailer_hook=None, **_kwargs,
 +):
++    if _ultralytics_kind(segm_detector) == "segm":
++        runtime, yolo = await _ultralytics_model(segm_detector)
++        segs = runtime.to_v2_segs(runtime.detect_segs(
++            yolo, "segm", await _ultralytics_pixels(image), threshold, dilation,
++            crop_factor, drop_size), SEG)
++        segs = await _detailer_hook_post_detection(segs, detailer_hook)
++        return _one(runtime.label_filter(segs, labels))
 +    del threshold, dilation
 +    mask = await _clipseg_detector_mask(segm_detector, image)
 +    header, items = _mask_to_segs_value(
@@ -43264,6 +43140,587 @@
 +    "unsupported",
 +    "wrap_output",
 +]
+--- /dev/null
++++ b/v2/_ultralytics_detector.py
+@@ -0,0 +1,578 @@
++"""Ultralytics detectors for Impact Pack under Secure Nodes V2 (fidelity repair r1).
++
++Detection, SEG building, dilation, cropping and label filtering are upstream code, copied verbatim below as
++AST source segments of the pristine files. The ultralytics package runs in this guest from the pack's
++dependency profile. The only V2 part is load_detector at the end: the weights arrive solely through the
++engine (assets.load_state_dict with metadata), and the model is rebuilt from the checkpoint's own
++architecture and set up the way ultralytics' load_checkpoint and Model._load set up a loaded checkpoint.
++Copied:
++#   ComfyUI-Impact-Subpack/modules/utils.py L29-40 normalize_region
++#   ComfyUI-Impact-Subpack/modules/utils.py L43-48 _tensor_check_image
++#   ComfyUI-Impact-Subpack/modules/utils.py L51-53 tensor2pil
++#   ComfyUI-Impact-Subpack/modules/utils.py L56-74 dilate_masks
++#   ComfyUI-Impact-Subpack/modules/utils.py L77-94 combine_masks
++#   ComfyUI-Impact-Subpack/modules/utils.py L97-123 make_crop_region
++#   ComfyUI-Impact-Subpack/modules/utils.py L126-134 crop_ndarray2
++#   ComfyUI-Impact-Subpack/modules/utils.py L137-145 crop_ndarray4
++#   ComfyUI-Impact-Subpack/modules/utils.py L148-148 crop_tensor4
++#   ComfyUI-Impact-Subpack/modules/utils.py L151-152 crop_image
++#   ComfyUI-Impact-Subpack/modules/subcore.py L19-21 SEG
++#   ComfyUI-Impact-Subpack/modules/subcore.py L125-134 create_segmasks
++#   ComfyUI-Impact-Subpack/modules/subcore.py L320-356 inference_bbox
++#   ComfyUI-Impact-Subpack/modules/subcore.py L359-409 inference_segm
++#   ComfyUI-Impact-Subpack/modules/subcore.py L412-468 UltraBBoxDetector
++#   ComfyUI-Impact-Subpack/modules/subcore.py L471-527 UltraSegmDetector
++#   ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L430-472 SEGSLabelFilter
++"""
++import json
++import os
++import tempfile
++import types
++from collections import namedtuple
++
++import cv2
++import numpy as np
++import torch
++from PIL import Image
++
++
++# ---------------------------------------------------------------- upstream Impact Subpack modules/utils.py
++# ComfyUI-Impact-Subpack/modules/utils.py L29-40 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def normalize_region(limit, startp, size):
++    if startp < 0:
++        new_endp = min(limit, size)
++        new_startp = 0
++    elif startp + size > limit:
++        new_startp = max(0, limit - size)
++        new_endp = limit
++    else:
++        new_startp = startp
++        new_endp = min(limit, startp+size)
++
++    return int(new_startp), int(new_endp)
++
++# ComfyUI-Impact-Subpack/modules/utils.py L43-48 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def _tensor_check_image(image):
++    if image.ndim != 4:
++        raise ValueError(f"Expected NHWC tensor, but found {image.ndim} dimensions")
++    if image.shape[-1] not in (1, 3, 4):
++        raise ValueError(f"Expected 1, 3 or 4 channels for image, but found {image.shape[-1]} channels")
++    return
++
++# ComfyUI-Impact-Subpack/modules/utils.py L51-53 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def tensor2pil(image):
++    _tensor_check_image(image)
++    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8))
++
++# ComfyUI-Impact-Subpack/modules/utils.py L56-74 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def dilate_masks(segmasks, dilation_factor, iter=1):
++    if dilation_factor == 0:
++        return segmasks
++
++    dilated_masks = []
++    kernel = np.ones((abs(dilation_factor), abs(dilation_factor)), np.uint8)
++
++    for i in range(len(segmasks)):
++        cv2_mask = segmasks[i][1]
++
++        if dilation_factor > 0:
++            dilated_mask = cv2.dilate(cv2_mask, kernel, iter)
++        else:
++            dilated_mask = cv2.erode(cv2_mask, kernel, iter)
++
++        item = (segmasks[i][0], dilated_mask, segmasks[i][2])
++        dilated_masks.append(item)
++
++    return dilated_masks
++
++# ComfyUI-Impact-Subpack/modules/utils.py L77-94 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def combine_masks(masks):
++    if len(masks) == 0:
++        return None
++    else:
++        initial_cv2_mask = np.array(masks[0][1])
++        combined_cv2_mask = initial_cv2_mask
++
++        for i in range(1, len(masks)):
++            cv2_mask = np.array(masks[i][1])
++
++            if combined_cv2_mask.shape == cv2_mask.shape:
++                combined_cv2_mask = cv2.bitwise_or(combined_cv2_mask, cv2_mask)
++            else:
++                # do nothing - incompatible mask
++                pass
++
++        mask = torch.from_numpy(combined_cv2_mask)
++        return mask
++
++# ComfyUI-Impact-Subpack/modules/utils.py L97-123 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def make_crop_region(w, h, bbox, crop_factor, crop_min_size=None):
++    x1 = bbox[0]
++    y1 = bbox[1]
++    x2 = bbox[2]
++    y2 = bbox[3]
++
++    bbox_w = x2 - x1
++    bbox_h = y2 - y1
++
++    crop_w = bbox_w * crop_factor
++    crop_h = bbox_h * crop_factor
++
++    if crop_min_size is not None:
++        crop_w = max(crop_min_size, crop_w)
++        crop_h = max(crop_min_size, crop_h)
++
++    kernel_x = x1 + bbox_w / 2
++    kernel_y = y1 + bbox_h / 2
++
++    new_x1 = int(kernel_x - crop_w / 2)
++    new_y1 = int(kernel_y - crop_h / 2)
++
++    # make sure position in (w,h)
++    new_x1, new_x2 = normalize_region(w, new_x1, crop_w)
++    new_y1, new_y2 = normalize_region(h, new_y1, crop_h)
++
++    return [new_x1, new_y1, new_x2, new_y2]
++
++# ComfyUI-Impact-Subpack/modules/utils.py L126-134 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def crop_ndarray2(npimg, crop_region):
++    x1 = crop_region[0]
++    y1 = crop_region[1]
++    x2 = crop_region[2]
++    y2 = crop_region[3]
++
++    cropped = npimg[y1:y2, x1:x2]
++
++    return cropped
++
++# ComfyUI-Impact-Subpack/modules/utils.py L137-145 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def crop_ndarray4(npimg, crop_region):
++    x1 = crop_region[0]
++    y1 = crop_region[1]
++    x2 = crop_region[2]
++    y2 = crop_region[3]
++
++    cropped = npimg[:, y1:y2, x1:x2, :]
++
++    return cropped
++
++# ComfyUI-Impact-Subpack/modules/utils.py L148-148 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++crop_tensor4 = crop_ndarray4
++
++# ComfyUI-Impact-Subpack/modules/utils.py L151-152 (pristine sha256 24ce981e1ee6d42d85c96764615f32cdbdc488f263cdc1e71f868728aea9ab01)
++def crop_image(image, crop_region):
++    return crop_tensor4(image, crop_region)
++
++
++utils = types.SimpleNamespace(tensor2pil=tensor2pil, dilate_masks=dilate_masks, combine_masks=combine_masks,
++                                make_crop_region=make_crop_region, crop_image=crop_image,
++                                crop_ndarray2=crop_ndarray2)
++
++
++# ---------------------------------------------------------------- upstream Impact Subpack modules/subcore.py
++# ComfyUI-Impact-Subpack/modules/subcore.py L19-21 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++SEG = namedtuple("SEG",
++                 ['cropped_image', 'cropped_mask', 'confidence', 'crop_region', 'bbox', 'label', 'control_net_wrapper'],
++                 defaults=[None])
++
++# ComfyUI-Impact-Subpack/modules/subcore.py L125-134 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++def create_segmasks(results):
++    bboxs = results[1]
++    segms = results[2]
++    confidence = results[3]
++
++    results = []
++    for i in range(len(segms)):
++        item = (bboxs[i], segms[i].astype(np.float32), confidence[i])
++        results.append(item)
++    return results
++
++# ComfyUI-Impact-Subpack/modules/subcore.py L320-356 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++def inference_bbox(
++    model,
++    image: Image.Image,
++    confidence: float = 0.3,
++    device: str = "",
++):
++    pred = model(image, conf=confidence, device=device)
++
++    bboxes = pred[0].boxes.xyxy.cpu().numpy()
++    cv2_image = np.array(image)
++    if len(cv2_image.shape) == 3:
++        cv2_image = cv2_image[:, :, ::-1].copy()  # Convert RGB to BGR for cv2 processing
++    else:
++        # Handle the grayscale image here
++        # For example, you might want to convert it to a 3-channel grayscale image for consistency:
++        cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_GRAY2BGR)
++    cv2_gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
++
++    segms = []
++    for x0, y0, x1, y1 in bboxes:
++        cv2_mask = np.zeros(cv2_gray.shape, np.uint8)
++        cv2.rectangle(cv2_mask, (int(x0), int(y0)), (int(x1), int(y1)), 255, -1)
++        cv2_mask_bool = cv2_mask.astype(bool)
++        segms.append(cv2_mask_bool)
++
++    n, m = bboxes.shape
++    if n == 0:
++        return [[], [], [], []]
++
++    results = [[], [], [], []]
++    for i in range(len(bboxes)):
++        results[0].append(pred[0].names[int(pred[0].boxes[i].cls.item())])
++        results[1].append(bboxes[i])
++        results[2].append(segms[i])
++        results[3].append(pred[0].boxes[i].conf.cpu().numpy())
++
++    return results
++
++# ComfyUI-Impact-Subpack/modules/subcore.py L359-409 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++def inference_segm(
++    model,
++    image: Image.Image,
++    confidence: float = 0.3,
++    device: str = "",
++):
++    pred = model(image, conf=confidence, device=device)
++
++    bboxes = pred[0].boxes.xyxy.cpu().numpy()
++    n, m = bboxes.shape
++    if n == 0:
++        return [[], [], [], []]
++
++    # NOTE: masks.data will be None when n == 0
++    segms = pred[0].masks.data.cpu().numpy()
++
++    h_segms = segms.shape[1]
++    w_segms = segms.shape[2]
++    h_orig = image.size[1]
++    w_orig = image.size[0]
++    ratio_segms = h_segms / w_segms
++    ratio_orig = h_orig / w_orig
++
++    if ratio_segms == ratio_orig:
++        h_gap = 0
++        w_gap = 0
++    elif ratio_segms > ratio_orig:
++        h_gap = int((ratio_segms - ratio_orig) * h_segms)
++        w_gap = 0
++    else:
++        h_gap = 0
++        ratio_segms = w_segms / h_segms
++        ratio_orig = w_orig / h_orig
++        w_gap = int((ratio_segms - ratio_orig) * w_segms)
++
++    results = [[], [], [], []]
++    for i in range(len(bboxes)):
++        results[0].append(pred[0].names[int(pred[0].boxes[i].cls.item())])
++        results[1].append(bboxes[i])
++
++        mask = torch.from_numpy(segms[i])
++        mask = mask[h_gap:mask.shape[0] - h_gap, w_gap:mask.shape[1] - w_gap]
++
++        scaled_mask = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(image.size[1], image.size[0]),
++                                                      mode='bilinear', align_corners=False)
++        scaled_mask = scaled_mask.squeeze().squeeze()
++
++        results[2].append(scaled_mask.numpy())
++        results[3].append(pred[0].boxes[i].conf.cpu().numpy())
++
++    return results
++
++# ComfyUI-Impact-Subpack/modules/subcore.py L412-468 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++class UltraBBoxDetector:
++    bbox_model = None
++
++    def __init__(self, bbox_model):
++        self.bbox_model = bbox_model
++
++    def detect(self, image, threshold, dilation, crop_factor, drop_size=1, detailer_hook=None):
++        drop_size = max(drop_size, 1)
++        detected_results = inference_bbox(self.bbox_model, utils.tensor2pil(image), threshold)
++        segmasks = create_segmasks(detected_results)
++
++        if dilation > 0:
++            segmasks = utils.dilate_masks(segmasks, dilation)
++
++        items = []
++        h = image.shape[1]
++        w = image.shape[2]
++
++        for x, label in zip(segmasks, detected_results[0]):
++            item_bbox = x[0]
++            item_mask = x[1]
++
++            y1, x1, y2, x2 = item_bbox
++
++            if x2 - x1 > drop_size and y2 - y1 > drop_size:  # minimum dimension must be (2,2) to avoid squeeze issue
++                crop_region = utils.make_crop_region(w, h, item_bbox, crop_factor)
++
++                if detailer_hook is not None:
++                    crop_region = detailer_hook.post_crop_region(w, h, item_bbox, crop_region)
++
++                cropped_image = utils.crop_image(image, crop_region)
++                cropped_mask = utils.crop_ndarray2(item_mask, crop_region)
++                confidence = x[2]
++                # bbox_size = (item_bbox[2]-item_bbox[0],item_bbox[3]-item_bbox[1]) # (w,h)
++
++                item = SEG(cropped_image, cropped_mask, confidence, crop_region, item_bbox, label, None)
++
++                items.append(item)
++
++        shape = image.shape[1], image.shape[2]
++        segs = shape, items
++
++        if detailer_hook is not None and hasattr(detailer_hook, "post_detection"):
++            segs = detailer_hook.post_detection(segs)
++
++        return segs
++
++    def detect_combined(self, image, threshold, dilation):
++        detected_results = inference_bbox(self.bbox_model, utils.tensor2pil(image), threshold)
++        segmasks = create_segmasks(detected_results)
++        if dilation > 0:
++            segmasks = utils.dilate_masks(segmasks, dilation)
++
++        return utils.combine_masks(segmasks)
++
++    def setAux(self, x):
++        pass
++
++# ComfyUI-Impact-Subpack/modules/subcore.py L471-527 (pristine sha256 a2dd6366aed5bb48c8f1d693da6939bdb56dc49a93190c4fc0f2c2913a591536)
++class UltraSegmDetector:
++    bbox_model = None
++
++    def __init__(self, bbox_model):
++        self.bbox_model = bbox_model
++
++    def detect(self, image, threshold, dilation, crop_factor, drop_size=1, detailer_hook=None):
++        drop_size = max(drop_size, 1)
++        detected_results = inference_segm(self.bbox_model, utils.tensor2pil(image), threshold)
++        segmasks = create_segmasks(detected_results)
++
++        if dilation > 0:
++            segmasks = utils.dilate_masks(segmasks, dilation)
++
++        items = []
++        h = image.shape[1]
++        w = image.shape[2]
++
++        for x, label in zip(segmasks, detected_results[0]):
++            item_bbox = x[0]
++            item_mask = x[1]
++
++            y1, x1, y2, x2 = item_bbox
++
++            if x2 - x1 > drop_size and y2 - y1 > drop_size:  # minimum dimension must be (2,2) to avoid squeeze issue
++                crop_region = utils.make_crop_region(w, h, item_bbox, crop_factor)
++
++                if detailer_hook is not None:
++                    crop_region = detailer_hook.post_crop_region(w, h, item_bbox, crop_region)
++
++                cropped_image = utils.crop_image(image, crop_region)
++                cropped_mask = utils.crop_ndarray2(item_mask, crop_region)
++                confidence = x[2]
++                # bbox_size = (item_bbox[2]-item_bbox[0],item_bbox[3]-item_bbox[1]) # (w,h)
++
++                item = SEG(cropped_image, cropped_mask, confidence, crop_region, item_bbox, label, None)
++
++                items.append(item)
++
++        shape = image.shape[1], image.shape[2]
++        segs = shape, items
++
++        if detailer_hook is not None and hasattr(detailer_hook, "post_detection"):
++            segs = detailer_hook.post_detection(segs)
++
++        return segs
++
++    def detect_combined(self, image, threshold, dilation):
++        detected_results = inference_segm(self.bbox_model, utils.tensor2pil(image), threshold)
++        segmasks = create_segmasks(detected_results)
++        if dilation > 0:
++            segmasks = utils.dilate_masks(segmasks, dilation)
++
++        return utils.combine_masks(segmasks)
++
++    def setAux(self, x):
++        pass
++
++
++# ---------------------------------------------------------------- upstream Impact Pack segs_nodes.py
++# ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L430-472 (pristine sha256 51e4b938627fb4f7958c220940747476cafc7f424f87035a886e8a0686e1ac8a)
++class SEGSLabelFilter:
++    @classmethod
++    def INPUT_TYPES(s):
++        return {"required": {
++                        "segs": ("SEGS", ),
++                        "preset": (['all'] + defs.detection_labels, ),
++                        "labels": ("STRING", {"multiline": True, "placeholder": "List the types of segments to be allowed, separated by commas"}),
++                     },
++                }
++
++    RETURN_TYPES = ("SEGS", "SEGS",)
++    RETURN_NAMES = ("filtered_SEGS", "remained_SEGS",)
++    FUNCTION = "doit"
++
++    CATEGORY = "ImpactPack/Util"
++
++    @staticmethod
++    def filter(segs, labels):
++        labels = set([label.strip() for label in labels])
++
++        if 'all' in labels:
++            return (segs, (segs[0], []), )
++        else:
++            res_segs = []
++            remained_segs = []
++
++            for x in segs[1]:
++                if x.label in labels:
++                    res_segs.append(x)
++                elif 'eyes' in labels and x.label in ['left_eye', 'right_eye']:
++                    res_segs.append(x)
++                elif 'eyebrows' in labels and x.label in ['left_eyebrow', 'right_eyebrow']:
++                    res_segs.append(x)
++                elif 'pupils' in labels and x.label in ['left_pupil', 'right_pupil']:
++                    res_segs.append(x)
++                else:
++                    remained_segs.append(x)
++
++        return ((segs[0], res_segs), (segs[0], remained_segs), )
++
++    def doit(self, segs, preset, labels):
++        labels = labels.split(',')
++        return SEGSLabelFilter.filter(segs, labels)
++
++
++# ---------------------------------------------------------------- V2: the detector weight, read through the engine
++os.environ.setdefault("YOLO_AUTOINSTALL", "False")  # never pip-install from the guest
++os.environ.setdefault("YOLO_OFFLINE", "True")  # the guest has no network
++os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(tempfile.gettempdir(), "Ultralytics"))
++
++# Impact Subpack's provider (v2) passes the selected weight as a descriptor: catalogue, name and the menu value.
++KINDS = {"impact.ultralytics_bbox": "bbox", "impact.ultralytics_segm": "segm"}
++FOLDERS = frozenset({"ultralytics", "ultralytics_bbox", "ultralytics_segm"})
++# Checkpoint model classes this loader rebuilds, each with an Ultralytics-packaged yaml for the throwaway
++# Model object whose model is then replaced (as Model._load replaces it).
++_TOP_CLASSES = {
++    "ultralytics.nn.tasks.DetectionModel": ("DetectionModel", "yolov8n.yaml"),
++    "ultralytics.nn.tasks.SegmentationModel": ("SegmentationModel", "yolov8n-seg.yaml"),
++}
++_MODELS = {}  # (catalogue, name) -> YOLO, as upstream reuses the provider's loaded model
++
++
++class DetectorWeightError(ValueError):
++    """The selected detector weight is not available as converted safetensors with Ultralytics metadata."""
++
++
++def is_descriptor(value, kind):
++    return (isinstance(value, dict) and KINDS.get(value.get("secure_kind")) == kind
++            and value.get("folder") in FOLDERS and isinstance(value.get("name"), str) and bool(value.get("name")))
++
++
++def label_filter(segs, labels):
++    # Impact Pack modules/impact/detectors.py, BboxDetectorForEach.doit / SegmDetectorForEach.doit:
++    if labels is not None and labels != '':
++        labels = labels.split(',')
++        if len(labels) > 0:
++            segs, _ = SEGSLabelFilter.filter(segs, labels)
++    return segs
++
++
++def _build(state, metadata, name):
++    from ultralytics import YOLO
++    from ultralytics.cfg import DEFAULT_CFG_DICT
++    from ultralytics.engine.model import Model
++    from ultralytics.nn import tasks
++
++    try:
++        class_name, stand_in = _TOP_CLASSES[metadata["top_class"]]
++        cfg = json.loads(metadata["yaml"])
++        names = {int(key): value for key, value in json.loads(metadata["names"]).items()}
++        train_args = json.loads(metadata.get("train_args") or "{}")
++    except (KeyError, TypeError, ValueError) as error:
++        raise DetectorWeightError(
++            f"[Impact Pack] '{name}' has no usable Ultralytics metadata (top_class, yaml, names): "
++            f"{type(error).__name__}: {error}") from error
++    # Building modules draws initial weights from torch's global generator; loading a checkpoint does not.
++    with torch.random.fork_rng(devices=[]):
++        model = getattr(tasks, class_name)(cfg, verbose=False)
++        yolo = YOLO(stand_in)
++    model.load_state_dict(state, strict=True)
++    # ultralytics.nn.tasks.load_checkpoint, after it has the checkpoint's model (fuse=False, inplace=True):
++    model = model.float()
++    model.args = {**DEFAULT_CFG_DICT, **train_args}
++    model.pt_path = str(name)
++    model.task = getattr(model, "task", tasks.guess_model_task(model))
++    if not hasattr(model, "stride"):
++        model.stride = torch.tensor([32.0])
++    model.names = names  # the checkpoint model's own class names
++    model = model.eval()
++    for m in model.modules():
++        if hasattr(m, "inplace"):
++            m.inplace = True
++        elif isinstance(m, torch.nn.Upsample) and not hasattr(m, "recompute_scale_factor"):
++            m.recompute_scale_factor = None
++    # ultralytics.engine.model.Model._load, after load_checkpoint:
++    yolo.model, yolo.ckpt, yolo.cfg, yolo.predictor = model, {}, None, None
++    yolo.task = model.task
++    yolo.overrides = model.args = Model._reset_ckpt_args(model.args)
++    yolo.ckpt_path = model.pt_path
++    yolo.overrides["model"] = str(name)
++    yolo.overrides["task"] = yolo.task
++    yolo.model_name = str(name)
++    return yolo
++
++
++async def load_detector(ctx, descriptor):
++    """The YOLO model for a provider descriptor. Only the engine reads the file: a converted safetensors state
++    dict with its Ultralytics metadata. Nothing here parses a pickle."""
++    key = (descriptor["folder"], descriptor["name"])
++    if key not in _MODELS:
++        menu_value = str(descriptor.get("model_name") or descriptor["name"])
++        try:
++            ref = await ctx.assets.resolve(*key)
++            state, metadata = await ctx.assets.load_state_dict(ref, return_metadata=True)
++        except PermissionError:
++            raise
++        except Exception as error:
++            raise DetectorWeightError(
++                f"[Impact Pack] cannot load '{menu_value}' through the engine ({type(error).__name__}: {error}). "
++                "Secure Nodes read Ultralytics detectors only as converted safetensors with their metadata.") from error
++        if not isinstance(metadata, dict):
++            raise DetectorWeightError(
++                f"[Impact Pack] '{menu_value}' came back without safetensors metadata; Secure Nodes need the "
++                "converted file's Ultralytics metadata (top_class, yaml, names) to rebuild the model.")
++        _MODELS[key] = _build(state, metadata, menu_value)
++    return _MODELS[key]
++
++
++def detect_segs(yolo, kind, image, threshold, dilation, crop_factor, drop_size):
++    detector = UltraBBoxDetector(yolo) if kind == "bbox" else UltraSegmDetector(yolo)
++    return detector.detect(image, threshold, dilation, crop_factor, drop_size, None)
++
++
++def detect_combined(yolo, kind, image, threshold, dilation):
++    detector = UltraBBoxDetector(yolo) if kind == "bbox" else UltraSegmDetector(yolo)
++    mask = detector.detect_combined(image, threshold, dilation)
++    # Impact Pack modules/impact/detectors.py, BboxDetectorCombined.doit / SegmDetectorCombined.doit:
++    if mask is None:
++        mask = torch.zeros((image.shape[1], image.shape[2]), dtype=torch.float32, device="cpu")
++    return mask.unsqueeze(0)
++
++
++def to_v2_segs(segs, seg_type):
++    """Upstream SEG values in the layout Impact v2 passes between nodes: masks as (1, h, w) float32 tensors, the
++    confidence as a float and the bbox as a tuple of floats (numpy values cannot cross the guest wire). Every
++    value is the upstream value; only its container changes."""
++    shape, items = segs
++    converted = []
++    for item in items:
++        mask = torch.from_numpy(np.ascontiguousarray(item.cropped_mask, dtype=np.float32)).unsqueeze(0)
++        confidence = float(np.asarray(item.confidence, dtype=np.float32).reshape(-1)[0])
++        converted.append(seg_type(
++            item.cropped_image.clone() if isinstance(item.cropped_image, torch.Tensor) else item.cropped_image,
++            mask, confidence, [int(v) for v in item.crop_region], tuple(float(v) for v in item.bbox), str(item.label),
++            item.control_net_wrapper))
++    return (int(shape[0]), int(shape[1])), converted
 --- /dev/null
 +++ b/v2/_wildcard_runtime.py
 @@ -0,0 +1,379 @@
@@ -53416,13 +53873,16 @@
      }
 --- a/pyproject.toml
 +++ b/v2/pyproject.toml
-@@ -2,19 +2,11 @@
+@@ -2,18 +2,18 @@
  name = "comfyui-impact-pack"
  description = "This node pack offers various detector nodes and detailer nodes that allow you to configure a workflow that automatically enhances facial details. And provide iterative upscaler."
  version = "8.28.3"
 +requires-python = ">=3.13,<3.14"
  license = { file = "LICENSE.txt" }
--dependencies = [
++# Ultralytics and segment-anything run inside the isolated pack runtime, served by the pack's dependency
++# profile (exact pins; everything else comes from the sealed guest base). SafeTensors parsing and
++# model-asset resolution remain brokered by the host.
+ dependencies = [
 -    "segment-anything",
 -    "scikit-image",
 -    "piexif",
@@ -53433,22 +53893,27 @@
 -    "dill",
 -    "matplotlib",
 -    "sam2 @ git+https://github.com/facebookresearch/sam2"
--]
-+# Ultralytics runs inside the isolated pack runtime. SafeTensors parsing and
-+# model-asset resolution remain brokered by the host.
-+dependencies = ["ultralytics==8.3.162"]
++    "ultralytics==8.4.198",
++    "segment-anything==1.0",
++    "opencv-python-headless==4.11.0.86",
++    "torchvision==0.23.0",
++    "tqdm==4.70.1",
++    "nvidia-ml-py==13.615.71",
+ ]
  
  [project.urls]
- Repository = "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,36240 @@
+@@ -0,0 +1,36243 @@
 +{
 + "format": "comfy-secure-nodes-v1",
 + "runtime": {
 +  "python": {
 +   "requires": ">=3.13,<3.14",
 +   "resolved": "3.13"
++  },
++  "dependencies": {
++   "profile_sha256": "dbef5022f4a2411dee515081a66216fd9678a497bd1d07f086d6f091a84bcd74"
 +  }
 + },
 + "nodes": {
@@ -89683,3 +90148,512 @@
 +  "impact_wildcards": "wildcards"
 + }
 +}
+--- /dev/null
++++ b/v2/tests/test_detector_repair_r1.py
+@@ -0,0 +1,506 @@
++"""Impact Pack + Impact Subpack, fidelity repair r1 (Ultralytics detectors): parity in the lane gate.
++
++DEPS=<the unpacked Impact dependency-profile wheels, plus dill for the original Subpack import> \
++run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/ and ComfyUI-Impact-Subpack-HEAD/> <Impact v2/tests> <results> \
++    test_detector_repair_r1.py [generate-manifests]
++
++Fixtures are synthetic: Ultralytics models built from Ultralytics' packaged yolov8n / yolov8n-seg yaml with a
++fixed seed (class biases raised so detections occur), stored as fp16 safetensors with the metadata a converted
++checkpoint carries (top_class, yaml, names, train_args), and synthetic images. No upstream media or model.
++
++  original  the pristine Impact Subpack modules (subcore, subpack_nodes) under Core, with upstream Impact Pack's
++            BboxDetectorForEach / SegmDetectorForEach / *Combined logic. The one boundary: subcore.load_yolo (a
++            pickle load) returns the in-memory model, built from the packaged yaml and the fp16 weights and set up
++            the way ultralytics' load_checkpoint and Model._load set up a loaded checkpoint.
++  v2        Impact Subpack v2's provider and Impact v2's detector handlers, with a fake SDK context. Its assets
++            domain lists the same catalogues, and load_state_dict returns the converted safetensors (tensors +
++            metadata) for a .pt name, as the engine's translation does. Imports outside the standard library, the
++            sealed guest base, /deps and the packs are blocked, as in a guest.
++Every v2 output also goes through the overlay's wire encoder (transport/wire.py), with tensors replaced by refs as
++Impact v2's SEGS wrap does, then JSON and decode.
++Compared: SEGS (shape, and per SEG: cropped image and mask bytes, confidence, crop region, bbox, label), combined
++masks, provider outputs and errors, and the rebuilt model against the in-memory one (every tensor, args, names,
++stride, task).
++"""
++import asyncio
++import glob
++import hashlib
++import importlib.abc
++import importlib.machinery
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++ROOT = "/pack"
++IMPACT = os.path.join(ROOT, "ComfyUI-Impact-Pack-HEAD")
++SUBPACK = os.path.join(ROOT, "ComfyUI-Impact-Subpack-HEAD")
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.update({"HOME": "/tmp", "YOLO_AUTOINSTALL": "False", "YOLO_OFFLINE": "True", "YOLO_CONFIG_DIR": "/tmp/yolo",
++                   "YOLO_VERBOSE": "False"})
++FX = "/tmp/fx"
++MODELS = {  # fixture model -> (packaged yaml, nc, names, seed, train_args)
++    "face_hand": ("yolov8n.yaml", 2, {"0": "face", "1": "hand"}, 1234, {"imgsz": 640, "task": "detect", "data": "fx.yaml", "single_cls": False}),
++    "small": ("yolov8n.yaml", 1, {"0": "face"}, 99, {"imgsz": 320, "task": "detect", "data": "fx.yaml", "single_cls": False}),
++    "person_seg": ("yolov8n-seg.yaml", 1, {"0": "person"}, 4321, {"imgsz": 640, "task": "segment", "data": "fx.yaml", "single_cls": False}),
++}
++CATALOGUES = {  # catalogue -> {menu file name: fixture model}
++    "ultralytics_bbox": {"face_hand.pt": "face_hand", "face_hand.safetensors": "face_hand", "small.pt": "small"},
++    "ultralytics_segm": {"person_seg.pt": "person_seg"},
++    "ultralytics": {"bbox/rooted.pt": "face_hand"},
++}
++
++
++def build_model(fixture):
++    import torch
++    from ultralytics.nn.tasks import DetectionModel, SegmentationModel, yaml_model_load
++    yaml_name, nc, _names, seed, _args = MODELS[fixture]
++    cfg = yaml_model_load(yaml_name)
++    cfg["nc"] = nc
++    torch.manual_seed(seed)
++    model = (SegmentationModel if "seg" in yaml_name else DetectionModel)(cfg, verbose=False)
++    with torch.no_grad():
++        for branch in model.model[-1].cv3:
++            branch[-1].bias += 6.0  # raise class logits so a random model detects at ordinary thresholds
++    return model
++
++
++def write_fixtures():
++    import torch
++    from safetensors.torch import save_file
++    os.makedirs(os.path.join(FX, "models"), exist_ok=True)
++    for fixture, (yaml_name, _nc, names, _seed, args) in MODELS.items():
++        model = build_model(fixture)
++        state = {k: (v.half() if v.is_floating_point() else v).contiguous() for k, v in model.state_dict().items()}
++        top = "SegmentationModel" if "seg" in yaml_name else "DetectionModel"
++        save_file(state, os.path.join(FX, "models", f"{fixture}.safetensors"), metadata={
++            "top_class": f"ultralytics.nn.tasks.{top}", "yaml": json.dumps(model.yaml), "names": json.dumps(names),
++            "train_args": json.dumps(args), "converter": "synthetic-fixture"})
++
++
++def cases():
++    out = []
++    images = [(11, 96, 128), (12, 160, 120), (13, 257, 333)]
++    for model_name in ("bbox/face_hand.pt", "bbox/face_hand.safetensors", "bbox/small.pt", "bbox/rooted.pt",
++                       "segm/person_seg.pt", "bbox/missing.pt", "segm/missing.pt", "missing.pt"):
++        out.append({"node": "provider", "model_name": model_name})
++    # Designed difference: the V2 menu lists the ultralytics_bbox catalogue's bare names (a host menu cannot add
++    # upstream's "bbox/" prefix), so v2 resolves a bare name as a bbox model; upstream has no bare names.
++    out.append({"node": "provider", "model_name": "face_hand.pt", "designed": "bare-name"})
++    for model_name, nodes in (("bbox/face_hand.pt", ("bbox_segs", "bbox_combined")),
++                              ("bbox/small.pt", ("bbox_segs", "bbox_combined")),
++                              ("segm/person_seg.pt", ("bbox_segs", "segm_segs", "segm_combined"))):
++        for node in nodes:
++            for image in images:
++                for threshold in (0.1, 0.3, 0.5):
++                    for dilation in (0, 4, -3):
++                        base = {"node": node, "model_name": model_name, "image": image, "threshold": threshold,
++                                "dilation": dilation}
++                        if node.endswith("combined"):
++                            out.append(base)
++                            continue
++                        for crop_factor, drop_size, labels in ((3.0, 10, "all"), (1.0, 1, "face"), (1.5, 30, "hand,face"),
++                                                               (2.0, 5, ""), (3.0, 10, "person"), (1.2, 10, "eyes")):
++                            out.append({**base, "crop_factor": crop_factor, "drop_size": drop_size, "labels": labels})
++    return out
++
++
++def make_image(spec):
++    import torch
++    seed, height, width = spec
++    g = torch.Generator().manual_seed(seed)
++    base = torch.rand((1, height, width, 3), generator=g)
++    ramp = torch.linspace(0, 1, width).view(1, 1, width, 1)
++    return (0.6 * base + 0.4 * ramp).clamp(0, 1).float()
++
++
++def digest(array):
++    import numpy as np
++    value = np.ascontiguousarray(np.asarray(array, dtype=np.float32))
++    return [list(value.shape), hashlib.sha256(value.tobytes()).hexdigest()]
++
++
++def seg_record(shape, items, v2):
++    import numpy as np
++    rows = []
++    for item in items:
++        mask = item.cropped_mask.squeeze(0).numpy() if v2 else item.cropped_mask
++        image = item.cropped_image.numpy() if item.cropped_image is not None else None
++        rows.append({"cropped_image": None if image is None else digest(image), "cropped_mask": digest(mask),
++                     "confidence": float(np.asarray(item.confidence, dtype=np.float32).reshape(-1)[0]),
++                     "crop_region": [int(v) for v in item.crop_region], "bbox": [float(v) for v in item.bbox],
++                     "label": str(item.label)})
++    return {"shape": [int(shape[0]), int(shape[1])], "items": rows}
++
++
++def outcome(fn):
++    try:
++        return ["value", fn()]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++
++
++def model_record(model):
++    import numpy as np
++    state = model.state_dict()
++    tensors = hashlib.sha256()
++    for key in sorted(state):
++        tensors.update(key.encode())
++        tensors.update(np.ascontiguousarray(state[key].detach().cpu().float().numpy()).tobytes())
++    args = getattr(model, "args", {})
++    return {"tensors": tensors.hexdigest(), "keys": len(state), "names": {str(k): v for k, v in model.names.items()},
++            "stride": [float(s) for s in model.stride], "task": model.task,
++            "args": {k: args.get(k) for k in ("imgsz", "task", "data", "single_cls", "conf", "iou", "max_det")}}
++
++
++# ---------------------------------------------------------------- original side
++def run_original(plan, out_path):
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import folder_paths
++    import torch
++    from ultralytics import YOLO
++    from ultralytics.cfg import DEFAULT_CFG_DICT
++    from ultralytics.engine.model import Model
++    from ultralytics.nn import tasks
++
++    for catalogue, files in CATALOGUES.items():
++        root = os.path.join(FX, "orig", catalogue)
++        for name in files:
++            os.makedirs(os.path.dirname(os.path.join(root, name)), exist_ok=True)
++            open(os.path.join(root, name), "wb").close()  # upstream only needs the path to exist
++        folder_paths.folder_names_and_paths[catalogue] = ([root], set(folder_paths.supported_pt_extensions))
++    root = "/tmp/orig-subpack"
++    shutil.copytree(SUBPACK, root, ignore=shutil.ignore_patterns("v2", "__pycache__"))
++    # modules/ has no __init__.py upstream: load it as a package directory so its relative imports resolve.
++    spec = importlib.machinery.ModuleSpec("impact_subpack_original", None, is_package=True)
++    package = importlib.util.module_from_spec(spec)
++    package.__path__ = [os.path.join(root, "modules")]
++    sys.modules[spec.name] = package
++    from safetensors.torch import load_file
++    loaded = {}
++
++    def checkpoint_model(path):
++        # The boundary: the file's model, as ultralytics' YOLO(path) would hold it, without unpickling a file.
++        fixture = None
++        for catalogue, files in CATALOGUES.items():
++            for name, value in files.items():
++                if os.path.realpath(path) == os.path.realpath(os.path.join(FX, "orig", catalogue, name)):
++                    fixture = value
++        if fixture not in loaded:
++            yaml_name, _nc, names, _seed, train_args = MODELS[fixture]
++            model = build_model(fixture)
++            model.load_state_dict(load_file(os.path.join(FX, "models", f"{fixture}.safetensors")), strict=True)
++            model = model.float()  # load_checkpoint: candidate.float()
++            model.args = {**DEFAULT_CFG_DICT, **train_args}
++            model.pt_path = str(path)
++            model.task = getattr(model, "task", tasks.guess_model_task(model))
++            model.names = {int(k): v for k, v in names.items()}
++            model = model.eval()
++            for m in model.modules():
++                if hasattr(m, "inplace"):
++                    m.inplace = True
++            yolo = YOLO(yaml_name)
++            yolo.model, yolo.ckpt, yolo.cfg = model, {}, None
++            yolo.task = model.task
++            yolo.overrides = model.args = Model._reset_ckpt_args(model.args)
++            yolo.ckpt_path = model.pt_path
++            yolo.overrides["model"] = str(path)
++            yolo.overrides["task"] = yolo.task
++            yolo.model_name = str(path)
++            loaded[fixture] = yolo
++        return loaded[fixture]
++
++    subcore = importlib.import_module("impact_subpack_original.subcore")
++    subcore.load_yolo = checkpoint_model
++    nodes = importlib.import_module("impact_subpack_original.subpack_nodes")
++    provider = nodes.UltralyticsDetectorProvider()
++    records, models = [], {}
++    for case in plan:
++        def run():
++            if case["node"] == "provider":
++                bbox, segm = provider.doit(case["model_name"])
++                return [type(bbox).__name__, type(segm).__name__]
++            bbox, segm = provider.doit(case["model_name"])
++            detector = segm if case["node"].startswith("segm") else bbox
++            image = make_image(case["image"])
++            if case["node"].endswith("combined"):
++                # Impact Pack detectors.py BboxDetectorCombined / SegmDetectorCombined.doit
++                mask = detector.detect_combined(image, case["threshold"], case["dilation"])
++                if mask is None:
++                    mask = torch.zeros((image.shape[1], image.shape[2]), dtype=torch.float32, device="cpu")
++                return digest(mask.unsqueeze(0).numpy())
++            # Impact Pack detectors.py BboxDetectorForEach / SegmDetectorForEach.doit (no detailer hook)
++            segs = detector.detect(image, case["threshold"], case["dilation"], case["crop_factor"], case["drop_size"], None)
++            labels = case["labels"]
++            if labels is not None and labels != '':
++                labels = labels.split(',')
++                if len(labels) > 0:
++                    segs, _ = label_filter(segs, labels)
++            return seg_record(segs[0], segs[1], False)
++        records.append(outcome(run))
++    for fixture in MODELS:
++        models[fixture] = model_record(loaded[fixture].model) if fixture in loaded else None
++    with open(out_path, "w") as handle:
++        json.dump({"records": records, "models": models}, handle)
++
++
++def label_filter(segs, labels):
++    # Impact Pack modules/impact/segs_nodes.py SEGSLabelFilter.filter, loaded from the pristine file.
++    source = open(os.path.join(IMPACT, "modules", "impact", "segs_nodes.py"), encoding="utf-8").read()
++    import ast
++    tree = ast.parse(source)
++    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SEGSLabelFilter")
++    fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "filter")
++    lines = source.splitlines(keepends=True)[fn.lineno - 1:fn.end_lineno]
++    import textwrap
++    namespace = {}
++    exec(compile(textwrap.dedent("".join(lines)), "segs_nodes.py:SEGSLabelFilter.filter", "exec"), namespace)
++    return namespace["filter"](segs, labels)
++
++
++# ---------------------------------------------------------------- v2 side
++GUEST_BASE = {"av", "blake3", "comfy_api", "comfy_secure_nodes", "comfy_secure_sdk", "filelock", "fsspec", "iniconfig",
++              "jinja2", "markupsafe", "mpmath", "networkx", "numpy", "nvidia", "packaging", "PIL", "pluggy", "psutil",
++              "pygments", "pytest", "_pytest", "py", "pytest_asyncio", "safetensors", "setuptools", "pkg_resources",
++              "_distutils_hack", "sympy", "torch", "functorch", "torchgen", "triton", "typing_extensions", "wheel"}
++
++
++class GuestImports(importlib.abc.MetaPathFinder):
++    """Blocks top-level imports a guest would not have (outside stdlib, guest base, /deps and the packs)."""
++
++    def __init__(self, allowed):
++        self.allowed, self.blocked = allowed, set()
++
++    def find_spec(self, fullname, path, target=None):
++        top = fullname.split(".")[0]
++        if top in sys.stdlib_module_names or top in self.allowed or top.startswith("_"):
++            return None
++        frame = sys._getframe(1)
++        while frame and frame.f_code.co_filename.startswith("<frozen"):
++            frame = frame.f_back
++        if frame is not None and not frame.f_code.co_filename.startswith(("/pack/", DEPS)):
++            return None  # the harness itself (Core, overlay) is not guest code
++        self.blocked.add(fullname)
++        raise ModuleNotFoundError(f"blocked in guest emulation: {fullname}", name=fullname)
++
++
++def run_v2(plan, out_path):
++    import torch
++    deps_top = {n[:-3] if n.endswith(".py") else n for n in os.listdir(DEPS) if not n.endswith((".dist-info", ".data", ".libs"))}
++    finder = GuestImports(GUEST_BASE | deps_top | {"impact_v2", "subpack_v2"})
++    sys.meta_path.insert(0, finder)
++    from safetensors import safe_open
++    from safetensors.torch import load_file
++
++    def load(name, path):
++        spec = importlib.util.spec_from_file_location(name, os.path.join(path, "__init__.py"), submodule_search_locations=[path])
++        module = importlib.util.module_from_spec(spec)
++        sys.modules[name] = module
++        spec.loader.exec_module(module)
++        return module
++
++    subpack = load("subpack_v2", os.path.join(SUBPACK, "v2"))
++    impact = load("impact_v2", os.path.join(IMPACT, "v2"))
++    provider_mod = sys.modules["subpack_v2._secure_nodes"]
++    nodes = sys.modules["impact_v2._secure_nodes"]
++
++    class Assets:
++        async def exists(self, folder, name):
++            if folder not in CATALOGUES:
++                raise KeyError(folder)  # an unregistered catalogue, as folder_paths raises
++            return name in CATALOGUES[folder]
++
++        async def resolve(self, folder, name):
++            if not await self.exists(folder, name):
++                raise FileNotFoundError(f"no {folder} asset named {name!r}")
++            return ("asset", folder, name)
++
++        async def load_state_dict(self, ref, return_metadata=False):
++            # The engine translation: a known pickle-format name reads its converted safetensors file.
++            fixture = CATALOGUES[ref[1]][ref[2]]
++            path = os.path.join(FX, "models", f"{fixture}.safetensors")
++            state = load_file(path)
++            if not return_metadata:
++                return state
++            with safe_open(path, framework="pt") as handle:
++                return state, handle.metadata()
++
++    context = types.SimpleNamespace(assets=Assets())
++    fake = types.SimpleNamespace(ctx=lambda: context)
++    provider_mod.sdk = fake
++    nodes.sdk = fake
++    from comfy_api.latest import sdk as public_sdk
++    wire_spec = importlib.util.spec_from_file_location("overlay_wire", "/overlay/comfy_secure_nodes/transport/wire.py")
++    wire = importlib.util.module_from_spec(wire_spec)
++    wire_spec.loader.exec_module(wire)
++    counter = [0]
++
++    def ref(cls, kind):
++        counter[0] += 1
++        return cls(kind=kind, id=f"t{counter[0]}")
++
++    def through_wire(value):
++        """Impact v2's SEGS wrap (cropped image/mask -> refs), then the wire encoder, JSON and decode."""
++        if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], list):
++            value = (tuple(value[0]), [tuple([ref(public_sdk.ImageRef, "IMAGE") if item[0] is not None else None,
++                                              ref(public_sdk.MaskRef, "MASK"), *item[2:]]) for item in value[1]])
++        elif isinstance(value, torch.Tensor):
++            value = ref(public_sdk.MaskRef, "MASK")
++        return wire.decode(json.loads(json.dumps(wire.encode(value))))
++
++    records, wire_failures = [], []
++    for index, case in enumerate(plan):
++        def run():
++            bbox, segm = asyncio.run(provider_mod.UltralyticsDetectorProvider.execute(model_name=case["model_name"])).result
++            through_wire(bbox)
++            through_wire(segm)
++            if case["node"] == "provider":
++                kinds = {"impact.ultralytics_bbox": "UltraBBoxDetector", "impact.ultralytics_segm": "UltraSegmDetector"}
++                return [kinds[bbox["secure_kind"]], "NO_SEGM_DETECTOR" if segm is None else kinds[segm["secure_kind"]]]
++            image = make_image(case["image"])
++            detector = segm if case["node"].startswith("segm") else bbox
++            if case["node"] == "bbox_combined":
++                (mask,) = asyncio.run(nodes._bbox_detector_combined(detector, image, case["threshold"], case["dilation"]))
++            elif case["node"] == "segm_combined":
++                (mask,) = asyncio.run(nodes._segm_detector_combined(detector, image, case["threshold"], case["dilation"]))
++            else:
++                handler = nodes._segm_detector_segs if case["node"] == "segm_segs" else nodes._bbox_detector_segs
++                (segs,) = asyncio.run(handler(detector, image, case["threshold"], case["dilation"], case["crop_factor"],
++                                              case["drop_size"], labels=case["labels"], detailer_hook=None))
++                decoded = through_wire(segs)
++                record = seg_record(segs[0], segs[1], True)
++                wired = [[float(item[2]), [int(v) for v in item[3]], [float(v) for v in item[4]], str(item[5])]
++                         for item in decoded[1]]
++                if wired != [[r["confidence"], r["crop_region"], r["bbox"], r["label"]] for r in record["items"]] \
++                        or [int(v) for v in decoded[0]] != record["shape"]:
++                    wire_failures.append(index)
++                return record
++            through_wire(mask)
++            return digest(mask.numpy())
++        try:
++            records.append(outcome(run))
++        except Exception as exc:  # a wire failure outside the node call
++            records.append(["error", type(exc).__name__, str(exc)])
++            wire_failures.append(index)
++    detector_module = sys.modules["impact_v2._ultralytics_detector"]
++    models = {}
++    for (folder, name), yolo in detector_module._MODELS.items():
++        models[CATALOGUES[folder][name]] = model_record(yolo.model)
++    with open(out_path, "w") as handle:
++        json.dump({"records": records, "models": models, "wire_failures": wire_failures,
++                   "blocked_imports": sorted(finder.blocked)}, handle)
++
++
++# ---------------------------------------------------------------- manifests (real encoder)
++def manifests():
++    import copy
++    sys.path.insert(0, "/overlay")
++    from comfy_secure_nodes.packmanifest import FORMAT, encode_schema, encode_validation_inputs
++    from comfy_secure_nodes.packruntime import manifest_declaration
++    out = {}
++    spec = importlib.util.spec_from_file_location("subpack_v2", os.path.join(SUBPACK, "v2", "__init__.py"),
++                                                  submodule_search_locations=[os.path.join(SUBPACK, "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["subpack_v2"] = package
++    spec.loader.exec_module(package)
++    rows = {}
++    for node_id, cls in package.NODE_CLASS_MAPPINGS.items():
++        row = {"class": cls.__name__,
++               "methods": {n: n in cls.__dict__ for n in ("check_lazy_status", "fingerprint_inputs", "validate_inputs")},
++               "module": cls.__module__.removeprefix("subpack_v2."), "permissions": list(cls.SDK_PERMISSIONS),
++               "schema": encode_schema(copy.deepcopy(cls.GET_SCHEMA())), "sdk_refs": cls.SDK_REFS is True}
++        if "validate_inputs" in cls.__dict__:
++            row["validation_inputs"] = encode_validation_inputs(cls)
++        rows[node_id] = row
++    out["subpack"] = json.dumps({"format": FORMAT, "nodes": rows, "runtime": manifest_declaration(os.path.join(SUBPACK, "v2"))},
++                                indent=2, sort_keys=True) + "\n"
++    out["impact_runtime"] = manifest_declaration(
++        os.path.join(IMPACT, "v2"), dependency_profile_sha256="dbef5022f4a2411dee515081a66216fd9678a497bd1d07f086d6f091a84bcd74")
++    return out
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        plan = json.load(open(argv[2]))
++        return (run_original if argv[1] == "original" else run_v2)(plan, argv[3]) or 0
++    if argv[:1] == ["generate-manifests"]:
++        out = manifests()
++        with open(os.path.join(RESULTS, "subpack-secure-nodes.json"), "w", newline="\n") as handle:
++            handle.write(out["subpack"])
++        with open(os.path.join(RESULTS, "impact-runtime.json"), "w", newline="\n") as handle:
++            json.dump(out["impact_runtime"], handle, indent=1)
++            handle.write("\n")
++        print("wrote manifests")
++        return 0
++    write_fixtures()
++    plan = cases()
++    with open("/tmp/plan.json", "w") as handle:
++        json.dump(plan, handle)
++    sides = {}
++    for side in ("original", "v2"):
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/plan.json",
++                                   f"/tmp/out-{side}.json"], stdout=log, stderr=subprocess.STDOUT, timeout=3000)
++        if proc.returncode != 0:
++            print(f"side {side} failed ({proc.returncode}); see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(f"/tmp/out-{side}.json"))
++        shutil.copyfile(f"/tmp/out-{side}.json", os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++    by_node, mismatches, designed = {}, [], {}
++    for case, want, got in zip(plan, original["records"], v2["records"]):
++        if case.get("designed") == "bare-name":
++            designed["bare_name"] = {"original": want, "v2": got,
++                                     "ok": want[0] == "error" and got == ["value", ["UltraBBoxDetector", "NO_SEGM_DETECTOR"]]}
++            continue
++        r = by_node.setdefault(case["node"], {"cases": 0, "mismatches": 0, "values": 0, "errors": 0, "segs_items": 0})
++        r["cases"] += 1
++        r["values" if want[0] == "value" else "errors"] += 1
++        if want[0] == "value" and isinstance(want[1], dict):
++            r["segs_items"] += len(want[1]["items"])
++        if want != got:
++            r["mismatches"] += 1
++            mismatches.append({"case": case, "original": want, "v2": got})
++    models_equal = {k: original["models"].get(k) == v2["models"].get(k) for k in MODELS}
++    probe = next((g for w, g in zip(original["records"], v2["records"]) if w[0] == "value" and isinstance(w[1], dict)
++                  and w[1]["items"]), None)
++    perturbed = json.loads(json.dumps(probe))
++    perturbed[1]["items"][0]["confidence"] += 1e-7
++    negative_red = perturbed != probe
++    # Optional imports their importers catch (torchvision: transforms/functional.py accimage, datasets/voc.py
++    # defusedxml); anything else blocked means the guest lacks a module the detector path needs.
++    known_optional = {"accimage", "defusedxml"}
++    unexpected_blocked = sorted(set(v2["blocked_imports"]) - known_optional)
++    ok = (not mismatches and all(models_equal.values()) and not v2["wire_failures"] and not unexpected_blocked
++          and all(r["cases"] for r in by_node.values()) and all(d["ok"] for d in designed.values()))
++    parity = {"status": "PASS" if ok else "FAIL", "nodes": {k: {"verdict": "EXACT" if not v["mismatches"] else "MISMATCH", **v}
++                                                            for k, v in by_node.items()},
++              "designed_differences": designed,
++              "rebuilt_model_equals_checkpoint_model": models_equal, "models": {"original": original["models"], "v2": v2["models"]},
++              "wire_failures": v2["wire_failures"], "guest_blocked_imports": v2["blocked_imports"],
++              "guest_blocked_imports_unexpected": unexpected_blocked,
++              "negative_control": {"perturbation": "one SEG confidence + 1e-7", "turned_red": negative_red}}
++    with open(os.path.join(RESULTS, "parity.json"), "w") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w") as handle:
++        json.dump(mismatches[:100], handle, indent=1)
++        handle.write("\n")
++    print(json.dumps({k: parity[k] for k in ("status", "nodes", "designed_differences", "rebuilt_model_equals_checkpoint_model",
++                                             "wire_failures", "guest_blocked_imports", "negative_control")}, indent=1))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))

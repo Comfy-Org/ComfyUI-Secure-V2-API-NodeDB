@@ -1303,155 +1303,35 @@ async def _clipseg_detector_mask(detector: Any, image: Any) -> torch.Tensor:
     return (prediction > 0.5).float().cpu()
 
 
-_ULTRALYTICS_MODELS: dict[str, tuple[Any, tuple[str, ...], int]] = {}
+_ULTRALYTICS_KINDS = {"impact.ultralytics_bbox": "bbox", "impact.ultralytics_segm": "segm"}
+
+
+def _ultralytics_kind(value: Any) -> str | None:
+    """'bbox' or 'segm' for an Impact Subpack Ultralytics detector descriptor, else None."""
+    if isinstance(value, dict):
+        return _ULTRALYTICS_KINDS.get(value.get("secure_kind"))
+    return None
 
 
 def _is_ultralytics_detector(value: Any) -> bool:
-    return (
-        isinstance(value, dict)
-        and value.get("secure_kind") == "impact.ultralytics_bbox"
-    )
+    return _ultralytics_kind(value) == "bbox"
 
 
-def _ultralytics_recipe(value: Any) -> dict[str, Any]:
-    if not _is_ultralytics_detector(value):
-        raise TypeError(
-            "BBOX_DETECTOR must be a Secure Nodes Ultralytics recipe")
-    weight = value.get("weight")
-    architecture = value.get("architecture")
-    classes = value.get("classes")
-    input_size = value.get("input_size")
-    if (
-        not isinstance(weight, str)
-        or not weight.endswith(".safetensors")
-        or ".." in PurePosixPath(weight).parts
-        or architecture != "yolov8x"
-        or not isinstance(classes, list)
-        or not classes
-        or len(classes) > 256
-        or not all(isinstance(item, str) and item for item in classes)
-        or isinstance(input_size, bool)
-        or not isinstance(input_size, int)
-        or not 64 <= input_size <= 2048
-    ):
-        raise ValueError("Ultralytics detector recipe is invalid")
-    return value
+async def _ultralytics_model(detector: Any) -> tuple[Any, Any]:
+    # Imported here rather than at module import: only the detector path needs the pack's dependency profile
+    # (ultralytics, cv2), and every other node must still load without it.
+    from . import _ultralytics_detector
+
+    if not _ultralytics_detector.is_descriptor(detector, _ultralytics_kind(detector)):
+        raise TypeError("an Impact Subpack Ultralytics detector must name its catalogue and weight")
+    return _ultralytics_detector, await _ultralytics_detector.load_detector(_ctx(), detector)
 
 
-async def _load_ultralytics_model(
-    recipe: dict[str, Any],
-) -> tuple[Any, tuple[str, ...], int]:
-    weight = str(recipe["weight"])
-    cached = _ULTRALYTICS_MODELS.get(weight)
-    if cached is not None:
-        return cached
-
-    # The state dict is parsed by the host's SafeTensors reader and arrives as
-    # tensors. Architecture construction and all YOLO behavior stay here in
-    # the sandboxed pack runtime; repository code/config is never downloaded.
-    asset = await _ctx().assets.resolve("detection", weight)
-    state = await _ctx().assets.load_state_dict(asset)
-    try:
-        from ultralytics.nn.tasks import DetectionModel
-    except ImportError as error:
-        raise RuntimeError(
-            "Ultralytics detector recipes require the pack's pinned "
-            "ultralytics dependency"
-        ) from error
-    normalized = {}
-    for key, tensor in state.items():
-        if not isinstance(key, str) or not key.startswith("model."):
-            raise ValueError(
-                "Ultralytics SafeTensors keys must use the fixed model prefix")
-        normalized[key.removeprefix("model.")] = tensor.detach().cpu()
-    classes = tuple(str(item) for item in recipe["classes"])
-    model = DetectionModel(
-        "yolov8x.yaml", ch=3, nc=len(classes), verbose=False)
-    model.load_state_dict(normalized, strict=True)
-    model.names = {index: name for index, name in enumerate(classes)}
-    model.eval().requires_grad_(False)
-    result = model, classes, int(recipe["input_size"])
-    _ULTRALYTICS_MODELS[weight] = result
-    return result
-
-
-def _letterbox(
-    pixels: torch.Tensor, size: int,
-) -> tuple[torch.Tensor, float, int, int]:
-    height, width = map(int, pixels.shape[1:3])
-    scale = min(float(size) / height, float(size) / width)
-    resized_height = max(1, min(size, round(height * scale)))
-    resized_width = max(1, min(size, round(width * scale)))
-    source = pixels[..., :3].movedim(-1, 1).float()
-    source = torch.nn.functional.interpolate(
-        source, size=(resized_height, resized_width), mode="bilinear",
-        align_corners=False,
-    )
-    pad_x = (size - resized_width) // 2
-    pad_y = (size - resized_height) // 2
-    padded = torch.nn.functional.pad(
-        source,
-        (pad_x, size - resized_width - pad_x,
-         pad_y, size - resized_height - pad_y),
-        value=114.0 / 255.0,
-    )
-    return padded, scale, pad_x, pad_y
-
-
-async def _ultralytics_detect(
-    detector: Any, image: Any, threshold: float, max_detections: int = 4096,
-) -> list[list[dict[str, Any]]]:
-    recipe = _ultralytics_recipe(detector)
+async def _ultralytics_pixels(image: Any) -> torch.Tensor:
     pixels = _image4(await _raw(image))
-    if not 1 <= int(pixels.shape[0]) <= 64:
-        raise ValueError("Ultralytics detector batch must be in [1, 64]")
-    confidence = float(threshold)
-    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
-        raise ValueError("Ultralytics threshold must be in [0, 1]")
-    limit = int(max_detections)
-    if not 1 <= limit <= 4096:
-        raise ValueError("Ultralytics max detections must be in [1, 4096]")
-    model, classes, size = await _load_ultralytics_model(recipe)
-    network_input, scale, pad_x, pad_y = _letterbox(pixels, size)
-    device = next(model.parameters()).device
-    network_input = network_input.to(device)
-    try:
-        from ultralytics.utils.ops import non_max_suppression
-    except ImportError as error:
-        raise RuntimeError("Ultralytics NMS is unavailable") from error
-    with torch.inference_mode():
-        prediction = model(network_input)
-        if isinstance(prediction, (tuple, list)):
-            prediction = prediction[0]
-        selected = non_max_suppression(
-            prediction,
-            conf_thres=confidence,
-            iou_thres=0.7,
-            max_det=limit,
-            nc=len(classes),
-        )
-    height, width = map(int, pixels.shape[1:3])
-    output: list[list[dict[str, Any]]] = []
-    for batch_result in selected:
-        current = []
-        for row in batch_result.detach().cpu():
-            left, top, right, bottom, score, class_index = row[:6].tolist()
-            left = max(0.0, min(float(width), (left - pad_x) / scale))
-            right = max(0.0, min(float(width), (right - pad_x) / scale))
-            top = max(0.0, min(float(height), (top - pad_y) / scale))
-            bottom = max(0.0, min(float(height), (bottom - pad_y) / scale))
-            index = int(class_index)
-            if right <= left or bottom <= top or not 0 <= index < len(classes):
-                continue
-            current.append({
-                "label": classes[index],
-                "score": float(score),
-                "box": [left, top, right, bottom],
-            })
-        output.append(current)
-    if len(output) != int(pixels.shape[0]):
-        raise RuntimeError("Ultralytics detector returned the wrong batch size")
-    return output
+    if pixels.shape[0] != 1:
+        raise ValueError("Impact Ultralytics detectors accept one image at a time")
+    return pixels
 
 
 async def _onnx_detector_provider(model_name, **_kwargs):
@@ -1506,53 +1386,12 @@ async def _onnx_detector_segs_value(
     return (height, width), result
 
 
-async def _ultralytics_detector_segs_value(
-    detector: Any, image: Any, threshold: float, dilation: int,
-    crop_factor: float, drop_size: int, labels: str,
-) -> tuple[tuple[int, int], list[SEG]]:
-    pixels = _image4(await _raw(image))
-    if pixels.shape[0] != 1:
-        raise ValueError("Impact Ultralytics detectors accept one image at a time")
-    height, width = map(int, pixels.shape[1:3])
-    detections = (await _ultralytics_detect(
-        detector, image, threshold))[0]
-    wanted = {part.strip() for part in str(labels).split(",") if part.strip()}
-    result: list[SEG] = []
-    minimum = max(1, int(drop_size))
-    for detection in detections:
-        confidence = float(detection["score"])
-        left_value, top_value, right_value, bottom_value = detection["box"]
-        left = max(0, min(width, math.floor(float(left_value))))
-        top = max(0, min(height, math.floor(float(top_value))))
-        right = max(0, min(width, math.ceil(float(right_value))))
-        bottom = max(0, min(height, math.ceil(float(bottom_value))))
-        if right - left <= minimum or bottom - top <= minimum:
-            continue
-        label = str(detection["label"])
-        if wanted and "all" not in wanted and label not in wanted:
-            continue
-        bbox = (left, top, right, bottom)
-        crop = _expand_box(bbox, float(crop_factor), width, height)
-        crop_left, crop_top, crop_right, crop_bottom = crop
-        mask = torch.zeros((
-            1, crop_bottom - crop_top, crop_right - crop_left,
-        ), dtype=torch.float32)
-        mask[
-            :, top - crop_top:bottom - crop_top,
-            left - crop_left:right - crop_left,
-        ] = 1.0
-        mask = _dilate(mask, int(dilation))
-        result.append(SEG(
-            None, mask, confidence, crop, bbox, label, None))
-    return (height, width), result
-
-
 async def _bbox_detector_combined(bbox_detector, image, threshold, dilation,
                                   **_kwargs):
     if _is_ultralytics_detector(bbox_detector):
-        segs = await _ultralytics_detector_segs_value(
-            bbox_detector, image, threshold, dilation, 1.0, 1, "all")
-        return _one(_combined_mask_value(segs))
+        runtime, yolo = await _ultralytics_model(bbox_detector)
+        return _one(runtime.detect_combined(
+            yolo, "bbox", await _ultralytics_pixels(image), threshold, dilation))
     if _onnx_detector.is_recipe(bbox_detector):
         segs = await _onnx_detector_segs_value(
             bbox_detector, image, threshold, dilation, 1.0, 1, "all")
@@ -1568,12 +1407,12 @@ async def _bbox_detector_segs(
     labels="all", detailer_hook=None, **_kwargs,
 ):
     if _is_ultralytics_detector(bbox_detector):
-        segs = await _ultralytics_detector_segs_value(
-            bbox_detector, image, threshold, dilation, crop_factor,
-            drop_size, labels,
-        )
-        return _one(await _detailer_hook_post_detection(
-            segs, detailer_hook))
+        runtime, yolo = await _ultralytics_model(bbox_detector)
+        segs = runtime.to_v2_segs(runtime.detect_segs(
+            yolo, "bbox", await _ultralytics_pixels(image), threshold, dilation,
+            crop_factor, drop_size), SEG)
+        segs = await _detailer_hook_post_detection(segs, detailer_hook)
+        return _one(runtime.label_filter(segs, labels))
     if _onnx_detector.is_recipe(bbox_detector):
         segs = await _onnx_detector_segs_value(
             bbox_detector, image, threshold, dilation, crop_factor,
@@ -1595,6 +1434,10 @@ async def _bbox_detector_segs(
 async def _segm_detector_combined(
     segm_detector, image, threshold, dilation, **_kwargs,
 ):
+    if _ultralytics_kind(segm_detector) == "segm":
+        runtime, yolo = await _ultralytics_model(segm_detector)
+        return _one(runtime.detect_combined(
+            yolo, "segm", await _ultralytics_pixels(image), threshold, dilation))
     # A converted provider must expose a closed data recipe. The current
     # CLIPSeg provider is mask-native, so it can safely satisfy segmentation
     # consumers without invoking a detector callback object.
@@ -1606,6 +1449,13 @@ async def _segm_detector_segs(
     segm_detector, image, threshold, dilation, crop_factor, drop_size,
     labels="all", detailer_hook=None, **_kwargs,
 ):
+    if _ultralytics_kind(segm_detector) == "segm":
+        runtime, yolo = await _ultralytics_model(segm_detector)
+        segs = runtime.to_v2_segs(runtime.detect_segs(
+            yolo, "segm", await _ultralytics_pixels(image), threshold, dilation,
+            crop_factor, drop_size), SEG)
+        segs = await _detailer_hook_post_detection(segs, detailer_hook)
+        return _one(runtime.label_filter(segs, labels))
     del threshold, dilation
     mask = await _clipseg_detector_mask(segm_detector, image)
     header, items = _mask_to_segs_value(
