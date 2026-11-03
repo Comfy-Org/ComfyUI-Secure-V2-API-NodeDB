@@ -3,10 +3,10 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 68 of the 220 registered node ids are converted. The other 152 are registered with their real schemas and refuse
+Status: 71 of the 220 registered node ids are converted. The other 149 are registered with their real schemas and refuse
 with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-so core never calls its validate_inputs), when it runs. Image Lucy Sharpen and Mask Fill Holes refuse with their own
-message (Known differences). The original declares one more id,
+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
+with their own message (Known differences). The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14662-14720). It is not registered here.
 
@@ -29,6 +29,7 @@ Converted:
   config for the latter), Upscale Model Loader (`models.load_upscale_model`), Random Number, Image Stitch and Mask
   Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
   `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
+- Round 6: Image Transpose, Mask Invert and Image Flip.
 
 ## How the conversion is built
 
@@ -95,6 +96,8 @@ every registered id against the original. A tampered output must turn the compar
 - Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
   (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
   yet. They return once it does.
+- Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
+  and a Secure Nodes V2 node has no network access.
 - Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
   conditioning counts as present even if it is an empty list.
 - Upscale Model Loader loads through the host, as core's UpscaleModelLoader does. Two differences from the original

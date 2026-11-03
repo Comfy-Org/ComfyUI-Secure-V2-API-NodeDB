@@ -58,3 +58,8 @@ NEEDS_SCIPY = (
     f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
     "which the guest runtime for this pack does not provide yet."
 )
+
+NO_NETWORK = (
+    f"{PACK}/{{node}} is not available on Secure Nodes V2: the original fetches its prompts from an online search "
+    "service when it runs, and a Secure Nodes V2 node has no network access."
+)

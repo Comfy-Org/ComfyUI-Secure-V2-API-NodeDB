@@ -2842,6 +2842,121 @@ class WAS_Mask_Gaussian_Region:
             return (region_tensor,)
 
 
+# --- WAS_Node_Suite.py:5191-5242
+class WAS_Image_Transpose:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "image_overlay": ("IMAGE",),
+                "width": ("INT", {"default": 512, "min": -48000, "max": 48000, "step": 1}),
+                "height": ("INT", {"default": 512, "min": -48000, "max": 48000, "step": 1}),
+                "X": ("INT", {"default": 0, "min": -48000, "max": 48000, "step": 1}),
+                "Y": ("INT", {"default": 0, "min": -48000, "max": 48000, "step": 1}),
+                "rotation": ("INT", {"default": 0, "min": -360, "max": 360, "step": 1}),
+                "feathering": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_transpose"
+
+    CATEGORY = "WAS Suite/Image/Transform"
+
+    def image_transpose(self, image: torch.Tensor, image_overlay: torch.Tensor, width: int, height: int, X: int, Y: int, rotation: int, feathering: int = 0):
+        return (pil2tensor(self.apply_transpose_image(tensor2pil(image), tensor2pil(image_overlay), (width, height), (X, Y), rotation, feathering)), )
+
+    def apply_transpose_image(self, image_bg, image_element, size, loc, rotate=0, feathering=0):
+
+        # Apply transformations to the element image
+        image_element = image_element.rotate(rotate, expand=True)
+        image_element = image_element.resize(size)
+
+        # Create a mask for the image with the faded border
+        if feathering > 0:
+            mask = Image.new('L', image_element.size, 255)  # Initialize with 255 instead of 0
+            draw = ImageDraw.Draw(mask)
+            for i in range(feathering):
+                alpha_value = int(255 * (i + 1) / feathering)  # Invert the calculation for alpha value
+                draw.rectangle((i, i, image_element.size[0] - i, image_element.size[1] - i), fill=alpha_value)
+            alpha_mask = Image.merge('RGBA', (mask, mask, mask, mask))
+            image_element = Image.composite(image_element, Image.new('RGBA', image_element.size, (0, 0, 0, 0)), alpha_mask)
+
+        # Create a new image of the same size as the base image with an alpha channel
+        new_image = Image.new('RGBA', image_bg.size, (0, 0, 0, 0))
+        new_image.paste(image_element, loc)
+
+        # Paste the new image onto the base image
+        image_bg = image_bg.convert('RGBA')
+        image_bg.paste(new_image, (0, 0), new_image)
+
+        return image_bg
+
+
+# --- WAS_Node_Suite.py:8502-8523
+class WAS_Mask_Invert:
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+                    "required": {
+                        "masks": ("MASK",),
+                    }
+                }
+
+    CATEGORY = "WAS Suite/Image/Masking"
+
+    RETURN_TYPES = ("MASK",)
+    RETURN_NAMES = ("MASKS",)
+
+    FUNCTION = "add_masks"
+
+    def add_masks(self, masks):
+        return (1. - masks,)
+
+
+# --- WAS_Node_Suite.py:6349-6380
+class WAS_Image_Flip:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "mode": (["horizontal", "vertical",],),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "image_flip"
+
+    CATEGORY = "WAS Suite/Image/Transform"
+
+    def image_flip(self, images, mode):
+
+        batch_tensor = []
+        for image in images:
+            image = tensor2pil(image)
+            if mode == 'horizontal':
+                image = image.transpose(0)
+            if mode == 'vertical':
+                image = image.transpose(1)
+            batch_tensor.append(pil2tensor(image))
+        batch_tensor = torch.cat(batch_tensor, dim=0)
+
+        return (batch_tensor, )
+
+
 # --- WAS_Node_Suite.py:1022-1025 (class line and docstring; selected members follow)
 class WAS_Tools_Class():
     """

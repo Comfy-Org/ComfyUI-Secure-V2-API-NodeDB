@@ -534,6 +534,28 @@ CASES += [
                                    probe(files=['11', 0]))),
 ]
 
+# ---- phase B batch 6 (r6): transforms, mask invert, and a refusal by name
+CASES += [
+    case('image-transpose', g(image(width=40, height=32, seed=18), test_image('5', width=16, height=12, seed=19),
+                              node('11', 'Image Transpose', image=['2', 0], image_overlay=['5', 0], width=12, height=10,
+                                   X=4, Y=3, rotation=30, feathering=2),
+                              probe(image=['11', 0]))),
+    case('image-transpose-negative-offset', g(image(width=40, height=32, seed=20), test_image('5', seed=21),
+                                              node('11', 'Image Transpose', image=['2', 0], image_overlay=['5', 0],
+                                                   width=20, height=16, X=-5, Y=30, rotation=0, feathering=0),
+                                              probe(image=['11', 0]))),
+    case('mask-invert', g(image(batch=2, seed=22), mask_from(), node('11', 'Mask Invert', masks=['30', 1]),
+                          probe(files=['11', 0]))),
+] + [
+    case(f'image-flip-{mode}', g(image(batch=2, seed=23), node('11', 'Image Flip', images=['2', 0], mode=mode),
+                                 probe(image=['11', 0])))
+    for mode in ('horizontal', 'vertical')
+] + [
+    case('text-random-prompt-no-network', g(node('11', 'Text Random Prompt', search_seed='cats'),
+                                            probe(text=['11', 0])),
+         expect='refused-named:fetches its prompts from an online search service'),
+]
+
 
 def run_side(side):
     out = WORK / side

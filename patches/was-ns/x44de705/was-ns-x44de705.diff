@@ -1,15 +1,15 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,114 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 68 of the 220 registered node ids are converted. The other 152 are registered with their real schemas and refuse
++Status: 71 of the 220 registered node ids are converted. The other 149 are registered with their real schemas and refuse
 +with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen and Mask Fill Holes refuse with their own
-+message (Known differences). The original declares one more id,
++so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
++with their own message (Known differences). The original declares one more id,
 +`CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 +(WAS_Node_Suite.py:14662-14720). It is not registered here.
 +
@@ -32,6 +32,7 @@
 +  config for the latter), Upscale Model Loader (`models.load_upscale_model`), Random Number, Image Stitch and Mask
 +  Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
 +  `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
++- Round 6: Image Transpose, Mask Invert and Image Flip.
 +
 +## How the conversion is built
 +
@@ -98,6 +99,8 @@
 +- Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
 +  (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
 +  yet. They return once it does.
++- Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
++  and a Secure Nodes V2 node has no network access.
 +- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
 +  conditioning counts as present even if it is an empty list.
 +- Upscale Model Loader loads through the host, as core's UpscaleModelLoader does. Two differences from the original
@@ -5083,7 +5086,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28669 @@
+@@ -0,0 +1,28651 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -12700,7 +12703,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -12782,13 +12785,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Generate Gradient": {
 +      "class": "WAS_V2_Image_Generate_Gradient_7893853e",
@@ -18890,7 +18887,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -19073,13 +19070,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Voronoi Noise Filter": {
 +      "class": "WAS_V2_Image_Voronoi_Noise_Filter_04003fce",
@@ -24491,7 +24482,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -24546,13 +24537,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Mask Minority Region": {
 +      "class": "WAS_V2_Mask_Minority_Region_e8c00dd3",
@@ -33898,7 +33883,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,823 @@
+@@ -0,0 +1,845 @@
 +"""Tier-1 parity: WAS Node Suite fork (44de7058) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -34433,6 +34418,28 @@
 +    case('mask-gaussian-region', g(image(seed=16), mask_from(),
 +                                   node('11', 'Mask Gaussian Region', masks=['30', 1], radius=3.0),
 +                                   probe(files=['11', 0]))),
++]
++
++# ---- phase B batch 6 (r6): transforms, mask invert, and a refusal by name
++CASES += [
++    case('image-transpose', g(image(width=40, height=32, seed=18), test_image('5', width=16, height=12, seed=19),
++                              node('11', 'Image Transpose', image=['2', 0], image_overlay=['5', 0], width=12, height=10,
++                                   X=4, Y=3, rotation=30, feathering=2),
++                              probe(image=['11', 0]))),
++    case('image-transpose-negative-offset', g(image(width=40, height=32, seed=20), test_image('5', seed=21),
++                                              node('11', 'Image Transpose', image=['2', 0], image_overlay=['5', 0],
++                                                   width=20, height=16, X=-5, Y=30, rotation=0, feathering=0),
++                                              probe(image=['11', 0]))),
++    case('mask-invert', g(image(batch=2, seed=22), mask_from(), node('11', 'Mask Invert', masks=['30', 1]),
++                          probe(files=['11', 0]))),
++] + [
++    case(f'image-flip-{mode}', g(image(batch=2, seed=23), node('11', 'Image Flip', images=['2', 0], mode=mode),
++                                 probe(image=['11', 0])))
++    for mode in ('horizontal', 'vertical')
++] + [
++    case('text-random-prompt-no-network', g(node('11', 'Text Random Prompt', search_seed='cats'),
++                                            probe(text=['11', 0])),
++         expect='refused-named:fetches its prompts from an online search service'),
 +]
 +
 +
@@ -35172,7 +35179,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,439 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35191,7 +35198,7 @@
 +
 +from . import originals
 +from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY,
++                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY, NO_NETWORK,
 +                       SecureConversionRefusal, not_converted)
 +from .schema_v3 import ROWS, build_schema
 +from .tokens import TextTokens
@@ -35269,6 +35276,10 @@
 +    "Random Number": ("WAS_Random_Number", "return_randm_number"),
 +    "Image Stitch": ("WAS_Image_Stitch", "image_stitching"),
 +    "Mask Gaussian Region": ("WAS_Mask_Gaussian_Region", "gaussian_region"),
++    # phase B batch 6 (r6)
++    "Image Transpose": ("WAS_Image_Transpose", "image_transpose"),
++    "Mask Invert": ("WAS_Mask_Invert", "add_masks"),
++    "Image Flip": ("WAS_Image_Flip", "image_flip"),
 +}
 +# WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 +# toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -35277,6 +35288,7 @@
 +_NAMED_REFUSALS = {
 +    "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
 +    "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
++    "Text Random Prompt": NO_NETWORK.format(node="Text Random Prompt"),
 +}
 +# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
 +# Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
@@ -35609,7 +35621,7 @@
 +CONVERTED_IDS = sorted(_CONVERTED)
 --- /dev/null
 +++ b/v2/was_v2/originals.py
-@@ -0,0 +1,2943 @@
+@@ -0,0 +1,3058 @@
 +"""Functions and node classes copied verbatim from WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4.
 +
 +The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
@@ -38454,6 +38466,121 @@
 +            return (region_tensor,)
 +
 +
++# --- WAS_Node_Suite.py:5191-5242
++class WAS_Image_Transpose:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "image_overlay": ("IMAGE",),
++                "width": ("INT", {"default": 512, "min": -48000, "max": 48000, "step": 1}),
++                "height": ("INT", {"default": 512, "min": -48000, "max": 48000, "step": 1}),
++                "X": ("INT", {"default": 0, "min": -48000, "max": 48000, "step": 1}),
++                "Y": ("INT", {"default": 0, "min": -48000, "max": 48000, "step": 1}),
++                "rotation": ("INT", {"default": 0, "min": -360, "max": 360, "step": 1}),
++                "feathering": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "image_transpose"
++
++    CATEGORY = "WAS Suite/Image/Transform"
++
++    def image_transpose(self, image: torch.Tensor, image_overlay: torch.Tensor, width: int, height: int, X: int, Y: int, rotation: int, feathering: int = 0):
++        return (pil2tensor(self.apply_transpose_image(tensor2pil(image), tensor2pil(image_overlay), (width, height), (X, Y), rotation, feathering)), )
++
++    def apply_transpose_image(self, image_bg, image_element, size, loc, rotate=0, feathering=0):
++
++        # Apply transformations to the element image
++        image_element = image_element.rotate(rotate, expand=True)
++        image_element = image_element.resize(size)
++
++        # Create a mask for the image with the faded border
++        if feathering > 0:
++            mask = Image.new('L', image_element.size, 255)  # Initialize with 255 instead of 0
++            draw = ImageDraw.Draw(mask)
++            for i in range(feathering):
++                alpha_value = int(255 * (i + 1) / feathering)  # Invert the calculation for alpha value
++                draw.rectangle((i, i, image_element.size[0] - i, image_element.size[1] - i), fill=alpha_value)
++            alpha_mask = Image.merge('RGBA', (mask, mask, mask, mask))
++            image_element = Image.composite(image_element, Image.new('RGBA', image_element.size, (0, 0, 0, 0)), alpha_mask)
++
++        # Create a new image of the same size as the base image with an alpha channel
++        new_image = Image.new('RGBA', image_bg.size, (0, 0, 0, 0))
++        new_image.paste(image_element, loc)
++
++        # Paste the new image onto the base image
++        image_bg = image_bg.convert('RGBA')
++        image_bg.paste(new_image, (0, 0), new_image)
++
++        return image_bg
++
++
++# --- WAS_Node_Suite.py:8502-8523
++class WAS_Mask_Invert:
++
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++                    "required": {
++                        "masks": ("MASK",),
++                    }
++                }
++
++    CATEGORY = "WAS Suite/Image/Masking"
++
++    RETURN_TYPES = ("MASK",)
++    RETURN_NAMES = ("MASKS",)
++
++    FUNCTION = "add_masks"
++
++    def add_masks(self, masks):
++        return (1. - masks,)
++
++
++# --- WAS_Node_Suite.py:6349-6380
++class WAS_Image_Flip:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "images": ("IMAGE",),
++                "mode": (["horizontal", "vertical",],),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    RETURN_NAMES = ("images",)
++    FUNCTION = "image_flip"
++
++    CATEGORY = "WAS Suite/Image/Transform"
++
++    def image_flip(self, images, mode):
++
++        batch_tensor = []
++        for image in images:
++            image = tensor2pil(image)
++            if mode == 'horizontal':
++                image = image.transpose(0)
++            if mode == 'vertical':
++                image = image.transpose(1)
++            batch_tensor.append(pil2tensor(image))
++        batch_tensor = torch.cat(batch_tensor, dim=0)
++
++        return (batch_tensor, )
++
++
 +# --- WAS_Node_Suite.py:1022-1025 (class line and docstring; selected members follow)
 +class WAS_Tools_Class():
 +    """
@@ -38555,7 +38682,7 @@
 +            return image.convert("RGB")
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,65 @@
 +"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
 +
 +PACK = "was-ns"
@@ -38615,6 +38742,11 @@
 +NEEDS_SCIPY = (
 +    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
 +    "which the guest runtime for this pack does not provide yet."
++)
++
++NO_NETWORK = (
++    f"{PACK}/{{node}} is not available on Secure Nodes V2: the original fetches its prompts from an online search "
++    "service when it runs, and a Secure Nodes V2 node has no network access."
 +)
 --- /dev/null
 +++ b/v2/was_v2/schema_v3.py

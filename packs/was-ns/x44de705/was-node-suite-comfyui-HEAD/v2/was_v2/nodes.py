@@ -16,7 +16,7 @@ from comfy_api.latest import io, sdk
 
 from . import originals
 from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY,
+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY, NO_NETWORK,
                        SecureConversionRefusal, not_converted)
 from .schema_v3 import ROWS, build_schema
 from .tokens import TextTokens
@@ -94,6 +94,10 @@ _PURE = {
     "Random Number": ("WAS_Random_Number", "return_randm_number"),
     "Image Stitch": ("WAS_Image_Stitch", "image_stitching"),
     "Mask Gaussian Region": ("WAS_Mask_Gaussian_Region", "gaussian_region"),
+    # phase B batch 6 (r6)
+    "Image Transpose": ("WAS_Image_Transpose", "image_transpose"),
+    "Mask Invert": ("WAS_Mask_Invert", "add_masks"),
+    "Image Flip": ("WAS_Image_Flip", "image_flip"),
 }
 # WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 # toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -102,6 +106,7 @@ _SKIP_INIT = {"Masks Combine Batch"}
 _NAMED_REFUSALS = {
     "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
     "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
+    "Text Random Prompt": NO_NETWORK.format(node="Text Random Prompt"),
 }
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
 # Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
