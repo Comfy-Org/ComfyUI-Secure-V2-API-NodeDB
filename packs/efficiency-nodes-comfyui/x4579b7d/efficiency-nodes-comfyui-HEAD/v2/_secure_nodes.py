@@ -1182,7 +1182,7 @@ async def _xy_manual(plot_type, plot_value, **_kwargs):
     return ((plot_type, parsed),) if parsed else (None,)
 
 
-def _xy_plot(
+async def _xy_plot(
     grid_spacing,
     XY_flip,
     Y_label_orientation,
@@ -1194,7 +1194,11 @@ def _xy_plot(
     my_unique_id=None,
     **_kwargs,
 ):
-    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple."""
+    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple. Its ninth item
+    is the node's own id, the original's hidden UNIQUE_ID (efficiency_nodes.py:2361, 2452-2453). A guest calls
+    execute directly, without core's hidden holder, so my_unique_id arrives as None there; the id comes from
+    ctx.graph.current_node_id() (permission "graph"): the executing node's id, on the host and in-process alike."""
+    del my_unique_id
     x_type, x_values = X if X is not None else ("Nothing", [""])
     y_type, y_values = Y if Y is not None else ("Nothing", [""])
     if x_type != "XY_Capsule" and x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
@@ -1230,8 +1234,9 @@ def _xy_plot(
     if XY_flip == "True":
         x_type, y_type, x_values, y_values = y_type, x_type, y_values, x_values
     xyplot_as_output_image = ksampler_output_image == "Plot"
+    node_id = str(await _ctx().graph.current_node_id())
     return ({"xyplot": (x_type, x_values, y_type, y_values, grid_spacing, Y_label_orientation, cache_models,
-                        xyplot_as_output_image, my_unique_id, dependencies)},)
+                        xyplot_as_output_image, node_id, dependencies)},)
 
 
 # Loader and sampler handlers are defined below, after their shared utilities.
@@ -2881,6 +2886,8 @@ for _node_id in {
 }:
     _PERMISSIONS[_node_id] = ("assets",)
 _PERMISSIONS["Image Overlay"] = ("raw",)
+# XY Plot reads its own node id (the original's hidden UNIQUE_ID) from the graph domain.
+_PERMISSIONS["XY Plot"] = ("graph",)
 
 
 NODE_CLASS_MAPPINGS = {

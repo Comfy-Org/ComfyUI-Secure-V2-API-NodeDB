@@ -12,6 +12,8 @@ Harness facts, both sides:
   * Test-only nodes (AMY*) produce inputs and probe outputs; core's PreviewAny, ImageBatch, SaveImage and
     EmptyLatentImage are the real ones.
 V2 side only:
+  * The live guest calls execute without core's hidden holder, so the harness clears cls.hidden before each V2 node's
+    execute (hidden values such as UNIQUE_ID never reach a V2 node live).
   * The live runtime runs V2 nodes out of process: each result and UI crosses the guest wire, whose encoder refuses
     anything but refs, JSON scalars and containers (overlay comfy_secure_nodes/transport/wire.py encode()). The
     in-process SDK of core never encodes, so the harness runs that same encode() (loaded read-only from the overlay
@@ -338,6 +340,28 @@ if SIDE == 'v2' and loaded:
             wrapped += 1
         HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
 
+# ---- the guest's call shape, V2 side
+# The live guest calls a V2 node's execute on the pack's own class (overlay guest/adapter.py invoke ->
+# entry_point -> cls.execute(**inputs)), without core's hidden holder, so the node sees cls.hidden as None there.
+# Core's in-process executor fills cls.hidden on a locked per-call class clone instead; the harness runs the node's own
+# execute on a subclass of that clone whose hidden is None, so hidden values reach V2 exactly as they do live (not at
+# all).
+GUEST_HIDDEN = None
+if SIDE == 'v2' and loaded:
+    cleared = 0
+    for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
+        if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
+            continue
+        node_execute = cls.__dict__['execute'].__func__
+
+        async def execute(klass, _node_execute=node_execute, **kwargs):
+            guest_class = type(klass.__name__, (klass,), {'hidden': None})
+            return await _node_execute(guest_class, **kwargs)
+
+        cls.execute = classmethod(execute)
+        cleared += 1
+    GUEST_HIDDEN = f'execute runs with hidden None on {cleared} V2 nodes (live guest call shape)'
+
 
 class Server:
     def __init__(self):
@@ -399,7 +423,7 @@ def run_case(case):
 def main():
     cases = json.loads(Path(CASES).read_text())
     report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
-              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
+              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS, 'guest_hidden': GUEST_HIDDEN,
               'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
               'routes': len(server.PromptServer.instance.routes), 'cases': []}
     if loaded:

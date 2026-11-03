@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,91 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `4579b7d6076b2870998a08f5d37883fbc8261ff2`. The sealed node schemas and permissions are in `secure-nodes.json`.
@@ -78,6 +78,20 @@
 +The City96 latent upscalers (`city96.v1`, `city96.xl`) are unchanged. They are declared by repository, revision and
 +sha256, and they load SafeTensors through `assets.load_state_dict`. With upscale_type "pixel" or "both", the latent
 +upscaler choice is not used, as in the original, so a TTL choice there is not refused.
++
++## Repair round r4: XY Plot carries its own node id
++
++The original XY Plot puts its hidden UNIQUE_ID, the node's own id, in the ninth slot of the SCRIPT tuple
++(`efficiency_nodes.py:2361`, `2452-2453`). A secure guest runs a node's execute without core's hidden values, so that
++slot was null. XY Plot now reads the executing node's id from `ctx.graph.current_node_id()` and declares the `graph`
++permission for it. The tuple is otherwise unchanged.
++
++Known difference (Tiled Upscaler Script): before the tiled sampler, the original scales the decoded image with
++ImageScaleBy and encodes the result. That image keeps core's NCHW memory behind an NHWC view, so the VAE encoder
++reads contiguous NCHW memory. In this build the guest scales the image itself, and the new image reaches the host as
++contiguous NHWC memory, so the encoder reads channels-last memory. The pixel values are the same, but the encoder's
++arithmetic runs in a different order, and the latent can differ in the last bits. The tiled sampler can amplify that
++difference. The SDK has no host-side image scale, so this build cannot keep the original's memory layout.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,18 +1,14 @@
@@ -28920,7 +28934,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,2902 @@
+@@ -0,0 +1,2909 @@
 +"""Secure Nodes 2.0 implementations for Efficiency Nodes' pinned surface.
 +
 +The original pack mixes workflow data helpers with global monkey patches,
@@ -30105,7 +30119,7 @@
 +    return ((plot_type, parsed),) if parsed else (None,)
 +
 +
-+def _xy_plot(
++async def _xy_plot(
 +    grid_spacing,
 +    XY_flip,
 +    Y_label_orientation,
@@ -30117,7 +30131,11 @@
 +    my_unique_id=None,
 +    **_kwargs,
 +):
-+    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple."""
++    """XY Plot as the original (efficiency_nodes.py:2369-2455), packing the original's ten-item tuple. Its ninth item
++    is the node's own id, the original's hidden UNIQUE_ID (efficiency_nodes.py:2361, 2452-2453). A guest calls
++    execute directly, without core's hidden holder, so my_unique_id arrives as None there; the id comes from
++    ctx.graph.current_node_id() (permission "graph"): the executing node's id, on the host and in-process alike."""
++    del my_unique_id
 +    x_type, x_values = X if X is not None else ("Nothing", [""])
 +    y_type, y_values = Y if Y is not None else ("Nothing", [""])
 +    if x_type != "XY_Capsule" and x_type == y_type and x_type not in {"Positive Prompt S/R", "Negative Prompt S/R"}:
@@ -30153,8 +30171,9 @@
 +    if XY_flip == "True":
 +        x_type, y_type, x_values, y_values = y_type, x_type, y_values, x_values
 +    xyplot_as_output_image = ksampler_output_image == "Plot"
++    node_id = str(await _ctx().graph.current_node_id())
 +    return ({"xyplot": (x_type, x_values, y_type, y_values, grid_spacing, Y_label_orientation, cache_models,
-+                        xyplot_as_output_image, my_unique_id, dependencies)},)
++                        xyplot_as_output_image, node_id, dependencies)},)
 +
 +
 +# Loader and sampler handlers are defined below, after their shared utilities.
@@ -31804,6 +31823,8 @@
 +}:
 +    _PERMISSIONS[_node_id] = ("assets",)
 +_PERMISSIONS["Image Overlay"] = ("raw",)
++# XY Plot reads its own node id (the original's hidden UNIQUE_ID) from the graph domain.
++_PERMISSIONS["XY Plot"] = ("graph",)
 +
 +
 +NODE_CLASS_MAPPINGS = {
@@ -41127,7 +41148,7 @@
 -Models = [{location = "/checkpoints/model.safetensor", model_url = "https://example.com/model.zip"}]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,31317 @@
+@@ -0,0 +1,31319 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -72221,7 +72242,9 @@
 +        "validate_inputs": false
 +      },
 +      "module": "_secure_nodes",
-+      "permissions": [],
++      "permissions": [
++        "graph"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -72447,7 +72470,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/eff_parity_worker.py
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,440 @@
 +"""One side of the efficiency-nodes-comfyui repair-round parity run (to-50% gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -72462,6 +72485,8 @@
 +  * Test-only nodes (AMY*) produce inputs and probe outputs; core's PreviewAny, ImageBatch, SaveImage and
 +    EmptyLatentImage are the real ones.
 +V2 side only:
++  * The live guest calls execute without core's hidden holder, so the harness clears cls.hidden before each V2 node's
++    execute (hidden values such as UNIQUE_ID never reach a V2 node live).
 +  * The live runtime runs V2 nodes out of process: each result and UI crosses the guest wire, whose encoder refuses
 +    anything but refs, JSON scalars and containers (overlay comfy_secure_nodes/transport/wire.py encode()). The
 +    in-process SDK of core never encodes, so the harness runs that same encode() (loaded read-only from the overlay
@@ -72788,6 +72813,28 @@
 +            wrapped += 1
 +        HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
 +
++# ---- the guest's call shape, V2 side
++# The live guest calls a V2 node's execute on the pack's own class (overlay guest/adapter.py invoke ->
++# entry_point -> cls.execute(**inputs)), without core's hidden holder, so the node sees cls.hidden as None there.
++# Core's in-process executor fills cls.hidden on a locked per-call class clone instead; the harness runs the node's own
++# execute on a subclass of that clone whose hidden is None, so hidden values reach V2 exactly as they do live (not at
++# all).
++GUEST_HIDDEN = None
++if SIDE == 'v2' and loaded:
++    cleared = 0
++    for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
++        if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
++            continue
++        node_execute = cls.__dict__['execute'].__func__
++
++        async def execute(klass, _node_execute=node_execute, **kwargs):
++            guest_class = type(klass.__name__, (klass,), {'hidden': None})
++            return await _node_execute(guest_class, **kwargs)
++
++        cls.execute = classmethod(execute)
++        cleared += 1
++    GUEST_HIDDEN = f'execute runs with hidden None on {cleared} V2 nodes (live guest call shape)'
++
 +
 +class Server:
 +    def __init__(self):
@@ -72849,7 +72896,7 @@
 +def main():
 +    cases = json.loads(Path(CASES).read_text())
 +    report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
-+              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
++              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS, 'guest_hidden': GUEST_HIDDEN,
 +              'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
 +              'routes': len(server.PromptServer.instance.routes), 'cases': []}
 +    if loaded:
@@ -73300,14 +73347,15 @@
 +    BOUNDARY.clear()
 --- /dev/null
 +++ b/v2/tests/test_efficiency_repair_parity.py
-@@ -0,0 +1,230 @@
+@@ -0,0 +1,238 @@
 +"""Tier-1 parity for efficiency-nodes-comfyui repair rounds: the pristine pack (4579b7d6) vs the repaired V2 conversion.
 +
 +Run in the to-50% gate:
 +  run_in_gate.sh <pack root> <v2/tests> <results> test_efficiency_repair_parity.py [ROUND] [CASE-FILTER]
 +
 +Two workers execute the same prompts through ComfyUI's real executor (eff_parity_worker.py); the V2 worker runs the
-+live guest-wire encoder on every V2 node's results and UI, and applies the live host's catalogue menus. Each case
++live guest-wire encoder on every V2 node's results and UI, applies the live host's catalogue menus, and calls each V2
++node's execute the way the live guest does, without core's hidden values (round r4). Each case
 +declares its expected outcome (EXACT, ERROR-PARITY, KNOWN-DIFFERENCE). A V2-only check then confirms that the
 +samplers' normalisers turn each SCRIPT tuple back into exactly the fields their sampling code reads.
 +Cases use synthetic inputs only; no upstream media, workflows or model files.
@@ -73321,7 +73369,7 @@
 +TESTS = Path(__file__).resolve().parent
 +RESULTS = Path('/results')
 +WORK = Path('/tmp/amy-eff-parity')
-+ROUNDS = ['r1']
++ROUNDS = ['r1', 'r4']
 +ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 +FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
 +CONTROLNET = 'amy-cn.safetensors'
@@ -73392,7 +73440,8 @@
 +    case('noise-then-tile', g(noise(), tile(script=['1', 0]), preview(['2', 0]))),
 +    case('tile-then-noise', g(tile(), noise(node_id='3', script=['2', 0]), preview(['3', 0]))),
 +    case('xyplot-seeds-cfg', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0]), preview(['plot', 0])),
-+         note='live A/B defect: the xyplot value was a dict with named keys'),
++         note='live A/B defects: the xyplot value was a dict with named keys (r1); live, the tuple carried null for '
++              'the node id, because a guest gets no hidden values (r4)'),
 +    case('xyplot-flip-plot', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0], XY_flip='True', ksampler_output_image='Plot',
 +                                                  cache_models='False', grid_spacing=0, Y_label_orientation='Vertical'),
 +                               preview(['plot', 0]))),
@@ -73401,7 +73450,13 @@
 +    case('xyplot-same-type', g(SEEDS, n('x2', 'XY Input: Seeds++ Batch', batch_count=3), xyplot(['x', 0], ['x2', 0]),
 +                               preview(['plot', 0]))),
 +]
-+CASES_BY_ROUND = {'r1': R1_CASES}
++R4_CASES = [
++    case('xyplot-numeric-id', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0], node_id='12'), preview(['12', 0])),
++         note='the node id in the tuple is the executing node id, not a fixed label'),
++    case('xyplot-steps-flip-id', g(STEPS, CFG, xyplot(['s', 0], ['y', 0], node_id='7', XY_flip='True'),
++                                   preview(['7', 0]))),
++]
++CASES_BY_ROUND = {'r1': R1_CASES, 'r4': R4_CASES}
 +CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 +if FILTER:
 +    CASES = [c for c in CASES if FILTER in c['name']]

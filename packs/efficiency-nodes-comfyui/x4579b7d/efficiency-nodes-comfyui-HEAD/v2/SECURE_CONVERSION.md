@@ -75,3 +75,17 @@ upscalers reached is removed, and so are the two .pt files: this snapshot omits 
 The City96 latent upscalers (`city96.v1`, `city96.xl`) are unchanged. They are declared by repository, revision and
 sha256, and they load SafeTensors through `assets.load_state_dict`. With upscale_type "pixel" or "both", the latent
 upscaler choice is not used, as in the original, so a TTL choice there is not refused.
+
+## Repair round r4: XY Plot carries its own node id
+
+The original XY Plot puts its hidden UNIQUE_ID, the node's own id, in the ninth slot of the SCRIPT tuple
+(`efficiency_nodes.py:2361`, `2452-2453`). A secure guest runs a node's execute without core's hidden values, so that
+slot was null. XY Plot now reads the executing node's id from `ctx.graph.current_node_id()` and declares the `graph`
+permission for it. The tuple is otherwise unchanged.
+
+Known difference (Tiled Upscaler Script): before the tiled sampler, the original scales the decoded image with
+ImageScaleBy and encodes the result. That image keeps core's NCHW memory behind an NHWC view, so the VAE encoder
+reads contiguous NCHW memory. In this build the guest scales the image itself, and the new image reaches the host as
+contiguous NHWC memory, so the encoder reads channels-last memory. The pixel values are the same, but the encoder's
+arithmetic runs in a different order, and the latent can differ in the last bits. The tiled sampler can amplify that
+difference. The SDK has no host-side image scale, so this build cannot keep the original's memory layout.

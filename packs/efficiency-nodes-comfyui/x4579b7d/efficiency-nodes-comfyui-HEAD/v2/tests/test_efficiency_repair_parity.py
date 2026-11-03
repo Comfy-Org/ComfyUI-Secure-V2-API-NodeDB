@@ -4,7 +4,8 @@ Run in the to-50% gate:
   run_in_gate.sh <pack root> <v2/tests> <results> test_efficiency_repair_parity.py [ROUND] [CASE-FILTER]
 
 Two workers execute the same prompts through ComfyUI's real executor (eff_parity_worker.py); the V2 worker runs the
-live guest-wire encoder on every V2 node's results and UI, and applies the live host's catalogue menus. Each case
+live guest-wire encoder on every V2 node's results and UI, applies the live host's catalogue menus, and calls each V2
+node's execute the way the live guest does, without core's hidden values (round r4). Each case
 declares its expected outcome (EXACT, ERROR-PARITY, KNOWN-DIFFERENCE). A V2-only check then confirms that the
 samplers' normalisers turn each SCRIPT tuple back into exactly the fields their sampling code reads.
 Cases use synthetic inputs only; no upstream media, workflows or model files.
@@ -18,7 +19,7 @@ import sys
 TESTS = Path(__file__).resolve().parent
 RESULTS = Path('/results')
 WORK = Path('/tmp/amy-eff-parity')
-ROUNDS = ['r1']
+ROUNDS = ['r1', 'r4']
 ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
 CONTROLNET = 'amy-cn.safetensors'
@@ -89,7 +90,8 @@ R1_CASES = [
     case('noise-then-tile', g(noise(), tile(script=['1', 0]), preview(['2', 0]))),
     case('tile-then-noise', g(tile(), noise(node_id='3', script=['2', 0]), preview(['3', 0]))),
     case('xyplot-seeds-cfg', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0]), preview(['plot', 0])),
-         note='live A/B defect: the xyplot value was a dict with named keys'),
+         note='live A/B defects: the xyplot value was a dict with named keys (r1); live, the tuple carried null for '
+              'the node id, because a guest gets no hidden values (r4)'),
     case('xyplot-flip-plot', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0], XY_flip='True', ksampler_output_image='Plot',
                                                   cache_models='False', grid_spacing=0, Y_label_orientation='Vertical'),
                                preview(['plot', 0]))),
@@ -98,7 +100,13 @@ R1_CASES = [
     case('xyplot-same-type', g(SEEDS, n('x2', 'XY Input: Seeds++ Batch', batch_count=3), xyplot(['x', 0], ['x2', 0]),
                                preview(['plot', 0]))),
 ]
-CASES_BY_ROUND = {'r1': R1_CASES}
+R4_CASES = [
+    case('xyplot-numeric-id', g(SEEDS, CFG, xyplot(['x', 0], ['y', 0], node_id='12'), preview(['12', 0])),
+         note='the node id in the tuple is the executing node id, not a fixed label'),
+    case('xyplot-steps-flip-id', g(STEPS, CFG, xyplot(['s', 0], ['y', 0], node_id='7', XY_flip='True'),
+                                   preview(['7', 0]))),
+]
+CASES_BY_ROUND = {'r1': R1_CASES, 'r4': R4_CASES}
 CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 if FILTER:
     CASES = [c for c in CASES if FILTER in c['name']]
