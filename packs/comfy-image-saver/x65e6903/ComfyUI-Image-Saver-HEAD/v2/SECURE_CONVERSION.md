@@ -1,106 +1,79 @@
-# GIRISS finite qualification: 7 of 9 purposes
+# comfy-image-saver (giriss): Secure Nodes V2 conversion
 
-Seven original purposes now have finite original/default/required-Guest
-component evidence. The prior String Literal result contributes one purpose;
-the separately accepted six-purpose attempt adds Seed Generator, Int Literal,
-Cfg Literal, Size Literal, Sampler Selector and Scheduler Selector. **Checkpoint
-Selector and Save Image remain unqualified. Whole-pack acceptance is partial.**
+**Status: converted 9 of 9 declared nodes; 0 refused.** Five saver behaviours that V2 cannot reproduce exactly are refused
+with named errors (see Known differences). This is the 2026-11-02 repair of the 2026-10-26 conversion.
 
-The new attempt contains **87 cases per route, 261 calls, 174 strict
-comparisons and 16 local controls**, with no control dispatches. One actual
-required Seatbelt Guest (PID 84332) supplies all 87 joined Guest replies.
-The first seed-zero 1/1/1 gate is included once in 87. Actual per-route return
-records retain one-item tuples, exact builtin type, decimal uint64 integers,
-float.hex (including signed zero), and exact strings. Counts by purpose are
-15, 6, 7, 5, 45 and 9. Selector checks cover the complete ordered 45 sampler
-and 9 scheduler names; both original and io MAX_RESOLUTION are 16384.
-MAX-1 is programmatic in-range coverage under the step-8 schema, not frontend
-step validation. Enum reordering
-controls are direct list inequalities, not sampling algorithms or mutant tests.
-Seed Generator qualifies metadata passthrough only; it grants no RNG/seeding
-or model-execution credit.
+- **Upstream:** giriss/comfy-image-saver @ `65e6903eff274a50f8b5cd768f0f96baf37baea1` (MIT).
+- **Minimum SDK base 0cd9adec.** The saver uses `png_text`, `a1111_parameters` and `graph.execution_metadata()`, none of
+  which exist in 0b86765f.
 
-The [new scoped report](../../../../../validation/20261027-giriss-six-scalar-selectors-component/SCOPED_REPORT.json),
-[accepted independent intake](../../../../../validation/20261027-giriss-six-scalar-selectors-component/independent-intake/REVIEW.json)
-and [retained evidence provenance](../../../../../validation/20261027-giriss-six-scalar-selectors-component/EVIDENCE_COPY_PROVENANCE.json)
-bind the exact selected source/configuration and raw archive hashes. Public
-evidence copies use opaque aliases for private machine paths; the original
-hash-pinned archive remains retained. These copies are not executable selection
-or authority. The executed historical 16-leaf fixture does not replace the
-current 18-leaf publication root or either qualified declaration.
+## Node ids
+These are the original `NODE_CLASS_MAPPINGS` keys (`nodes.py:269-279`), unchanged and in order:
+"Checkpoint Selector", "Save Image w/Metadata", "Sampler Selector", "Scheduler Selector", "Seed Generator",
+"String Literal", "Width/Height Literal", "Cfg Literal", "Int Literal".
 
-Limits remain explicit: 2 GiB sampled RSS and passive census are not exhaustive,
-and the pre-fsync uncatchable-kill gap is unclosed. Policy proof is the live
-supported source-recipe attestation, without a separately saved expected raw
-profile or post-retirement rendering. Recorded process/group/socket retirement
-is verified; non-socket home and torchinductor directories remain. Startup
-pynvml and duplicate AVFoundation warnings are retained. No full temporary
-parent removal, encoder/model behavior, scientific generation/replay, browser,
-live service, registry activation, deployment or grants are qualified here.
+The original has no display-name mappings, so each display name is the id. The 2026-10-26 conversion registered
+sanitized, hash-suffixed ids instead of these; this repair restores the originals.
 
-This documentation/evidence successor preserves all production code, schemas,
-permissions, the normal nine-node manifest, package metadata and both contracts.
-Canonical patch/ZIP file-only replays below add no scientific purpose credit.
-The prior String Literal evidence and its separate 39-call/26-comparison run
-remain intact and are not counted again as part of this 261-call attempt.
+## How the nodes run
+- **Seed Generator and the four literals:** pure values. No permissions.
+- **Sampler Selector and Scheduler Selector:** the same choices as the original, from core's lists at ComfyUI 6257422b
+  (`_catalogues.py`).
+- **Checkpoint Selector:** `assets`. `web/catalogues.js` fills the menu from the host checkpoint catalogue, and
+  `validate_inputs` checks membership at queue time.
+- **Save Image w/Metadata:** `assets`, `output` and `graph.metadata`.
+  - `assets` resolves the checkpoint and gives its sha256 for "Model hash".
+  - `output` is the SDK image writer.
+  - `graph.metadata` reads prompt/extra_pnginfo. These are declared as hidden inputs, as in the original
+    (`nodes.py:199-202`), and read with `ctx.graph.execution_metadata()`, which returns the same original prompt and
+    extra_pnginfo.
+  - The filename, path and comment code is the original's, unchanged (`_saver.py`).
 
-## Prior String Literal publication (historical 1-of-9 scope)
+## Tests (`tests/`, run in the gate container)
+- **`test_comfy_image_saver_parity.py`** compares the original in-process with V2 in a real guest process, over 216 cases.
+  - **All 9 nodes are EXACT:** values (type-strict, float bits), schemas, queue-time validation, and the filename algorithm
+    under a frozen clock.
+  - **PNG output is byte-identical**, including UI payloads and colon names.
+  - **WebP output is identical after decoding** (see below).
+  - Five behaviours are refused as designed (JPEG, overwrite, duplicate key, path escape, backslash), and a negative
+    control turns the comparator red.
+- **`encode_manifest.py`** shows that `secure-nodes.json` is the live encoder's output, and that the real loader registers
+  the nine original ids.
+- **`combo45_link_check.py`** is labelled evidence for selector-output links on two cores (see 7 below). It is not part of
+  tier-1.
 
-The following note records the earlier publication and remains historical.
-Its statements about other purposes being unqualified or source-only describe
-that earlier run, not the combined seven-purpose disposition above.
+## Known differences
+1. **JPEG is refused**, with a named error. The original saves with Pillow's default 4:2:0 chroma subsampling, but the V2
+   writer always uses 4:4:4 and has no subsampling option. (API ask.)
+2. **Existing file:** the original overwrites it. The V2 writer never overwrites, so V2 raises
+   `FileExistsError: comfy-image-saver/Save Image w/Metadata: <names> already exists. The original overwrites it, but the
+   V2 image writer never overwrites files; use %time or %counter in the filename.` (API ask: explicit overwrite for exact
+   names.)
+3. **Duplicate PNG text keys** (extra_pnginfo containing "parameters" or "prompt") are refused with a named error. The
+   original writes duplicate chunks; the writer's `png_text` is a dict.
+4. **Output names** follow the writer's rules, each refused with a node-prefixed named error:
+   - absolute paths, a drive prefix (`C:` or `C:/…`) and `..` segments leave the output folder (the original writes
+     outside it);
+   - a backslash is refused because the writer treats it as a path separator, while the original writes it literally;
+   - a mid-name `:` (e.g. `%H:%M:%S`) works exactly as in the original.
+5. **WebP:** pixels, EXIF UserComment and every image chunk are byte-identical. Only the EXIF chunk differs: 420 bytes from
+   Pillow vs 416 from piexif. Pillow writes the Exif sub-IFD's TIFF-required 4-byte next-IFD offset, and piexif omits it,
+   so UserComment sits at 0x2c vs 0x28. The tags and payload are the same, and the files are not byte-identical.
+6. **Writer bounds** that the original lacks raise named SDK errors:
+   - PNG text: at most 1 MiB, with Latin-1 keywords of at most 79 bytes;
+   - WebP UserComment: at most 60 KiB.
+7. **Selector outputs (Combo.Output, partial).** The original returns its choice list as the output type, so its
+   outputs link into KSampler and CheckpointLoaderSimple inputs.
+   - On core 6257422b the V2 outputs are typed COMBO, and core refuses those links (`return_type_mismatch`).
+   - Core 45c05a86 and later accept the Sampler and Scheduler Selector links, because their options are declared. That
+     change is not yet adopted by the runtime.
+   - Checkpoint Selector declares no options and stays partial.
+8. **The sampler and scheduler choice lists are static** (core 6257422b order). The original reads them live, so names
+   that other packs add at runtime are not offered.
+9. **A non-catalogue checkpoint name** is refused at queue time by both, but V2's message is the pack's own ("Checkpoint is
+   not in the current checkpoints catalogue"), not core's "Value not in list".
 
-# GIRISS finite qualification and conversion status
-
-Only the finite String Literal purpose is component-qualified: **1 of 9**
-original purposes. The accepted run used the preserved Mac profile `40fbb95d`
-and SDK implementation `f1a73e4f`: 13 original calls, 13 stock-default SDK
-calls, and 13 calls through the same actual required Seatbelt Guest (PID40365).
-That is **39 calls, 26 strict comparisons and 2 local comparator controls**;
-the controls added no pack dispatches. Empty capabilities were used.
-
-The [scoped report](../../../../../validation/20261026-giriss-string-literal-component/SCOPED_REPORT.json),
-[independent intake](../../../../../validation/20261026-giriss-string-literal-component/REVIEW.json) and
-[scoped disposition](../../../../../validation/20261026-giriss-string-literal-component/SCOPED_DISPOSITION.json) retain the exact source/config/profile
-and runtime evidence. Per-route raw returned strings/tuples were not separately
-serialized; proof consists of the frozen strict comparator/runtime assertions
-and joined receipts. Recorded process/group/socket absence was verified;
-non-socket `home` and `torchinductor_ben` directories remained. Full temporary
-parent removal is not claimed.
-
-The other eight purposes remain unqualified by that run. Scalar/selector
-follow-up is source preparation only. Saver image/metadata parity still needs
-its separate coherent encoder/profile qualification; frontend catalogue
-hydration and live managed/registry/service admission also remain open. This
-note makes no blanket claim that a required API is currently absent. All
-executable source, registrations, schemas and both qualified generated
-declarations are unchanged by this documentation successor. Canonical
-pair/bundle replay checks are metadata evidence, not new scientific acceptance.
-
-## Historical encoder/source-successor note
-
-The following is the original draft's historical status, including its
-then-current `199457` SDK reference. It is retained for provenance, not as a
-statement of current SDK availability or a replacement for the scoped result
-above. Current encoder adoption/profile and image behavior need their own
-source/runtime evidence; the historical refusal wording grants no current
-missing-API conclusion.
-
-> # GIRISS encoder consumer source successor
->
-> Source only; no runtime acceptance. All nine existing registry IDs and original
-> scalar/type/validation contracts remain. NODE_CLASS_MAPPINGS now names the
-> same nine classes as the extension so genuine canonical authoring can find
-> them. The original seven-file pack and prior source seals remain unchanged.
->
-> Saver uses the already supported explicit-filename overwrite=True contract.
-> It now requests proposed jpeg_subsampling=-1 for Pillow defaults and ordered
-> PNG text pairs, preserving duplicate parameters/prompt chunks and insertion
-> order. The previous qualified-f1 consumer and JPEG guard remain preserved
-> in the parent packet. This new consumer must not run on current199457 SDK:
-> paired engine/Guest/Host options are unadopted and need coherent publication.
->
-> The whole pack remains PARTIAL. Manifest-only authoring can precede encoder
-> adoption because schemas never execute saver bodies. Actual image parity,
-> Guest/permission proof and frontend catalogue hydration are separate gates.
-> Use the finite plan; no model weights, surrogate providers or fake outputs.
+## Dependencies
+- The guest has none (`pyproject.toml` dependencies = []).
+- `piexif` 1.1.3 is used only by the original, inside the parity test. So `requirements.txt` (piexif) is the one pristine
+  file not copied into v2. LICENSE, README.md, example-workflow.json and .gitignore are unchanged copies.

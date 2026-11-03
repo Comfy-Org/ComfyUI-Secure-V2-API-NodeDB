@@ -2,8 +2,8 @@ import { comfy } from '/comfy/api/v2.js'
 
 // Only the published named catalogue service reaches shared host resources.
 for (const [type, input] of [
-  ['Checkpoint_Selector_efcbbd2520fd995e676f4966', 'ckpt_name'],
-  ['Save_Image_w_Metadata_6be3a4fb3d0e4c56fec9513e', 'modelname']
+  ['Checkpoint Selector', 'ckpt_name'],
+  ['Save Image w/Metadata', 'modelname']
 ]) {
   comfy.defs.extend(type, (definition) => {
     async function hydrate(node) {

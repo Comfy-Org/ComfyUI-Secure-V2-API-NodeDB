@@ -12,7 +12,7 @@ class SeedGenerator(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id='Seed_Generator_04cedd963306933ada265ea6',
+            node_id='Seed Generator',
             display_name='Seed Generator',
             category="ImageSaverTools/utils",
             inputs=[io.Int.Input('seed', default=0, min=0, max=0xffffffffffffffff)],
@@ -31,7 +31,7 @@ class StringLiteral(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id='String_Literal_5bb4d668d27398985246d1d5',
+            node_id='String Literal',
             display_name='String Literal',
             category="ImageSaverTools/utils",
             inputs=[io.String.Input('string', default="", multiline=True)],
@@ -50,7 +50,7 @@ class SizeLiteral(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id='Width_Height_Literal_5d88cd3d528e456d6aadd9fa',
+            node_id='Width/Height Literal',
             display_name='Width/Height Literal',
             category="ImageSaverTools/utils",
             inputs=[io.Int.Input('int', default=512, min=1, max=io.MAX_RESOLUTION, step=8)],
@@ -69,7 +69,7 @@ class CfgLiteral(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id='Cfg_Literal_b9806fcd61fbfa9e078fef8e',
+            node_id='Cfg Literal',
             display_name='Cfg Literal',
             category="ImageSaverTools/utils",
             inputs=[io.Float.Input('float', default=8.0, min=0.0, max=100.0)],
@@ -88,7 +88,7 @@ class IntLiteral(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id='Int_Literal_01c062f38ae3d7bd4a3894d2',
+            node_id='Int Literal',
             display_name='Int Literal',
             category="ImageSaverTools/utils",
             inputs=[io.Int.Input('int', default=0, min=0, max=1000000)],
@@ -114,7 +114,7 @@ class CheckpointSelector(io.ComfyNode):
         # above independently checks host catalogue membership at admission.
         # No remote route or static machine-specific checkpoint names are used.
         return io.Schema(
-            node_id="Checkpoint_Selector_efcbbd2520fd995e676f4966",
+            node_id="Checkpoint Selector",
             display_name="Checkpoint Selector", category="ImageSaverTools/utils",
             inputs=[io.Combo.Input("ckpt_name", options=[])],
             outputs=[io.Combo.Output(display_name="ckpt_name")],
@@ -133,7 +133,7 @@ class SamplerSelector(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="Sampler_Selector_6652e5ab7bd841db459469db",
+            node_id="Sampler Selector",
             display_name="Sampler Selector", category="ImageSaverTools/utils",
             inputs=[io.Combo.Input("sampler_name", options=SAMPLERS)],
             outputs=[io.Combo.Output(display_name="sampler_name", options=SAMPLERS)],
@@ -151,7 +151,7 @@ class SchedulerSelector(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="Scheduler_Selector_a46f37468d203a78b3568bbb",
+            node_id="Scheduler Selector",
             display_name="Scheduler Selector", category="ImageSaverTools/utils",
             inputs=[io.Combo.Input("scheduler", options=SCHEDULERS)],
             outputs=[io.Combo.Output(display_name="scheduler", options=SCHEDULERS)],
@@ -164,7 +164,7 @@ class SchedulerSelector(io.ComfyNode):
 
 class ImageSaveWithMetadata(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ("assets", "output", "output.overwrite", "graph.metadata")
+    SDK_PERMISSIONS = ("assets", "output", "graph.metadata")
 
     @classmethod
     async def validate_inputs(cls, modelname, input_types=None):
@@ -173,7 +173,7 @@ class ImageSaveWithMetadata(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="Save_Image_w_Metadata_6be3a4fb3d0e4c56fec9513e",
+            node_id="Save Image w/Metadata",
             display_name="Save Image w/Metadata", category="ImageSaverTools",
             is_output_node=True,
             inputs=[
@@ -196,6 +196,10 @@ class ImageSaveWithMetadata(io.ComfyNode):
                 io.Int.Input("counter", default=0, min=0, max=0xffffffffffffffff, optional=True),
                 io.String.Input("time_format", default="%Y-%m-%d-%H%M%S", multiline=False, optional=True),
             ], outputs=[],
+            # The original declares hidden PROMPT/EXTRA_PNGINFO (nodes.py:199-202). Core
+            # supplies them to declared V2 nodes; the guest reads them through
+            # ctx.graph.execution_metadata() (graph.metadata) in _saver.py.
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
         )
 
     @classmethod
