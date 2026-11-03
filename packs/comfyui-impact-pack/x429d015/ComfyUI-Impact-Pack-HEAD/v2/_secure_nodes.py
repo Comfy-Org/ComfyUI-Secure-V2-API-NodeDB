@@ -3012,9 +3012,19 @@ async def _detail_sample(
         custom_noise = await _detailer_hook_noise(
             current, detailer_hook, cycle_seed)
         if refiner is None or refiner_ratio is None:
-            current = await _ctx().sample(
+            # Impact's ksampler_wrapper without a refiner (impact_sampling.py L198-213; repair 7): separated_sample
+            # over floor(steps / denoise) total steps, from total - steps to the end with no leftover noise, returning
+            # the sampler's final denoised prediction (sample_with_custom_noise's second output), not the last
+            # latent. Core's euler ends at x + d * dt, which differs from that prediction in the last bits, and a
+            # noise mask blended without differential diffusion carries those bits into the decoded crop. The
+            # engine's sample with start/last steps and return_denoised is that call (as NED r1's
+            # _impact_sample_latent for the pixel upscaler).
+            advanced_steps = math.floor(int(steps) / cycle_denoise)
+            start_at_step = advanced_steps - int(steps)
+            end_at_step = start_at_step + int(steps)
+            _output, denoised = await _ctx().sample(
                 latent=current,
-                steps=int(steps),
+                steps=int(advanced_steps),
                 model=model,
                 positive=positive,
                 negative=negative,
@@ -3022,12 +3032,16 @@ async def _detail_sample(
                 seed=cycle_seed,
                 sampler_name=str(sampler_name),
                 scheduler=str(scheduler),
-                denoise=cycle_denoise,
+                denoise=1.0,
+                start_step=int(start_at_step),
+                last_step=int(end_at_step),
                 force_full_denoise=True,
                 sampler=custom_sampler,
                 noise=custom_noise,
                 sigma_schedule=sigma_schedule,
+                return_denoised=True,
             )
+            current = _as_latent_ref(denoised)
             continue
         ratio = float(refiner_ratio)
         if not 0.0 <= ratio <= 1.0:

@@ -188,3 +188,23 @@ Manifest uses the original indent-1 format with only the five intended field cha
   - With neither cropped images nor a fallback image it returns no output, as upstream does.
   - The previews are upstream's RGBA images, shown through the SDK's temp preview as PNG. Upstream wrote lossy WebP
     into the temp folder. This needs the "ui" permission.
+
+## Fidelity repair 7 - detailer sampling
+- **The detailers' sampling without a refiner.** This covers DetailerForEach and its Debug, Pipe and AutoRetry forms,
+  FaceDetailer, MaskDetailerPipe and SEGSDetailer, through `core.enhance_detail`.
+  - Upstream samples through `impact_sampling.ksampler_wrapper`. That is `separated_sample` over `floor(steps /
+    denoise)` total steps, from `total - steps` to the end with no leftover noise.
+  - It returns the sampler's final denoised prediction. V2 took the last latent of a KSampler denoise run instead.
+  - The two differ in the last bits: Core's euler ends at `x + d * dt`. A noise mask blended without differential
+    diffusion carries those bits into the decoded crop when the crop is not a multiple of 8. This was B12's
+    DetailerForEach residual.
+  - The engine's sample is now called exactly that way (start/last step, `return_denoised`), as repair NED r1 did for
+    the pixel upscaler.
+  - Unchanged: the refiner path. Upstream also composites the first pass into the noise mask and returns the
+    refiner pass's denoised prediction there.
+  - Known difference, as in NED r1: for the SDE samplers, upstream seeds the Brownian noise sampler from the full
+    schedule's sigma range, while the engine uses the sliced range.
+- `tests/test_detailer_repair_r7.py` runs on NED r1's harness: the tiny seeded SD1.x model, Core's real encode,
+  sample and decode, the real PromptExecutor, and an out-of-process guest. It runs B12's case (MaskToSEGS crop factor
+  1.4 into DetailerForEach, with the optional inputs absent) and variants that each change one thing. The final
+  images are compared exactly.

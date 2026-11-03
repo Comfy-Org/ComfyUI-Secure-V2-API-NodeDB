@@ -8,7 +8,9 @@ stand-ins (no model can run in the gate):
   VAE encode   center-crop to a multiple of 8 (as Core's VAE.encode does), 8x8 average pool, 4 channels
   sampler      a seeded blend whose strength depends on denoise, steps, cfg, sampler, scheduler, the positive
                conditioning and differential diffusion, applied through the latent noise mask exactly as Core's
-               sampler applies it (comfy.utils.reshape_mask)
+               sampler applies it (comfy.utils.reshape_mask). Since repair 7 both sides reach it through
+               impact_sample's slice (floor(steps / denoise) total steps, from total - steps to the end), so its
+               denoise is steps / total on both (tests/test_detailer_repair_r7.py runs the real sampler)
   VAE decode   8x nearest upsample of the first 3 channels
   differential diffusion   a marker on the model that the sampler stand-in reads
 Original: the pristine Impact Pack under Core. DetailerForEach.do_detail (which DetailerForEach, its Debug/Pipe forms
@@ -24,6 +26,7 @@ import hashlib
 import importlib.abc
 import importlib.util
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -261,8 +264,9 @@ def run_original(plan, out_path):
                          refiner_ratio=None, refiner_model=None, refiner_clip=None, refiner_positive=None,
                          refiner_negative=None, sigma_factor=1.0, noise=None, scheduler_func=None, sampler_opt=None):
         out = latent_image.copy()
+        total = math.floor(steps / denoise)  # ksampler_wrapper's slice (repair 7: v2 makes the same call)
         out["samples"] = stub_sample(latent_image["samples"], latent_image.get("noise_mask"), model.dd, seed, steps, cfg,
-                                     sampler_name, scheduler, positive, denoise)
+                                     sampler_name, scheduler, positive, steps / total)
         return out
 
     impact_sampling.ksampler_wrapper = ksampler_wrapper  # the boundary: the engine samples in V2
@@ -399,8 +403,14 @@ class FakeContext:
         self.calls.append(sorted(k for k, v in extra.items() if v not in (None, False, True)))
         value = dict(await fake_materialize(latent))
         out = dict(value)
+        if extra.get("start_step") is not None:
+            # impact_sample's call (repair 7): `steps` total, sampled from start_step to last_step, no leftover noise
+            sampled = int(extra["last_step"]) - int(extra["start_step"])
+            steps, denoise = sampled, sampled / int(steps)
         out["samples"] = stub_sample(value["samples"], value.get("noise_mask"), model.dd, seed, steps, cfg, sampler_name,
                                      scheduler, await fake_materialize(positive), denoise)
+        if extra.get("return_denoised"):
+            return [FakeLatentRef(out), FakeLatentRef(dict(out))]
         return FakeLatentRef(out)
 
 
