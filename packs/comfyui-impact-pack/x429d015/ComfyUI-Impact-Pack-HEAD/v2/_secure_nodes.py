@@ -3517,7 +3517,7 @@ async def _enhance_detail_crop(
     sampler_name: str,
     scheduler: str,
     denoise: float,
-    noise_mask: torch.Tensor | None,
+    noise_mask: Any,
     force_inpaint: bool,
     cycle: int,
     inpaint_model: bool,
@@ -3527,87 +3527,121 @@ async def _enhance_detail_crop(
     refiner_ratio: float | None,
     detailer_hook: Any = None,
     scheduler_func_opt: Any = None,
+    noise_mask_feather: int = 0,
 ) -> torch.Tensor | None:
-    cropped = _image4(cropped)
+    """Impact Pack core.py enhance_detail (L250-423), ported line for line.
+
+    The pixel work is upstream's own (tensor_gaussian_blur_mask, tensor_resize). The engine encodes, samples and
+    decodes. Differential diffusion is applied by the callers once, as upstream's do_detail does before this
+    function's own check finds it already applied. Wildcards are handled by the caller, as before.
+    """
+    from . import _detailer_upstream as upstream
+
+    utils = upstream.utils
+    image = cropped
     if isinstance(model, str) and model == "DUMMY":
-        return cropped
-    height, width = map(int, cropped.shape[1:3])
-    left, top, right, bottom = map(float, item.bbox)
-    bbox_width, bbox_height = right - left, bottom - top
-    if bbox_width <= 0 or bbox_height <= 0:
+        return image
+
+    if noise_mask is not None:
+        noise_mask = utils.tensor_gaussian_blur_mask(noise_mask, noise_mask_feather)
+        noise_mask = noise_mask.squeeze(3)
+
+    h = image.shape[1]
+    w = image.shape[2]
+
+    bbox = item.bbox
+    bbox_h = bbox[3] - bbox[1]
+    bbox_w = bbox[2] - bbox[0]
+
+    # Skip processing if the detected bbox is already larger than the guide_size
+    if not force_inpaint and bbox_h >= guide_size and bbox_w >= guide_size:
         return None
-    guide_size = float(guide_size)
-    if (
-        not force_inpaint
-        and bbox_height >= guide_size
-        and bbox_width >= guide_size
-    ):
-        return None
-    scale_basis = min(bbox_width, bbox_height) if guide_size_for else min(width, height)
-    scale = guide_size / scale_basis
-    new_width, new_height = int(width * scale), int(height * scale)
-    maximum = max(64, int(max_size))
-    if new_width > maximum or new_height > maximum:
-        scale *= maximum / max(new_width, new_height)
-        new_width, new_height = int(width * scale), int(height * scale)
-    if scale <= 1.0 or new_width <= 0 or new_height <= 0:
-        if not force_inpaint:
+
+    if guide_size_for:  # == "bbox"
+        # Scale up based on the smaller dimension between width and height.
+        upscale = guide_size / min(bbox_w, bbox_h)
+    else:
+        # for cropped_size
+        upscale = guide_size / min(w, h)
+
+    new_w = int(w * upscale)
+    new_h = int(h * upscale)
+
+    if new_w > max_size or new_h > max_size:
+        upscale *= max_size / max(new_w, new_h)
+        new_w = int(w * upscale)
+        new_h = int(h * upscale)
+
+    if not force_inpaint:
+        if upscale <= 1.0:
             return None
-        new_width, new_height = width, height
-    new_width, new_height = _detailer_hook_scaled_size(
-        detailer_hook, new_width, new_height)
-    upscaled = _resize_images(cropped, new_width, new_height)
-    upscaled_mask = (
-        None if noise_mask is None
-        else _resize_masks(noise_mask, new_width, new_height)
-    )
-    upscaled = await _detailer_hook_post_upscale(
-        upscaled, upscaled_mask, detailer_hook)
-    if _detailer_hook_skip_sampling(detailer_hook):
-        return _resize_images(upscaled, width, height).cpu()
-    positive, negative = await _apply_controlnet_wrappers(
-        item.control_net_wrapper, positive, negative, upscaled,
-        mask=upscaled_mask)
-    model = await _apply_ipadapter_wrappers(
-        item.control_net_wrapper, model)
-    latent, sampled_positive, sampled_negative = await _detail_encode(
-        vae, upscaled, upscaled_mask, positive, negative,
-        inpaint_model=bool(inpaint_model), tiled_encode=bool(tiled_encode))
-    latent = await _detailer_coreml_batch(
-        latent, detailer_hook, before_decode=False)
-    sampled = await _detail_sample(
-        latent,
-        model=model,
-        positive=sampled_positive,
-        negative=sampled_negative,
-        seed=int(seed),
-        steps=int(steps),
-        cfg=float(cfg),
-        sampler_name=str(sampler_name),
-        scheduler=str(scheduler),
-        denoise=float(denoise),
-        cycle=int(cycle),
-        refiner=refiner,
-        refiner_ratio=refiner_ratio,
-        detailer_hook=detailer_hook,
-        scheduler_func_opt=scheduler_func_opt,
-    )
-    sampled = await _detailer_coreml_batch(
-        sampled, detailer_hook, before_decode=True)
-    try:
-        decoded_ref = (
-            await vae.decode_tiled(sampled, tile_size=512, overlap=64)
-            if tiled_decode else await vae.decode(sampled)
+
+        if new_w == 0 or new_h == 0:
+            return None
+    else:
+        if upscale <= 1.0 or new_w == 0 or new_h == 0:
+            upscale = 1.0
+            new_w = w
+            new_h = h
+
+    new_w, new_h = _detailer_hook_scaled_size(detailer_hook, new_w, new_h)
+
+    # upscale
+    upscaled_image = utils.tensor_resize(image, new_w, new_h)
+    upscaled_image = await _detailer_hook_post_upscale(upscaled_image, noise_mask, detailer_hook)
+
+    if not _detailer_hook_skip_sampling(detailer_hook):
+        positive, negative = await _apply_controlnet_wrappers(
+            item.control_net_wrapper, positive, negative, upscaled_image, mask=noise_mask)
+        model = await _apply_ipadapter_wrappers(item.control_net_wrapper, model)
+        # prepare mask: the latent carries the crop-size noise mask, as upstream's does; the sampler resizes it
+        latent_image, positive, negative = await _detail_encode(
+            vae, upscaled_image, noise_mask, positive, negative,
+            inpaint_model=bool(inpaint_model), tiled_encode=bool(tiled_encode))
+        latent_image = await _detailer_coreml_batch(latent_image, detailer_hook, before_decode=False)
+        refined_latent = await _detail_sample(
+            latent_image,
+            model=model,
+            positive=positive,
+            negative=negative,
+            seed=int(seed),
+            steps=int(steps),
+            cfg=float(cfg),
+            sampler_name=str(sampler_name),
+            scheduler=str(scheduler),
+            denoise=float(denoise),
+            cycle=int(cycle),
+            refiner=refiner,
+            refiner_ratio=refiner_ratio,
+            detailer_hook=detailer_hook,
+            scheduler_func_opt=scheduler_func_opt,
         )
-    except Exception:
-        if tiled_decode:
-            raise
-        decoded_ref = await vae.decode_tiled(
-            sampled, tile_size=512, overlap=64)
-    decoded = torch.as_tensor(await _raw(decoded_ref)).float()
-    if decoded.ndim == 5 and decoded.shape[0] == 1:
-        decoded = decoded.squeeze(0)
-    return _resize_images(decoded, width, height).cpu()
+        refined_latent = await _detailer_coreml_batch(refined_latent, detailer_hook, before_decode=True)
+        try:
+            decoded_ref = (
+                await vae.decode_tiled(refined_latent, tile_size=512, overlap=64)
+                if tiled_decode else await vae.decode(refined_latent)
+            )
+        except Exception:
+            if tiled_decode:
+                raise
+            decoded_ref = await vae.decode_tiled(refined_latent, tile_size=512, overlap=64)
+        refined_image = torch.as_tensor(await _raw(decoded_ref)).float()
+    else:
+        # skipped
+        refined_image = upscaled_image
+
+    # downscale
+
+    # workaround: support WAN as an i2i model
+    if len(refined_image.shape) == 5:
+        refined_image = refined_image.squeeze(0)
+
+    refined_image = utils.tensor_resize(refined_image, w, h)
+
+    # prevent mixing of device
+    refined_image = refined_image.cpu()
+    return refined_image
 
 
 def _paste_detail_crop(
@@ -3672,126 +3706,148 @@ async def _detail_segs_common(
     torch.Tensor, list[torch.Tensor], list[torch.Tensor], list[torch.Tensor],
     list[torch.Tensor], tuple[tuple[int, int], list[SEG]],
 ]:
+    """Impact Pack impact_pack.py DetailerForEach.do_detail (L264-414), ported line for line.
+
+    It serves DetailerForEach and its Debug, Pipe and AutoRetry forms, and FaceDetailer. The crops, the feathered
+    paste mask, the paste and the alpha previews are upstream's own helpers. The wildcard ordering and per-SEG seeds
+    (seed + index), hooks and retries are the pack's existing implementations. SEGSDetailer has its own port
+    (_segs_detailer); prefer_seg_image is accepted for compatibility and unused.
+    """
+    from . import _detailer_upstream as upstream
+
+    utils = upstream.utils
     _validate_detailer_sampling_hooks(detailer_hook)
     _sigma_schedule_recipe(scheduler_func_opt)
     pixels = _image4(await _raw(image)).cpu()
     if pixels.shape[0] != 1:
         raise ValueError("Impact per-SEGS detailers accept one image at a time")
-    scaled_segs = _scale_segs_to_image(await _raw(segs), pixels)
-    plan, concat_wildcard = _detail_wildcard_plan(
-        wildcard, scaled_segs[1], int(seed))
-    output = pixels.clone()
-    cropped_list: list[torch.Tensor] = []
-    enhanced_list: list[torch.Tensor] = []
-    enhanced_alpha_list: list[torch.Tensor] = []
-    cnet_images: list[torch.Tensor] = []
-    new_items: list[SEG] = []
-    detail_model = model
-    if (
-        not (isinstance(model, str) and model == "DUMMY")
-        and int(noise_mask_feather) > 0
-    ):
-        detail_model = await model.patch(
-            "differential_diffusion", strength=1.0)
 
-    for plan_index, (item, item_seed, item_wildcard) in enumerate(plan):
-        source = (
-            _image4(torch.as_tensor(item.cropped_image)).clone()
-            if prefer_seg_image and item.cropped_image is not None
-            else _crop_image(output, item.crop_region).clone()
-        )
-        source_mask = _seg_mask(item)
-        if not torch.any(source_mask > 0):
-            if prefer_seg_image:
-                new_items.append(item)
+    image = pixels.clone()
+    enhanced_alpha_list = []
+    enhanced_list = []
+    cropped_list = []
+    cnet_pil_list = []
+
+    segs = upstream.scale_match(_segs(await _raw(segs)), image.shape, SEG)
+    new_segs = []
+
+    ordered_segs, wildcard_concat = _detail_wildcard_plan(wildcard, segs[1], int(seed))
+
+    dummy = isinstance(model, str) and model == "DUMMY"
+    if not dummy and int(noise_mask_feather) > 0:
+        model = await model.patch("differential_diffusion", strength=1.0)
+
+    for i, (seg, seg_seed, wildcard_item) in enumerate(ordered_segs):
+        cropped_image = utils.crop_ndarray4(image.cpu().numpy(), seg.crop_region)  # Never use seg.cropped_image to handle overlapping area
+        cropped_image = utils.to_tensor(cropped_image)
+        seg_mask = _seg_mask(seg)
+        mask = utils.to_tensor(seg_mask)
+        mask = utils.tensor_gaussian_blur_mask(mask, feather)
+
+        is_mask_all_zeros = bool((seg_mask == 0).all())
+        if is_mask_all_zeros:
             continue
-        paste_mask = _gaussian(source_mask, int(feather))
-        sample_mask = (
-            _gaussian(source_mask, int(noise_mask_feather))
-            if noise_mask else None)
-        cropped_positive = await _crop_detail_conditioning(
-            positive, pixels, item.crop_region)
-        cropped_negative = await _crop_detail_conditioning(
-            negative, pixels, item.crop_region)
-        item_model = detail_model
-        if item_wildcard.strip() == "[SKIP]":
+
+        if noise_mask:
+            cropped_mask = seg_mask
+        else:
+            cropped_mask = None
+
+        cropped_positive = await _crop_detail_conditioning(positive, image, seg.crop_region)
+        cropped_negative = await _crop_detail_conditioning(negative, image, seg.crop_region)
+
+        if wildcard_item and wildcard_item.strip() == '[SKIP]':
             continue
-        if item_wildcard.strip() == "[STOP]":
+
+        if wildcard_item and wildcard_item.strip() == '[STOP]':
             break
-        if item_wildcard.strip():
-            item_model, _item_clip, wildcard_positive, _text = (
-                await _wildcard_encode(
-                    item_model, clip, item_wildcard, "", "populate", item_seed))
+
+        item_model = model
+        if not dummy and wildcard_item and wildcard_item.strip():
+            item_model, _item_clip, wildcard_positive, _text = await _wildcard_encode(
+                item_model, clip, wildcard_item, "", "populate", seg_seed)
             cropped_positive = (
                 await cropped_positive.concat(wildcard_positive)
-                if concat_wildcard else wildcard_positive)
-        original_crop = source.clone()
-        attempts = max(1, int(max_retries))
-        enhanced = None
-        for retry in range(attempts):
-            enhanced = await _enhance_detail_crop(
-                source,
-                item,
-                model=item_model,
-                vae=vae,
-                positive=cropped_positive,
-                negative=cropped_negative,
-                guide_size=guide_size,
-                guide_size_for=guide_size_for,
-                max_size=max_size,
-                seed=item_seed + retry,
-                steps=steps,
-                cfg=cfg,
-                sampler_name=sampler_name,
-                scheduler=scheduler,
-                denoise=denoise,
-                noise_mask=sample_mask,
-                force_inpaint=force_inpaint,
-                cycle=cycle,
-                inpaint_model=inpaint_model,
-                tiled_encode=tiled_encode,
-                tiled_decode=tiled_decode,
-                refiner=refiner,
-                refiner_ratio=refiner_ratio,
-                detailer_hook=detailer_hook,
-                scheduler_func_opt=scheduler_func_opt,
-            )
-            if (
-                enhanced is None
-                or isinstance(item_model, str) and item_model == "DUMMY"
-                or not _detailer_hook_should_retry(enhanced, detailer_hook)
-            ):
-                break
-            if retry + 1 == attempts:
-                raise RuntimeError("Max retries reached")
-        cropped_list.append(original_crop)
-        if enhanced is not None:
-            cnet_images.extend(_wrapper_preview_images(
-                item.control_net_wrapper))
-            _paste_detail_crop(output, enhanced, paste_mask, item.crop_region)
-            await _detailer_hook_post_paste(
-                output, detailer_hook, plan_index + 1, len(plan))
-            enhanced = _image4(enhanced).cpu()
-            enhanced_list.append(enhanced)
-            alpha = _resize_masks(
-                paste_mask, enhanced.shape[2], enhanced.shape[1])
-            if alpha.shape[0] == 1 and enhanced.shape[0] > 1:
-                alpha = alpha.expand(enhanced.shape[0], -1, -1)
-            enhanced_alpha_list.append(torch.cat(
-                (enhanced[..., :3], alpha[..., None]), dim=-1))
-            new_image = enhanced
-        else:
-            new_image = None
-        new_items.append(item._replace(cropped_image=new_image))
+                if wildcard_concat else wildcard_positive)
 
-    key = lambda tensor: tuple(tensor.shape)
-    cropped_list.sort(key=key, reverse=True)
-    enhanced_list.sort(key=key, reverse=True)
-    enhanced_alpha_list.sort(key=key, reverse=True)
-    return (
-        output[..., :3], cropped_list, enhanced_list, enhanced_alpha_list,
-        cnet_images, (scaled_segs[0], new_items),
-    )
+        orig_cropped_image = cropped_image.clone()
+        if not dummy:
+            attempts = max(1, int(max_retries))
+            enhanced_image = None
+            for retry in range(attempts):
+                enhanced_image = await _enhance_detail_crop(
+                    cropped_image,
+                    seg,
+                    model=item_model,
+                    vae=vae,
+                    positive=cropped_positive,
+                    negative=cropped_negative,
+                    guide_size=guide_size,
+                    guide_size_for=guide_size_for,
+                    max_size=max_size,
+                    seed=seg_seed + retry,
+                    steps=steps,
+                    cfg=cfg,
+                    sampler_name=sampler_name,
+                    scheduler=scheduler,
+                    denoise=denoise,
+                    noise_mask=cropped_mask,
+                    force_inpaint=force_inpaint,
+                    cycle=cycle,
+                    inpaint_model=inpaint_model,
+                    tiled_encode=tiled_encode,
+                    tiled_decode=tiled_decode,
+                    refiner=refiner,
+                    refiner_ratio=refiner_ratio,
+                    detailer_hook=detailer_hook,
+                    scheduler_func_opt=scheduler_func_opt,
+                    noise_mask_feather=noise_mask_feather,
+                )
+                if enhanced_image is None or not _detailer_hook_should_retry(enhanced_image, detailer_hook):
+                    break
+                if retry + 1 == attempts:
+                    raise RuntimeError("Max retries reached")
+            cnet_pils = _wrapper_preview_images(seg.control_net_wrapper) if enhanced_image is not None else None
+        else:
+            enhanced_image = cropped_image
+            cnet_pils = None
+
+        if cnet_pils:
+            cnet_pil_list.extend(cnet_pils)
+
+        if enhanced_image is not None:
+            # don't latent composite-> converting to latent caused poor quality
+            # use image paste
+            image = image.cpu()
+            enhanced_image = enhanced_image.cpu()
+            utils.tensor_paste(image, enhanced_image, (seg.crop_region[0], seg.crop_region[1]), mask)  # this code affecting to `cropped_image`.
+            enhanced_list.append(enhanced_image)
+
+            await _detailer_hook_post_paste(image, detailer_hook, i + 1, len(ordered_segs))
+
+        if enhanced_image is not None:
+            # Convert enhanced_pil_alpha to RGBA mode
+            enhanced_image_alpha = utils.tensor_convert_rgba(enhanced_image)
+            new_seg_image = enhanced_image  # alpha should not be applied to seg_image
+
+            # Apply the mask
+            mask = utils.tensor_resize(mask, *utils.tensor_get_size(enhanced_image))
+            utils.tensor_putalpha(enhanced_image_alpha, mask)
+            enhanced_alpha_list.append(enhanced_image_alpha)
+        else:
+            new_seg_image = None
+
+        cropped_list.append(orig_cropped_image)  # NOTE: Don't use `cropped_image`
+
+        new_segs.append(seg._replace(cropped_image=new_seg_image))
+
+    image_tensor = utils.tensor_convert_rgb(image)
+
+    cropped_list.sort(key=lambda x: x.shape, reverse=True)
+    enhanced_list.sort(key=lambda x: x.shape, reverse=True)
+    enhanced_alpha_list.sort(key=lambda x: x.shape, reverse=True)
+
+    return image_tensor, cropped_list, enhanced_list, enhanced_alpha_list, cnet_pil_list, (segs[0], new_segs)
 
 
 async def _detailer_for_each(**kwargs):
@@ -3856,37 +3912,104 @@ async def _segs_detailer(
     image, segs, basic_pipe, refiner_basic_pipe_opt=None,
     refiner_ratio=None, batch_size=1, **kwargs,
 ):
+    """Impact Pack segs_nodes.py SEGSDetailer.do_detail / doit (L73-166), ported line for line.
+
+    Every SEG is cropped from the input image (or taken from the SEG), detailed with the same seed within a batch
+    pass, and returned as a new SEG; nothing is pasted. The pixel work is upstream's own; the engine encodes,
+    samples and decodes.
+    """
+    from . import _detailer_upstream as upstream
+
+    utils = upstream.utils
     model, clip, vae, positive, negative = _basic_pipe(basic_pipe)
-    refiner, ratio = _detail_refiner(
-        refiner_basic_pipe_opt, refiner_ratio)
-    header = None
-    items: list[SEG] = []
-    cnet_images: list[torch.Tensor] = []
-    base_seed = int(kwargs.pop("seed"))
-    for batch_index in range(max(1, int(batch_size))):
-        result = await _detail_segs_common(
-            image=image,
-            segs=segs,
-            model=model,
-            clip=clip,
-            vae=vae,
-            positive=positive,
-            negative=negative,
-            seed=base_seed + batch_index + 1,
-            feather=0,
-            wildcard=None,
-            refiner=refiner,
-            refiner_ratio=ratio,
-            prefer_seg_image=True,
-            **kwargs,
-        )
-        header = result[5][0]
-        items.extend(result[5][1])
-        cnet_images.extend(result[4])
-    return (
-        (header or (0, 0), items),
-        cnet_images or [_empty_detail_image()],
-    )
+    refiner, ratio = _detail_refiner(refiner_basic_pipe_opt, refiner_ratio)
+    scheduler_func_opt = kwargs.get("scheduler_func_opt")
+    _sigma_schedule_recipe(scheduler_func_opt)
+    noise_mask_feather = int(kwargs.get("noise_mask_feather", 0))
+    image = _image4(await _raw(image)).cpu()
+    if len(image) > 1:
+        raise ValueError("Impact per-SEGS detailers accept one image at a time")
+
+    segs = upstream.scale_match(_segs(await _raw(segs)), image.shape, SEG)
+
+    new_segs = []
+    cnet_pil_list = []
+
+    dummy = isinstance(model, str) and model == "DUMMY"
+    if not dummy and noise_mask_feather > 0:
+        model = await model.patch("differential_diffusion", strength=1.0)
+
+    seed = int(kwargs["seed"])
+    for i in range(int(batch_size)):
+        seed += 1
+        for seg in segs[1]:
+            cropped_image = seg.cropped_image if seg.cropped_image is not None \
+                                              else utils.crop_ndarray4(image.numpy(), seg.crop_region)
+            cropped_image = utils.to_tensor(cropped_image)
+
+            seg_mask = _seg_mask(seg)
+            is_mask_all_zeros = bool((seg_mask == 0).all())
+            if is_mask_all_zeros:
+                new_segs.append(seg)
+                continue
+
+            if kwargs["noise_mask"]:
+                cropped_mask = seg_mask
+            else:
+                cropped_mask = None
+
+            cropped_positive = await _crop_detail_conditioning(positive, image, seg.crop_region)
+            cropped_negative = await _crop_detail_conditioning(negative, image, seg.crop_region)
+
+            if not dummy:
+                enhanced_image = await _enhance_detail_crop(
+                    cropped_image,
+                    seg,
+                    model=model,
+                    vae=vae,
+                    positive=cropped_positive,
+                    negative=cropped_negative,
+                    guide_size=kwargs["guide_size"],
+                    guide_size_for=kwargs["guide_size_for"],
+                    max_size=kwargs["max_size"],
+                    seed=seed,
+                    steps=kwargs["steps"],
+                    cfg=kwargs["cfg"],
+                    sampler_name=kwargs["sampler_name"],
+                    scheduler=kwargs["scheduler"],
+                    denoise=kwargs["denoise"],
+                    noise_mask=cropped_mask,
+                    force_inpaint=kwargs["force_inpaint"],
+                    cycle=kwargs.get("cycle", 1),
+                    inpaint_model=kwargs.get("inpaint_model", False),
+                    tiled_encode=False,
+                    tiled_decode=False,
+                    refiner=refiner,
+                    refiner_ratio=ratio,
+                    scheduler_func_opt=scheduler_func_opt,
+                    noise_mask_feather=noise_mask_feather,
+                )
+                cnet_pils = _wrapper_preview_images(seg.control_net_wrapper) if enhanced_image is not None else None
+            else:
+                enhanced_image = cropped_image
+                cnet_pils = None
+
+            if cnet_pils:
+                cnet_pil_list.extend(cnet_pils)
+
+            if enhanced_image is None:
+                new_cropped_image = cropped_image
+            else:
+                new_cropped_image = enhanced_image
+
+            new_segs.append(SEG(new_cropped_image, seg.cropped_mask, seg.confidence, seg.crop_region, seg.bbox,
+                                seg.label, None))
+
+    # set fallback image
+    if len(cnet_pil_list) == 0:
+        cnet_pil_list = [_empty_detail_image()]
+
+    return (segs[0], new_segs), cnet_pil_list
 
 
 async def _face_detailer_batches(

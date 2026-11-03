@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,174 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `429d0159ad429e64d2b3916e6e7be9c22d025c3c`.
@@ -149,6 +149,32 @@
 +  The preview is still shown.
 +- `tests/test_preview_bridge_repair_r5.py` is the lane-gate parity test. It runs every block / restore_mask
 +  combination on two image sizes through the original node and through this handler.
++
++## Fidelity repair r6 - detailers
++
++- DetailerForEach and SEGSDetailer follow upstream line for line:
++  - DetailerForEach (with its Debug, Pipe and AutoRetry forms, and FaceDetailer, which share it) follows
++    `DetailerForEach.do_detail`;
++  - SEGSDetailer follows `SEGSDetailer.do_detail`;
++  - the per-SEG step in both follows `core.enhance_detail`.
++- Their pixel work is upstream's own code, copied verbatim in `_detailer_upstream.py` and repair r4's
++  `_segs_paste_upstream.py`: `segs_scale_match`, `crop_ndarray4`, `tensor_resize`, `tensor_gaussian_blur_mask`,
++  `tensor_paste` and the RGBA helpers. The engine still encodes, samples and decodes.
++- It replaces v2's own versions of these steps, which differed from upstream:
++  - the blur of the paste mask and of the noise mask, which used a different kernel width;
++  - the noise mask, which was resized to the upscaled crop before the sampler resized it again. It now reaches the
++    sampler at crop size, as upstream's does;
++  - the resizes up to the guide size and back, and the SEGS scale match.
++- SEGSDetailer now matches upstream in four ways:
++  - it crops every SEG from its input image, and pastes nothing;
++  - it uses one seed for all SEGs in a batch pass;
++  - it returns the crop for a SEG it does not detail;
++  - it clears the SEG's ControlNet wrapper.
++- Unchanged: the inpaint-model path, detailer hooks, ControlNet wrappers, wildcards, the refiner, and the
++  AnimateDiff detailers.
++- `tests/test_detailer_repair_r6.py` is the lane-gate parity test. No model can run in the gate, so both sides use
++  the same deterministic stand-ins for the VAE encode, the sampler and the VAE decode. Everything else is compared
++  exactly: DetailerForEach's six outputs, and SEGSDetailer followed by SEGSPaste.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,456 +1,13 @@
@@ -616,6 +642,148 @@
 +    "NODE_DISPLAY_NAME_MAPPINGS",
 +    "WEB_DIRECTORY",
 +]
+--- /dev/null
++++ b/v2/_detailer_upstream.py
+@@ -0,0 +1,139 @@
++"""Upstream helpers for Impact Pack's detailers under Secure Nodes V2 (fidelity repair r6).
++
++The functions below are upstream code, copied verbatim as AST source segments of the pristine utils.py. The resize,
++blur, paste, crop and SEGS scale-match helpers come verbatim from _segs_paste_upstream.py (repair r4). The detailer
++loops that call them are ported line for line in _secure_nodes.py, where the engine does the VAE encode, the
++sampling and the VAE decode.
++Copied here:
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L25-44 tensor_convert_rgba
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L47-68 tensor_convert_rgb
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L146-150 tensor_get_size
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L176-183 to_tensor
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L186-193 to_numpy
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L195-198 tensor_putalpha
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L609-610 empty_pil_tensor
++"""
++import types
++
++import numpy as np
++import torch
++from PIL import Image
++
++from ._segs_paste_upstream import (_tensor_check_image, _tensor_check_mask, crop_ndarray4,
++                                   general_tensor_resize, segs_scale_match, tensor_gaussian_blur_mask,
++                                   tensor_paste, tensor_resize)
++
++
++# ---------------------------------------------------------------- upstream Impact Pack modules/impact/utils.py
++# ComfyUI-Impact-Pack/modules/impact/utils.py L25-44 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_convert_rgba(image, prefer_copy=True):
++    """Assumes NHWC format tensor with 1, 3 or 4 channels."""
++    _tensor_check_image(image)
++    n_channel = image.shape[-1]
++    if n_channel == 4:
++        return image
++
++    if n_channel == 3:
++        alpha = torch.ones((*image.shape[:-1], 1))
++        return torch.cat((image, alpha), axis=-1)
++
++    if n_channel == 1:
++        if prefer_copy:
++            image = image.repeat(1, -1, -1, 4)
++        else:
++            image = image.expand(1, -1, -1, 3)
++        return image
++
++    # NOTE: Similar error message as in PIL, for easier googling :P
++    raise ValueError(f"illegal conversion (channels: {n_channel} -> 4)")
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L47-68 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_convert_rgb(image, prefer_copy=True):
++    """Assumes NHWC format tensor with 1, 3 or 4 channels."""
++    _tensor_check_image(image)
++    n_channel = image.shape[-1]
++    if n_channel == 3:
++        return image
++
++    if n_channel == 4:
++        image = image[..., :3]
++        if prefer_copy:
++            image = image.copy()
++        return image
++
++    if n_channel == 1:
++        if prefer_copy:
++            image = image.repeat(1, -1, -1, 4)
++        else:
++            image = image.expand(1, -1, -1, 3)
++        return image
++
++    # NOTE: Same error message as in PIL, for easier googling :P
++    raise ValueError(f"illegal conversion (channels: {n_channel} -> 3)")
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L146-150 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_get_size(image):
++    """Mimicking `PIL.Image.size`"""
++    _tensor_check_image(image)
++    _, h, w, _ = image.shape
++    return (w, h)
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L176-183 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def to_tensor(image):
++    if isinstance(image, Image.Image):
++        return torch.from_numpy(np.array(image)) / 255.0
++    if isinstance(image, torch.Tensor):
++        return image
++    if isinstance(image, np.ndarray):
++        return torch.from_numpy(image)
++    raise ValueError(f"Cannot convert {type(image)} to torch.Tensor")
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L186-193 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def to_numpy(image):
++    if isinstance(image, Image.Image):
++        return np.array(image)
++    if isinstance(image, torch.Tensor):
++        return image.numpy()
++    if isinstance(image, np.ndarray):
++        return image
++    raise ValueError(f"Cannot convert {type(image)} to numpy.ndarray")
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L195-198 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_putalpha(image, mask):
++    _tensor_check_image(image)
++    _tensor_check_mask(mask)
++    image[..., -1] = mask[..., 0]
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L609-610 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def empty_pil_tensor(w=64, h=64):
++    return torch.zeros((1, h, w, 3), dtype=torch.float32)
++
++
++utils = types.SimpleNamespace(
++    tensor_convert_rgba=tensor_convert_rgba, tensor_convert_rgb=tensor_convert_rgb,
++    tensor_get_size=tensor_get_size, to_tensor=to_tensor, to_numpy=to_numpy, tensor_putalpha=tensor_putalpha,
++    empty_pil_tensor=empty_pil_tensor, crop_ndarray4=crop_ndarray4, tensor_resize=tensor_resize,
++    general_tensor_resize=general_tensor_resize, tensor_gaussian_blur_mask=tensor_gaussian_blur_mask,
++    tensor_paste=tensor_paste)
++
++
++# ---------------------------------------------------------------- V2: SEGS scale match in Impact v2's layout
++def scale_match(segs, image_shape, seg_type):
++    """Upstream core.segs_scale_match for Impact v2 SEGS.
++
++    When the SEGS already match the image (or have a zero size), upstream returns them unchanged, and so does this.
++    Otherwise they are scaled by upstream's own function in upstream's value types and come back in v2's layout
++    (cropped images as tensors, since numpy arrays cannot cross the guest wire).
++    """
++    (h, w), _items = segs
++    th = image_shape[1]
++    tw = image_shape[2]
++    if (h == th and w == tw) or h == 0 or w == 0:
++        return segs
++    from . import _segs_upstream
++
++    shape, items = _segs_upstream.to_v2_segs(segs_scale_match(_segs_upstream.to_upstream_segs(segs), image_shape),
++                                             seg_type)
++    items = [item._replace(cropped_image=torch.from_numpy(np.ascontiguousarray(item.cropped_image)))
++             if isinstance(item.cropped_image, np.ndarray) else item for item in items]
++    return shape, items
 --- /dev/null
 +++ b/v2/_image_classifier.py
 @@ -0,0 +1,316 @@
@@ -36929,7 +37097,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,6620 @@
+@@ -0,0 +1,6743 @@
 +"""Secure Nodes 2.0 conversion for the pinned Impact Pack snapshot.
 +
 +The upstream pack combines ordinary value, mask, image, SEGS and pipe
@@ -40449,7 +40617,7 @@
 +    sampler_name: str,
 +    scheduler: str,
 +    denoise: float,
-+    noise_mask: torch.Tensor | None,
++    noise_mask: Any,
 +    force_inpaint: bool,
 +    cycle: int,
 +    inpaint_model: bool,
@@ -40459,87 +40627,121 @@
 +    refiner_ratio: float | None,
 +    detailer_hook: Any = None,
 +    scheduler_func_opt: Any = None,
++    noise_mask_feather: int = 0,
 +) -> torch.Tensor | None:
-+    cropped = _image4(cropped)
++    """Impact Pack core.py enhance_detail (L250-423), ported line for line.
++
++    The pixel work is upstream's own (tensor_gaussian_blur_mask, tensor_resize). The engine encodes, samples and
++    decodes. Differential diffusion is applied by the callers once, as upstream's do_detail does before this
++    function's own check finds it already applied. Wildcards are handled by the caller, as before.
++    """
++    from . import _detailer_upstream as upstream
++
++    utils = upstream.utils
++    image = cropped
 +    if isinstance(model, str) and model == "DUMMY":
-+        return cropped
-+    height, width = map(int, cropped.shape[1:3])
-+    left, top, right, bottom = map(float, item.bbox)
-+    bbox_width, bbox_height = right - left, bottom - top
-+    if bbox_width <= 0 or bbox_height <= 0:
++        return image
++
++    if noise_mask is not None:
++        noise_mask = utils.tensor_gaussian_blur_mask(noise_mask, noise_mask_feather)
++        noise_mask = noise_mask.squeeze(3)
++
++    h = image.shape[1]
++    w = image.shape[2]
++
++    bbox = item.bbox
++    bbox_h = bbox[3] - bbox[1]
++    bbox_w = bbox[2] - bbox[0]
++
++    # Skip processing if the detected bbox is already larger than the guide_size
++    if not force_inpaint and bbox_h >= guide_size and bbox_w >= guide_size:
 +        return None
-+    guide_size = float(guide_size)
-+    if (
-+        not force_inpaint
-+        and bbox_height >= guide_size
-+        and bbox_width >= guide_size
-+    ):
-+        return None
-+    scale_basis = min(bbox_width, bbox_height) if guide_size_for else min(width, height)
-+    scale = guide_size / scale_basis
-+    new_width, new_height = int(width * scale), int(height * scale)
-+    maximum = max(64, int(max_size))
-+    if new_width > maximum or new_height > maximum:
-+        scale *= maximum / max(new_width, new_height)
-+        new_width, new_height = int(width * scale), int(height * scale)
-+    if scale <= 1.0 or new_width <= 0 or new_height <= 0:
-+        if not force_inpaint:
++
++    if guide_size_for:  # == "bbox"
++        # Scale up based on the smaller dimension between width and height.
++        upscale = guide_size / min(bbox_w, bbox_h)
++    else:
++        # for cropped_size
++        upscale = guide_size / min(w, h)
++
++    new_w = int(w * upscale)
++    new_h = int(h * upscale)
++
++    if new_w > max_size or new_h > max_size:
++        upscale *= max_size / max(new_w, new_h)
++        new_w = int(w * upscale)
++        new_h = int(h * upscale)
++
++    if not force_inpaint:
++        if upscale <= 1.0:
 +            return None
-+        new_width, new_height = width, height
-+    new_width, new_height = _detailer_hook_scaled_size(
-+        detailer_hook, new_width, new_height)
-+    upscaled = _resize_images(cropped, new_width, new_height)
-+    upscaled_mask = (
-+        None if noise_mask is None
-+        else _resize_masks(noise_mask, new_width, new_height)
-+    )
-+    upscaled = await _detailer_hook_post_upscale(
-+        upscaled, upscaled_mask, detailer_hook)
-+    if _detailer_hook_skip_sampling(detailer_hook):
-+        return _resize_images(upscaled, width, height).cpu()
-+    positive, negative = await _apply_controlnet_wrappers(
-+        item.control_net_wrapper, positive, negative, upscaled,
-+        mask=upscaled_mask)
-+    model = await _apply_ipadapter_wrappers(
-+        item.control_net_wrapper, model)
-+    latent, sampled_positive, sampled_negative = await _detail_encode(
-+        vae, upscaled, upscaled_mask, positive, negative,
-+        inpaint_model=bool(inpaint_model), tiled_encode=bool(tiled_encode))
-+    latent = await _detailer_coreml_batch(
-+        latent, detailer_hook, before_decode=False)
-+    sampled = await _detail_sample(
-+        latent,
-+        model=model,
-+        positive=sampled_positive,
-+        negative=sampled_negative,
-+        seed=int(seed),
-+        steps=int(steps),
-+        cfg=float(cfg),
-+        sampler_name=str(sampler_name),
-+        scheduler=str(scheduler),
-+        denoise=float(denoise),
-+        cycle=int(cycle),
-+        refiner=refiner,
-+        refiner_ratio=refiner_ratio,
-+        detailer_hook=detailer_hook,
-+        scheduler_func_opt=scheduler_func_opt,
-+    )
-+    sampled = await _detailer_coreml_batch(
-+        sampled, detailer_hook, before_decode=True)
-+    try:
-+        decoded_ref = (
-+            await vae.decode_tiled(sampled, tile_size=512, overlap=64)
-+            if tiled_decode else await vae.decode(sampled)
++
++        if new_w == 0 or new_h == 0:
++            return None
++    else:
++        if upscale <= 1.0 or new_w == 0 or new_h == 0:
++            upscale = 1.0
++            new_w = w
++            new_h = h
++
++    new_w, new_h = _detailer_hook_scaled_size(detailer_hook, new_w, new_h)
++
++    # upscale
++    upscaled_image = utils.tensor_resize(image, new_w, new_h)
++    upscaled_image = await _detailer_hook_post_upscale(upscaled_image, noise_mask, detailer_hook)
++
++    if not _detailer_hook_skip_sampling(detailer_hook):
++        positive, negative = await _apply_controlnet_wrappers(
++            item.control_net_wrapper, positive, negative, upscaled_image, mask=noise_mask)
++        model = await _apply_ipadapter_wrappers(item.control_net_wrapper, model)
++        # prepare mask: the latent carries the crop-size noise mask, as upstream's does; the sampler resizes it
++        latent_image, positive, negative = await _detail_encode(
++            vae, upscaled_image, noise_mask, positive, negative,
++            inpaint_model=bool(inpaint_model), tiled_encode=bool(tiled_encode))
++        latent_image = await _detailer_coreml_batch(latent_image, detailer_hook, before_decode=False)
++        refined_latent = await _detail_sample(
++            latent_image,
++            model=model,
++            positive=positive,
++            negative=negative,
++            seed=int(seed),
++            steps=int(steps),
++            cfg=float(cfg),
++            sampler_name=str(sampler_name),
++            scheduler=str(scheduler),
++            denoise=float(denoise),
++            cycle=int(cycle),
++            refiner=refiner,
++            refiner_ratio=refiner_ratio,
++            detailer_hook=detailer_hook,
++            scheduler_func_opt=scheduler_func_opt,
 +        )
-+    except Exception:
-+        if tiled_decode:
-+            raise
-+        decoded_ref = await vae.decode_tiled(
-+            sampled, tile_size=512, overlap=64)
-+    decoded = torch.as_tensor(await _raw(decoded_ref)).float()
-+    if decoded.ndim == 5 and decoded.shape[0] == 1:
-+        decoded = decoded.squeeze(0)
-+    return _resize_images(decoded, width, height).cpu()
++        refined_latent = await _detailer_coreml_batch(refined_latent, detailer_hook, before_decode=True)
++        try:
++            decoded_ref = (
++                await vae.decode_tiled(refined_latent, tile_size=512, overlap=64)
++                if tiled_decode else await vae.decode(refined_latent)
++            )
++        except Exception:
++            if tiled_decode:
++                raise
++            decoded_ref = await vae.decode_tiled(refined_latent, tile_size=512, overlap=64)
++        refined_image = torch.as_tensor(await _raw(decoded_ref)).float()
++    else:
++        # skipped
++        refined_image = upscaled_image
++
++    # downscale
++
++    # workaround: support WAN as an i2i model
++    if len(refined_image.shape) == 5:
++        refined_image = refined_image.squeeze(0)
++
++    refined_image = utils.tensor_resize(refined_image, w, h)
++
++    # prevent mixing of device
++    refined_image = refined_image.cpu()
++    return refined_image
 +
 +
 +def _paste_detail_crop(
@@ -40604,126 +40806,148 @@
 +    torch.Tensor, list[torch.Tensor], list[torch.Tensor], list[torch.Tensor],
 +    list[torch.Tensor], tuple[tuple[int, int], list[SEG]],
 +]:
++    """Impact Pack impact_pack.py DetailerForEach.do_detail (L264-414), ported line for line.
++
++    It serves DetailerForEach and its Debug, Pipe and AutoRetry forms, and FaceDetailer. The crops, the feathered
++    paste mask, the paste and the alpha previews are upstream's own helpers. The wildcard ordering and per-SEG seeds
++    (seed + index), hooks and retries are the pack's existing implementations. SEGSDetailer has its own port
++    (_segs_detailer); prefer_seg_image is accepted for compatibility and unused.
++    """
++    from . import _detailer_upstream as upstream
++
++    utils = upstream.utils
 +    _validate_detailer_sampling_hooks(detailer_hook)
 +    _sigma_schedule_recipe(scheduler_func_opt)
 +    pixels = _image4(await _raw(image)).cpu()
 +    if pixels.shape[0] != 1:
 +        raise ValueError("Impact per-SEGS detailers accept one image at a time")
-+    scaled_segs = _scale_segs_to_image(await _raw(segs), pixels)
-+    plan, concat_wildcard = _detail_wildcard_plan(
-+        wildcard, scaled_segs[1], int(seed))
-+    output = pixels.clone()
-+    cropped_list: list[torch.Tensor] = []
-+    enhanced_list: list[torch.Tensor] = []
-+    enhanced_alpha_list: list[torch.Tensor] = []
-+    cnet_images: list[torch.Tensor] = []
-+    new_items: list[SEG] = []
-+    detail_model = model
-+    if (
-+        not (isinstance(model, str) and model == "DUMMY")
-+        and int(noise_mask_feather) > 0
-+    ):
-+        detail_model = await model.patch(
-+            "differential_diffusion", strength=1.0)
 +
-+    for plan_index, (item, item_seed, item_wildcard) in enumerate(plan):
-+        source = (
-+            _image4(torch.as_tensor(item.cropped_image)).clone()
-+            if prefer_seg_image and item.cropped_image is not None
-+            else _crop_image(output, item.crop_region).clone()
-+        )
-+        source_mask = _seg_mask(item)
-+        if not torch.any(source_mask > 0):
-+            if prefer_seg_image:
-+                new_items.append(item)
++    image = pixels.clone()
++    enhanced_alpha_list = []
++    enhanced_list = []
++    cropped_list = []
++    cnet_pil_list = []
++
++    segs = upstream.scale_match(_segs(await _raw(segs)), image.shape, SEG)
++    new_segs = []
++
++    ordered_segs, wildcard_concat = _detail_wildcard_plan(wildcard, segs[1], int(seed))
++
++    dummy = isinstance(model, str) and model == "DUMMY"
++    if not dummy and int(noise_mask_feather) > 0:
++        model = await model.patch("differential_diffusion", strength=1.0)
++
++    for i, (seg, seg_seed, wildcard_item) in enumerate(ordered_segs):
++        cropped_image = utils.crop_ndarray4(image.cpu().numpy(), seg.crop_region)  # Never use seg.cropped_image to handle overlapping area
++        cropped_image = utils.to_tensor(cropped_image)
++        seg_mask = _seg_mask(seg)
++        mask = utils.to_tensor(seg_mask)
++        mask = utils.tensor_gaussian_blur_mask(mask, feather)
++
++        is_mask_all_zeros = bool((seg_mask == 0).all())
++        if is_mask_all_zeros:
 +            continue
-+        paste_mask = _gaussian(source_mask, int(feather))
-+        sample_mask = (
-+            _gaussian(source_mask, int(noise_mask_feather))
-+            if noise_mask else None)
-+        cropped_positive = await _crop_detail_conditioning(
-+            positive, pixels, item.crop_region)
-+        cropped_negative = await _crop_detail_conditioning(
-+            negative, pixels, item.crop_region)
-+        item_model = detail_model
-+        if item_wildcard.strip() == "[SKIP]":
++
++        if noise_mask:
++            cropped_mask = seg_mask
++        else:
++            cropped_mask = None
++
++        cropped_positive = await _crop_detail_conditioning(positive, image, seg.crop_region)
++        cropped_negative = await _crop_detail_conditioning(negative, image, seg.crop_region)
++
++        if wildcard_item and wildcard_item.strip() == '[SKIP]':
 +            continue
-+        if item_wildcard.strip() == "[STOP]":
++
++        if wildcard_item and wildcard_item.strip() == '[STOP]':
 +            break
-+        if item_wildcard.strip():
-+            item_model, _item_clip, wildcard_positive, _text = (
-+                await _wildcard_encode(
-+                    item_model, clip, item_wildcard, "", "populate", item_seed))
++
++        item_model = model
++        if not dummy and wildcard_item and wildcard_item.strip():
++            item_model, _item_clip, wildcard_positive, _text = await _wildcard_encode(
++                item_model, clip, wildcard_item, "", "populate", seg_seed)
 +            cropped_positive = (
 +                await cropped_positive.concat(wildcard_positive)
-+                if concat_wildcard else wildcard_positive)
-+        original_crop = source.clone()
-+        attempts = max(1, int(max_retries))
-+        enhanced = None
-+        for retry in range(attempts):
-+            enhanced = await _enhance_detail_crop(
-+                source,
-+                item,
-+                model=item_model,
-+                vae=vae,
-+                positive=cropped_positive,
-+                negative=cropped_negative,
-+                guide_size=guide_size,
-+                guide_size_for=guide_size_for,
-+                max_size=max_size,
-+                seed=item_seed + retry,
-+                steps=steps,
-+                cfg=cfg,
-+                sampler_name=sampler_name,
-+                scheduler=scheduler,
-+                denoise=denoise,
-+                noise_mask=sample_mask,
-+                force_inpaint=force_inpaint,
-+                cycle=cycle,
-+                inpaint_model=inpaint_model,
-+                tiled_encode=tiled_encode,
-+                tiled_decode=tiled_decode,
-+                refiner=refiner,
-+                refiner_ratio=refiner_ratio,
-+                detailer_hook=detailer_hook,
-+                scheduler_func_opt=scheduler_func_opt,
-+            )
-+            if (
-+                enhanced is None
-+                or isinstance(item_model, str) and item_model == "DUMMY"
-+                or not _detailer_hook_should_retry(enhanced, detailer_hook)
-+            ):
-+                break
-+            if retry + 1 == attempts:
-+                raise RuntimeError("Max retries reached")
-+        cropped_list.append(original_crop)
-+        if enhanced is not None:
-+            cnet_images.extend(_wrapper_preview_images(
-+                item.control_net_wrapper))
-+            _paste_detail_crop(output, enhanced, paste_mask, item.crop_region)
-+            await _detailer_hook_post_paste(
-+                output, detailer_hook, plan_index + 1, len(plan))
-+            enhanced = _image4(enhanced).cpu()
-+            enhanced_list.append(enhanced)
-+            alpha = _resize_masks(
-+                paste_mask, enhanced.shape[2], enhanced.shape[1])
-+            if alpha.shape[0] == 1 and enhanced.shape[0] > 1:
-+                alpha = alpha.expand(enhanced.shape[0], -1, -1)
-+            enhanced_alpha_list.append(torch.cat(
-+                (enhanced[..., :3], alpha[..., None]), dim=-1))
-+            new_image = enhanced
-+        else:
-+            new_image = None
-+        new_items.append(item._replace(cropped_image=new_image))
++                if wildcard_concat else wildcard_positive)
 +
-+    key = lambda tensor: tuple(tensor.shape)
-+    cropped_list.sort(key=key, reverse=True)
-+    enhanced_list.sort(key=key, reverse=True)
-+    enhanced_alpha_list.sort(key=key, reverse=True)
-+    return (
-+        output[..., :3], cropped_list, enhanced_list, enhanced_alpha_list,
-+        cnet_images, (scaled_segs[0], new_items),
-+    )
++        orig_cropped_image = cropped_image.clone()
++        if not dummy:
++            attempts = max(1, int(max_retries))
++            enhanced_image = None
++            for retry in range(attempts):
++                enhanced_image = await _enhance_detail_crop(
++                    cropped_image,
++                    seg,
++                    model=item_model,
++                    vae=vae,
++                    positive=cropped_positive,
++                    negative=cropped_negative,
++                    guide_size=guide_size,
++                    guide_size_for=guide_size_for,
++                    max_size=max_size,
++                    seed=seg_seed + retry,
++                    steps=steps,
++                    cfg=cfg,
++                    sampler_name=sampler_name,
++                    scheduler=scheduler,
++                    denoise=denoise,
++                    noise_mask=cropped_mask,
++                    force_inpaint=force_inpaint,
++                    cycle=cycle,
++                    inpaint_model=inpaint_model,
++                    tiled_encode=tiled_encode,
++                    tiled_decode=tiled_decode,
++                    refiner=refiner,
++                    refiner_ratio=refiner_ratio,
++                    detailer_hook=detailer_hook,
++                    scheduler_func_opt=scheduler_func_opt,
++                    noise_mask_feather=noise_mask_feather,
++                )
++                if enhanced_image is None or not _detailer_hook_should_retry(enhanced_image, detailer_hook):
++                    break
++                if retry + 1 == attempts:
++                    raise RuntimeError("Max retries reached")
++            cnet_pils = _wrapper_preview_images(seg.control_net_wrapper) if enhanced_image is not None else None
++        else:
++            enhanced_image = cropped_image
++            cnet_pils = None
++
++        if cnet_pils:
++            cnet_pil_list.extend(cnet_pils)
++
++        if enhanced_image is not None:
++            # don't latent composite-> converting to latent caused poor quality
++            # use image paste
++            image = image.cpu()
++            enhanced_image = enhanced_image.cpu()
++            utils.tensor_paste(image, enhanced_image, (seg.crop_region[0], seg.crop_region[1]), mask)  # this code affecting to `cropped_image`.
++            enhanced_list.append(enhanced_image)
++
++            await _detailer_hook_post_paste(image, detailer_hook, i + 1, len(ordered_segs))
++
++        if enhanced_image is not None:
++            # Convert enhanced_pil_alpha to RGBA mode
++            enhanced_image_alpha = utils.tensor_convert_rgba(enhanced_image)
++            new_seg_image = enhanced_image  # alpha should not be applied to seg_image
++
++            # Apply the mask
++            mask = utils.tensor_resize(mask, *utils.tensor_get_size(enhanced_image))
++            utils.tensor_putalpha(enhanced_image_alpha, mask)
++            enhanced_alpha_list.append(enhanced_image_alpha)
++        else:
++            new_seg_image = None
++
++        cropped_list.append(orig_cropped_image)  # NOTE: Don't use `cropped_image`
++
++        new_segs.append(seg._replace(cropped_image=new_seg_image))
++
++    image_tensor = utils.tensor_convert_rgb(image)
++
++    cropped_list.sort(key=lambda x: x.shape, reverse=True)
++    enhanced_list.sort(key=lambda x: x.shape, reverse=True)
++    enhanced_alpha_list.sort(key=lambda x: x.shape, reverse=True)
++
++    return image_tensor, cropped_list, enhanced_list, enhanced_alpha_list, cnet_pil_list, (segs[0], new_segs)
 +
 +
 +async def _detailer_for_each(**kwargs):
@@ -40788,37 +41012,104 @@
 +    image, segs, basic_pipe, refiner_basic_pipe_opt=None,
 +    refiner_ratio=None, batch_size=1, **kwargs,
 +):
++    """Impact Pack segs_nodes.py SEGSDetailer.do_detail / doit (L73-166), ported line for line.
++
++    Every SEG is cropped from the input image (or taken from the SEG), detailed with the same seed within a batch
++    pass, and returned as a new SEG; nothing is pasted. The pixel work is upstream's own; the engine encodes,
++    samples and decodes.
++    """
++    from . import _detailer_upstream as upstream
++
++    utils = upstream.utils
 +    model, clip, vae, positive, negative = _basic_pipe(basic_pipe)
-+    refiner, ratio = _detail_refiner(
-+        refiner_basic_pipe_opt, refiner_ratio)
-+    header = None
-+    items: list[SEG] = []
-+    cnet_images: list[torch.Tensor] = []
-+    base_seed = int(kwargs.pop("seed"))
-+    for batch_index in range(max(1, int(batch_size))):
-+        result = await _detail_segs_common(
-+            image=image,
-+            segs=segs,
-+            model=model,
-+            clip=clip,
-+            vae=vae,
-+            positive=positive,
-+            negative=negative,
-+            seed=base_seed + batch_index + 1,
-+            feather=0,
-+            wildcard=None,
-+            refiner=refiner,
-+            refiner_ratio=ratio,
-+            prefer_seg_image=True,
-+            **kwargs,
-+        )
-+        header = result[5][0]
-+        items.extend(result[5][1])
-+        cnet_images.extend(result[4])
-+    return (
-+        (header or (0, 0), items),
-+        cnet_images or [_empty_detail_image()],
-+    )
++    refiner, ratio = _detail_refiner(refiner_basic_pipe_opt, refiner_ratio)
++    scheduler_func_opt = kwargs.get("scheduler_func_opt")
++    _sigma_schedule_recipe(scheduler_func_opt)
++    noise_mask_feather = int(kwargs.get("noise_mask_feather", 0))
++    image = _image4(await _raw(image)).cpu()
++    if len(image) > 1:
++        raise ValueError("Impact per-SEGS detailers accept one image at a time")
++
++    segs = upstream.scale_match(_segs(await _raw(segs)), image.shape, SEG)
++
++    new_segs = []
++    cnet_pil_list = []
++
++    dummy = isinstance(model, str) and model == "DUMMY"
++    if not dummy and noise_mask_feather > 0:
++        model = await model.patch("differential_diffusion", strength=1.0)
++
++    seed = int(kwargs["seed"])
++    for i in range(int(batch_size)):
++        seed += 1
++        for seg in segs[1]:
++            cropped_image = seg.cropped_image if seg.cropped_image is not None \
++                                              else utils.crop_ndarray4(image.numpy(), seg.crop_region)
++            cropped_image = utils.to_tensor(cropped_image)
++
++            seg_mask = _seg_mask(seg)
++            is_mask_all_zeros = bool((seg_mask == 0).all())
++            if is_mask_all_zeros:
++                new_segs.append(seg)
++                continue
++
++            if kwargs["noise_mask"]:
++                cropped_mask = seg_mask
++            else:
++                cropped_mask = None
++
++            cropped_positive = await _crop_detail_conditioning(positive, image, seg.crop_region)
++            cropped_negative = await _crop_detail_conditioning(negative, image, seg.crop_region)
++
++            if not dummy:
++                enhanced_image = await _enhance_detail_crop(
++                    cropped_image,
++                    seg,
++                    model=model,
++                    vae=vae,
++                    positive=cropped_positive,
++                    negative=cropped_negative,
++                    guide_size=kwargs["guide_size"],
++                    guide_size_for=kwargs["guide_size_for"],
++                    max_size=kwargs["max_size"],
++                    seed=seed,
++                    steps=kwargs["steps"],
++                    cfg=kwargs["cfg"],
++                    sampler_name=kwargs["sampler_name"],
++                    scheduler=kwargs["scheduler"],
++                    denoise=kwargs["denoise"],
++                    noise_mask=cropped_mask,
++                    force_inpaint=kwargs["force_inpaint"],
++                    cycle=kwargs.get("cycle", 1),
++                    inpaint_model=kwargs.get("inpaint_model", False),
++                    tiled_encode=False,
++                    tiled_decode=False,
++                    refiner=refiner,
++                    refiner_ratio=ratio,
++                    scheduler_func_opt=scheduler_func_opt,
++                    noise_mask_feather=noise_mask_feather,
++                )
++                cnet_pils = _wrapper_preview_images(seg.control_net_wrapper) if enhanced_image is not None else None
++            else:
++                enhanced_image = cropped_image
++                cnet_pils = None
++
++            if cnet_pils:
++                cnet_pil_list.extend(cnet_pils)
++
++            if enhanced_image is None:
++                new_cropped_image = cropped_image
++            else:
++                new_cropped_image = enhanced_image
++
++            new_segs.append(SEG(new_cropped_image, seg.cropped_mask, seg.confidence, seg.crop_region, seg.bbox,
++                                seg.label, None))
++
++    # set fallback image
++    if len(cnet_pil_list) == 0:
++        cnet_pil_list = [_empty_detail_image()]
++
++    return (segs[0], new_segs), cnet_pil_list
 +
 +
 +async def _face_detailer_batches(
@@ -91556,6 +91847,551 @@
 +  "impact_wildcards": "wildcards"
 + }
 +}
+--- /dev/null
++++ b/v2/tests/test_detailer_repair_r6.py
+@@ -0,0 +1,542 @@
++"""Impact Pack fidelity repair r6 (detailers): parity in the lane gate.
++
++DEPS=<the unpacked Impact dependency-profile wheels; upstream-only test needs (piexif, dill) under _orig_only/> \
++run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/> <Impact v2/tests> <results> test_detailer_repair_r6.py
++
++The detailers' pixel work is compared with the engine work replaced, on both sides, by the same deterministic
++stand-ins (no model can run in the gate):
++  VAE encode   center-crop to a multiple of 8 (as Core's VAE.encode does), 8x8 average pool, 4 channels
++  sampler      a seeded blend whose strength depends on denoise, steps, cfg, sampler, scheduler, the positive
++               conditioning and differential diffusion, applied through the latent noise mask exactly as Core's
++               sampler applies it (comfy.utils.reshape_mask)
++  VAE decode   8x nearest upsample of the first 3 channels
++  differential diffusion   a marker on the model that the sampler stand-in reads
++Original: the pristine Impact Pack under Core. DetailerForEach.do_detail (which DetailerForEach, its Debug/Pipe forms
++and FaceDetailer use) with impact_sampling.ksampler_wrapper and utils.apply_differential_diffusion replaced by the
++stand-ins; SEGSDetailer.doit then SEGSPaste.doit. v2: the repaired handlers (_detail_segs_common, _segs_detailer,
++_paste_segs) with a fake SDK context whose vae / sample / model.patch do the same. SEGS come from each side's own
++MaskToSEGS on synthetic masks (repair r3 showed those equal). Compared: every output tensor's bytes and every SEG's
++values. Every v2 output also crosses the overlay's wire encoder (tensors as refs).
++"""
++import asyncio
++import glob
++import hashlib
++import importlib.abc
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++import types
++import warnings
++
++sys.dont_write_bytecode = True
++warnings.simplefilter("ignore")
++ROOT = "/pack"
++IMPACT = os.path.join(ROOT, "ComfyUI-Impact-Pack-HEAD")
++RESULTS = "/results"
++DEPS = "/deps"
++BASE = glob.glob("/bases/0cd9adec*/common-site-packages")[0]
++for _index, _path in enumerate((DEPS, BASE, "/core", "/overlay")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++H, W = 96, 128
++
++
++# ---------------------------------------------------------------- cases and fixtures
++def cases():
++    out = []
++    for mask in ("one", "two", "three+empty", "edge"):
++        for guide_for in (True, False):
++            for guide, max_size in ((48.0, 256.0), (160.0, 256.0), (160.0, 96.0)):
++                for feather in (0, 5):
++                    for noise_mask in (True, False):
++                        for nmf in (0, 4):
++                            for force in (True, False):
++                                out.append({"node": "dfe", "mask": mask, "guide_for": guide_for, "guide": guide,
++                                            "max_size": max_size, "feather": feather, "noise_mask": noise_mask,
++                                            "nmf": nmf, "force": force, "cycle": 1, "denoise": 0.5, "steps": 2,
++                                            "seed": 17, "model": "stub"})
++    for mask in ("one", "two"):
++        out.append({"node": "dfe", "mask": mask, "guide_for": True, "guide": 160.0, "max_size": 256.0, "feather": 5,
++                    "noise_mask": True, "nmf": 4, "force": True, "cycle": 2, "denoise": 0.35, "steps": 3, "seed": 5,
++                    "model": "stub"})
++    for mask in ("half", "half-two"):
++        out.append({"node": "dfe", "mask": mask, "guide_for": True, "guide": 160.0, "max_size": 256.0, "feather": 5,
++                    "noise_mask": True, "nmf": 0, "force": True, "cycle": 1, "denoise": 0.5, "steps": 2, "seed": 3,
++                    "model": "stub"})
++    out.append({"node": "dfe", "mask": "two", "guide_for": True, "guide": 160.0, "max_size": 256.0, "feather": 5,
++                "noise_mask": True, "nmf": 4, "force": True, "cycle": 1, "denoise": 0.5, "steps": 2, "seed": 3,
++                "model": "DUMMY"})
++    for mask in ("one", "two", "three+empty", "edge"):
++        for batch in (1, 2):
++            for noise_mask in (True, False):
++                for nmf in (0, 4):
++                    for force in (True, False):
++                        for guide, max_size in ((48.0, 256.0), (160.0, 96.0)):
++                            out.append({"node": "segs", "mask": mask, "batch": batch, "guide_for": True, "guide": guide,
++                                        "max_size": max_size, "noise_mask": noise_mask, "nmf": nmf, "force": force,
++                                        "cycle": 1, "denoise": 0.5, "steps": 2, "seed": 17, "model": "stub"})
++    out.append({"node": "segs", "mask": "half-two", "batch": 1, "guide_for": True, "guide": 160.0, "max_size": 256.0,
++                "noise_mask": True, "nmf": 0, "force": True, "cycle": 1, "denoise": 0.5, "steps": 2, "seed": 9,
++                "model": "stub"})
++    out.append({"node": "segs", "mask": "two", "batch": 1, "guide_for": False, "guide": 160.0, "max_size": 256.0,
++                "noise_mask": True, "nmf": 4, "force": True, "cycle": 1, "denoise": 0.5, "steps": 2, "seed": 9,
++                "model": "DUMMY"})
++    return out
++
++
++def make_image():
++    import torch
++    g = torch.Generator().manual_seed(1234)
++    image = torch.rand((1, H, W, 3), generator=g)
++    return torch.floor(image * 255.0) / 255.0  # 8-bit values, as LoadImage gives
++
++
++def make_mask(kind):
++    # Separate blobs, so MaskToSEGS makes one SEG each; "two" and "three" have overlapping crop regions (crop_factor
++    # 1.4), so later SEGs are cropped from where earlier ones were pasted.
++    import torch
++    kind = kind.removesuffix("+empty")
++    if kind.startswith("half"):
++        mask = torch.zeros((1, H // 2, W // 2))
++        mask[:, 6:18, 6:22] = 1.0
++        if kind == "half-two":
++            mask[:, 22:40, 24:50] = 1.0
++        return mask
++    mask = torch.zeros((1, H, W))
++    if kind == "one":
++        mask[:, 30:62, 40:80] = 1.0
++    elif kind == "two":
++        mask[:, 16:40, 14:44] = 1.0
++        mask[:, 46:78, 48:88] = 1.0
++    elif kind == "three":
++        mask[:, 8:24, 8:30] = 1.0
++        mask[:, 40:60, 10:40] = 0.75
++        mask[:, 30:70, 52:110] = 1.0
++    elif kind == "edge":
++        mask[:, 10:44, 100:W] = 1.0
++    return mask
++
++
++def mask_to_segs_args(kind):
++    # MaskToSEGS(mask, combined, crop_factor, bbox_fill, drop_size, contour_fill)
++    return (make_mask(kind), False, 1.4, False, 10, False)
++
++
++def with_empty(kind, segs, seg_type, empty_mask):
++    """For "+empty" cases, append a SEG whose mask is all zeros (the detailers skip it, each in its own way)."""
++    if not kind.endswith("+empty"):
++        return segs
++    return segs[0], list(segs[1]) + [seg_type(None, empty_mask, 1.0, [5, 5, 17, 15], (6, 6, 16, 14), "A", None)]
++
++
++def conditioning(sign):
++    import torch
++    return [[torch.full((1, 4, 8), 0.25 * sign), {"pooled_output": torch.full((1, 8), 0.5 * sign)}]]
++
++
++# ---------------------------------------------------------------- the engine stand-ins (the same on both sides)
++def stub_encode(pixels):
++    import torch
++    pixels = pixels[..., :3]
++    h8, w8 = (pixels.shape[1] // 8) * 8, (pixels.shape[2] // 8) * 8
++    y0, x0 = (pixels.shape[1] % 8) // 2, (pixels.shape[2] % 8) // 2
++    pixels = pixels[:, y0:y0 + h8, x0:x0 + w8].movedim(-1, 1).float()
++    latent = torch.nn.functional.avg_pool2d(pixels, 8)
++    return torch.cat([latent, latent.mean(1, keepdim=True)], 1)
++
++
++def stub_decode(samples):
++    import torch
++    return torch.nn.functional.interpolate(samples[:, :3].float(), scale_factor=8, mode="nearest").movedim(1, -1).clamp(0, 1)
++
++
++def stub_sample(samples, noise_mask, dd, seed, steps, cfg, sampler_name, scheduler, positive, denoise):
++    import torch
++    import comfy.utils
++    g = torch.Generator().manual_seed(int(seed) % (1 << 63))
++    noise = torch.randn(samples.shape, generator=g)
++    strength = float(denoise) * (0.6 + 0.1 * min(int(steps), 4)) * (1.0 + 0.01 * float(cfg)) * (0.75 if dd else 1.0)
++    if sampler_name != "euler" or scheduler != "normal":
++        strength *= 0.9
++    strength = min(strength, 1.0)
++    cond = float(positive[0][0].float().mean())
++    target = 0.5 * samples.flip(-1) + 0.1 * noise + cond
++    if noise_mask is not None:
++        m = comfy.utils.reshape_mask(torch.as_tensor(noise_mask).float(), samples.shape)
++    else:
++        m = torch.ones_like(samples)
++    return samples * (1 - m * strength) + target * m * strength
++
++
++# ---------------------------------------------------------------- records
++def digest(value):
++    import numpy as np
++    import torch
++    if value is None:
++        return None
++    if isinstance(value, torch.Tensor):
++        value = value.detach().cpu().numpy()
++    value = np.ascontiguousarray(np.asarray(value, dtype=np.float32))
++    return [list(value.shape), hashlib.sha256(value.tobytes()).hexdigest()]
++
++
++def seg_mask2d(mask):
++    import numpy as np
++    import torch
++    mask = mask.detach().cpu().numpy() if isinstance(mask, torch.Tensor) else np.asarray(mask)
++    if mask.ndim == 3 and mask.shape[0] == 1:
++        mask = mask[0]
++    return mask
++
++
++def segs_record(segs):
++    import numpy as np
++    shape, items = segs
++    rows = []
++    for item in items:
++        rows.append({"image": digest(item[0]), "mask": digest(seg_mask2d(item[1])),
++                     "confidence": float(np.asarray(item[2], dtype=np.float32).reshape(-1)[0]),
++                     "crop_region": [int(v) for v in item[3]], "bbox": [float(v) for v in item[4]],
++                     "label": str(item[5]), "cnet": item[6] is not None})
++    return {"shape": [int(v) for v in shape], "items": rows}
++
++
++def outcome(fn):
++    try:
++        return ["value", fn()]
++    except Exception as exc:
++        return ["error", type(exc).__name__, str(exc)]
++
++
++# ---------------------------------------------------------------- original side
++class StubModel:
++    def __init__(self, dd=False):
++        self.dd = dd
++        self.model_options = {"denoise_mask_function": "differential_diffusion"} if dd else {}
++
++
++class StubVae:
++    def encode(self, pixels):
++        return stub_encode(pixels)
++
++    def decode(self, samples):
++        return stub_decode(samples)
++
++    def decode_tiled(self, samples, **_kwargs):
++        return stub_decode(samples)
++
++
++def run_original(plan, out_path):
++    sys.path.insert(0, os.path.join(DEPS, "_orig_only"))
++    import comfy.cli_args
++    comfy.cli_args.args.cpu = True
++    import server
++
++    class Routes:
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: lambda function: function
++
++    class Instance:
++        routes = Routes()
++        prompt_queue = types.SimpleNamespace(currently_running={})
++
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: None
++
++    server.PromptServer.instance = Instance()
++    root = "/tmp/orig-impact"
++    shutil.copytree(IMPACT, root, ignore=shutil.ignore_patterns("v2", "__pycache__", ".git"))
++    sys.path.insert(0, os.path.join(root, "modules"))
++    import impact.config  # noqa: F401  (upstream __init__ order)
++    import impact.impact_server  # noqa: F401
++    import impact.impact_pack as impact_pack
++    import impact.impact_sampling as impact_sampling
++    import impact.segs_nodes as segs_nodes
++    import impact.utils as impact_utils
++
++    def ksampler_wrapper(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise,
++                         refiner_ratio=None, refiner_model=None, refiner_clip=None, refiner_positive=None,
++                         refiner_negative=None, sigma_factor=1.0, noise=None, scheduler_func=None, sampler_opt=None):
++        out = latent_image.copy()
++        out["samples"] = stub_sample(latent_image["samples"], latent_image.get("noise_mask"), model.dd, seed, steps, cfg,
++                                     sampler_name, scheduler, positive, denoise)
++        return out
++
++    impact_sampling.ksampler_wrapper = ksampler_wrapper  # the boundary: the engine samples in V2
++    impact_utils.apply_differential_diffusion = lambda model: StubModel(dd=True)
++
++    import numpy as np
++    import impact.core as impact_core
++
++    image = make_image()
++    vae = StubVae()
++    records = []
++    for case in plan:
++        def run():
++            (segs,) = segs_nodes.MaskToSEGS.doit(*mask_to_segs_args(case["mask"]))
++            segs = with_empty(case["mask"], segs, impact_core.SEG, np.zeros((10, 12), dtype=np.float32))
++            model = "DUMMY" if case["model"] == "DUMMY" else StubModel()
++            if case["node"] == "dfe":
++                result = impact_pack.DetailerForEach.do_detail(
++                    image, segs, model, None, vae, case["guide"], case["guide_for"], case["max_size"], case["seed"],
++                    case["steps"], 5.0, "euler", "normal", conditioning(1), conditioning(-1), case["denoise"],
++                    case["feather"], case["noise_mask"], case["force"], wildcard_opt="", detailer_hook=None,
++                    cycle=case["cycle"], inpaint_model=False, noise_mask_feather=case["nmf"])
++                image_out, cropped, enhanced, alpha, cnet, new_segs = result
++                return {"image": digest(image_out), "cropped": [digest(x) for x in cropped],
++                        "enhanced": [digest(x) for x in enhanced], "alpha": [digest(x) for x in alpha],
++                        "cnet": len(cnet), "segs": segs_record(new_segs)}
++            basic_pipe = (model, None, vae, conditioning(1), conditioning(-1))
++            new_segs, cnet = segs_nodes.SEGSDetailer().doit(
++                image, segs, case["guide"], case["guide_for"], case["max_size"], case["seed"], case["steps"], 5.0,
++                "euler", "normal", case["denoise"], case["noise_mask"], case["force"], basic_pipe, 0.2, case["batch"],
++                cycle=case["cycle"], inpaint_model=False, noise_mask_feather=case["nmf"])
++            (pasted,) = segs_nodes.SEGSPaste().doit(image, new_segs, 3, 255)
++            return {"segs": segs_record(new_segs), "cnet": [digest(x) for x in cnet], "paste": digest(pasted)}
++        records.append(outcome(run))
++    with open(out_path, "w") as handle:
++        json.dump({"records": records}, handle)
++
++
++# ---------------------------------------------------------------- v2 side
++GUEST_BASE = {"av", "blake3", "comfy_api", "comfy_secure_nodes", "comfy_secure_sdk", "filelock", "fsspec", "iniconfig",
++              "jinja2", "markupsafe", "mpmath", "networkx", "numpy", "nvidia", "packaging", "PIL", "pluggy", "psutil",
++              "pygments", "pytest", "_pytest", "py", "pytest_asyncio", "safetensors", "setuptools", "pkg_resources",
++              "_distutils_hack", "sympy", "torch", "functorch", "torchgen", "triton", "typing_extensions", "wheel"}
++
++
++class GuestImports(importlib.abc.MetaPathFinder):
++    def __init__(self, allowed):
++        self.allowed, self.blocked = allowed, set()
++
++    def find_spec(self, fullname, path, target=None):
++        top = fullname.split(".")[0]
++        if top in sys.stdlib_module_names or top in self.allowed or top.startswith("_"):
++            return None
++        frame = sys._getframe(1)
++        while frame and frame.f_code.co_filename.startswith("<frozen"):
++            frame = frame.f_back
++        if frame is not None and not frame.f_code.co_filename.startswith(("/pack/", DEPS)):
++            return None
++        self.blocked.add(fullname)
++        raise ModuleNotFoundError(f"blocked in guest emulation: {fullname}", name=fullname)
++
++
++class FakeRef:
++    kind = "REF"
++
++    def __init__(self, value):
++        self.value = value
++
++    async def release(self):
++        return None
++
++
++class FakeImageRef(FakeRef):
++    kind = "IMAGE"
++
++    @classmethod
++    async def _from_raw(cls, value):
++        return cls(value)
++
++
++class FakeMaskRef(FakeImageRef):
++    kind = "MASK"
++
++
++class FakeLatentRef(FakeRef):
++    kind = "LATENT"
++
++    @classmethod
++    async def from_value(cls, value):
++        return cls(value)
++
++    @classmethod
++    def _wrap(cls, ref):
++        return cls(ref.value)
++
++
++class FakeCondRef(FakeLatentRef):
++    kind = "CONDITIONING"
++
++
++async def fake_materialize(value):
++    return value.value if isinstance(value, FakeRef) else value
++
++
++class FakeModel:
++    def __init__(self, dd=False):
++        self.dd = dd
++
++    async def patch(self, name, strength=1.0):
++        assert name == "differential_diffusion" and strength == 1.0, (name, strength)
++        return FakeModel(dd=True)
++
++
++class FakeVae:
++    async def encode(self, image_ref):
++        return FakeLatentRef({"samples": stub_encode(await fake_materialize(image_ref))})
++
++    async def encode_tiled(self, image_ref, **_kwargs):
++        return await self.encode(image_ref)
++
++    async def decode(self, latent_ref):
++        return FakeImageRef(stub_decode((await fake_materialize(latent_ref))["samples"]))
++
++    async def decode_tiled(self, latent_ref, **_kwargs):
++        return await self.decode(latent_ref)
++
++
++class FakeContext:
++    def __init__(self):
++        self.calls = []
++
++    async def sample(self, *, latent, steps, model, positive, negative, cfg, seed, sampler_name, scheduler, denoise=1.0,
++                     **extra):
++        self.calls.append(sorted(k for k, v in extra.items() if v not in (None, False, True)))
++        value = dict(await fake_materialize(latent))
++        out = dict(value)
++        out["samples"] = stub_sample(value["samples"], value.get("noise_mask"), model.dd, seed, steps, cfg, sampler_name,
++                                     scheduler, await fake_materialize(positive), denoise)
++        return FakeLatentRef(out)
++
++
++def run_v2(plan, out_path):
++    import torch
++    deps_top = {n[:-3] if n.endswith(".py") else n for n in os.listdir(DEPS) if not n.endswith((".dist-info", ".data", ".libs"))}
++    finder = GuestImports(GUEST_BASE | deps_top | {"impact_v2"})
++    sys.meta_path.insert(0, finder)
++    spec = importlib.util.spec_from_file_location("impact_v2", os.path.join(IMPACT, "v2", "__init__.py"),
++                                                  submodule_search_locations=[os.path.join(IMPACT, "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["impact_v2"] = package
++    spec.loader.exec_module(package)
++    nodes = sys.modules["impact_v2._secure_nodes"]
++    from comfy_api.latest import sdk as public_sdk
++    wire_spec = importlib.util.spec_from_file_location("overlay_wire", "/overlay/comfy_secure_nodes/transport/wire.py")
++    wire = importlib.util.module_from_spec(wire_spec)
++    wire_spec.loader.exec_module(wire)
++    context = FakeContext()
++    nodes.materialize = fake_materialize
++    nodes.sdk = types.SimpleNamespace(ctx=lambda: context, Ref=FakeRef, ImageRef=FakeImageRef, MaskRef=FakeMaskRef,
++                                      LatentRef=FakeLatentRef, CondRef=FakeCondRef)
++    counter = [0]
++
++    def ref(cls, kind):
++        counter[0] += 1
++        return cls(kind=kind, id=f"t{counter[0]}")
++
++    def through_wire(value):
++        if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], list):
++            value = (tuple(value[0]), [tuple([None if item[0] is None else ref(public_sdk.ImageRef, "IMAGE"),
++                                              ref(public_sdk.MaskRef, "MASK"), *item[2:]]) for item in value[1]])
++        elif isinstance(value, torch.Tensor):
++            value = ref(public_sdk.ImageRef, "IMAGE")
++        elif isinstance(value, list):
++            value = [ref(public_sdk.ImageRef, "IMAGE") for _ in value]
++        return wire.decode(json.loads(json.dumps(wire.encode(value))))
++
++    image = make_image()
++    vae = FakeVae()
++    records, wire_failures = [], []
++    for index, case in enumerate(plan):
++        def run():
++            (segs,) = asyncio.run(nodes._mask_to_segs_upstream(*mask_to_segs_args(case["mask"])))
++            segs = with_empty(case["mask"], segs, nodes.SEG, torch.zeros((1, 10, 12)))
++            model = "DUMMY" if case["model"] == "DUMMY" else FakeModel()
++            if case["node"] == "dfe":
++                result = asyncio.run(nodes._detail_segs_common(
++                    image=image, segs=segs, model=model, clip=None, vae=vae, positive=conditioning(1),
++                    negative=conditioning(-1), guide_size=case["guide"], guide_size_for=case["guide_for"],
++                    max_size=case["max_size"], seed=case["seed"], steps=case["steps"], cfg=5.0, sampler_name="euler",
++                    scheduler="normal", denoise=case["denoise"], feather=case["feather"], noise_mask=case["noise_mask"],
++                    force_inpaint=case["force"], wildcard="", cycle=case["cycle"], detailer_hook=None,
++                    inpaint_model=False, noise_mask_feather=case["nmf"]))
++                image_out, cropped, enhanced, alpha, cnet, new_segs = result
++                for value in (image_out, cropped, enhanced, alpha, new_segs):
++                    through_wire(value)
++                return {"image": digest(image_out), "cropped": [digest(x) for x in cropped],
++                        "enhanced": [digest(x) for x in enhanced], "alpha": [digest(x) for x in alpha],
++                        "cnet": len(cnet), "segs": segs_record(new_segs)}
++            basic_pipe = (model, None, vae, conditioning(1), conditioning(-1))
++            new_segs, cnet = asyncio.run(nodes._segs_detailer(
++                image=image, segs=segs, basic_pipe=basic_pipe, refiner_basic_pipe_opt=None, refiner_ratio=0.2,
++                batch_size=case["batch"], guide_size=case["guide"], guide_size_for=case["guide_for"],
++                max_size=case["max_size"], seed=case["seed"], steps=case["steps"], cfg=5.0, sampler_name="euler",
++                scheduler="normal", denoise=case["denoise"], noise_mask=case["noise_mask"], force_inpaint=case["force"],
++                cycle=case["cycle"], inpaint_model=False, noise_mask_feather=case["nmf"]))
++            through_wire(new_segs)
++            through_wire(cnet)
++            (pasted,) = asyncio.run(nodes._paste_segs(image, new_segs, 3, 255))
++            through_wire(pasted)
++            return {"segs": segs_record(new_segs), "cnet": [digest(x) for x in cnet], "paste": digest(pasted)}
++        try:
++            records.append(outcome(run))
++        except Exception as exc:
++            records.append(["error", type(exc).__name__, str(exc)])
++            wire_failures.append(index)
++    extra_sample_args = sorted({k for call in context.calls for k in call})
++    with open(out_path, "w") as handle:
++        json.dump({"records": records, "wire_failures": wire_failures, "blocked_imports": sorted(finder.blocked),
++                   "sample_calls": len(context.calls), "extra_sample_args": extra_sample_args}, handle)
++
++
++def main(argv):
++    if argv[:1] == ["side"]:
++        plan = json.load(open(argv[2]))
++        return (run_original if argv[1] == "original" else run_v2)(plan, argv[3]) or 0
++    plan = cases()
++    with open("/tmp/plan.json", "w") as handle:
++        json.dump(plan, handle)
++    sides = {}
++    for side in ("original", "v2"):
++        with open(os.path.join(RESULTS, f"side-{side}.log"), "w") as log:
++            proc = subprocess.run([sys.executable, "-I", "-B", os.path.abspath(__file__), "side", side, "/tmp/plan.json",
++                                   f"/tmp/out-{side}.json"], stdout=log, stderr=subprocess.STDOUT, timeout=3000)
++        if proc.returncode != 0:
++            print(f"side {side} failed ({proc.returncode}); see side-{side}.log")
++            return 1
++        sides[side] = json.load(open(f"/tmp/out-{side}.json"))
++        shutil.copyfile(f"/tmp/out-{side}.json", os.path.join(RESULTS, f"outcomes-{side}.json"))
++    original, v2 = sides["original"], sides["v2"]
++    by_node = {}
++    mismatches = []
++    for case, want, got in zip(plan, original["records"], v2["records"]):
++        row = by_node.setdefault(case["node"], {"cases": 0, "values": 0, "mismatches": 0, "segs_items": 0})
++        row["cases"] += 1
++        row["values"] += want[0] == "value"
++        if want[0] == "value":
++            row["segs_items"] += len(want[1]["segs"]["items"])
++        if want != got:
++            row["mismatches"] += 1
++            mismatches.append({"case": case, "original": want, "v2": got})
++    for row in by_node.values():
++        row["verdict"] = "EXACT" if not row["mismatches"] else "MISMATCH"
++        row["errors"] = row["cases"] - row["values"]
++    unexpected = sorted(set(v2["blocked_imports"]) - {"accimage", "defusedxml", "envwrap"})
++    probe = next((g for w, g in zip(original["records"], v2["records"]) if w[0] == "value" and "image" in w[1]), None)
++    perturbed = json.loads(json.dumps(probe))
++    perturbed[1]["image"][1] = "0" * 64
++    negative_red = perturbed != probe
++    ok = not mismatches and not v2["wire_failures"] and not unexpected and all(
++        row["values"] == row["cases"] for row in by_node.values())
++    parity = {"status": "PASS" if ok else "FAIL", "nodes": by_node, "wire_failures": v2["wire_failures"],
++              "guest_blocked_imports": v2["blocked_imports"], "guest_blocked_imports_unexpected": unexpected,
++              "engine_sample_calls": v2["sample_calls"], "extra_sample_args": v2["extra_sample_args"],
++              "negative_control": {"perturbation": "one output image digest replaced", "turned_red": negative_red}}
++    with open(os.path.join(RESULTS, "parity.json"), "w") as handle:
++        json.dump(parity, handle, indent=1, sort_keys=True)
++        handle.write("\n")
++    with open(os.path.join(RESULTS, "mismatches.json"), "w") as handle:
++        json.dump(mismatches[:40], handle, indent=1)
++        handle.write("\n")
++    print(json.dumps({k: parity[k] for k in ("status", "nodes", "wire_failures", "guest_blocked_imports_unexpected",
++                                             "engine_sample_calls", "extra_sample_args", "negative_control")}, indent=1))
++    return 0 if ok and negative_red else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
 --- /dev/null
 +++ b/v2/tests/test_detector_repair_r1.py
 @@ -0,0 +1,506 @@

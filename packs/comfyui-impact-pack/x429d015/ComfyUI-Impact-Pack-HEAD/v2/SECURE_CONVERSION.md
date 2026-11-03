@@ -146,3 +146,29 @@ Manifest uses the original indent-1 format with only the five intended field cha
   The preview is still shown.
 - `tests/test_preview_bridge_repair_r5.py` is the lane-gate parity test. It runs every block / restore_mask
   combination on two image sizes through the original node and through this handler.
+
+## Fidelity repair r6 - detailers
+
+- DetailerForEach and SEGSDetailer follow upstream line for line:
+  - DetailerForEach (with its Debug, Pipe and AutoRetry forms, and FaceDetailer, which share it) follows
+    `DetailerForEach.do_detail`;
+  - SEGSDetailer follows `SEGSDetailer.do_detail`;
+  - the per-SEG step in both follows `core.enhance_detail`.
+- Their pixel work is upstream's own code, copied verbatim in `_detailer_upstream.py` and repair r4's
+  `_segs_paste_upstream.py`: `segs_scale_match`, `crop_ndarray4`, `tensor_resize`, `tensor_gaussian_blur_mask`,
+  `tensor_paste` and the RGBA helpers. The engine still encodes, samples and decodes.
+- It replaces v2's own versions of these steps, which differed from upstream:
+  - the blur of the paste mask and of the noise mask, which used a different kernel width;
+  - the noise mask, which was resized to the upscaled crop before the sampler resized it again. It now reaches the
+    sampler at crop size, as upstream's does;
+  - the resizes up to the guide size and back, and the SEGS scale match.
+- SEGSDetailer now matches upstream in four ways:
+  - it crops every SEG from its input image, and pastes nothing;
+  - it uses one seed for all SEGs in a batch pass;
+  - it returns the crop for a SEG it does not detail;
+  - it clears the SEG's ControlNet wrapper.
+- Unchanged: the inpaint-model path, detailer hooks, ControlNet wrappers, wildcards, the refiner, and the
+  AnimateDiff detailers.
+- `tests/test_detailer_repair_r6.py` is the lane-gate parity test. No model can run in the gate, so both sides use
+  the same deterministic stand-ins for the VAE encode, the sampler and the VAE decode. Everything else is compared
+  exactly: DetailerForEach's six outputs, and SEGSDetailer followed by SEGSPaste.
