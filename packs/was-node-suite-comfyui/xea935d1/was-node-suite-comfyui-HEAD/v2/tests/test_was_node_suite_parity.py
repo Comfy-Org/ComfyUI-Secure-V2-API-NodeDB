@@ -94,6 +94,16 @@ def make_fixtures():
     pixels(6, 5, 10).save(many / 'one.png')
     (FIXTURES / 'elsewhere').mkdir(parents=True, exist_ok=True)
     pixels(7, 4, 11).save(FIXTURES / 'elsewhere' / 'f.png')
+    # text files: lines with a CRLF, a blank line and a comment; an empty file; markdown with comments and UTF-8; bytes
+    # that are not UTF-8; a folder holding a file; a text file outside the input folder
+    texts = FIXTURES / 'input' / 'texts'
+    (texts / 'sub').mkdir(parents=True, exist_ok=True)
+    (texts / 'lines.txt').write_bytes(b'  first line \nsecond\r\n\n# a comment\nlast line')
+    (texts / 'empty.txt').write_bytes(b'')
+    (texts / 'notes.md').write_bytes('# heading\nalpha\r\n  # indented comment\nbeta café\n'.encode('utf-8'))
+    (texts / 'bad.txt').write_bytes(b'ok\n\xff\xfe broken\n')
+    (texts / 'sub' / 'deep.txt').write_bytes(b'deep\n')
+    (FIXTURES / 'elsewhere' / 'note.txt').write_bytes(b'outside\n')
 
 
 def text(node_id, value):
@@ -137,10 +147,11 @@ def save(**options):
     return node('3', 'Image Save', **inputs)
 
 
-def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None):
+def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None, session=False,
+         v2_only=False):
     extra_pnginfo = extra if extra is not None else ({'workflow': WORKFLOW} if workflow else None)
     return {'name': name, 'prompt': prompt, 'expect': expect, 'allow': sorted(allow), 'runs': runs,
-            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo}
+            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo, 'session': session, 'v2_only': v2_only}
 
 
 PNG = {'DECODED-EXACT-PNG-PHYS'}
@@ -687,9 +698,148 @@ CASES += [
 ]
 
 
+# ---- phase B batch 9: text files, Number Counter, Prompt Styles Selector, and refusals by name
+def text_file(file_path, dictionary_name='[filename]'):
+    return node('11', 'Load Text File', file_path=file_path, dictionary_name=dictionary_name)
+
+
+def text_line(**inputs):
+    values = dict(file_path='input/texts/lines.txt', dictionary_name='[filename]', label='TextBatch', mode='automatic',
+                  index=0)
+    values.update(inputs)
+    return node('11', 'Text Load Line From File', **values)
+
+
+def text_saver(**options):
+    inputs = {'text': ['10', 0], 'path': 'output/texts', 'filename_prefix': 'ComfyUI', 'filename_delimiter': '_',
+              'filename_number_padding': 4, 'file_extension': '.txt', 'encoding': 'utf-8', 'filename_suffix': ''}
+    inputs.update(options)
+    return node('11', 'Save Text File', **inputs)
+
+
+def counter(node_id, **inputs):
+    values = dict(number_type='integer', mode='increment', start=0.0, stop=0.0, step=1.0)
+    values.update(inputs)
+    return node(node_id, 'Number Counter', **values)
+
+
+def counter_probe(node_id):
+    return probe(**outs(node_id, number=0, number_float=1, number_int=2))
+
+
+TEXT_PROBE = dict(text=['11', 0], files=['11', 1])
+OUTSIDE_NOTE = str(FIXTURES / 'elsewhere' / 'note.txt')
+SAVED_TEXT = 'line one\nline two café\n'
+OUTSIDE_SAVE = "is not a folder inside ComfyUI's output or temp folder"
+CASES += [
+    case('load-text-file', g(text_file('input/texts/notes.md'), probe(**TEXT_PROBE))),
+    case('load-text-file-named-dictionary', g(text_file('input/texts/lines.txt', 'mine'), probe(**TEXT_PROBE))),
+    case('load-text-file-missing', g(text_file('input/texts/nope.txt'), probe(**TEXT_PROBE))),
+    case('load-text-file-empty-path', g(text_file(''), probe(**TEXT_PROBE))),
+    case('load-text-file-from-output', g(text_file('output/notes/out.txt'), probe(**TEXT_PROBE)),
+         preexisting={'notes/out.txt': 'kept\n# skipped\nlast'}),
+    case('load-text-file-folder-error', g(text_file('input/texts/sub'), probe(**TEXT_PROBE)), expect='error'),
+    case('load-text-file-not-utf8-error', g(text_file('input/texts/bad.txt'), probe(**TEXT_PROBE)), expect='error'),
+    case('load-text-file-absolute-refused', g(text_file(OUTSIDE_NOTE), probe(**TEXT_PROBE)),
+         expect="refused-named:is outside ComfyUI's input, output and temp folders"),
+] + [
+    case('text-load-line-automatic', g(text_line(label='tl-auto'), probe(**TEXT_PROBE)), runs=6),
+    case('text-load-line-index', g(text_line(mode='index', index=3, label='tl-index'), probe(**TEXT_PROBE))),
+    case('text-load-line-index-wraps', g(text_line(mode='index', index=7, label='tl-wrap'), probe(**TEXT_PROBE))),
+    case('text-load-line-empty-file-error', g(text_line(file_path='input/texts/empty.txt', label='tl-empty'),
+                                              probe(**TEXT_PROBE)), expect='error'),
+    case('text-load-line-empty-file-index-error', g(text_line(file_path='input/texts/empty.txt', mode='index',
+                                                              label='tl-empty-index'), probe(**TEXT_PROBE)),
+         expect='error'),
+    case('text-load-line-multiline', g(text('10', 'red\ngreen\nblue\n'),
+                                       text_line(multiline_text=['10', 0], label='tl-multi'), probe(**TEXT_PROBE)),
+         runs=4),
+    case('text-load-line-multiline-bad-index', g(text('10', 'a\nb'),
+                                                 text_line(multiline_text=['10', 0], mode='index', index=5,
+                                                           label='tl-multi-index'), probe(**TEXT_PROBE))),
+    case('text-load-line-missing', g(text_line(file_path='input/texts/nope.txt', label='tl-missing'),
+                                     probe(**TEXT_PROBE))),
+    case('text-load-line-no-path', g(text_line(file_path='', label='tl-none'), probe(**TEXT_PROBE))),
+    case('text-load-line-folder-error', g(text_line(file_path='input/texts/sub', label='tl-folder'),
+                                          probe(**TEXT_PROBE)), expect='error'),
+    # one label across two cases: a new file resets the label's counter, as the original's database did
+    case('text-load-line-shared-label-first-file', g(text_line(label='tl-shared'), probe(**TEXT_PROBE)), runs=2),
+    case('text-load-line-shared-label-new-file-resets', g(text_line(file_path='input/texts/notes.md',
+                                                                    label='tl-shared'), probe(**TEXT_PROBE)), runs=2),
+    case('text-load-line-absolute-refused', g(text_line(file_path=OUTSIDE_NOTE, label='tl-abs'), probe(**TEXT_PROBE)),
+         expect='refusal'),
+] + [
+    case('save-text-file', g(text('10', SAVED_TEXT), text_saver(), probe(text=['10', 0])), runs=2),
+    case('save-text-file-after-existing', g(text('10', SAVED_TEXT), text_saver(), probe(text=['10', 0])),
+         preexisting={'texts/ComfyUI_0007.txt': 'old', 'texts/other_0099.txt': 'x'}),
+    case('save-text-file-no-padding-overwrites', g(text('10', SAVED_TEXT),
+                                                   text_saver(filename_prefix='fixed', filename_number_padding=0),
+                                                   probe(text=['10', 0])),
+         preexisting={'texts/fixed.txt': 'old text'}),
+    case('save-text-file-dated-no-delimiter-md', g(text('10', SAVED_TEXT),
+                                                   text_saver(path='output/[time(%Y-%m-%d)]', filename_delimiter='',
+                                                              filename_suffix='_v', file_extension='.md'),
+                                                   probe(text=['10', 0]))),
+    # The refusal cases have the saver as their only output node: with a second output in the prompt, core would run
+    # that one and leave out the refused saver without failing the prompt.
+    # The original's default path names the output folder only when ComfyUI runs from its parent folder. The fork
+    # refuses it as a write-protected path; this pin writes there (see ORIGINAL_EXPECTATIONS). V2 refuses it by name.
+    case('save-text-file-default-path-refused', g(text('10', SAVED_TEXT),
+                                                  text_saver(path='./ComfyUI/output/[time(%Y-%m-%d)]')),
+         expect=f'refused-named-original-fails:{OUTSIDE_SAVE}'),
+    case('save-text-file-input-refused', g(text('10', SAVED_TEXT), text_saver(path='input/notes')),
+         expect=f'refused-named:{OUTSIDE_SAVE}'),
+    case('save-text-file-utf16-refused', g(text('10', SAVED_TEXT), text_saver(encoding='utf-16')),
+         expect='refused-named:the managed text writer writes UTF-8 only'),
+    case('save-text-file-extension-refused', g(text('10', SAVED_TEXT), text_saver(file_extension='.prompt')),
+         expect='refused-named:the managed text writer accepts only'),
+    case('save-text-file-unknown-encoding-error', g(text('10', SAVED_TEXT), text_saver(encoding='no-such-codec'),
+                                                    probe(text=['10', 0])), expect='error'),
+] + [
+    # one executor across each case's prompts, as in a running server; one node id per case (the counters persist)
+    case('number-counter-increment', g(counter('61'), counter_probe('61')), runs=3, session=True),
+    case('number-counter-increment-to-stop', g(counter('62', mode='increment_to_stop', stop=2.0), counter_probe('62')),
+         runs=4, session=True),
+    case('number-counter-reset-after-stop', g(counter('63', mode='reset_after_stop', stop=2.0), counter_probe('63')),
+         runs=4, session=True),
+    case('number-counter-decrement-unchanged', g(counter('64', mode='decrement', start=5.0), counter_probe('64')),
+         runs=2, session=True),
+    case('number-counter-float', g(counter('65', number_type='float', step=0.25), counter_probe('65')), runs=3,
+         session=True),
+    case('number-counter-reset-bool', g(node('20', 'Constant Number', number_type='integer', number=1.0),
+                                        counter('66', start=10.0, reset_bool=['20', 0]), counter_probe('66')),
+         runs=2, session=True),
+] + [
+    case('prompt-styles-none', g(node('11', 'Prompt Styles Selector', style='None'),
+                                 probe(text=['11', 0], files=['11', 1]))),
+] + [
+    # refused by name; the original is not run here (it needs cv2, the network, or cascade files this snapshot omits)
+    case('image-crop-face-needs-opencv',
+         g(image(seed=28), node('11', 'Image Crop Face', image=['2', 0], crop_padding_factor=0.25,
+                                cascade_xml='lbpcascade_animeface.xml'), probe(files=['11', 0])),
+         expect='refused-named-v2:computes it with OpenCV (cv2 cascade classifiers)', v2_only=True),
+    case('create-video-needs-opencv',
+         g(node('11', 'Create Video from Path', transition_frames=10, image_delay_sec=1.0, fps=30, max_size=512,
+                input_path='input/batch', output_path='output', filename='morph', codec='H264'),
+           probe(files=['11', 0])),
+         expect='refused-named-v2:computes it with OpenCV (cv2 video writing)', v2_only=True),
+    case('video-dump-frames-needs-opencv',
+         g(node('11', 'Video Dump Frames', video_path='input/clip.mp4', output_path='output/frames', prefix='frame_',
+                filenumber_digits=4, extension='png'), probe(files=['11', 0])),
+         expect='refused-named-v2:computes it with OpenCV (cv2 video reading)', v2_only=True),
+    case('clipseg-needs-weights',
+         g(image(seed=29), node('11', 'CLIPSeg Masking', image=['2', 0], text='a cat'), probe(files=['11', 0])),
+         expect='refused-named-v2:downloads the CLIPSeg model', v2_only=True),
+    case('nsp-needs-network',
+         g(ckpt(), node('11', 'CLIPTextEncode (NSP)', mode='Noodle Soup Prompts', noodle_key='__', seed=1,
+                        text='a __animal__', clip=['1', 1]), probe(files=['11', 0])),
+         expect='refused-named-v2:downloads its prompt pantry', v2_only=True),
+]
+
+
 # ---- was-node-suite-comfyui (ea935d10): cases whose expected outcome differs on the original, set by
 # derive_was_original.py (both sides run this pin's code here)
-ORIGINAL_EXPECTATIONS = {"random-number-integer": "error"}
+ORIGINAL_EXPECTATIONS = {"random-number-integer": "error", "save-text-file-default-path-refused": "refused-named:is not a folder inside ComfyUI's output or temp folder"}
 assert set(ORIGINAL_EXPECTATIONS) <= {_c['name'] for _c in CASES}, ORIGINAL_EXPECTATIONS
 for _c in CASES:
     if _c['name'] in ORIGINAL_EXPECTATIONS:
@@ -779,6 +929,21 @@ def compare_case(spec, orig, conv, output_dir):
         ok = not validation_o and all(r.get('success') for r in runs_o) and bool(validation_c) and phrase in text
         return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
                 'v2_validation': text[:400]}
+    if expect.startswith('refused-named-original-fails:'):
+        # V2 refuses at validation, by name; the original runs and fails with its own error
+        phrase = expect.split(':', 1)[1]
+        text = json.dumps([r.get('node_errors') for r in validation_c])
+        failed = [_errors(r) for r in runs_o]
+        ok = not validation_o and bool(runs_o) and all(failed) and bool(validation_c) and phrase in text
+        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
+                'v2_validation': text[:400], 'original_errors': failed}
+    if expect.startswith('refused-named-v2:'):
+        # V2 refuses at validation, by name; the original is not run (case v2_only)
+        phrase = expect.split(':', 1)[1]
+        text = json.dumps([r.get('node_errors') for r in validation_c])
+        ok = orig.get('skipped_original') is True and bool(validation_c) and phrase in text
+        return {'case': name, 'expect': expect, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH',
+                'v2_validation': text[:400], 'original': 'not run'}
     if validation_o or validation_c:
         return {'case': name, 'expect': expect, 'verdict': 'MISMATCH',
                 'notes': [r.get('node_errors') for r in runs_o + runs_c]}

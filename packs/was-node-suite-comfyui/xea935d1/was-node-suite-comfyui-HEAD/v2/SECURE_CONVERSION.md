@@ -1,19 +1,22 @@
 # Secure conversion notes
 
-This conversion is derived from was-ns v2 (corpus main 7090689a, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
+This conversion is derived from was-ns v2 (corpus main 717bce32, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
 - `was_v2/originals.py`: every block is copied from this pin's `WAS_Node_Suite.py`. Code that differs from the fork: `WAS_Random_Number` (WAS_Node_Suite.py:12462-12505).
 - `was_v2/schemas.json`: captured from this pin in the gate. `secure-nodes.json` comes from the real encoder.
 - File references (`WAS_Node_Suite.py:<line>`) point at this pin's file.
 - Random Number with number_type `integer` raises the original's TypeError on Python 3.13: this pin passes the FLOAT bounds to `random.randint` unrounded. The fork rounds them.
+- Line ranges whose ends are unchanged but whose inside differs from the fork are mapped by their ends: WAS_Node_Suite.py:10848-10916 → WAS_Node_Suite.py:10802-10865 (was_v2/nodes.py).
+- Save Text File: this pin has no write whitelist and writes wherever path points. The fork refuses paths outside the input, output and temp folders as write-protected. V2's refusals are the same for both.
 
 Pinned upstream commit: `ea935d1044ae5a26efa54ebeb18fe9020af49a45` (WASasquatch/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 73 of the 220 registered node ids are converted. The other 147 are registered with their real schemas and refuse
+Status: 78 of the 220 registered node ids are converted. The other 142 are registered with their real schemas and refuse
 with `was-node-suite-comfyui/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image
-Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter refuse with their own message (Known
-differences). The original declares one more id,
+so core never calls its validate_inputs), when it runs. Eleven of them refuse with their own message instead (Known
+differences): Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image Shadows and Highlights, Image Dragan
+Photography Filter, Image Style Filter, Image Crop Face, Create Video from Path, Video Dump Frames, CLIPSeg Masking and
+CLIPTextEncode (NSP). The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14611-14669). It is not registered here.
 
@@ -40,6 +43,8 @@ Converted:
 - Round 7: Load Image Batch, over the input folder (Known differences).
 - Round 8: Image Monitor Effects Filter (WAS_Tools_Class members `digital_distortion`, `signal_distortion`,
   `tv_vhs_distortion`), and Image Save's webp with embed_workflow (Known differences).
+- Round 9: Load Text File, Text Load Line From File and Save Text File, over ComfyUI's folders; Number Counter (the
+  original's class, run on a counter kept in host storage); Prompt Styles Selector (Known differences).
 
 ## How the conversion is built
 
@@ -131,16 +136,50 @@ import of a package outside both must be stopped.
     follow links out of the input folder. A folder it cannot list is refused by name.
   - A folder that holds no files at all returns no image, as a missing folder does in the original. The original
     went on with an empty folder and failed on the index.
-  - Each label's counter, path and pattern live in the pack's host storage (`ctx.storage`). The original kept them
-    in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:148-151, 874).
-    - They survive restarts: the host keeps them on disk.
-    - They are kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and
-      user shares them, as everyone shared the original's database. On a multi-tenant host each tenant has its own.
-    - The host keeps at most 256 entries per pack, which means at most 256 labels.
+  - Each label's counter, path and pattern live in the pack's host storage (see "Host storage" below). The original
+    kept them in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:148-151, 874).
   - V2 writes no image history. The original also added each batch's file paths to its history database
     (update_history_images, WAS_Node_Suite.py:897-920).
   - The random mode seeds Python's `random` module, as the original does. As with Text Random Line, the reseeded
     module is the guest's.
+- Host storage: Load Image Batch, Text Load Line From File and Number Counter keep their state in the pack's host
+  storage (`ctx.storage`), not in the original's databases or node objects.
+  - It survives restarts: the host keeps it on disk.
+  - It is kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and user
+    shares it, as everyone shared the original's databases. On a multi-tenant host each tenant has its own.
+  - The host keeps at most 256 entries per pack, shared by the batch labels, the text-batch labels and the counters.
+- Load Text File, Text Load Line From File and Save Text File:
+  - The original resolved file_path / path against ComfyUI's working directory and read any file on the host; it
+    wrote wherever path pointed. V2 reads
+    files given as `input/...`, `output/...` or `temp/...` and writes only inside output or temp. Any other path,
+    absolute paths included, is refused by name: at validation for Load Text File and Save Text File, and when the file
+    mode runs for Text Load Line From File (with multiline_text connected the original ignores file_path).
+    Backslashes count as folder separators, as on a Windows host.
+  - Save Text File's default path `./ComfyUI/output/[time(%Y-%m-%d)]` names the output folder only when ComfyUI runs
+    from its parent folder; elsewhere the original created that folder under its working directory and wrote there.
+    V2 refuses it by name: use
+    `output/[time(%Y-%m-%d)]`.
+  - Save Text File writes UTF-8 only (another encoding is refused by name; an unknown one fails as in the original),
+    only the extensions the managed text writer accepts (.txt, .caption, .json, .yaml, .yml, .md, .csv, .tsv, .xml,
+    .log, .ini, .toml), at most 960 KiB of text, and no folder separators in the prefix, suffix or extension.
+  - A path naming a folder fails with the original's IsADirectoryError when that folder holds files; a folder that
+    holds none reads as missing, because the host lists files, not folders.
+  - The text-batch counter and path of each label (file mode) and the counter of each label (multiline mode) live in
+    host storage. The original kept the first in its settings database and the second in its history database.
+  - V2 keeps no text-file history (update_history_text_files, WAS_Node_Suite.py:952-975).
+- Number Counter runs the original's increment_number on a counter kept in host storage under the node id. The
+  original kept it on the node object, which ComfyUI's default cache drops on restart and when a prompt runs
+  without that node; V2's counter survives both. Like the original, mode "decrement" leaves the counter unchanged
+  (its code tests for 'deccrement', WAS_Node_Suite.py:12666).
+- Prompt Styles Selector behaves as the original with its default configuration: there is no styles.json, so the menu
+  holds only "None" and the node returns two empty strings.
+- Image Crop Face, Create Video from Path and Video Dump Frames are refused by name: the original computes them with
+  OpenCV (cv2), which this pack's guest runtime does not provide. Image Crop Face's cascade files are also omitted
+  from this snapshot.
+- CLIPSeg Masking is refused by name: the original downloads its model when it runs, and the host provides no pinned
+  copy yet.
+- CLIPTextEncode (NSP) is refused by name: in Noodle Soup Prompts mode the original downloads its pantry the first time
+  it runs, and in Wildcards mode it reads wildcard files from a folder on the host.
 - Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
   and a Secure Nodes V2 node has no network access.
 - Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected

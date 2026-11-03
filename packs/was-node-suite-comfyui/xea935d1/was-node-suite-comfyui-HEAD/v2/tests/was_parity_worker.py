@@ -51,14 +51,11 @@ for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'})
                   ('upscale_models', {'.safetensors', '.pth'})):
     folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 OUTPUT = OUT / 'output'
-CWD = OUT / 'cwd'
-CWD.mkdir(parents=True, exist_ok=True)
-# The input folder holds the synthetic image fixtures; the original resolves a relative folder path against ComfyUI's
-# working directory, where `input` is the input folder.
+# ComfyUI's working directory, against which the original resolves relative paths: there `input`, `output` and `temp`
+# are ComfyUI's own folders (OUT/input, OUT/output, OUT/temp). The input folder holds the synthetic fixtures.
+CWD = OUT
 if (Path(FIXTURES) / 'input').is_dir():
     shutil.copytree(Path(FIXTURES) / 'input', OUT / 'input', dirs_exist_ok=True)
-if not (CWD / 'input').exists():
-    (CWD / 'input').symlink_to(OUT / 'input', target_is_directory=True)
 os.chdir(CWD)
 
 import comfy.lora  # noqa: E402
@@ -336,7 +333,8 @@ if SIDE == 'v2':
             SDK._image_from_value(value)
 
     def _guard(cls):
-        original = cls.execute
+        # the classmethod's function, called with the class core passes: the per-prompt clone that carries cls.hidden
+        function = cls.execute.__func__
         declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
 
         def check_all(result):
@@ -345,12 +343,12 @@ if SIDE == 'v2':
             return result
 
         # core runs execute as a coroutine only when it is a coroutine function, so the wrapper keeps that shape
-        if inspect.iscoroutinefunction(original):
+        if inspect.iscoroutinefunction(function):
             async def checked(c, **kwargs):
-                return check_all(await original(**kwargs))
+                return check_all(await function(c, **kwargs))
         else:
             def checked(c, **kwargs):
-                return check_all(original(**kwargs))
+                return check_all(function(c, **kwargs))
         cls.execute = classmethod(checked)
 
     class _PackStorage:
@@ -485,7 +483,19 @@ def run_case(case):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode())
     result = {'name': case['name'], 'runs': []}
+    if case.get('v2_only') and SIDE == 'original':
+        # the original cannot run here (it needs cv2, the network or files this snapshot omits); V2's refusal is checked
+        result['skipped_original'] = True
+        result['files'] = []
+        result['loader_calls'] = []
+        return result
     LOADER_CALLS.clear()
+    # session=True: one executor across the case's prompts, as a running ComfyUI server keeps its caches and node
+    # objects between prompts (Number Counter's original keeps its counters on the node object)
+    session = None
+    if case.get('session'):
+        session = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
+                                           cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
     for index in range(case.get('runs', 1)):
         prompt = json.loads(json.dumps(case['prompt']))
         prompt_id = f"{case['name']}-{index}"
@@ -497,8 +507,8 @@ def run_case(case):
         torch.manual_seed(20261102)
         random.seed(20261102)
         numpy.random.seed(20261102)
-        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
-                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
+        executor = session or execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
+                                                       cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
         extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
         executor.execute(prompt, prompt_id, extra, valid[2])
         errors = []

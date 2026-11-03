@@ -5,6 +5,7 @@ Each id gets its own class (no concrete parent class), built from the original's
 Pure value nodes call the original's method from originals.py (copied verbatim from WAS_Node_Suite.py by the
 build); nodes that touch models, tensors or files go through the guest SDK.
 """
+import codecs
 import glob
 import hashlib
 import io as io_bytes
@@ -20,10 +21,11 @@ from PIL import Image, ImageOps
 from comfy_api.latest import io, sdk
 
 from . import originals
-from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
-                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_PILGRAM, NEEDS_SCIPY, NO_NETWORK,
-                       SecureConversionRefusal, not_converted)
+from .refusals import (CLIPSEG_WEIGHTS, IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING,
+                       IMAGE_SAVE_OVERWRITE, IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED,
+                       LOAD_BATCH_LISTING, LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_OPENCV, NEEDS_PILGRAM,
+                       NEEDS_SCIPY, NO_NETWORK, NSP_SOURCES, SAVE_TEXT_ENCODING, SAVE_TEXT_LISTING, SAVE_TEXT_NAME,
+                       SAVE_TEXT_PATH, TEXT_FILE_LISTING, TEXT_FILE_PATH, SecureConversionRefusal, not_converted)
 from .schema_v3 import ROWS, build_schema
 from .tokens import TextTokens
 
@@ -122,6 +124,13 @@ _NAMED_REFUSALS = {
     "Image Dragan Photography Filter": NEEDS_PILGRAM.format(node="Image Dragan Photography Filter",
                                                             use="pilgram.css.blending.overlay and color"),
     "Image Style Filter": NEEDS_PILGRAM.format(node="Image Style Filter", use="its photo filters"),
+    # phase B batch 9: WAS_Image_Crop_Face and WAS_Tools_Class.VideoWriter import cv2 (WAS_Node_Suite.py:3095-3232,
+    # 1268-1473); WAS_CLIPSeg downloads its model (11628-11629); nsp_parse fetches the NSP pantry (528-535)
+    "Image Crop Face": NEEDS_OPENCV.format(node="Image Crop Face", use="cv2 cascade classifiers"),
+    "Create Video from Path": NEEDS_OPENCV.format(node="Create Video from Path", use="cv2 video writing"),
+    "Video Dump Frames": NEEDS_OPENCV.format(node="Video Dump Frames", use="cv2 video reading"),
+    "CLIPSeg Masking": CLIPSEG_WEIGHTS,
+    "CLIPTextEncode (NSP)": NSP_SOURCES,
 }
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:10979-10981: always changed)
 # Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12501-12505); core turns that into
@@ -418,6 +427,319 @@ async def _load_image_batch_validate(cls, path=None, pattern=None):
     return True
 
 
+# ---- text files (phase B batch 9): Load Text File, Text Load Line From File, Save Text File
+# The originals resolved a file path against ComfyUI's working directory, where input, output and temp are ComfyUI's
+# folders. V2 reads only inside those three folders (ctx.assets) and writes only inside output or temp
+# (ctx.output.write_text). The original also recorded every file it read or wrote in its history database; V2 keeps
+# no such history.
+_TEXT_FOLDERS = ("input", "output", "temp")
+_TEXT_WRITE_FOLDERS = ("output", "temp")
+# The extensions the managed text writer accepts (comfy_api output.write_text)
+_TEXT_WRITE_EXTENSIONS = (".txt", ".caption", ".json", ".yaml", ".yml", ".md", ".csv", ".tsv", ".xml", ".log", ".ini",
+                          ".toml")
+_TEXT_WRITE_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries the text to the writer
+
+
+def _text_location(node, path, folders=_TEXT_FOLDERS, refusal=TEXT_FILE_PATH):
+    """(folder, logical name) for a path inside one of ComfyUI's folders, else a named refusal. Backslashes count as
+    separators, as on a Windows host."""
+    text = path.replace("\\", "/")
+    if text.startswith("/") or _DRIVE.match(text):
+        raise SecureConversionRefusal(refusal.format(node=node, path=path))
+    head, _, rest = posixpath.normpath(text).partition("/")
+    if head in folders:
+        return head, rest
+    raise SecureConversionRefusal(refusal.format(node=node, path=path))
+
+
+async def _text_kind(node, folder, name, path):
+    """What os.path.exists(path) found: "file", "folder" or None. The SDK lists files, so a folder that holds no files
+    reads as missing."""
+    if not name:
+        return "folder"
+    assets = sdk.ctx().assets
+    try:
+        if await assets.exists(folder, name):
+            return "file"
+        below = await assets.list(folder, prefix=name, recursive=True)
+    except Exception as error:  # in a guest a host error arrives as a transport error
+        raise SecureConversionRefusal(TEXT_FILE_LISTING.format(node=node, path=path, reason=error)) from error
+    return "folder" if below else None
+
+
+async def _text_open(folder, name, kind, path):
+    """open(path, 'r', encoding="utf-8", newline='\\n') on the asset's bytes; for a folder, the IsADirectoryError that
+    open() raised."""
+    if kind == "folder":
+        raise IsADirectoryError(21, "Is a directory", path)
+    assets = sdk.ctx().assets
+    data = await assets.read_bytes(await assets.resolve(folder, name))
+    return io_bytes.TextIOWrapper(io_bytes.BytesIO(data), encoding="utf-8", newline="\n")
+
+
+def _text_validate(node):
+    async def validate(cls, file_path=None):
+        # A path outside ComfyUI's folders is refused before the prompt runs; a linked path when the node runs.
+        if isinstance(file_path, str) and file_path:
+            try:
+                _text_location(node, file_path)
+            except SecureConversionRefusal as refusal:
+                return str(refusal)
+        return True
+    return validate
+
+
+async def _load_text_file(cls, file_path='', dictionary_name='[filename]]'):
+    # WAS_Text_Load_From_File.load_file (WAS_Node_Suite.py:11159-11181)
+    filename = (os.path.basename(file_path).split('.', 1)[0]
+                if '.' in os.path.basename(file_path) else os.path.basename(file_path))
+    if dictionary_name != '[filename]':
+        filename = dictionary_name
+    kind = None
+    if file_path:  # os.path.exists('') is False
+        folder, name = _text_location("Load Text File", file_path)
+        kind = await _text_kind("Load Text File", folder, name, file_path)
+    if kind is None:
+        originals.cstr(f"The path `{file_path}` specified cannot be found.").error.print()
+        return io.NodeOutput('', {filename: []})
+    with await _text_open(folder, name, kind, file_path) as file:
+        text = file.read()
+
+    lines = []
+    for line in io_bytes.StringIO(text):
+        if not line.strip().startswith('#'):
+            lines.append(line.replace("\n", '').replace("\r", ''))
+    dictionary = {filename: lines}
+
+    return io.NodeOutput("\n".join(lines), dictionary)
+
+
+def _text_batch_index(position):
+    color = originals.cstr.color
+    originals.cstr(f'{color.YELLOW}TextBatch{color.END} Index: {position}').msg.print()
+
+
+def _text_batch_key(kind, label):
+    return f"text-load-line:{kind}:" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:40]
+
+
+async def _text_load_line(cls, file_path='', dictionary_name='[filename]', label='TextBatch', mode='automatic',
+                          index=0, multiline_text=None):
+    # WAS_Text_Load_Line_From_File.load_file and TextFileLoader (WAS_Node_Suite.py:11223-11312). The original kept the
+    # file mode's counter and path per label in its settings database and the multiline mode's counter per label in
+    # its history database; V2 keeps both in the pack's host storage, under separate keys.
+    storage = sdk.ctx().storage
+    if multiline_text is not None:
+        lines = multiline_text.strip().split('\n')
+        if mode == 'index':
+            if index < 0 or index >= len(lines):
+                originals.cstr(f"Invalid line index `{index}`").error.print()
+                return io.NodeOutput('', {dictionary_name: []})
+            line = lines[index]
+        else:
+            key = _text_batch_key("multiline", label)
+            stored = await storage.get(key)
+            line_index = json.loads(stored) if stored is not None else None
+            if line_index is None:
+                line_index = 0
+            line = lines[line_index % len(lines)]
+            await storage.set(key, json.dumps(line_index + 1))
+        return io.NodeOutput(line, {dictionary_name: lines})
+
+    if file_path == '':
+        originals.cstr("No file path specified.").error.print()
+        return io.NodeOutput('', {dictionary_name: []})
+
+    folder, name = _text_location("Text Load Line From File", file_path)
+    kind = await _text_kind("Text Load Line From File", folder, name, file_path)
+    if kind is None:
+        originals.cstr(f"The path `{file_path}` specified cannot be found.").error.print()
+        return io.NodeOutput('', {dictionary_name: []})
+
+    # TextFileLoader.load_file: the label's counter, reset to 0 (with the new path) when its stored path differs,
+    # before the file is opened
+    key = _text_batch_key("file", label)
+    stored = await storage.get(key)
+    state = json.loads(stored) if stored else {}
+    if state.get("path") != file_path:
+        state = {"label": label, "path": file_path, "counter": 0}
+        await storage.set(key, json.dumps(state))
+    position = state["counter"]
+    with await _text_open(folder, name, kind, file_path) as file:
+        lines = [line.strip() for line in file]
+
+    line, found_lines = None, []
+    if mode == 'automatic':
+        # get_next_line
+        if position >= len(lines):
+            position = 0
+        line = lines[position]
+        position += 1
+        if position == len(lines):
+            position = 0
+        _text_batch_index(position)
+        found_lines = lines
+    elif mode == 'index':
+        if index >= len(lines):
+            index = index % len(lines)
+        # get_line_by_index
+        if index < 0 or index >= len(lines):
+            originals.cstr(f"Invalid line index `{index}`").error.print()
+        else:
+            position = index
+            line = lines[position]
+            _text_batch_index(position)
+            found_lines = lines
+    if line is None:
+        originals.cstr("No valid line was found. The file may be empty or all lines have been read.").error.print()
+        return io.NodeOutput('', {dictionary_name: []})
+    state["counter"] = position  # store_index
+    await storage.set(key, json.dumps(state))
+
+    return io.NodeOutput(line, {dictionary_name: found_lines})
+
+
+async def _text_load_line_fingerprint(cls, **kwargs):
+    # IS_CHANGED (WAS_Node_Suite.py:11204-11215): always changed in automatic mode; in index mode the sha256 of the
+    # file, or False when there is no such file.
+    if kwargs['mode'] != 'index':
+        return float("NaN")
+    file_path = kwargs['file_path']
+    if file_path == '':
+        return False
+    folder, name = _text_location("Text Load Line From File", file_path)
+    kind = await _text_kind("Text Load Line From File", folder, name, file_path)
+    if kind is None:
+        return False
+    if kind == "folder":  # the original's open(path, 'rb') raised; core then counts the node as changed
+        raise IsADirectoryError(21, "Is a directory", file_path)
+    assets = sdk.ctx().assets
+    return await assets.digest(await assets.resolve(folder, name), "sha256")
+
+
+def _save_text_checks(path, encoding, filename_prefix, filename_suffix, file_extension):
+    folder, sub = _text_location("Save Text File", path, _TEXT_WRITE_FOLDERS, SAVE_TEXT_PATH)
+    if codecs.lookup(encoding).name != 'utf-8':  # an unknown name raises the LookupError the original's open() raised
+        raise SecureConversionRefusal(SAVE_TEXT_ENCODING.format(encoding=encoding))
+    for part in (filename_prefix, filename_suffix, file_extension):
+        if "/" in part or "\\" in part:
+            raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
+                name=f"{filename_prefix}{filename_suffix}{file_extension}", why="it holds a folder separator"))
+    if file_extension.lower() not in _TEXT_WRITE_EXTENSIONS:
+        raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
+            name=f"{filename_prefix}{filename_suffix}{file_extension}",
+            why="the managed text writer accepts only " + ", ".join(_TEXT_WRITE_EXTENSIONS)))
+    return folder, sub
+
+
+async def _save_text_file(cls, text, path, filename_prefix='ComfyUI', filename_delimiter='_',
+                          filename_number_padding=4, file_extension='.txt', encoding='utf-8', filename_suffix=''):
+    # WAS_Text_Save.save_text_file, generate_filename and write_text_file (WAS_Node_Suite.py:10802-10865)
+    tokens = TextTokens()
+    path = tokens.parseTokens(path)
+    filename_prefix = tokens.parseTokens(filename_prefix)
+    folder, sub = _save_text_checks(path, encoding, filename_prefix, filename_suffix, file_extension)
+    size = len(text.encode("utf-8"))
+    if size > _TEXT_WRITE_LIMIT:
+        raise SecureConversionRefusal(SAVE_TEXT_NAME.format(
+            name=f"{filename_prefix}{filename_suffix}{file_extension}",
+            why=f"the text takes {size} bytes, more than a Secure Nodes V2 node can write at once"))
+
+    if text.strip() == '':
+        originals.cstr("There is no text specified to save! Text is empty.").error.print()
+
+    delimiter = filename_delimiter
+    number_padding = int(filename_number_padding)
+    prefix, suffix, extension = filename_prefix, filename_suffix, file_extension
+    assets = sdk.ctx().assets
+    if number_padding == 0:
+        # If number_padding is 0, don't use a numerical suffix
+        filename = f"{prefix}{suffix}{extension}"
+    else:
+        if delimiter:
+            pattern = f"{re.escape(prefix)}{re.escape(delimiter)}(\\d{{{number_padding}}}){re.escape(suffix)}{re.escape(extension)}"
+        else:
+            pattern = f"{re.escape(prefix)}(\\d{{{number_padding}}}){re.escape(suffix)}{re.escape(extension)}"
+        try:  # os.listdir(path)
+            listed = [posixpath.basename(name) for name in await assets.list(folder, prefix=sub, recursive=False)]
+        except Exception as error:  # in a guest a host error arrives as a transport error
+            where = posixpath.join(folder, sub)
+            raise SecureConversionRefusal(SAVE_TEXT_LISTING.format(path=where, reason=error)) from error
+        existing_counters = [
+            int(re.search(pattern, filename).group(1))
+            for filename in listed
+            if re.match(pattern, filename) and filename.endswith(extension)
+        ]
+        existing_counters.sort()
+        if existing_counters:
+            counter = existing_counters[-1] + 1
+        else:
+            counter = 1
+        if delimiter:
+            filename = f"{prefix}{delimiter}{counter:0{number_padding}}{suffix}{extension}"
+        else:
+            filename = f"{prefix}{counter:0{number_padding}}{suffix}{extension}"
+
+        while await assets.exists(folder, posixpath.join(sub, filename) if sub else filename):
+            counter += 1
+            if delimiter:
+                filename = f"{prefix}{delimiter}{counter:0{number_padding}}{suffix}{extension}"
+            else:
+                filename = f"{prefix}{counter:0{number_padding}}{suffix}{extension}"
+
+    logical = posixpath.join(sub, filename) if sub else filename
+    await sdk.ctx().output.write_text(text, filename=logical, folder=folder, mode="overwrite")
+    return io.NodeOutput()
+
+
+async def _save_text_validate(cls, path=None, encoding=None, filename_prefix=None, filename_suffix=None,
+                              file_extension=None):
+    # The path, encoding and file name checks of _save_text_file, before the prompt runs (widget values only)
+    values = (path, encoding, filename_prefix, filename_suffix, file_extension)
+    if all(isinstance(value, str) for value in values):
+        try:
+            tokens = TextTokens()
+            _save_text_checks(tokens.parseTokens(path), encoding, tokens.parseTokens(filename_prefix),
+                              filename_suffix, file_extension)
+        except SecureConversionRefusal as refusal:
+            return str(refusal)
+        except LookupError:  # an unknown encoding fails when the node runs, as the original's open() did
+            pass
+    return True
+
+
+# ---- Number Counter (WAS_Number_Counter.increment_number, WAS_Node_Suite.py:12655-12679), phase B batch 9
+async def _number_counter(cls, number_type, mode, start, stop, step, reset_bool=0):
+    # The original kept each node's counter on the node object, keyed by the node id, for as long as ComfyUI kept
+    # that object. V2 keeps it in the pack's host storage under the node id and runs the original method on it.
+    unique_id = cls.hidden.unique_id
+    key = "number-counter:" + hashlib.sha256(str(unique_id).encode("utf-8")).hexdigest()[:40]
+    storage = sdk.ctx().storage
+    node = originals.WAS_Number_Counter()
+    stored = await storage.get(key)
+    if stored is not None:
+        node.counters[unique_id] = json.loads(stored)
+    result = node.increment_number(number_type, mode, start, stop, step, unique_id, reset_bool=reset_bool)
+    await storage.set(key, json.dumps(node.counters[unique_id]))
+    return io.NodeOutput(*result)
+
+
+# ---- Prompt Styles Selector (WAS_Prompt_Styles_Selector.load_style, WAS_Node_Suite.py:9779-9795), phase B batch 9
+def _prompt_styles_selector(cls, style):
+    # The original read styles.json from its configuration folder. With the default configuration there is no such
+    # file (its menu then holds only "None"), and V2 ships none either, so the styles are empty, as there.
+    originals.cstr("The styles file does not exist. Unable to load styles! Have you imported your AUTOMATIC1111 "
+                   "WebUI styles?").error.print()
+    styles = {}
+    if styles and style != None or style != 'None':  # noqa: E711 (the original's test)
+        prompt = styles[style]['prompt']
+        negative_prompt = styles[style]['negative_prompt']
+    else:
+        prompt = ''
+        negative_prompt = ''
+    return io.NodeOutput(prompt, negative_prompt)
+
+
 # ---- Image Save (WAS_Image_Save.was_save_images)
 _WEBP_EMBED_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries this metadata to the writer
 
@@ -612,6 +934,22 @@ _CONVERTED["Checkpoint Loader"] = {
 _CONVERTED["Load Image Batch"] = {
     "execute": classmethod(_load_image_batch), "fingerprint_inputs": classmethod(_load_image_batch_fingerprint),
     "validate_inputs": classmethod(_load_image_batch_validate), "SDK_PERMISSIONS": ("assets", "storage")}
+_CONVERTED["Load Text File"] = {
+    "execute": classmethod(_load_text_file), "validate_inputs": classmethod(_text_validate("Load Text File")),
+    "SDK_PERMISSIONS": ("assets",)}
+# No validate_inputs: with multiline_text connected the original ignores file_path, so a path is refused only when
+# the file mode runs.
+_CONVERTED["Text Load Line From File"] = {
+    "execute": classmethod(_text_load_line), "fingerprint_inputs": classmethod(_text_load_line_fingerprint),
+    "SDK_PERMISSIONS": ("assets", "storage")}
+_CONVERTED["Save Text File"] = {
+    "execute": classmethod(_save_text_file), "validate_inputs": classmethod(_save_text_validate),
+    "SDK_PERMISSIONS": ("assets", "output")}
+# IS_CHANGED returns NaN (WAS_Node_Suite.py:12645-12647)
+_CONVERTED["Number Counter"] = {
+    "execute": classmethod(_number_counter), "fingerprint_inputs": classmethod(_always_changed),
+    "SDK_PERMISSIONS": ("storage",)}
+_CONVERTED["Prompt Styles Selector"] = {"execute": classmethod(_prompt_styles_selector)}
 _CONVERTED["Upscale Model Loader"] = {
     "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
     "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}
