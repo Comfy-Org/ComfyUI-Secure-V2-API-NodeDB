@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,106 @@
 +# Secure Nodes V2 conversion
 +
 +Pinned upstream commit: `210dc072b1f103f91be18a33bdeb13ab315aaae5`
@@ -14,14 +14,24 @@
 +  IPAdapter, AnimateDiff, VideoHelperSuite, efficiency nodes, ControlNet
 +  auxiliaries). The served node info equals the original's
 +  (`tests/test_artv_schemas.py`).
-+- Converted round 1 (`utility_nodes.py`):
++- Converted (`utility_nodes.py`):
 +  - `StringToInt`, `BooleanPrimitive`, `SeedSelector`;
 +  - `SDXLAspectRatioSelector`, `AspectRatioSelector`;
 +  - `ImageScaleDownBy`, `ImageScaleDownToSize`, `ImageScaleToMegapixels`;
 +  - `ImageGaussianBlur`, `ImageApplyChannel`;
 +  - `CheckpointNameSelector`, `RandomInt`, `RandomFloat`.
++- Converted (`loader_nodes.py`): `AV_LoraLoader`, `AV_VAELoader`.
 +- Every other id is refused by name at queue time ("not converted to Secure
-+  Nodes V2 yet"), and again at run time. Nothing is approximated.
++  Nodes V2 yet"), and again at run time. Nothing is approximated. These are
++  refused with their own reason:
++  - `MergeModels`: it merges two models' weights, and the guest SDK has no
++    model-merge operation;
++  - `Fooocus_KSampler` and `Fooocus_KSamplerAdvanced`: they patch Core's UNet
++    forward and SDXL conditioning for the whole process while they sample;
++  - `AV_ControlNetPreprocessor`: its preprocessors are another pack's code
++    (comfyui_controlnet_aux). Without that pack the original fails too;
++  - `LaMaInpaint` and `LoadLaMaModel`: the LaMa model is a TorchScript
++    archive, which V2 does not load.
 +- Not registered: the nodes the original adds only when an optional pack is
 +  installed (for example `AV_FaceDetailer`, `AV_IPAdapter`).
 +- Frontend extensions (`web/`): not served (not converted).
@@ -33,8 +43,19 @@
 +  and the same torch operations.
 +- Images and masks arrive as tensor refs and are read exactly.
 +- `ImageScaleToMegapixels` upscales below 1.2x, or without an upscale model,
-+  with the bicubic interpolation that core's `common_upscale` uses. Upscaling
-+  through a connected upscale model is refused by name.
++  with the bicubic interpolation that core's `common_upscale` uses. With a
++  connected upscale model, from 1.2x up, the host runs the model the way
++  Core's "Upscale Image (using Model)" does: colour channels only, 512-pixel
++  tiles with a 32-pixel overlap, clamped. The original's centre-crop scale-down
++  then runs on the result in the guest.
++- `AV_LoraLoader` and `AV_VAELoader` keep the original's enable and override
++  logic in the guest. The override name is checked against the host's own
++  catalogue, and the same warning is printed when it is missing. Loading and
++  applying run on the host's LoRA and VAE loaders, which are Core's
++  `LoraLoader` and `VAELoader`. Zero strengths return the inputs unchanged;
++  strengths linked from other nodes pass through, as in the original. An
++  override check against a catalogue of more than 4096 names is refused by
++  name.
 +- Model menus are filled by the host from its own model folders, never by
 +  the pack. The menu's static entries come first, as in the original.
 +- `CheckpointNameSelector` passes the chosen name on unchanged. Like the
@@ -55,15 +76,27 @@
 +  `taesd` entries for VAE menus are not offered.
 +- The Pillow-based nodes are exact when the guest's Pillow matches the host's,
 +  as it does in the test environment.
++- `AV_VAELoader`: a VAE file with audio (vocoder) weights is converted the way
++  the host's loader converts it, which differs from Core's plain `VAELoader`.
++  Image VAEs are unaffected.
 +
 +## Verification
 +
 +All tests run on CPU without weights, on synthetic, seeded images and values.
 +
-+- `tests/test_artv_parity.py` compares every converted node, original
-+  against V2 in a real guest, bitwise and type-strict. The random nodes are
-+  compared with both sides' generator seeded identically before the call.
-+  Includes a negative control.
++- `tests/test_artv_parity.py` compares every converted utility node, original
++  against V2 in a real guest, bitwise and type-strict. That includes
++  `ImageScaleToMegapixels` with a small seeded upscale model, loaded through
++  Core's own upscale-model loader. The random nodes are compared with both
++  sides' generator seeded identically before the call. Includes a negative
++  control.
++- `tests/test_artv_loaders.py` compares `AV_LoraLoader` and `AV_VAELoader`,
++  original against V2 in a real guest, on a seeded tiny UNet and text
++  encoder, LoRA files built from Core's own LoRA key maps, and TAESD-format
++  VAE files. It compares the returned model and text-encoder patches and the
++  returned VAEs (state, settings, a decode) bitwise, plus the override
++  warnings and errors. It includes a negative control and a guard against
++  empty patch sets.
 +- `tests/test_artv_schemas.py`: every node's node info, in process and as
 +  served from the manifest, against the original's.
 +- `tests/encode_manifest.py`: manifest regeneration and loader check.
@@ -76,7 +109,7 @@
 +  heavy dependencies that no converted node uses, and raise if used.
 --- a/__init__.py
 +++ b/v2/__init__.py
-@@ -1,17 +1,16 @@
+@@ -1,17 +1,21 @@
 -import sys
 -import folder_paths
 +"""comfyui-art-venture (sipherxyz/comfyui-art-venture @ 210dc072): Secure Nodes V2.
@@ -85,24 +118,28 @@
 -    folder_paths.folder_names_and_paths['saved_prompts'] = ([], set(['.txt']))
 +- Every node id the original registers (without the optional packs it integrates with) is registered here with its
 +  original schema (_frozen_nodes.json), so saved workflows load unchanged.
-+- Converted (utility_nodes.py): StringToInt, BooleanPrimitive, SeedSelector, SDXLAspectRatioSelector,
-+  AspectRatioSelector, ImageScaleDownBy, ImageScaleDownToSize, ImageScaleToMegapixels, ImageGaussianBlur,
-+  ImageApplyChannel, CheckpointNameSelector, RandomInt, RandomFloat (verbatim global RNG, as upstream).
++- Converted:
++  - utility_nodes.py: StringToInt, BooleanPrimitive, SeedSelector, SDXLAspectRatioSelector, AspectRatioSelector,
++    ImageScaleDownBy, ImageScaleDownToSize, ImageScaleToMegapixels, ImageGaussianBlur, ImageApplyChannel,
++    CheckpointNameSelector, RandomInt, RandomFloat (verbatim global RNG, as upstream);
++  - loader_nodes.py: AV_LoraLoader, AV_VAELoader (on the host's own LoRA and VAE loaders).
 +- Every other node refuses by name at queue time and when executed. See SECURE_CONVERSION.md.
 +"""
 +from ._secure_runtime import FROZEN, REFUSED
-+from .utility_nodes import CONVERTED
++from .loader_nodes import CONVERTED as LOADERS
++from .utility_nodes import CONVERTED as UTILITIES
  
 -custom_nodes = folder_paths.get_folder_paths("custom_nodes")
 -for dir in custom_nodes:
 -    if dir not in sys.path:
 -        print("Adding", dir, "to sys.path")
 -        sys.path.append(dir)
++CONVERTED = {**UTILITIES, **LOADERS}
+ 
+-from .modules.nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 +# Refused ids use the classes _secure_runtime defines at import (the guest finds them there without this file)
 +NODE_CLASS_MAPPINGS = {node_id: CONVERTED.get(node_id) or REFUSED[node_id] for node_id in sorted(FROZEN)}
  
--from .modules.nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
--
 -WEB_DIRECTORY = "./web"
 -
 -__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
@@ -8676,7 +8713,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_runtime.py
-@@ -0,0 +1,217 @@
+@@ -0,0 +1,227 @@
 +"""Frozen-schema runtime for the comfyui-art-venture Secure Nodes V2 pack.
 +
 +_frozen_nodes.json holds every node declaration of upstream comfyui-art-venture 210dc072, frozen in the gate from
@@ -8851,6 +8888,16 @@
 +
 +
 +REFUSAL_REASON = "not in the converted V2 set"
++# Used ids that stay refused, each with its reason (SECURE_CONVERSION.md, Known differences).
++REFUSAL_REASONS = {
++    "MergeModels": "it merges two models' weights, and the guest SDK has no model-merge operation",
++    "Fooocus_KSampler": "it patches Core's UNet forward and SDXL conditioning for the whole process while it samples",
++    "Fooocus_KSamplerAdvanced": "it patches Core's UNet forward and SDXL conditioning for the whole process while it "
++                                "samples",
++    "AV_ControlNetPreprocessor": "its preprocessors are another pack's code (comfyui_controlnet_aux)",
++    "LaMaInpaint": "the LaMa model is a TorchScript archive, which V2 does not load",
++    "LoadLaMaModel": "the LaMa model is a TorchScript archive, which V2 does not load",
++}
 +
 +
 +def refusal_class_name(node_id: str) -> str:
@@ -8890,7 +8937,7 @@
 +# Every refusal class exists as soon as THIS module is imported. The production guest imports only the module a
 +# manifest row names, inside a bare namespace package (the pack's __init__.py does not run), then looks the class up
 +# by name. tests/test_production_load.py checks every manifest row that way.
-+REFUSED = {node_id: refusing_node(node_id) for node_id in sorted(FROZEN)}
++REFUSED = {node_id: refusing_node(node_id, REFUSAL_REASONS.get(node_id, REFUSAL_REASON)) for node_id in sorted(FROZEN)}
 +globals().update({cls.__name__: cls for cls in REFUSED.values()})
 +
 +__all__ = ["FROZEN", "MENUS", "REFUSED", "decode", "refusal_class_name", "refusing_node", "schema_for", "v1_schema"]
@@ -13826,6 +13873,90 @@
 +    def __init__(self, op: str) -> None: ...
 +
 +providers: Providers = ...
+--- /dev/null
++++ b/v2/loader_nodes.py
+@@ -0,0 +1,81 @@
++"""Secure Nodes V2: comfyui-art-venture's AV_LoraLoader and AV_VAELoader (upstream 210dc072, modules/nodes.py:66-107),
++ported exactly onto the host's own loaders.
++
++- AV_LoraLoader runs the original's enable and override logic, then Core's LoraLoader.load_lora through the host's
++  ``model.apply_lora``. That operation loads the LoRA file with ``load_torch_file(safe_load=True)`` and applies
++  ``comfy.sd.load_lora_for_models`` with the same strengths and metadata. Zero strengths return the inputs
++  unchanged, as Core does. ``allow_extended_strengths`` lets linked strengths through unchanged, as the original
++  does.
++- AV_VAELoader runs the original's override logic, then Core's VAELoader.load_vae through ``ctx.models.load_vae``.
++- Override names are checked against the host's catalogue (``ctx.assets.list``), as the original checks
++  ``folder_paths.get_filename_list``. The warning the original prints is printed the same way.
++"""
++from __future__ import annotations
++
++from typing import Any
++
++from comfy_api.latest import io, sdk
++
++from .utility_nodes import _FrozenSchema
++
++PREFIX = "comfyui-art-venture"
++
++
++class OutOfEnvelope(RuntimeError):
++    """A path this port cannot take exactly; refused by name."""
++
++
++async def _catalogue(folder: str, node_id: str) -> list:
++    try:
++        return await sdk.ctx().assets.list(folder)
++    except ValueError as error:  # the host lists at most 4096 names per catalogue
++        raise OutOfEnvelope(f"{PREFIX}/{node_id}: the host's {folder} catalogue cannot be listed for the override "
++                            f"check ({error})") from None
++
++
++class AVLoraLoaderV2(_FrozenSchema, io.ComfyNode):
++    """modules/nodes.py:85-107, then Core's LoraLoader.load_lora."""
++    NODE_ID = "AV_LoraLoader"
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("assets",)
++
++    @classmethod
++    async def execute(cls, model: Any = None, clip: Any = None, lora_name: str = "", strength_model: float = 1.0,
++                      strength_clip: float = 1.0, lora_override: str = "None", enabled: bool = True) -> io.NodeOutput:
++        if not enabled:
++            return io.NodeOutput(model, clip)
++
++        if lora_override != "None":
++            if lora_override not in await _catalogue("loras", cls.NODE_ID):
++                print(f"Warning: Not found Lora model {lora_override}. Use {lora_name} instead.")
++            else:
++                lora_name = lora_override
++
++        if strength_model == 0 and strength_clip == 0:
++            return io.NodeOutput(model, clip)
++        asset = await sdk.ctx().assets.resolve("loras", lora_name)
++        patched_model, patched_clip = await model.apply_lora(
++            asset, clip, strength_model, strength_clip, allow_extended_strengths=True)
++        return io.NodeOutput(patched_model, patched_clip)
++
++
++class AVVAELoaderV2(_FrozenSchema, io.ComfyNode):
++    """modules/nodes.py:66-82, then Core's VAELoader.load_vae."""
++    NODE_ID = "AV_VAELoader"
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("assets", "models")
++
++    @classmethod
++    async def execute(cls, vae_name: str = "", vae_override: str = "None") -> io.NodeOutput:
++        if vae_override != "None":
++            if vae_override not in await _catalogue("vae", cls.NODE_ID):
++                print(f"Warning: Not found VAE model {vae_override}. Use {vae_name} instead.")
++            else:
++                vae_name = vae_override
++
++        return io.NodeOutput(await sdk.ctx().models.load_vae(vae_name))
++
++
++CONVERTED = {cls.NODE_ID: cls for cls in (AVLoraLoaderV2, AVVAELoaderV2)}
++
++__all__ = ["CONVERTED"]
 --- a/pyproject.toml
 +++ b/v2/pyproject.toml
 @@ -1,27 +1,5 @@
@@ -13862,7 +13993,7 @@
 +dependencies = []
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,11614 @@
+@@ -0,0 +1,11605 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -17292,14 +17423,16 @@
 +      }
 +    },
 +    "AV_LoraLoader": {
-+      "class": "Refused_AV_LoraLoader_662b9d62",
++      "class": "AVLoraLoaderV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "loader_nodes",
++      "permissions": [
++        "assets"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -17504,14 +17637,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "model"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "AV_NanoBananaApiConfig": {
 +      "class": "Refused_AV_NanoBananaApiConfig_85b0a0f2",
@@ -18393,14 +18519,17 @@
 +      }
 +    },
 +    "AV_VAELoader": {
-+      "class": "Refused_AV_VAELoader_99d1773d",
++      "class": "AVVAELoaderV2",
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
-+      "module": "_secure_runtime",
-+      "permissions": [],
++      "module": "loader_nodes",
++      "permissions": [
++        "assets",
++        "models"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -18495,14 +18624,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true,
-+      "validation_inputs": {
-+        "args": [
-+          "cls",
-+          "vae_name"
-+        ],
-+        "kwargs": false
-+      }
++      "sdk_refs": true
 +    },
 +    "AspectRatioSelector": {
 +      "class": "AspectRatioSelectorV2",
@@ -38594,8 +38716,435 @@
 + }
 +}
 --- /dev/null
++++ b/v2/tests/test_artv_loaders.py
+@@ -0,0 +1,424 @@
++"""Tier-1 parity for the loaders: comfyui-art-venture AV_LoraLoader and AV_VAELoader, ORIGINAL vs V2 (gate only, CPU).
++
++No real weights are used. All fixtures are seeded and synthetic, built here:
++* MODEL: a tiny SD1.5-shaped UNet;
++* CLIP: a tiny SD1 text encoder (Core's SD1 tokenizer files, a 2-layer, width-32 text model);
++* LoRA files: built from Core's own LoRA key maps (comfy/lora.py model_lora_keys_unet / model_lora_keys_clip);
++* VAE files: TAESD-format state dicts with seeded weights, which Core's VAE recognises by key.
++The original runs in-process. V2 runs in a REAL guest with exactly its declared permissions; the host operations
++(model.apply_lora, models.load_vae, assets.*) run in this process, as the host would run them.
++Compared:
++* returned MODEL/CLIP: the same base model, and equal patches (strengths, offsets, functions, adapter tensors bitwise);
++* pass-through cases (disabled, zero strengths): the very same objects;
++* returned VAE: model class, state dict bitwise, latent channels and scale ratios, the patcher's cached init, and a
++  decode of a fixed latent bitwise;
++* the warning the original prints for an unknown override (stdout of each side);
++* errors: the same exception type on both sides.
++A negative control must turn the comparator red. Writes /results/loaders.json; exit 1 on any difference.
++Run: run_in_gate.sh <comfyui-art-venture-HEAD with v2> <v2/tests> <out> test_artv_loaders.py
++"""
++import asyncio
++import contextlib
++import importlib
++import importlib.util
++import io as pyio
++import json
++import os
++import shutil
++import sys
++import tempfile
++import traceback
++import types
++from pathlib import Path
++
++CORE = Path(os.environ.get("COMFY_CORE_ROOT", "/core"))
++sys.path[:0] = [str(CORE), "/overlay", str(Path(__file__).resolve().parent)]
++
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++import torch  # noqa: E402
++from safetensors.torch import save_file  # noqa: E402
++
++import folder_paths  # noqa: E402
++import server  # noqa: E402
++from aiohttp import web  # noqa: E402
++
++server.PromptServer.instance = types.SimpleNamespace(
++    routes=web.RouteTableDef(), supports={"custom_nodes_from_web"}, send_sync=lambda *a, **k: None,
++    client_id=None, last_node_id=None)
++
++import import_stubs  # noqa: E402
++
++STUBBED = import_stubs.install(["cv2", "timm", "fairscale", "pycocoevalcap", "qrcode", "pytorch_lightning", "kornia",
++                                "segment_anything", "omegaconf", "boto3", "botocore", "transformers", "skimage",
++                                "onnxruntime"])
++import comfy.lora  # noqa: E402
++import comfy.model_base as mb  # noqa: E402
++import comfy.model_patcher as mp  # noqa: E402
++import comfy.sd  # noqa: E402
++import comfy.sd1_clip  # noqa: E402
++import comfy.supported_models as sm  # noqa: E402
++import comfy.supported_models_base  # noqa: E402
++import comfy.taesd.taesd  # noqa: E402
++from comfy_api.latest import _execution_metadata, _sdk  # noqa: E402
++from comfy_execution.graph import DynamicPrompt  # noqa: E402
++from comfy_secure_nodes.transport.host import GuestSession  # noqa: E402
++
++PACK = Path(os.environ.get("ARTV_PACK", "/pack"))
++V2 = PACK / "v2"
++RESULTS = Path(os.environ.get("ARTV_RESULTS", "/results"))
++TMP = Path(tempfile.mkdtemp(prefix="artv-loaders-"))
++SEED = 20261103
++ROWS = []
++PIDS = set()
++
++
++# --------------------------------------------------------------------------------------------------------------- #
++# Fixtures
++# --------------------------------------------------------------------------------------------------------------- #
++def seeded_(module, seed, scale=0.02):
++    gen = torch.Generator().manual_seed(seed)
++    with torch.no_grad():
++        for p in module.parameters():
++            p.copy_(torch.randn(p.shape, generator=gen) * scale)
++    return module
++
++
++def tiny_model():
++    unet_config = {
++        "use_checkpoint": False, "image_size": 32, "out_channels": 4, "use_spatial_transformer": True,
++        "legacy": False, "adm_in_channels": None, "in_channels": 4, "model_channels": 32,
++        "num_res_blocks": [1, 1], "transformer_depth": [1, 1], "channel_mult": [1, 2],
++        "transformer_depth_middle": 1, "use_linear_in_transformer": False, "context_dim": 32,
++        "transformer_depth_output": [1, 1, 1, 1], "use_temporal_attention": False, "use_temporal_resblock": False,
++    }
++    config = sm.SD15(unet_config)
++    config.set_inference_dtype(torch.float32, None)
++    model = mb.BaseModel(config, model_type=mb.ModelType.EPS, device=torch.device("cpu"))
++    seeded_(model.diffusion_model, SEED)
++    return mp.ModelPatcher(model, load_device=torch.device("cpu"), offload_device=torch.device("cpu"))
++
++
++def tiny_clip():
++    """Core's SD1 text encoder, shrunk through Core's own config override (model_options["clip_l_model_config"],
++    comfy/sd1_clip.py SDClipModel), with the SD1 tokenizer files Core ships."""
++    target = comfy.supported_models_base.ClipTarget(comfy.sd1_clip.SD1Tokenizer, comfy.sd1_clip.SD1ClipModel)
++    clip = comfy.sd.CLIP(target=target, model_options={
++        "load_device": torch.device("cpu"), "offload_device": torch.device("cpu"), "dtype": torch.float32,
++        "clip_l_model_config": {"hidden_size": 32, "intermediate_size": 64, "num_attention_heads": 2,
++                                "num_hidden_layers": 2, "projection_dim": 32}})
++    seeded_(clip.cond_stage_model, SEED + 1)
++    return clip
++
++
++def lora_file(path, model, clip, seed, rank=4, per_side=3):
++    """A kohya-style LoRA for a few 2-D weights of each side, named through Core's own key maps."""
++    gen = torch.Generator().manual_seed(seed)
++    tensors = {}
++    for key_map, state in ((comfy.lora.model_lora_keys_unet(model.model, {}), model.model.state_dict()),
++                           (comfy.lora.model_lora_keys_clip(clip.cond_stage_model, {}),
++                            clip.cond_stage_model.state_dict())):
++        chosen = []
++        for lora_key, target in sorted(key_map.items()):
++            if not isinstance(target, str) or not lora_key.startswith(("lora_unet_", "lora_te_")):
++                continue
++            weight = state.get(target if target in state else target.replace("diffusion_model.", "", 1))
++            if weight is None or weight.ndim != 2:
++                continue
++            chosen.append((lora_key, weight.shape))
++            if len(chosen) == per_side:
++                break
++        assert len(chosen) == per_side, (len(chosen), path)
++        for lora_key, (out_features, in_features) in chosen:
++            tensors[f"{lora_key}.lora_up.weight"] = torch.randn((out_features, rank), generator=gen) * 0.1
++            tensors[f"{lora_key}.lora_down.weight"] = torch.randn((rank, in_features), generator=gen) * 0.1
++            tensors[f"{lora_key}.alpha"] = torch.tensor(float(rank / 2))
++    path.parent.mkdir(parents=True, exist_ok=True)
++    save_file(tensors, str(path))
++    return sorted(k for k in tensors if k.endswith(".lora_up.weight"))
++
++
++def vae_file(path, seed):
++    module = seeded_(comfy.taesd.taesd.TAESD(latent_channels=4), seed, scale=0.05)
++    path.parent.mkdir(parents=True, exist_ok=True)
++    save_file({k: v.contiguous() for k, v in module.state_dict().items()}, str(path))
++
++
++MODEL = tiny_model()
++CLIP = tiny_clip()
++LORAS = TMP / "models" / "loras"
++VAES = TMP / "models" / "vae"
++LORA_KEYS = {name: lora_file(LORAS / name, MODEL, CLIP, seed)
++             for name, seed in (("lora_a.safetensors", 1), ("lora_b.safetensors", 2), ("sub/lora_c.safetensors", 3))}
++for name, seed in (("vae_a.safetensors", 4), ("vae_b.safetensors", 5)):
++    vae_file(VAES / name, seed)
++folder_paths.folder_names_and_paths["loras"] = ([str(LORAS)], set(folder_paths.supported_pt_extensions))
++folder_paths.folder_names_and_paths["vae"] = ([str(VAES)], set(folder_paths.supported_pt_extensions))
++(TMP / "models" / "checkpoints").mkdir(parents=True)
++folder_paths.folder_names_and_paths["checkpoints"] = ([str(TMP / "models" / "checkpoints")],
++                                                      set(folder_paths.supported_pt_extensions))
++
++shutil.copytree(PACK, TMP / "comfyui_art_venture", ignore=shutil.ignore_patterns("v2"))
++sys.path.insert(0, str(TMP))
++ORIGINAL = dict(importlib.import_module("comfyui_art_venture").NODE_CLASS_MAPPINGS)
++
++
++def import_package(name, root):
++    spec = importlib.util.spec_from_file_location(name, root / "__init__.py", submodule_search_locations=[str(root)])
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++SECURE = dict(import_package("artv_secure", V2).NODE_CLASS_MAPPINGS)
++
++
++# --------------------------------------------------------------------------------------------------------------- #
++# Running both sides
++# --------------------------------------------------------------------------------------------------------------- #
++class EntryGuestSession(GuestSession):
++    """Production entry order (limits, fixr1_compat, main); no seed file is written, so no RNG seeding happens."""
++
++    def _guest_command(self, python):
++        return [python, str(Path(__file__).resolve().parent / "_artv_seeded_guest_entry.py")]
++
++
++SESSION = {"guest": None}
++
++
++async def run_v2(node_id, inputs):
++    cls = SECURE[node_id]
++    permissions = tuple(cls.SDK_PERMISSIONS)
++    refs = _sdk.InProcessRefResolver()
++    scope = _execution_metadata.ExecutionMetadataScope("artv-loaders", DynamicPrompt({}), None, observe=True)
++    scope.__enter__()
++    try:
++        plan = _sdk.ExecutionPlan(
++            prompt_id="artv-loaders", node_id="9", node_type=cls.__name__, tier="sandbox", node_module=cls.__module__,
++            inputs=dict(inputs), input_mode="refs" if getattr(cls, "SDK_REFS", False) else "values",
++            method="execute", permissions=permissions, prompt=None, extra_pnginfo=None,
++            dynamic_prompt=DynamicPrompt({}), execution_metadata=scope)
++        runtime = _sdk.Runtime(refs=refs, ctx=_sdk.InProcessCtxProvider().build(plan), ops=_sdk.InProcessOps())
++        plan.inputs = await _sdk.wrap_inputs(runtime.refs, plan.inputs)
++        if SESSION["guest"] is None:
++            Path("/tmp/artv-guest-seed").unlink(missing_ok=True)
++            SESSION["guest"] = await EntryGuestSession("artv-loaders", guest_runtime_root=V2).start()
++        guest = SESSION["guest"]
++        result = await guest.execute(plan, runtime, capabilities=permissions, tenant="artv-loaders")
++        if guest.last_guest_pid:
++            PIDS.add(guest.last_guest_pid)
++        values = tuple([await refs.resolve(v) if isinstance(v, _sdk.Ref) else v for v in (result.result or ())])
++        return values, guest.last_stdout or ""
++    finally:
++        scope.__exit__(None, None, None)
++
++
++def run_original(node_id, inputs):
++    cls = ORIGINAL[node_id]
++    out = pyio.StringIO()
++    with contextlib.redirect_stdout(out):
++        values = tuple(getattr(cls(), cls.FUNCTION)(**inputs))
++    return values, out.getvalue()
++
++
++# --------------------------------------------------------------------------------------------------------------- #
++# Comparison
++# --------------------------------------------------------------------------------------------------------------- #
++def deep_equal(a, b, path="", seen=None):
++    """Structural, bitwise equality. Returns the first differing path, or None."""
++    seen = set() if seen is None else seen
++    if type(a) is not type(b):
++        return f"{path}: type {type(a).__name__} != {type(b).__name__}"
++    if isinstance(a, torch.Tensor):
++        if a.dtype != b.dtype or a.shape != b.shape or not torch.equal(a, b):
++            return f"{path}: tensor differs"
++        return None
++    if isinstance(a, float):
++        return None if a.hex() == b.hex() else f"{path}: {a!r} != {b!r}"
++    if isinstance(a, (str, int, bool, type(None), torch.dtype, torch.device)) or callable(a) and not hasattr(a, "__dict__"):
++        return None if a == b else f"{path}: {a!r} != {b!r}"
++    if isinstance(a, (list, tuple)):
++        if len(a) != len(b):
++            return f"{path}: length {len(a)} != {len(b)}"
++        for index, (x, y) in enumerate(zip(a, b)):
++            found = deep_equal(x, y, f"{path}[{index}]", seen)
++            if found:
++                return found
++        return None
++    if isinstance(a, (set, frozenset)):
++        return None if a == b else f"{path}: sets differ"
++    if isinstance(a, dict):
++        if set(a) != set(b):
++            return f"{path}: keys {sorted(map(str, set(a) ^ set(b)))[:6]}"
++        for key in a:
++            found = deep_equal(a[key], b[key], f"{path}.{key}", seen)
++            if found:
++                return found
++        return None
++    if a is b:
++        return None
++    if (id(a), id(b)) in seen:
++        return None
++    seen.add((id(a), id(b)))
++    if hasattr(a, "__dict__"):
++        return deep_equal(vars(a), vars(b), f"{path}<{type(a).__name__}>", seen)
++    return None if a == b else f"{path}: {type(a).__name__} differs"
++
++
++def compare_patched(expected, actual):
++    """MODEL (ModelPatcher) or CLIP outputs of a LoRA application."""
++    if isinstance(expected, mp.ModelPatcher):
++        if expected.model is not actual.model:
++            return "MODEL: a different base model"
++        return (deep_equal(expected.patches, actual.patches, "MODEL.patches")
++                or deep_equal(expected.object_patches, actual.object_patches, "MODEL.object_patches")
++                or deep_equal(expected.model_options, actual.model_options, "MODEL.model_options"))
++    if isinstance(expected, comfy.sd.CLIP):
++        if expected.cond_stage_model is not actual.cond_stage_model:
++            return "CLIP: a different text encoder"
++        return deep_equal(expected.patcher.patches, actual.patcher.patches, "CLIP.patches")
++    return "unexpected output type"
++
++
++LATENT = torch.randn((1, 4, 8, 8), generator=torch.Generator().manual_seed(SEED + 9))
++
++
++def compare_vae(expected, actual):
++    if type(expected.first_stage_model) is not type(actual.first_stage_model):
++        return "VAE: model class differs"
++    found = deep_equal(expected.first_stage_model.state_dict(), actual.first_stage_model.state_dict(), "VAE.sd")
++    if found:
++        return found
++    for attribute in ("latent_channels", "downscale_ratio", "upscale_ratio", "output_channels", "vae_dtype"):
++        found = deep_equal(getattr(expected, attribute, None), getattr(actual, attribute, None), f"VAE.{attribute}")
++        if found:
++            return found
++    init_a = getattr(expected.patcher, "cached_patcher_init", None)
++    init_b = getattr(actual.patcher, "cached_patcher_init", None)
++    if (init_a is None) != (init_b is None) or (init_a is not None and (
++            init_a[0] is not init_b[0] or deep_equal(init_a[1], init_b[1]))):
++        return f"VAE.cached_patcher_init: {init_a!r} != {init_b!r}"
++    with torch.no_grad():
++        if not torch.equal(expected.decode(LATENT.clone()), actual.decode(LATENT.clone())):
++            return "VAE: decode differs"
++    return None
++
++
++def compare(node_id, expected, actual, identity):
++    if len(expected) != len(actual):
++        return f"output count {len(expected)} != {len(actual)}"
++    for index, (a, b) in enumerate(zip(expected, actual)):
++        if identity:
++            if a is not b:
++                return f"output {index}: not the same object as the original's"
++            continue
++        found = compare_vae(a, b) if isinstance(a, comfy.sd.VAE) else compare_patched(a, b)
++        if found:
++            return f"output {index}: {found}"
++    return None
++
++
++# --------------------------------------------------------------------------------------------------------------- #
++# Cases
++# --------------------------------------------------------------------------------------------------------------- #
++def lora(lora_name="lora_a.safetensors", sm_=1.0, sc=1.0, **extra):
++    return {"model": MODEL, "clip": CLIP, "lora_name": lora_name, "strength_model": sm_, "strength_clip": sc, **extra}
++
++
++def cases():
++    out = [
++        ("AV_LoraLoader", "disabled", lora(enabled=False), True),
++        ("AV_LoraLoader", "zero strengths", lora(sm_=0.0, sc=0.0), True),
++        ("AV_LoraLoader", "a 1/1", lora(), False),
++        ("AV_LoraLoader", "a 0.5/0 (clip strength zero)", lora(sm_=0.5, sc=0.0), False),
++        ("AV_LoraLoader", "a 0/0.75 (model strength zero)", lora(sm_=0.0, sc=0.75), False),
++        ("AV_LoraLoader", "a -1.25/2", lora(sm_=-1.25, sc=2.0), False),
++        ("AV_LoraLoader", "a linked strength 150 (outside the widget range)", lora(sm_=150.0, sc=1.0), False),
++        ("AV_LoraLoader", "subfolder c", lora("sub/lora_c.safetensors"), False),
++        ("AV_LoraLoader", "override b present", lora(lora_override="lora_b.safetensors"), False),
++        ("AV_LoraLoader", "override subfolder c present", lora(lora_override="sub/lora_c.safetensors"), False),
++        ("AV_LoraLoader", "override missing (warning, then a)", lora(lora_override="missing.safetensors"), False),
++        ("AV_LoraLoader", "override 'None'", lora(lora_override="None"), False),
++        ("AV_LoraLoader", "unknown lora_name (error)", lora("missing.safetensors"), False),
++        ("AV_VAELoader", "vae a", {"vae_name": "vae_a.safetensors"}, False),
++        ("AV_VAELoader", "override b present", {"vae_name": "vae_a.safetensors", "vae_override": "vae_b.safetensors"},
++         False),
++        ("AV_VAELoader", "override missing (warning, then a)",
++         {"vae_name": "vae_a.safetensors", "vae_override": "missing.safetensors"}, False),
++        ("AV_VAELoader", "pixel_space", {"vae_name": "pixel_space"}, False),
++        ("AV_VAELoader", "unknown vae_name (error)", {"vae_name": "missing.safetensors"}, False),
++    ]
++    return out
++
++
++async def main():
++    for node_id, label, inputs, identity in cases():
++        case = f"{node_id}:{label}"
++        try:
++            (expected, expected_out), expected_error = run_original(node_id, dict(inputs)), None
++        except Exception as error:  # noqa: BLE001
++            expected, expected_out, expected_error = None, "", type(error).__name__
++        try:
++            (actual, actual_out), actual_error = await run_v2(node_id, dict(inputs)), None
++        except Exception as error:  # noqa: BLE001
++            actual, actual_out, actual_error = None, "", f"{type(error).__name__}: {error}"[:300]
++        difference = None
++        if expected_error or actual_error:
++            ok = bool(expected_error) and bool(actual_error) and expected_error in actual_error
++            verdict = "BOTH_FAIL" if ok else "MISMATCH"
++        else:
++            difference = compare(node_id, expected, actual, identity)
++            if difference is None and expected_out.strip() != actual_out.strip():
++                difference = f"stdout differs: {expected_out.strip()!r} != {actual_out.strip()!r}"
++            verdict = "EXACT" if difference is None else "MISMATCH"
++        patched = {}
++        if node_id == "AV_LoraLoader" and not identity and expected is not None:
++            # Guard against a vacuous match: an applied strength must have patched weights on that side.
++            patched = {"model_keys": len(expected[0].patches), "clip_keys": len(expected[1].patcher.patches)}
++            if verdict == "EXACT" and ((inputs["strength_model"] != 0 and not patched["model_keys"])
++                                       or (inputs["strength_clip"] != 0 and not patched["clip_keys"])):
++                verdict, difference = "MISMATCH", f"vacuous: no patched weights for an applied strength {patched}"
++        ROWS.append({"node": node_id, "case": case, "verdict": verdict, "difference": difference, "patched": patched,
++                     "identity_case": identity, "stdout_original": expected_out.strip()[:300],
++                     "stdout_v2": actual_out.strip()[:300], "expected_error": expected_error,
++                     "actual_error": actual_error})
++        print(verdict, case, difference or "", expected_error or "", actual_error or "", flush=True)
++    # Negative control: the comparator must go red when one LoRA patch tensor changes by one ulp.
++    expected, _ = run_original("AV_LoraLoader", lora())
++    tampered, _ = run_original("AV_LoraLoader", lora())
++    key = sorted(tampered[0].patches)[0]
++    strength, adapter, *rest = tampered[0].patches[key][0]
++    weights = list(getattr(adapter, "weights", adapter[1] if isinstance(adapter, tuple) else ()))
++    first = next(i for i, w in enumerate(weights) if isinstance(w, torch.Tensor))
++    bumped = weights[first].clone()
++    bumped.view(-1)[0] = torch.nextafter(bumped.view(-1)[0], torch.tensor(float("inf")))
++    weights[first] = bumped
++    if hasattr(adapter, "weights"):
++        adapter.weights = tuple(weights)
++    negative_control_red = compare("AV_LoraLoader", expected, tampered, False) is not None
++    if SESSION["guest"] is not None:
++        await SESSION["guest"].kill()
++    await asyncio.sleep(0.5)
++    alive = [pid for pid in PIDS if Path(f"/proc/{pid}").exists()]
++    totals = {}
++    for row in ROWS:
++        totals.setdefault(row["node"], {}).setdefault(row["verdict"], 0)
++        totals[row["node"]][row["verdict"]] += 1
++    doc = {"totals": totals, "negative_control_red": negative_control_red, "stubbed_imports_original_side": STUBBED,
++           "lora_keys": {k: len(v) for k, v in LORA_KEYS.items()}, "guest_pids": sorted(PIDS),
++           "alive_after_kill": alive, "torch": torch.__version__, "rows": ROWS}
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (RESULTS / "loaders.json").write_text(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
++    print(json.dumps({k: doc[k] for k in ("totals", "negative_control_red", "lora_keys", "alive_after_kill")},
++                     indent=1))
++    return 1 if any(r["verdict"] == "MISMATCH" for r in ROWS) or alive or not negative_control_red else 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(asyncio.run(main()))
++    except Exception:  # noqa: BLE001
++        traceback.print_exc()
++        sys.exit(1)
+--- /dev/null
 +++ b/v2/tests/test_artv_parity.py
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,280 @@
 +"""Tier-1 parity: comfyui-art-venture ORIGINAL vs V2 for the converted nodes (gate only, CPU, synthetic inputs).
 +
 +* Original side: the pristine package imported in this process. Heavy dependencies the gate lacks are import stubs
@@ -38655,6 +39204,28 @@
 +CKPT.mkdir(parents=True)
 +(CKPT / "model_a.safetensors").write_bytes(b"synthetic checkpoint name only\n")
 +folder_paths.folder_names_and_paths["checkpoints"] = ([str(CKPT)], set(folder_paths.supported_pt_extensions))
++
++
++def tiny_upscale_model():
++    """A seeded 2x RealESRGAN-Compact upscaler (8 features, 2 convs), loaded through Core's own UpscaleModelLoader,
++    so both sides get the object a real graph passes (spandrel descriptor + Core's patcher)."""
++    from safetensors.torch import save_file
++    from spandrel.architectures.Compact import Compact
++    import comfy_extras.nodes_upscale_model as upscale_nodes
++
++    net = Compact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type="prelu")
++    gen = torch.Generator().manual_seed(11)
++    with torch.no_grad():
++        for parameter in net.parameters():
++            parameter.copy_(torch.randn(parameter.shape, generator=gen) * 0.1)
++    folder = TMP / "models" / "upscale_models"
++    folder.mkdir(parents=True)
++    save_file({k: v.contiguous() for k, v in net.state_dict().items()}, str(folder / "tiny_x2.safetensors"))
++    folder_paths.folder_names_and_paths["upscale_models"] = ([str(folder)], set(folder_paths.supported_pt_extensions))
++    return upscale_nodes.UpscaleModelLoader.execute("tiny_x2.safetensors").result[0]
++
++
++UPSCALE_MODEL = tiny_upscale_model()
 +shutil.copytree(PACK, TMP / "comfyui_art_venture", ignore=shutil.ignore_patterns("v2"))
 +sys.path.insert(0, str(TMP))
 +ORIGINAL = dict(importlib.import_module("comfyui_art_venture").NODE_CLASS_MAPPINGS)
@@ -38776,6 +39347,15 @@
 +            out.append(("ImageScaleDownToSize", {"images": rgb, "size": size, "mode": mode}, None))
 +    for megapixels in (0.001, 0.0025, 0.0031, 0.004, 0.02):
 +        out.append(("ImageScaleToMegapixels", {"images": rgb, "megapixels": megapixels}, None))
++    # With an upscale model: >= 1.2x goes through the model (Core's ImageUpscaleWithModel in the original), then the
++    # original's centre-crop LANCZOS scale-down; < 1.2x stays bicubic. RGBA covers the colour-only model input.
++    small_rgb = image(1, 24, 20, 3, 4)
++    small_batch = image(2, 24, 20, 3, 5)
++    small_rgba = image(1, 24, 20, 4, 6)
++    for images, megapixels in ((small_rgb, 0.001), (small_rgb, 0.0035), (small_batch, 0.002), (small_rgba, 0.0015),
++                               (small_rgb, 0.0006)):
++        out.append(("ImageScaleToMegapixels", {"images": images, "megapixels": megapixels,
++                                               "upscale_model_opt": UPSCALE_MODEL}, None))
 +    for radius in (1, 3):
 +        out.append(("ImageGaussianBlur", {"images": rgb, "radius": radius}, None))
 +    mask = torch.rand((64, 48), generator=torch.Generator().manual_seed(3))
@@ -38792,7 +39372,10 @@
 +
 +async def main():
 +    for node_id, inputs, seed in cases():
-+        label = ",".join(f"{k}={'tensor' if isinstance(v, torch.Tensor) else v!r}" for k, v in inputs.items())
++        label = ",".join(
++            f"{k}=" + ("tensor" + "x".join(map(str, v.shape)) if isinstance(v, torch.Tensor)
++                       else repr(v) if isinstance(v, (str, int, float, bool, type(None))) else type(v).__name__)
++            for k, v in inputs.items())
 +        case = f"{node_id}:{label}" + (f":seed={seed}" if seed is not None else "")
 +        try:
 +            expected, expected_error = run_original(node_id, inputs, seed), None
@@ -39336,7 +39919,7 @@
 +    sys.exit(main())
 --- /dev/null
 +++ b/v2/utility_nodes.py
-@@ -0,0 +1,345 @@
+@@ -0,0 +1,350 @@
 +"""Secure Nodes V2: comfyui-art-venture's utility nodes, ported exactly (bodies from upstream 210dc072,
 +modules/utility_nodes.py and modules/utils.py).
 +
@@ -39573,9 +40156,14 @@
 +            s = torch.nn.functional.interpolate(s, size=(height, width), mode="bicubic")
 +            s = s.movedim(1, -1)
 +            return io.NodeOutput(await sdk.ImageRef.from_value(s))
-+        raise NotImplementedError(
-+            f"{PREFIX}/ImageScaleToMegapixels: upscaling with an upscale model (scale {float(scale_by):.3f} >= 1.2 "
-+            f"and upscale_model_opt connected) is not converted yet; see SECURE_CONVERSION.md")
++        # Core's ImageUpscaleWithModel (the original calls it here) runs the model on the colour channels only, in
++        # 512-pixel tiles with a 32-pixel overlap, clamped to [0, 1]: the host's upscale op with tile_size=512 does
++        # the same. Core then adds back an alpha channel, which image_scale_down's convert("RGB") drops again, so
++        # only the colour channels go to the model here.
++        source = await images.rgb() if tensor.shape[-1] == 4 else images
++        upscaled = await upscale_model_opt.upscale(source, tile_size=512)
++        result = image_scale_down(await upscaled.raw(), width, height, "center")
++        return io.NodeOutput(await sdk.ImageRef.from_value(result))
 +
 +
 +class ImageGaussianBlurV2(_FrozenSchema, io.ComfyNode):

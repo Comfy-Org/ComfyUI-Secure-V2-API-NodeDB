@@ -172,6 +172,16 @@ def _validation_argument(node_id: str) -> str | None:
 
 
 REFUSAL_REASON = "not in the converted V2 set"
+# Used ids that stay refused, each with its reason (SECURE_CONVERSION.md, Known differences).
+REFUSAL_REASONS = {
+    "MergeModels": "it merges two models' weights, and the guest SDK has no model-merge operation",
+    "Fooocus_KSampler": "it patches Core's UNet forward and SDXL conditioning for the whole process while it samples",
+    "Fooocus_KSamplerAdvanced": "it patches Core's UNet forward and SDXL conditioning for the whole process while it "
+                                "samples",
+    "AV_ControlNetPreprocessor": "its preprocessors are another pack's code (comfyui_controlnet_aux)",
+    "LaMaInpaint": "the LaMa model is a TorchScript archive, which V2 does not load",
+    "LoadLaMaModel": "the LaMa model is a TorchScript archive, which V2 does not load",
+}
 
 
 def refusal_class_name(node_id: str) -> str:
@@ -211,7 +221,7 @@ def refusing_node(node_id: str, reason: str = REFUSAL_REASON) -> type[io.ComfyNo
 # Every refusal class exists as soon as THIS module is imported. The production guest imports only the module a
 # manifest row names, inside a bare namespace package (the pack's __init__.py does not run), then looks the class up
 # by name. tests/test_production_load.py checks every manifest row that way.
-REFUSED = {node_id: refusing_node(node_id) for node_id in sorted(FROZEN)}
+REFUSED = {node_id: refusing_node(node_id, REFUSAL_REASONS.get(node_id, REFUSAL_REASON)) for node_id in sorted(FROZEN)}
 globals().update({cls.__name__: cls for cls in REFUSED.values()})
 
 __all__ = ["FROZEN", "MENUS", "REFUSED", "decode", "refusal_class_name", "refusing_node", "schema_for", "v1_schema"]

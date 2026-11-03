@@ -57,6 +57,28 @@ CKPT = TMP / "models" / "checkpoints"
 CKPT.mkdir(parents=True)
 (CKPT / "model_a.safetensors").write_bytes(b"synthetic checkpoint name only\n")
 folder_paths.folder_names_and_paths["checkpoints"] = ([str(CKPT)], set(folder_paths.supported_pt_extensions))
+
+
+def tiny_upscale_model():
+    """A seeded 2x RealESRGAN-Compact upscaler (8 features, 2 convs), loaded through Core's own UpscaleModelLoader,
+    so both sides get the object a real graph passes (spandrel descriptor + Core's patcher)."""
+    from safetensors.torch import save_file
+    from spandrel.architectures.Compact import Compact
+    import comfy_extras.nodes_upscale_model as upscale_nodes
+
+    net = Compact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type="prelu")
+    gen = torch.Generator().manual_seed(11)
+    with torch.no_grad():
+        for parameter in net.parameters():
+            parameter.copy_(torch.randn(parameter.shape, generator=gen) * 0.1)
+    folder = TMP / "models" / "upscale_models"
+    folder.mkdir(parents=True)
+    save_file({k: v.contiguous() for k, v in net.state_dict().items()}, str(folder / "tiny_x2.safetensors"))
+    folder_paths.folder_names_and_paths["upscale_models"] = ([str(folder)], set(folder_paths.supported_pt_extensions))
+    return upscale_nodes.UpscaleModelLoader.execute("tiny_x2.safetensors").result[0]
+
+
+UPSCALE_MODEL = tiny_upscale_model()
 shutil.copytree(PACK, TMP / "comfyui_art_venture", ignore=shutil.ignore_patterns("v2"))
 sys.path.insert(0, str(TMP))
 ORIGINAL = dict(importlib.import_module("comfyui_art_venture").NODE_CLASS_MAPPINGS)
@@ -178,6 +200,15 @@ def cases():
             out.append(("ImageScaleDownToSize", {"images": rgb, "size": size, "mode": mode}, None))
     for megapixels in (0.001, 0.0025, 0.0031, 0.004, 0.02):
         out.append(("ImageScaleToMegapixels", {"images": rgb, "megapixels": megapixels}, None))
+    # With an upscale model: >= 1.2x goes through the model (Core's ImageUpscaleWithModel in the original), then the
+    # original's centre-crop LANCZOS scale-down; < 1.2x stays bicubic. RGBA covers the colour-only model input.
+    small_rgb = image(1, 24, 20, 3, 4)
+    small_batch = image(2, 24, 20, 3, 5)
+    small_rgba = image(1, 24, 20, 4, 6)
+    for images, megapixels in ((small_rgb, 0.001), (small_rgb, 0.0035), (small_batch, 0.002), (small_rgba, 0.0015),
+                               (small_rgb, 0.0006)):
+        out.append(("ImageScaleToMegapixels", {"images": images, "megapixels": megapixels,
+                                               "upscale_model_opt": UPSCALE_MODEL}, None))
     for radius in (1, 3):
         out.append(("ImageGaussianBlur", {"images": rgb, "radius": radius}, None))
     mask = torch.rand((64, 48), generator=torch.Generator().manual_seed(3))
@@ -194,7 +225,10 @@ def cases():
 
 async def main():
     for node_id, inputs, seed in cases():
-        label = ",".join(f"{k}={'tensor' if isinstance(v, torch.Tensor) else v!r}" for k, v in inputs.items())
+        label = ",".join(
+            f"{k}=" + ("tensor" + "x".join(map(str, v.shape)) if isinstance(v, torch.Tensor)
+                       else repr(v) if isinstance(v, (str, int, float, bool, type(None))) else type(v).__name__)
+            for k, v in inputs.items())
         case = f"{node_id}:{label}" + (f":seed={seed}" if seed is not None else "")
         try:
             expected, expected_error = run_original(node_id, inputs, seed), None

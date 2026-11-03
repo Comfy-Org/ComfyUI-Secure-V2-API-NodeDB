@@ -234,9 +234,14 @@ class ImageScaleToMegapixelsV2(_FrozenSchema, io.ComfyNode):
             s = torch.nn.functional.interpolate(s, size=(height, width), mode="bicubic")
             s = s.movedim(1, -1)
             return io.NodeOutput(await sdk.ImageRef.from_value(s))
-        raise NotImplementedError(
-            f"{PREFIX}/ImageScaleToMegapixels: upscaling with an upscale model (scale {float(scale_by):.3f} >= 1.2 "
-            f"and upscale_model_opt connected) is not converted yet; see SECURE_CONVERSION.md")
+        # Core's ImageUpscaleWithModel (the original calls it here) runs the model on the colour channels only, in
+        # 512-pixel tiles with a 32-pixel overlap, clamped to [0, 1]: the host's upscale op with tile_size=512 does
+        # the same. Core then adds back an alpha channel, which image_scale_down's convert("RGB") drops again, so
+        # only the colour channels go to the model here.
+        source = await images.rgb() if tensor.shape[-1] == 4 else images
+        upscaled = await upscale_model_opt.upscale(source, tile_size=512)
+        result = image_scale_down(await upscaled.raw(), width, height, "center")
+        return io.NodeOutput(await sdk.ImageRef.from_value(result))
 
 
 class ImageGaussianBlurV2(_FrozenSchema, io.ComfyNode):
