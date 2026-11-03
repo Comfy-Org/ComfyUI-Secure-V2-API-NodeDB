@@ -1,0 +1,29 @@
+{
+  "pack": "comfyui-kjnodes",
+  "key": "x3f20054",
+  "folder": "ComfyUI-KJNodes-HEAD",
+  "pins": {"tqdm": "4.70.1", "einops": "0.8.2"},
+  "dists": {"tqdm": "tqdm", "einops": "einops"},
+  "pyproject_old": "dependencies = [\"pillow>=10.3.0\", \"color-matcher\", \"matplotlib\"]\n",
+  "pyproject_new": "dependencies = [\"tqdm==4.70.1\", \"einops==0.8.2\"]\n",
+  "pyproject_line": "dependencies = [\"tqdm==4.70.1\", \"einops==0.8.2\"]",
+  "load_fail_rows": [
+    "LTX2AttentionTunerPatch", "LTX2AudioLatentNormalizingSampling", "LTX2LoraLoaderAdvanced",
+    "LTX2MemoryEfficientSageAttentionPatch", "LTX2SamplingPreviewOverride", "LTX2_NAG", "LTXVAddGuideMulti",
+    "LTXVAddGuidesFromBatch", "LTXVAudioVideoMask", "LTXVChunkFeedForward", "LTXVImgToVideoInplaceKJ",
+    "MiniMaxH3MemoryEfficientSageAttentionPatch", "WanVideoMemoryEfficientSageAttentionPatch",
+    "LoraExtractKJ", "LoraReduceRankKJ"
+  ],
+  "guest_cases": [
+    {"node": "ColorToMask", "label": "tqdm when the extracted method runs",
+     "original": {"module": "nodes.mask_nodes", "class": "ColorToMask"},
+     "inputs": {"images": {"__tensor__": true, "shape": [1, 32, 40, 3], "seed": 1}, "invert": false, "red": 0,
+                "green": 0, "blue": 0, "threshold": 200, "per_batch": 16}},
+    {"node": "BlockifyMask", "label": "tqdm when the extracted method runs",
+     "original": {"module": "nodes.mask_nodes", "class": "BlockifyMask"},
+     "inputs": {"masks": {"__mask__": true, "shape": [1, 64, 64], "seed": 2}, "block_size": 32}}
+  ],
+  "doc_file": "DEPENDENCY_PROFILE.md",
+  "doc_title": "## Dependency profile (NED profile r1): tqdm 4.70.1, einops 0.8.2",
+  "doc_note": "- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not\n  Core's requirements; base 0cd9adec has neither tqdm nor einops.\n- Rows that cannot load without them (module level):\n  - einops: the 13 rows in `nodes/ltxv_nodes` (through `nodes/_ltx_utils.py:4`);\n  - tqdm: the 2 rows in `nodes/lora_nodes` (`nodes/lora_nodes.py:9`).\n- Rows that need tqdm when they run: the 6 mask nodes whose upstream methods run through `_w3_l_upstream`\n  (`nodes/mask_nodes.py:309`): BlockifyMask, ColorToMask, ConsolidateMasksKJ, CreateFadeMask, CreateFadeMaskAdvanced,\n  CreateFluidMask.\n- `pyproject.toml` pins exactly `tqdm==4.70.1` and `einops==0.8.2` (py3-none-any wheels; PyPI sha256\n  c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 and\n  54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193). They replace the upstream's unpinned\n  `pillow`, `color-matcher` and `matplotlib`, which are not profile pins (Pillow is in the base).\n- Not covered by this profile: some rows also need, when they run, modules a guest base lacks (torchvision,\n  scipy, matplotlib, pandas, color-matcher, OpenCV). Each of those rows needs a profile entry or a refusal by name.\n- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.\n- `tests/test_dependency_profile.py` lets both modules, and the modules the guest bases lack (scipy, torchvision,\n  tqdm, yaml, cv2), come only from the pinned copies under /deps.\n"
+}
