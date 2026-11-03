@@ -172,6 +172,17 @@ def child_v1(out: Path):
         sys.path[:0] = ["/core"] + (["/deps"] if os.path.isdir("/deps") else [])
         os.chdir("/tmp")
         force_cpu()
+        # /core is read-only in the gate: some packs create config/user folders at import time.
+        try:
+            import folder_paths
+            for setter, sub in (("set_user_directory", "user"), ("set_output_directory", "output"),
+                                ("set_temp_directory", "temp"), ("set_input_directory", "input")):
+                if hasattr(folder_paths, setter):
+                    d = Path("/tmp/review-v1-dirs") / sub
+                    d.mkdir(parents=True, exist_ok=True)
+                    getattr(folder_paths, setter)(str(d))
+        except Exception as e:  # noqa: BLE001
+            res["folder_paths_note"] = repr(e)[:200]
         try:
             import server  # noqa: F401
             if getattr(server.PromptServer, "instance", None) is None:

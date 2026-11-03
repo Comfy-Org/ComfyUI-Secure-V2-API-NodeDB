@@ -95,6 +95,21 @@ else
   fi
 fi
 FP="$W/pristine/$slug/$key/$pack"
+# PRE_OMITTED=1 (new packs): the worker staged with the Comfy omission policy already applied. Apply the same plan to the
+# fresh pristine before comparing; the generic OMITTED.md goes to $W for publish_stage.sh, the list stays outside git.
+if [ "${PRE_OMITTED:-0}" = 1 ] && [ "${REPAIR:-0}" != 1 ]; then
+  mkdir -p /home/benjc/ab-expand/archive/omitted
+  OLIST="/home/benjc/ab-expand/archive/omitted/$slug-$key-$(date -u +%Y%m%dT%H%M%SZ)-pre.json"
+  if $PY "$RV/omit_media.py" plan "$FP" "$OLIST" > "$OUT/pre-omit.txt" 2>&1 \
+     && $PY "$RV/omit_media.py" apply "$FP" "$OLIST" >> "$OUT/pre-omit.txt" 2>&1; then
+    if $PY -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))['entries'] else 1)" "$OLIST"; then
+      $PY "$RV/omit_media.py" note "$OLIST" "$W/OMITTED.md" >> "$OUT/pre-omit.txt" 2>&1
+    fi
+    log "PRE_OMITTED: omission plan applied to the fresh pristine (list $OLIST)"
+  else
+    fail "PRE_OMITTED: omission plan failed (pre-omit.txt)"
+  fi
+fi
 $PY "$RV/treecmp.py" bytes "$SP" "$FP" --skip-v2 > "$OUT/pristine-cmp.json" \
   && log "staged pristine == fresh pristine (bytes)" || fail "staged pristine differs from fresh pristine (pristine-cmp.json)"
 
@@ -188,6 +203,7 @@ if [ "${SKIP_GATE:-0}" != 1 ] && [ -d "$RP/v2" ]; then
       rc=$?
       log "parity $s mount=$mnt rc=$rc"
       [ -f "$po/parity.json" ] && break
+      [ $rc -eq 0 ] && break   # a passing run on the first mount is final (some harnesses support only one mount)
     done
     [ $rc -eq 0 ] && log "parity $s rc=0" || fail "parity $s rc=$rc (parity/${s%.py}/stderr.txt)"
     if [ -f "$po/parity.json" ]; then
@@ -201,6 +217,8 @@ for k, v in (nodes.items() if isinstance(nodes, dict) else []):
         c[v["verdict"]] += 1; cases += int(v.get("cases", v.get("case_count", 0)) or 0)
 print(f"  parity verdicts {dict(c)} cases={cases} negative_control={d.get('negative_control') if isinstance(d, dict) else None}")
 EOF
+    elif [ $rc -eq 0 ] && grep -Eq '"(verdict|status)": "PASS"|"ok": true' "$po/stdout.txt"; then
+      log "parity $s wrote no parity.json; its stdout reports PASS: $(grep -Eo '"(verdict|status)": "PASS"|"ok": true' "$po/stdout.txt" | tail -1)"
     else
       fail "parity $s wrote no parity.json"
     fi
