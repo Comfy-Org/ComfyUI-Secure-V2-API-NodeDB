@@ -1,0 +1,504 @@
+import { app } from "../../../scripts/app.js";
+import { api } from "../../../scripts/api.js";
+import { installCanvasZoomPassthrough } from "../shared/canvas_zoom.mjs";
+import { notifyRouterChanged } from "../shared/router_changed.mjs";
+import { capComputeSizeInNodes2 } from "../shared/core_min_size.mjs";
+import {
+  STATE_PROP, MAX_ROWS, CONTROL_BAND,
+  readState, writeState,
+  setupNode, restoreFromProperties, rebuildSlots,
+  updateOutputLabels, rowCount, highestWiredRow, minNodeHeight,
+  outputLabelRect, outputLabelScreenRect, pointInRect,
+} from "./core.mjs";
+import { openLabelEditor, cancelEditorForNode } from "./editor.mjs";
+import { makeNumericInput, injectResizePanelCSS } from "../shared/resize_panel.mjs";
+import { applyAdaptiveCanvasOnly, isVueNodes } from "../shared/nodes2.mjs";
+import { installNodeAccent, registerNodeAccent } from "../shared/node_settings.mjs";
+
+// Switch Source Pixaroma - two banks (A/B), one toggle flips every row.
+// Slot count is set by the Rows field (not by wiring); editable output labels;
+// a Missing-side mode (Use connected / Strict). State on
+// node.properties.switchSourceState, injected + pruned at submit time by the
+// app.graphToPrompt hook (Pattern #9, same family as Switch / Switch WH).
+
+const BRAND = "#f66744";
+const HIDDEN_INPUT_NAME = "SwitchSourceState";
+const MIN_W = 250;
+
+// Load guard (mirrors Switch): the per-node configuring flag does NOT cover
+// LiteGraph's graph-level connection replay, which fires onConnectionsChange
+// AFTER each node's onConfigure returns. Wrapping app.loadGraphData (the funnel
+// for open / tab switch / Ctrl+Z) gives a load-wide guard with a 300ms trailing
+// window for the link restore that settles a tick later (Vue Compat #19).
+let _ssLoadingGraph = false;
+if (app && app.loadGraphData && !app._pixSsLoadWrapped) {
+  app._pixSsLoadWrapped = true;
+  const _origLoad_fn = app.loadGraphData;
+  const _origLoad = (...a) => _origLoad_fn.apply(app, a);
+  app.loadGraphData = function (...args) {
+    _ssLoadingGraph = true;
+    let r;
+    try { r = _origLoad(...args); }
+    finally { Promise.resolve(r).finally(() => setTimeout(() => { _ssLoadingGraph = false; }, 300)); }
+    return r;
+  };
+}
+
+// Brief warning toast (modern ComfyUI API, with a hand-rolled banner fallback
+// for older Easy Install builds that lack extensionManager.toast).
+function toast(msg) {
+  try {
+    if (app.extensionManager?.toast?.add) {
+      app.extensionManager.toast.add({ severity: "warn", summary: "Switch Source", detail: msg, life: 3000 });
+      return;
+    }
+  } catch (e) { /* fall through to banner */ }
+  const d = document.createElement("div");
+  d.textContent = msg;
+  d.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#1d1d1d;color:#fff;border:2px solid " + BRAND + ";border-radius:8px;padding:10px 16px;font:13px sans-serif;z-index:100000;box-shadow:0 4px 16px rgba(0,0,0,.5);";
+  document.body.appendChild(d);
+  setTimeout(() => { d.remove(); }, 3000);
+}
+
+function injectCSS() {
+  if (document.getElementById("pix-switchsrc-css")) return;
+  const s = document.createElement("style");
+  s.id = "pix-switchsrc-css";
+  s.textContent = `
+    .pix-ss-root { display:flex; flex-direction:column; gap:6px; padding:6px; box-sizing:border-box; width:100%; }
+    .pix-ss-row { display:flex; gap:6px; align-items:stretch; }
+    .pix-ss-rowsfield {
+      display:inline-flex; align-items:center; flex:1;
+      background:#1d1d1d; border:1px solid #444; border-radius:6px; overflow:hidden;
+    }
+    .pix-ss-rowsfield:focus-within { border-color:var(--pix-acc,#f66744); }
+    .pix-ss-rowsfield.is-blocked { border-color:#ff5555 !important; }
+    .pix-ss-rows-label {
+      color:var(--pix-acc,#f66744); font-size:10px; font-weight:600; letter-spacing:0.5px;
+      text-transform:uppercase; padding:0 4px 0 9px; white-space:nowrap;
+    }
+    /* Blend the shared numeric input into the rows-field box (drop its own border/bg). */
+    .pix-ss-rowsfield .pix-li-numinput { border:none !important; background:transparent !important; flex:1; border-radius:0; }
+    .pix-ss-btn {
+      flex:1; height:28px; border-radius:6px;
+      border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05);
+      color:rgba(255,255,255,0.85); font-weight:600; font-size:12px; letter-spacing:0.5px;
+      cursor:pointer; transition:background .1s,border-color .1s,color .1s; font-family:inherit; padding:0;
+    }
+    .pix-ss-btn:hover { background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.35); color:#fff; }
+    .pix-ss-btn.active { background:var(--pix-acc,#f66744); color:#fff; border-color:var(--pix-acc,#f66744); }
+    .pix-ss-abtoggle { display:flex; gap:4px; width:96px; }
+    /* Stack label above the buttons so "When active row is empty:" fits even
+       at the min node width, and the buttons get the full row to themselves. */
+    .pix-ss-missingrow { flex-direction:column; gap:4px; align-items:stretch; }
+    .pix-ss-missing-label { font-size:10px; color:#999; white-space:nowrap; padding-left:4px; }
+    .pix-ss-missingtoggle { display:flex; gap:4px; width:100%; }
+    .pix-ss-missingtoggle .pix-ss-btn { font-size:11px; letter-spacing:0; }
+    /* Solid filled ▲▼ triangles (like Image Resize / Load Image), replacing the
+       shared outline-chevron carets, and drop the internal divider so the Rows
+       box reads as one uniform field. Literal glyphs - never the \\XXXX escape
+       (octal-escape error in a template literal), per UI conventions #12. */
+    .pix-ss-rowsfield .pix-li-spin { width:16px; border-left:none; }
+    .pix-ss-rowsfield .pix-li-spin > button { background:transparent; }
+    .pix-ss-rowsfield .pix-li-spin-up::before,
+    .pix-ss-rowsfield .pix-li-spin-down::before {
+      border:none; width:auto; height:auto; font-size:8px; line-height:1;
+      transform:translate(-50%,-50%);
+    }
+    .pix-ss-rowsfield .pix-li-spin-up::before { content:"▲"; }
+    .pix-ss-rowsfield .pix-li-spin-down::before { content:"▼"; }
+  `;
+  document.head.appendChild(s);
+}
+
+function buildControls(node) {
+  const root = document.createElement("div");
+  root.className = "pix-ss-root";
+
+  // Row 1: Rows field + A/B toggle.
+  const row1 = document.createElement("div");
+  row1.className = "pix-ss-row";
+
+  const rowsField = document.createElement("div");
+  rowsField.className = "pix-ss-rowsfield";
+  rowsField.title = "Number of A/B row pairs (1-16). Disconnect a row's wires before lowering Rows below it.";
+  const rowsLabel = document.createElement("span");
+  rowsLabel.className = "pix-ss-rows-label";
+  rowsLabel.textContent = "Rows";
+  rowsField.appendChild(rowsLabel);
+
+  const st0 = readState(node);
+  const rowsBuilt = makeNumericInput({
+    value: st0.rows,
+    min: 1, max: MAX_ROWS, step: 1,
+    format: (v) => String(Math.round(v)),
+    onCommit: (v) => {
+      let target = Math.max(1, Math.min(MAX_ROWS, Math.round(v)));
+      const hw = highestWiredRow(node);
+      if (target < hw) {
+        target = hw; // can't drop a wired row
+        toast(`Can't go below ${hw} rows: row ${hw} still has wires. Disconnect them first.`);
+        rowsField.classList.add("is-blocked");
+        setTimeout(() => { rowsField.classList.remove("is-blocked"); }, 700);
+      }
+      if (rowsBuilt.input.value !== String(target)) rowsBuilt.input.value = String(target);
+      if (target !== rowCount(node)) rebuildSlots(node, target);
+    },
+  });
+  rowsField.appendChild(rowsBuilt.wrap);
+  row1.appendChild(rowsField);
+
+  const ab = document.createElement("div");
+  ab.className = "pix-ss-abtoggle";
+  const btnA = document.createElement("button");
+  btnA.className = "pix-ss-btn"; btnA.textContent = "A"; btnA.dataset.value = "A";
+  btnA.title = "Route every row through its A input.";
+  const btnB = document.createElement("button");
+  btnB.className = "pix-ss-btn"; btnB.textContent = "B"; btnB.dataset.value = "B";
+  btnB.title = "Route every row through its B input.";
+  ab.append(btnA, btnB);
+  row1.appendChild(ab);
+  root.appendChild(row1);
+
+  // Row 2: Missing-side mode toggle.
+  const row2 = document.createElement("div");
+  row2.className = "pix-ss-row pix-ss-missingrow";
+  const mLabel = document.createElement("span");
+  mLabel.className = "pix-ss-missing-label";
+  mLabel.textContent = "When active row is empty:";
+  const mToggle = document.createElement("div");
+  mToggle.className = "pix-ss-missingtoggle";
+  const btnConn = document.createElement("button");
+  btnConn.className = "pix-ss-btn"; btnConn.textContent = "Allow empty"; btnConn.dataset.value = "connected";
+  btnConn.title = "Leave the output empty when the active side has no wire on a row. No error. Use this when A and B have different amounts of wires.";
+  const btnStrict = document.createElement("button");
+  btnStrict.className = "pix-ss-btn"; btnStrict.textContent = "Show error"; btnStrict.dataset.value = "strict";
+  btnStrict.title = "Show an error when the active side has no wire but the OTHER side does. Catches the case where you wired the wrong bank by mistake.";
+  mToggle.append(btnConn, btnStrict);
+  row2.append(mLabel, mToggle);
+  root.appendChild(row2);
+
+  function refresh() {
+    const s = readState(node);
+    btnA.classList.toggle("active", s.active === "A");
+    btnB.classList.toggle("active", s.active === "B");
+    btnConn.classList.toggle("active", s.missing === "connected");
+    btnStrict.classList.toggle("active", s.missing === "strict");
+    if (rowsBuilt.input.value !== String(s.rows)) rowsBuilt.input.value = String(s.rows);
+  }
+
+  for (const b of [btnA, btnB]) {
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const s = readState(node);
+      const was = s.active;
+      s.active = b.dataset.value;
+      writeState(node, s);
+      refresh();
+      updateOutputLabels(node);
+      node.graph?.setDirtyCanvas?.(true, true);
+      // Same reason as Switch's setActiveRow: a node showing a picture of what
+      // is wired into it (Inpaint Crop) asks us which bank is live, and nothing
+      // else would tell it we moved. Only on a REAL change.
+      if (was !== s.active) notifyRouterChanged(node);
+    });
+  }
+  for (const b of [btnConn, btnStrict]) {
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const s = readState(node);
+      s.missing = b.dataset.value;
+      writeState(node, s);
+      refresh();
+      node.graph?.setDirtyCanvas?.(true, true);
+    });
+  }
+
+  refresh();
+  return { root, refresh };
+}
+
+app.registerExtension({
+  name: "Pixaroma.SwitchSource",
+
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== "PixaromaSwitchSource") return;
+    capComputeSizeInNodes2(nodeType); // Nodes 2.0 Ctrl+Z grow on frontend 1.53 (switch-family.md)
+
+    const _origCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      _origCreated?.apply(this, arguments);
+      const node = this;
+      injectCSS();
+      injectResizePanelCSS(); // styles the shared makeNumericInput (.pix-li-*)
+      setupNode(node);        // strip raw Python slots -> initial rows
+      const { root, refresh } = buildControls(node);
+      node._pixSsRefresh = refresh;
+      installCanvasZoomPassthrough(root);
+      installNodeAccent(node, root);   // the face follows this node's accent colour
+      const ssWidget = node.addDOMWidget("pixaroma_switch_source_ui", "custom", root, {
+        serialize: false,
+        getMinHeight: () => CONTROL_BAND,
+        getMaxHeight: () => CONTROL_BAND,
+        getValue: () => null,
+        setValue: () => {},
+      });
+      // Adaptive canvasOnly: true in the legacy renderer (kept out of the
+      // Parameters tab, Vue Compat #15) but false in Nodes 2.0 so the Vue body
+      // actually renders the control strip - with a static canvasOnly:true the
+      // entire strip (Rows / A-B / Missing) vanished in Nodes 2.0.
+      applyAdaptiveCanvasOnly(ssWidget);
+      node.setDirtyCanvas(true, true);
+      // Defer restore so node.properties is populated from workflow JSON first
+      // (Vue Compat #8). onConfigure also restores (belt and braces).
+      queueMicrotask(() => { restoreFromProperties(node); refresh(); });
+    };
+
+    // ── Configure gate: wrap `configure`, NOT the `onConfigure` hook ──
+    // LiteGraph calls the onConfigure hook as the LAST statement of configure(),
+    // after it has replayed onConnectionsChange once per input. A flag raised in
+    // the hook never covered that replay, so on a copy / paste / duplicate (not a
+    // workflow load, so _ssLoadingGraph is down too) every input's replay ran
+    // updateOutputLabels mid-configure. Harmless today - the hook below redoes
+    // it - but unguarded. Same fix as Switch (CLAUDE.md Vue Compat #17).
+    const _origConfigureFn = nodeType.prototype.configure;
+    nodeType.prototype.configure = function () {
+      this._pixSsConfiguring = true;
+      try {
+        // Not `?.apply`: a silent no-op would restore no saved state at all.
+        if (typeof _origConfigureFn !== "function") {
+          console.error("[Switch Source Pixaroma] node configure() is missing - saved state was not restored");
+          return undefined;
+        }
+        return _origConfigureFn.apply(this, arguments);
+      } finally {
+        this._pixSsConfiguring = false;
+      }
+    };
+
+    // Runs INSIDE configure, so the gate above is still up. Do not set or clear
+    // the flag here: this hook runs partway through, and dropping it early would
+    // reopen the window the wrapper closes.
+    const _origConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (info) {
+      // Do NOT wipe slots here. onConfigure fires at the END of
+      // LGraphNode.configure(), i.e. AFTER the saved slots and their links
+      // have already been restored. The old clearAllSlots(this) was therefore
+      // destroying every restored wire on every workflow load / tab switch /
+      // undo (confirmed: the node came back with zero inputs/outputs and the
+      // whole graph lost its links). The saved two-bank order is preserved
+      // because setupNode leaves the node empty during a load, so configure
+      // re-adds the saved slots in their saved order.
+      const r = _origConfigure?.apply(this, arguments);
+      // Set the safety-net flag AFTER _origConfigure SUCCEEDS. If it threw,
+      // the flag stays false and setupNode's microtask falls through to its
+      // slot-count check + buildBareRows fallback (recovering an empty node
+      // from saved state.rows), instead of being permanently disabled.
+      this._pixSsConfigureRan = true;
+      restoreFromProperties(this);
+      this._pixSsRefresh?.();
+      return r;
+    };
+
+    // Wire connect/disconnect never changes the slot count (the Rows field
+    // owns that). Just re-resolve output types/labels. Gated during rebuild /
+    // configure / load so it never mutates serialized state on those paths.
+    const _origConn = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+      if (!this._pixSsRebuilding && !this._pixSsConfiguring && !_ssLoadingGraph) {
+        updateOutputLabels(this);
+        this.graph?.setDirtyCanvas?.(true, true);
+      }
+      return _origConn?.apply(this, arguments);
+    };
+
+    // Click an output label to rename that row. Canvas-only: in Nodes 2.0 the
+    // slots are Vue-rendered and our painted-rect hit-test would misfire, so we
+    // skip it there (a Nodes 2.0 rename path is handled separately).
+    const _origDown = nodeType.prototype.onMouseDown;
+    nodeType.prototype.onMouseDown = function (e, pos) {
+      if (!this.flags?.collapsed && !isVueNodes()) {
+        const n = rowCount(this);
+        for (let r = 1; r <= n; r++) {
+          if (pointInRect(pos, outputLabelRect(this, r))) {
+            openLabelEditor(this, r, outputLabelScreenRect(this, r));
+            return true;
+          }
+        }
+      }
+      return _origDown ? _origDown.call(this, e, pos) : false;
+    };
+
+    const _origRemoved = nodeType.prototype.onRemoved;
+    nodeType.prototype.onRemoved = function () {
+      cancelEditorForNode(this);
+      this._pixSsRefresh = null;
+      return _origRemoved?.apply(this, arguments);
+    };
+
+    // Self-heal min width AND height every paint (UI conventions #7; onResize
+    // unreliable for DOM-widget nodes per Vue Compat #13). Without the height
+    // floor, dragging the node shorter clips the control strip / output rows
+    // past the bottom frame. Both writes are CONDITIONAL (only when below the
+    // min) so a correctly-saved workflow never gets a size write on load
+    // (Vue Compat #18).
+    const _origDraw = nodeType.prototype.onDrawForeground;
+    nodeType.prototype.onDrawForeground = function (ctx) {
+      if (_origDraw) _origDraw.call(this, ctx);
+      if (this.flags?.collapsed) return;
+      if (this.size[0] < MIN_W) this.size[0] = MIN_W;
+      const minH = minNodeHeight(rowCount(this));
+      if (this.size[1] < minH) this.size[1] = minH;
+    };
+
+    // Belt-and-braces clamp on the resize path too (Switch WH pattern).
+    const _origResize = nodeType.prototype.onResize;
+    nodeType.prototype.onResize = function (size) {
+      if (size) {
+        if (size[0] < MIN_W) size[0] = MIN_W;
+        const minH = minNodeHeight(rowCount(this));
+        if (size[1] < minH) size[1] = minH;
+      }
+      return _origResize?.apply(this, arguments);
+    };
+  },
+});
+
+// ── app.graphToPrompt hook (subgraph-safe) ────────────────────────────────
+// Injects {version, active, rows, missing, aWired, bWired} into the hidden
+// SwitchSourceState input AND prunes each row to the side actually used so only
+// that branch executes.
+
+function buildIndex() {
+  const index = new Map();
+  const visit = (graph) => {
+    if (!graph) return;
+    const nodes = graph._nodes || graph.nodes || [];
+    for (const n of nodes) {
+      if (!n) continue;
+      if (n.comfyClass === "PixaromaSwitchSource" || n.type === "PixaromaSwitchSource") {
+        index.set(String(n.id), n);
+      }
+      const inner = n.subgraph || n.graph || n._graph;
+      if (inner && inner !== graph) visit(inner);
+    }
+  };
+  visit(app.graph);
+  return index;
+}
+
+function findNode(index, promptId) {
+  const sId = String(promptId);
+  if (index.has(sId)) return index.get(sId);
+  const tail = sId.includes(":") ? sId.slice(sId.lastIndexOf(":") + 1) : null;
+  if (tail && index.has(tail)) return index.get(tail);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prompt hooks - split in two, exactly like Switch Pixaroma (see the long note in
+// js/switch/index.js). graphToPrompt INJECTS the hidden state only, so ComfyUI's
+// "Export (API)" keeps EVERY wired a_N / b_N and the exported JSON can be
+// re-pointed at the other bank by hand. api.queuePrompt PRUNES the inactive bank,
+// and only when a prompt is actually submitted from the browser.
+//
+// The inactive bank not EXECUTING is no longer this prune's job: node_switch_source.py
+// declares the inputs "lazy" and check_lazy_status() requests only the active
+// side, server-side - which is the only thing that can work for an API submission,
+// where this JS never runs. The prune stays for browser runs as a caching /
+// validation optimisation (an unused bank can't invalidate the cache or fail
+// validation), which is how it has always behaved.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-Switch-Source facts needed by both hooks: which bank is active, how many
+// rows, and which sides are wired.
+function switchSourceInfo(index, id, entry) {
+  if (!entry || entry.class_type !== "PixaromaSwitchSource") return null;
+  const node = findNode(index, id);
+  if (!node) return null;
+  const state = readState(node);
+  const rows = rowCount(node);
+  const aWired = [];
+  const bWired = [];
+  for (let r = 1; r <= rows; r++) {
+    const a = (node.inputs || []).find((s) => s.name === `a_${r}`);
+    const b = (node.inputs || []).find((s) => s.name === `b_${r}`);
+    if (a && a.link != null) aWired.push(r);
+    if (b && b.link != null) bWired.push(r);
+  }
+  return { active: state.active, missing: state.missing, rows, aWired, bWired };
+}
+
+// Idempotency guard: hot-reload or duplicate module evaluation would otherwise
+// capture this module's previous wrapper as _origGraphToPrompt and double-wrap,
+// double-injecting SwitchSourceState. Matches the _pixSsLoadWrapped pattern above.
+if (!app._pixSsGtpWrapped) {
+  app._pixSsGtpWrapped = true;
+  const _origGraphToPrompt_fn = app.graphToPrompt;
+  const _origGraphToPrompt = (...a) => _origGraphToPrompt_fn.apply(app, a);
+  app.graphToPrompt = async function (...args) {
+    const result = await _origGraphToPrompt(...args);
+    const out = result?.output;
+    if (out) {
+      let index = null;
+      for (const id in out) {
+        const entry = out[id];
+        if (!entry || entry.class_type !== "PixaromaSwitchSource") continue;
+        if (!index) index = buildIndex();
+        const info = switchSourceInfo(index, id, entry);
+        if (!info) continue;
+        entry.inputs = entry.inputs || {};
+        // aWired/bWired travel with the state so 'Show error' mode can tell whether
+        // the OTHER side was wired (i.e. the user dropped the wire on the wrong bank).
+        entry.inputs[HIDDEN_INPUT_NAME] = JSON.stringify({
+          version: 1,
+          active: info.active,
+          rows: info.rows,
+          missing: info.missing,
+          aWired: info.aWired,
+          bWired: info.bWired,
+        });
+      }
+    }
+    return result;
+  };
+}
+
+// Submit-time prune of the inactive bank (browser runs only). ...args is forwarded
+// untouched so partialExecutionTargets and any future option survive.
+if (!api._pixSsQueueWrapped) {
+  api._pixSsQueueWrapped = true;
+  const _origQueuePrompt_fn = api.queuePrompt;
+  const _origQueuePrompt = (...a) => _origQueuePrompt_fn.apply(api, a);
+  api.queuePrompt = async function (...args) {
+    try {
+      const out = args[1]?.output;
+      if (out) {
+        let index = null;
+        for (const id in out) {
+          const entry = out[id];
+          if (!entry || entry.class_type !== "PixaromaSwitchSource") continue;
+          if (!index) index = buildIndex();
+          const info = switchSourceInfo(index, id, entry);
+          if (!info || !entry.inputs) continue;
+          // ACTIVE SIDE ONLY: always drop the inactive side, regardless of mode.
+          // The mode (allow-empty vs show-error) only changes what Python does when
+          // the ACTIVE side is empty - it never falls back to the other side.
+          for (let r = 1; r <= info.rows; r++) {
+            const drop = info.active === "A" ? `b_${r}` : `a_${r}`;
+            if (drop in entry.inputs) delete entry.inputs[drop];
+          }
+        }
+      }
+    } catch (e) {
+      // Never block a run over a pruning failure - Python's lazy inputs already
+      // guarantee only the active bank executes.
+      console.warn("[Switch Source Pixaroma] could not prune the inactive bank:", (e && e.message) || e);
+    }
+    return _origQueuePrompt(...args);
+  };
+}
+
+// The colour option: a right-click "Switch Source settings" entry, the gear in the
+// selection toolbar, and the shared colour panel behind both.
+registerNodeAccent("PixaromaSwitchSource", { title: "Switch Source" });

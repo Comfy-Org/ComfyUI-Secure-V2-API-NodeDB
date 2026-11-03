@@ -1,0 +1,490 @@
+// Prompt Multi Pixaroma - DOM widget render.
+//
+// Builds a root <div> for the node body containing one row per state entry +
+// an "+ Add row" button. Each row is its own <div> with controls.
+// Click handlers and drag handlers are wired in interaction.mjs (Task 5+).
+
+import { readState, MODE_QUEUE, MODE_LIST } from "./core.mjs";
+import { attachLabelEditor, attachTextareaEditor, attachDragHandlers } from "./interaction.mjs";
+import { textSize } from "../shared/text_size.mjs";
+import { followSpellcheck } from "../shared/spellcheck.mjs";
+
+const CSS_ID = "pix-prompt-multi-css";
+
+// Pixaroma node UI conventions (CLAUDE.md): semi-transparent white
+// overlays for adaptive UI surfaces so the node body colour (custom
+// right-click -> Colors) shows through correctly. Action buttons mirror
+// Prompt Pack's .pix-pp-actbtn (box-sizing border-box, min-width 86,
+// full BRAND hover, user-select none).
+const CSS = `
+.pix-pm-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 8px;
+  box-sizing: border-box;
+  font-family: inherit;
+  color: #ddd;
+}
+/* An opened node keeps its saved height until you act on it (index.js contentMinHeight): rows that need more room
+   (a bigger text size) scroll inside the body instead of spilling below the node. */
+.pix-pm-root.is-held { overflow-y: auto; }
+
+/* Mode pills (Queue Text / List Prompts) — DOM segmented toggle at the top
+   of the body (were canvas-painted; moved to DOM for Nodes 2.0). */
+.pix-pm-modebar { display: flex; gap: 4px; flex: 0 0 auto; user-select: none; }
+.pix-pm-modepill {
+  flex: 1;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  font: 11px sans-serif;
+  padding: 4px 0;
+  text-align: center;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.pix-pm-modepill:hover { background: var(--pix-acc,#f66744); border-color: var(--pix-acc,#f66744); color: #fff; }
+.pix-pm-modepill.active { background: var(--pix-acc,#f66744); border-color: var(--pix-acc,#f66744); color: #fff; }
+
+/* Row card uses fixed dark grey background + visible grey border (NOT
+   the adaptive white-overlay used for interactive surfaces). The card
+   is a passive container - the visible contour reads more clearly here
+   than a semi-transparent overlay would. The interactive surfaces
+   INSIDE the row (toggle, label input, textarea, delete) keep their
+   adaptive treatment. */
+.pix-pm-row {
+  display: flex;
+  flex-direction: column;
+  /* NEVER shrink. The root is a fixed-height flex column, so a row's only
+     other protection is the flex AUTOMATIC MINIMUM (min-height:auto) - an
+     implicit guarantee ANY stylesheet on the page can delete with a
+     "min-height:0" (min-h-0 is a stock Tailwind flex idiom, and ComfyUI
+     already stamps its own utility classes onto our root). Lose it and a
+     root even slightly shorter than its content crushes every row: measured
+     row 79px -> 27px with an 18px toggle still inside it, so the toggle is
+     clipped by the row's own bottom edge and each row's opaque background
+     covers the one above - exactly the "collapsed, distorted and overlapping"
+     report from two bug hunters, 2026-08-25. Overflowing is the correct
+     failure: the node clips, the rows stay usable. Prompt Pack's bottom bar
+     and every Find-and-Replace child already declare this. */
+  flex-shrink: 0;
+  /* AND a real floor, because flex-shrink:0 does NOT cover the other half of
+     this hole: it only stops the row shrinking BELOW its flex base size, and an
+     explicit "height" IS that base size. So anything that puts a height on the
+     row wins outright - notably ComfyUI's own resize probe, which deliberately
+     sets "--node-height: 0" to measure the collapsed node and would leave the
+     row at 0 if it were ever not restored. MEASURED from a user's broken node
+     (2026-08-27) and reproduced field for field: row offsetHeight 13, which is
+     exactly this row's padding+border (13.33) with ZERO content height, while
+     the textarea inside still rendered at its full 38px and overflowed - so
+     each row's opaque background covered the one above it. "fit-content" puts
+     the floor back at head+gap+textarea and the same forced "height:0" then
+     produces 77px again. Keep both declarations: they defend different things. */
+  min-height: fit-content;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 4px;
+  background: #232323;
+  border: 1px solid #2e2e2e;
+  position: relative;
+  transition: opacity 0.12s ease;
+}
+.pix-pm-row.is-disabled { opacity: 0.45; }
+.pix-pm-row.is-dragging { opacity: 0.4; }
+.pix-pm-row.is-drop-target-above { box-shadow: 0 -2px 0 0 var(--pix-acc,#f66744); }
+.pix-pm-row.is-drop-target-below { box-shadow: 0 2px 0 0 var(--pix-acc,#f66744); }
+
+.pix-pm-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.pix-pm-handle {
+  cursor: grab;
+  color: #888;
+  font-size: 14px;
+  line-height: 14px;
+  user-select: none;
+  padding: 0 2px;
+  letter-spacing: -2px;
+}
+.pix-pm-handle:active { cursor: grabbing; }
+.pix-pm-handle:hover { color: #ccc; }
+
+.pix-pm-toggle {
+  min-width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.5px;
+  padding: 0 6px;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  user-select: none;
+}
+.pix-pm-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+.pix-pm-toggle.on {
+  background: var(--pix-acc,#f66744);
+  border-color: var(--pix-acc,#f66744);
+  color: #fff;
+}
+.pix-pm-toggle.on:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+
+.pix-pm-label {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 11px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
+}
+.pix-pm-label:focus { border-color: var(--pix-acc,#f66744); }
+.pix-pm-label::placeholder { color: rgba(255, 255, 255, 0.4); font-style: italic; }
+
+.pix-pm-delete {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 14px;
+  flex-shrink: 0;
+  padding: 0;
+}
+.pix-pm-delete:hover { color: var(--pix-acc,#f66744); background: color-mix(in srgb, var(--pix-acc,#f66744) 12%, transparent); }
+.pix-pm-delete:disabled { color: #444; cursor: not-allowed; background: transparent; }
+
+/* Textarea interior matches Prompt Pack / Text Pixaroma for consistency. */
+.pix-pm-textarea {
+  width: 100%;
+  min-height: 38px;
+  max-height: 120px;
+  resize: none;
+  background: #1d1d1d;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font: 12px monospace;
+  font-size: ${textSize(12)};
+  padding: 6px 8px;
+  outline: none;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+.pix-pm-textarea:focus { border-color: var(--pix-acc,#f66744); }
+
+/* Bottom action buttons mirror Prompt Pack's .pix-pp-actbtn exactly so
+   the two nodes feel like one design. Same min-width, same border-box,
+   same overlay default, same full BRAND hover. */
+.pix-pm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  /* Same reason as .pix-pm-row: crushed to 5px of its 22px in the harness,
+     which is why the buttons read as "unresponsive" - they are still there,
+     just too thin to hit. */
+  flex-shrink: 0;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 4px;
+  user-select: none;
+}
+.pix-pm-actbtn {
+  box-sizing: border-box;
+  min-width: 86px;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  font: 11px sans-serif;
+  padding: 4px 12px;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.pix-pm-actbtn:hover {
+  background: var(--pix-acc,#f66744);
+  border-color: var(--pix-acc,#f66744);
+  color: #fff;
+}
+.pix-pm-actbtn[disabled] {
+  color: rgba(255, 255, 255, 0.3);
+  cursor: default;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.pix-pm-actbtn[disabled]:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.pix-pm-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+.pix-pm-confirm-box {
+  background: #1d1d1d;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  min-width: 320px;
+  max-width: 480px;
+  padding: 18px 20px;
+  color: #ddd;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+.pix-pm-confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 8px 0;
+}
+.pix-pm-confirm-msg {
+  font-size: 13px;
+  color: #bbb;
+  margin: 0 0 16px 0;
+  line-height: 1.4;
+}
+.pix-pm-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.pix-pm-confirm-btn {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  color: #ddd;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 14px;
+  font-family: inherit;
+}
+.pix-pm-confirm-btn:hover { background: #333; border-color: #555; }
+.pix-pm-confirm-btn.primary {
+  background: var(--pix-acc,#f66744);
+  border-color: var(--pix-acc,#f66744);
+  color: #fff;
+}
+.pix-pm-confirm-btn.primary:hover { background: #ff7a58; border-color: #ff7a58; }
+`;
+
+export function injectCSS() {
+  if (document.getElementById(CSS_ID)) return;
+  const el = document.createElement("style");
+  el.id = CSS_ID;
+  el.textContent = CSS;
+  document.head.appendChild(el);
+}
+
+export function buildRoot() {
+  const root = document.createElement("div");
+  root.className = "pix-pm-root";
+  return root;
+}
+
+// measureContentHeight: sum of each child's offsetHeight (not root.scrollHeight,
+// because ComfyUI stretches root.offsetHeight which would create a feedback
+// loop). Adds CSS row-gap between children + root's vertical padding.
+// Used by getMinHeight so the DOM widget can ask ComfyUI for the right amount
+// of vertical space as rows are added or removed.
+export function measureContentHeight(root) {
+  if (!root) return 120;
+  // Refuse to measure before the root has a real width (UI#39): a node built by an open / Ctrl+Z is ~16 px wide
+  // for a few frames, everything wraps, and the inflated answer grew the node.
+  if (root.offsetWidth < 100) return 120;
+  let h = 0;
+  let count = 0;
+  for (const child of root.children) {
+    if (child.offsetParent === null) continue;
+    h += child.offsetHeight;
+    count += 1;
+  }
+  const cs = getComputedStyle(root);
+  const gap = parseFloat(cs.rowGap || cs.gap) || 0;
+  if (count > 1) h += gap * (count - 1);
+  h += parseFloat(cs.paddingTop) || 0;
+  h += parseFloat(cs.paddingBottom) || 0;
+  // Round to a 4px grid so sub-pixel/font jitter can't creep node.size bigger
+  // on every workflow switch (getMinHeight feeds Nodes 2.0 grow-to-content,
+  // which is grow-only and accumulates - Vue Compat #18).
+  return Math.max(120, Math.round(h / 4) * 4);
+}
+
+// renderRows clears root.innerHTML and rebuilds every row.
+// Returns nothing; mutates root.
+// rowHandlers is an object with callbacks the interaction module wires up:
+//   { onToggleEnabled(id), onLabelChange(id, val), onTextChange(id, val),
+//     onDelete(id), onAdd(),
+//     onDragStart(id, ev), onDragOver(id, ev), onDrop(id, ev), onDragEnd(ev) }
+export function renderRows(node, root, rowHandlers) {
+  const state = readState(node);
+  root.innerHTML = "";
+
+  // Mode pills (Queue Text / List Prompts) — DOM segmented toggle at the top
+  // of the body (was canvas-painted; moved to DOM for Nodes 2.0). Rebuilt
+  // here each render because renderRows clears root.innerHTML.
+  const modebar = document.createElement("div");
+  modebar.className = "pix-pm-modebar";
+  const mkModePill = (mode, label, title) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pix-pm-modepill" + (state.mode === mode ? " active" : "");
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", () => rowHandlers.onSetMode(mode));
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("mousedown", (e) => e.stopPropagation());
+    return b;
+  };
+  modebar.append(
+    mkModePill(MODE_QUEUE, "Queue Text", "Queue Text: click Run and the workflow runs once per enabled prompt (N images). Wire the `text` output to a CLIP Text Encode."),
+    mkModePill(MODE_LIST, "List Prompts", "List Prompts: click Run and the workflow runs ONCE. Wire the `prompts` output into Prompt From List Pixaroma nodes downstream to grab specific rows.")
+  );
+  root.appendChild(modebar);
+
+  for (const row of state.rows) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "pix-pm-row" + (row.enabled ? "" : " is-disabled");
+    rowEl.dataset.id = row.id;
+    // The HANDLE is the drag source, NOT the whole row - otherwise the browser
+    // reports the row as the dragstart target and the "only drag from the
+    // handle" gate never matches, cancelling every drag (see prompt_stack).
+    rowEl.draggable = false;
+
+    const head = document.createElement("div");
+    head.className = "pix-pm-row-head";
+
+    const handle = document.createElement("span");
+    handle.className = "pix-pm-handle";
+    handle.draggable = true;
+    handle.textContent = "⋮⋮"; // two vertical ellipses
+    handle.title = "Drag to reorder";
+    head.appendChild(handle);
+
+    const toggle = document.createElement("div");
+    toggle.className = "pix-pm-toggle" + (row.enabled ? " on" : "");
+    toggle.textContent = row.enabled ? "ON" : "OFF";
+    toggle.title = row.enabled ? "Click to mute this row" : "Click to include this row";
+    toggle.addEventListener("click", () => rowHandlers.onToggleEnabled(row.id));
+    head.appendChild(toggle);
+
+    const label = document.createElement("input");
+    label.type = "text";
+    label.className = "pix-pm-label";
+    label.value = row.label || "";
+    label.placeholder = `Prompt ${state.rows.indexOf(row) + 1}`;
+    label.title = "Optional name for this row, just a reminder for you. It is not part of the prompt.";
+    head.appendChild(label);
+    attachLabelEditor(node, label, row.id);
+
+    const del = document.createElement("button");
+    del.className = "pix-pm-delete";
+    del.type = "button";
+    del.textContent = "✕";
+    del.title = "Delete row";
+    del.disabled = state.rows.length <= 1;
+    del.addEventListener("click", () => rowHandlers.onDelete(row.id));
+    head.appendChild(del);
+
+    rowEl.appendChild(head);
+
+    const ta = document.createElement("textarea");
+    ta.className = "pix-pm-textarea";
+    ta.value = row.text || "";
+    ta.rows = 2;
+    ta.placeholder = "Type a prompt variant. Each enabled row with text queues one workflow run. Empty rows are skipped.";
+    followSpellcheck(ta);
+    rowEl.appendChild(ta);
+    attachTextareaEditor(node, ta, row.id);
+
+    attachDragHandlers(node, rowEl, row.id, rowHandlers.onDrop);
+
+    root.appendChild(rowEl);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "pix-pm-actions";
+
+  const add = document.createElement("button");
+  add.className = "pix-pm-actbtn";
+  add.type = "button";
+  add.textContent = "Add prompt";
+  add.title = "Append an empty prompt row at the end of the list";
+  add.addEventListener("click", () => rowHandlers.onAdd());
+  actions.appendChild(add);
+
+  const clear = document.createElement("button");
+  clear.className = "pix-pm-actbtn";
+  clear.type = "button";
+  clear.textContent = "Clear all";
+  clear.title = "Empty the text in every row (keeps row count, labels and toggles)";
+  clear.addEventListener("click", () => rowHandlers.onClearAll());
+  actions.appendChild(clear);
+
+  const reset = document.createElement("button");
+  reset.className = "pix-pm-actbtn";
+  reset.type = "button";
+  reset.textContent = "Reset";
+  reset.title = "Reset to default (two empty rows, both ON, no labels)";
+  reset.addEventListener("click", () => rowHandlers.onReset());
+  actions.appendChild(reset);
+
+  // Reactive enable/disable: walk live DOM inputs so buttons update on every
+  // keystroke without waiting for state commit or a re-render. Exposed on the
+  // node so attachTextareaEditor and attachLabelEditor can poke it.
+  const refreshActionButtons = () => {
+    const tas = root.querySelectorAll(".pix-pm-textarea");
+    let anyText = false;
+    for (const ta of tas) {
+      if (ta.value && ta.value.trim()) { anyText = true; break; }
+    }
+    clear.disabled = !anyText;
+
+    const labels = root.querySelectorAll(".pix-pm-label");
+    let anyLabel = false;
+    for (const lab of labels) {
+      if (lab.value && lab.value.trim()) { anyLabel = true; break; }
+    }
+    const s = readState(node);
+    const anyDisabled = s.rows.some((r) => !r.enabled);
+    const notTwoRows = s.rows.length !== 2;
+    reset.disabled = !(anyText || anyLabel || anyDisabled || notTwoRows);
+  };
+  refreshActionButtons();
+  node._pixPmRefreshClear = refreshActionButtons;
+
+  root.appendChild(actions);
+}

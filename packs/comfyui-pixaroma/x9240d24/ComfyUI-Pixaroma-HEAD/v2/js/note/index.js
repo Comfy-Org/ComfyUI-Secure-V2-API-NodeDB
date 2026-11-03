@@ -1,0 +1,192 @@
+import { app } from "../../../scripts/app.js";
+import { hideJsonWidget, allow_debug, applyAdaptiveCanvasOnly,
+  installCanvasZoomPassthrough,
+} from "../shared/index.mjs";
+import { createNoteDOMWidget, renderContent, attachEditButton } from "./render.mjs";
+import { NoteEditor } from "./core.mjs";
+import "./toolbar.mjs";
+import "./blocks.mjs";
+import { ensureIcons, injectIconCSS } from "./icons.mjs";
+import { refuseRowPromotion } from "../shared/subgraph_wire.mjs";
+
+// Preload the inline-icon CSS at extension setup so on-canvas note
+// rendering after a fresh page load (Ctrl+F5) shows icons correctly,
+// not as solid colored rectangles. Without this, the per-icon mask-
+// image rules only get injected when the editor is OPENED for the
+// first time - notes rendered on the canvas before that show the
+// fallback "missing rule" rectangle. Fire-and-forget; both calls are
+// idempotent.
+ensureIcons().then(() => injectIconCSS()).catch(() => {});
+
+
+const DEFAULT_CFG = {
+  version: 1,
+  content: "",
+  buttonColor: "#f66744",
+  lineColor: "#f66744",
+  // backgroundColor is intentionally NOT listed here — the key is
+  // missing in DEFAULT_CFG so fresh notes have `undefined`, which
+  // renderContent treats as "don't touch node.color/bgcolor". That
+  // means ComfyUI's native right-click Colors menu is respected out
+  // of the box, and the LiteGraph theme default shows on brand-new
+  // notes. If the user picks a hex via the Bg picker, cfg gets the
+  // hex and renderContent applies it (with a darkened title). If
+  // the user clicks Clear in the Bg picker, cfg gets null (NOT
+  // deleted) so renderContent explicitly reverts our override.
+  width: 420,
+  height: 320,
+};
+
+function parseCfg(node) {
+  const w = (node.widgets || []).find((x) => x.name === "note_json");
+  if (!w?.value || w.value === "{}") return { ...DEFAULT_CFG };
+  try {
+    const parsed = JSON.parse(w.value);
+    // Migration: two generations of widget defaults shipped a
+    // cosmetic backgroundColor that ALWAYS overrode whatever the user
+    // picked in ComfyUI's native right-click Colors menu. For
+    // brand-new notes (no content) those defaults are noise — drop
+    // them so the node respects native Colors-menu picks.
+    //   - "transparent" — the earliest widget default.
+    //   - "#111111"     — the later default, dropped in favour of
+    //                     "undefined means no override".
+    // If the note has content, we leave whatever value is there
+    // alone; the user may have explicitly picked #111111, and we
+    // shouldn't second-guess that.
+    if (
+      (parsed.backgroundColor === "transparent" ||
+        parsed.backgroundColor === "#111111") &&
+      !parsed.content
+    ) {
+      delete parsed.backgroundColor;
+    }
+    // Migration: single accentColor → split buttonColor + lineColor.
+    // Existing notes authored before the split get their accent preserved
+    // as the button color. lineColor falls through to the DEFAULT_CFG
+    // value rather than inheriting the old accent — accentColor wasn't
+    // driving any lines before, so there's no prior-art line color to
+    // preserve. See spec 2026-04-21-note-btn-ln-split-design.md.
+    if (parsed.accentColor !== undefined && parsed.buttonColor === undefined) {
+      parsed.buttonColor = parsed.accentColor;
+    }
+    delete parsed.accentColor;
+    return { ...DEFAULT_CFG, ...parsed };
+  } catch (e) {
+    return { ...DEFAULT_CFG };
+  }
+}
+
+function openEditor(node) {
+  // Prevent stacking overlays if user clicks Edit twice quickly or Vue removes the
+  // overlay without firing close() (see CLAUDE.md §Vue rule 2 — overlay.isConnected).
+  if (node._noteEditor?._el?.isConnected) return;
+  if (node._noteEditor && !node._noteEditor._el?.isConnected) {
+    node._noteEditor._cleanup();
+  }
+  const editor = new NoteEditor(node);
+  node._noteEditor = editor;
+  editor.open();
+}
+
+function setupNote(node) {
+  try {
+    hideJsonWidget(node.widgets, "note_json");
+    node._noteCfg = parseCfg(node);
+
+    // Build and register the DOM widget. nodeCreated only fires once per node
+    // lifecycle (unlike prototype onNodeCreated + onConfigure overrides which
+    // both fire on workflow reload), so this is always a fresh install.
+    const wrap = createNoteDOMWidget(node);
+    node._noteDOMWrap = wrap;
+    node._noteBody = wrap.querySelector(".pix-note-body");
+    attachEditButton(wrap, () => openEditor(node));
+    installCanvasZoomPassthrough(wrap);
+    const _noteWidget = node.addDOMWidget("note_dom", "custom", wrap, {
+      // canvasOnly set adaptively below (CLAUDE.md Nodes 2.0): true in legacy
+      // (out of the Parameters tab), false in Nodes 2.0 (renders in Vue body).
+      serialize: false,
+      getMinHeight: () => 80,
+    });
+    applyAdaptiveCanvasOnly(_noteWidget);
+  } catch (err) {
+    console.error("[Pixaroma Note] setupNote error:", err);
+  }
+}
+
+app.registerExtension({
+  name: "Pixaroma.Note",
+
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== "PixaromaNote") return;
+    // The hidden note_json state must not be promoted from a subgraph's widget
+    // list ("Show all", Classic): it put the note's raw JSON on the subgraph.
+    refuseRowPromotion(nodeType, "note_json");
+
+    // Prototype-level: suppress double-click so only the hover-reveal Edit
+    // button can open the editor. Applies to all instances of this type.
+    nodeType.prototype.onDblClick = function () {
+      return false;
+    };
+
+    // Workflow reload path: nodeCreated fires BEFORE configure populates
+    // widget values, so parseCfg() during setupNote reads empty defaults.
+    // Re-parse + re-render after configure has set note_json.value.
+    //
+    // Body lookup mirrors save()'s three-step robust chain (Pattern #23 in
+    // CLAUDE.md). Vue can tear down and re-attach the DOM widget during
+    // workflow reload; if we paint to a stale `_noteBody` reference, the
+    // canvas renders blank until the next save or resize. Each step checks
+    // `.isConnected` so we only accept a live element; refresh the cached
+    // `_noteBody` reference to the live one so subsequent renders are fast.
+    const _origCfg = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (data) {
+      const r = _origCfg?.apply(this, arguments);
+      this._noteCfg = parseCfg(this);
+      let body = this._noteBody?.isConnected ? this._noteBody : null;
+      if (!body && this._noteDOMWrap?.isConnected) {
+        body = this._noteDOMWrap.querySelector(".pix-note-body");
+      }
+      if (!body) {
+        const w = this.widgets?.find((x) => x.name === "note_dom");
+        body = w?.element?.querySelector(".pix-note-body");
+      }
+      if (body) {
+        this._noteBody = body;
+        renderContent(this, body);
+      }
+      return r;
+    };
+
+    // Persist node size on resize so the width/height survive workflow
+    // reload. The editor's save() also stamps the current size into cfg,
+    // but users may resize on the canvas without opening the editor at
+    // all — without this hook those nodes would revert to 420x320 on
+    // reload.
+    const _origResize = nodeType.prototype.onResize;
+    nodeType.prototype.onResize = function (size) {
+      const r = _origResize?.apply(this, arguments);
+      if (this._noteCfg && Array.isArray(size)) {
+        this._noteCfg.width = Math.max(160, size[0]);
+        this._noteCfg.height = Math.max(80, size[1]);
+        const w = (this.widgets || []).find((x) => x.name === "note_json");
+        if (w) w.value = JSON.stringify(this._noteCfg);
+      }
+      return r;
+    };
+  },
+
+  async nodeCreated(node) {
+    if (node.comfyClass !== "PixaromaNote") return;
+
+    setupNote(node);
+
+    // Apply default size only if the node is at LiteGraph's tiny default.
+    // Workflow-restored nodes already have their saved size set before this
+    // hook fires, so we leave those untouched.
+    if (!node.size || node.size[0] < 200 || node.size[1] < 80) {
+      node.size = [node._noteCfg?.width || 420, node._noteCfg?.height || 320];
+    }
+
+    if (allow_debug) console.log("PixaromaNote created", node);
+  },
+});

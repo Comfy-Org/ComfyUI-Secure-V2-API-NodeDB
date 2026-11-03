@@ -1,0 +1,117 @@
+import torch
+import numpy as np
+from PIL import Image
+import os
+import json
+import folder_paths
+from .node_ref import any_type, FlexibleOptionalInputType
+from ._path_guard import safe_join
+
+
+class PixaromaPaint:
+    DESCRIPTION = (
+        "Paint Pixaroma - a fast, simple painting editor with layers. Drop an "
+        "image onto the closed node body to add it as a new top layer (opens "
+        "the editor and stacks the dropped image above the auto-created "
+        "Background, never replacing existing layers). Open the fullscreen "
+        "editor to draw with pencil / brush / eraser / smudge / fill / shape / "
+        "picker tools, on stacked layers with Photoshop-style controls (drag "
+        "to reorder, opacity, blend modes, merge, flatten). The brush engine "
+        "supports custom hardness / opacity, and the smudge tool gives you "
+        "smooth color blending.\n\n"
+        "AI Remove Background button (rembg-powered) on image-source layers "
+        "extracts subjects with one click. Save with transparent background "
+        "directly to disk via the toolbar checkbox.\n\n"
+        "Outputs the final composited IMAGE plus its width and height. Inside "
+        "the editor you can also drag-drop more images to add as additional "
+        "layers, or wire any upstream IMAGE source into the optional input "
+        "slot the editor creates.\n\n"
+        "Inputs are dynamic placeholder slots created by the editor; their "
+        "tooltips live on the JS side."
+    )
+
+    @classmethod
+    def INPUT_TYPES(self):
+        return {
+            "required": {},
+            "optional": FlexibleOptionalInputType(any_type),
+        }
+
+    RETURN_TYPES = ("IMAGE", "INT", "INT")
+    RETURN_NAMES = ("image", "width", "height")
+    OUTPUT_TOOLTIPS = ("The painted image.", "Image width in pixels.", "Image height in pixels.")
+    FUNCTION = "load_painting"
+    CATEGORY = "👑 Pixaroma/🎨 Editors"
+    OUTPUT_NODE = True
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        """Force re-execution when the composite file on disk changes."""
+        paint_data = kwargs.get("PaintWidget")
+        if not paint_data:
+            return ""
+        try:
+            paint_json = paint_data.get("paint_json", "{}") if isinstance(paint_data, dict) else str(paint_data)
+            meta = json.loads(paint_json)
+            composite_path = meta.get("composite_path", "")
+            if composite_path:
+                # safe_join, not os.path.join - see _path_guard.safe_join.
+                # load_painting below was already guarded; this twin was not.
+                full_path = safe_join(folder_paths.get_input_directory(), composite_path)
+                if full_path and os.path.exists(full_path):
+                    return os.path.getmtime(full_path)
+        except Exception:
+            pass
+        return str(paint_data)
+
+    def load_painting(self, **kwargs):
+        empty_image = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+
+        paint_data = kwargs.get("PaintWidget")
+        if not paint_data:
+            return (empty_image, 1024, 1024)
+
+        paint_json = paint_data.get("paint_json", "{}") if isinstance(paint_data, dict) else str(paint_data)
+        if not paint_json or paint_json.strip() in ("", "{}"):
+            return (empty_image, 1024, 1024)
+        try:
+            meta = json.loads(paint_json)
+            if not isinstance(meta, dict):
+                return (empty_image, 1024, 1024)
+
+            doc_w = int(meta.get("doc_w", 1024))
+            doc_h = int(meta.get("doc_h", 1024))
+
+            composite_path = meta.get("composite_path", "")
+            if not composite_path:
+                arr = np.ones((doc_h, doc_w, 3), dtype=np.float32)
+                return (torch.from_numpy(arr)[None,], doc_w, doc_h)
+
+            input_dir = os.path.realpath(folder_paths.get_input_directory())
+            full_path = os.path.realpath(os.path.join(input_dir, composite_path))
+
+            if not full_path.startswith(input_dir + os.sep):
+                print(
+                    "[PixaromaPaint] Security: composite_path escapes input directory, blocked."
+                )
+                return (empty_image, doc_w, doc_h)
+
+            if not os.path.exists(full_path):
+                return (empty_image, doc_w, doc_h)
+
+            img = Image.open(full_path).convert("RGB")
+            arr = np.array(img).astype(np.float32) / 255.0
+            return (torch.from_numpy(arr)[None,], doc_w, doc_h)
+
+        except Exception as e:
+            print(f"[PixaromaPaint] Load error: {e}")
+            return (empty_image, 1024, 1024)
+
+
+NODE_CLASS_MAPPINGS = {
+    "PixaromaPaint": PixaromaPaint,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "PixaromaPaint": "Paint Pixaroma",
+}

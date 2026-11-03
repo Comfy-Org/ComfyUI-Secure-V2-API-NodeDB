@@ -1,0 +1,286 @@
+import torch
+import torch.nn.functional as F
+
+
+# Must match the constant emitted by node_crop.py's crop_info output. Kept as a
+# plain duplicated string (not a cross-file import) to avoid an import chain.
+PIXAROMA_CROP_INFO = "PIXAROMA_CROP_INFO"
+
+
+class PixaromaUncrop:
+    DESCRIPTION = (
+        "Image Uncrop Pixaroma - paste an edited crop back onto the original "
+        "image at the exact spot it came from. The classic crop, fix or upscale, "
+        "then put it back workflow.\n\n"
+        "Wire the 'crop_info' output of Image Crop Pixaroma into 'crop_info' "
+        "here, and wire your edited crop (after upscaling, inpainting, color "
+        "work, anything) into 'image'. The node resizes the edited crop to the "
+        "original crop region if needed and composites it onto the full original "
+        "image, leaving everything outside the crop untouched.\n\n"
+        "Transparency travels through full-frame: the 'mask' output is the "
+        "original mask with the crop region updated, so wiring Image Crop's mask "
+        "straight across keeps the whole image's transparency (or wire an edited "
+        "region mask to change just that area). 'feather' softens the seam for a "
+        "seamless blend.\n\n"
+        "Outputs the recombined full image plus the full-frame mask."
+    )
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        # Slot order is image, mask, crop_info so they line up under Image Crop
+        # Pixaroma's image/mask/crop_info outputs (wires run straight across).
+        # ComfyUI always draws required inputs before optional ones, so to keep
+        # that order with mask staying optional, crop_info is optional too - it
+        # degrades to a clean passthrough if left unwired (handled in uncrop()).
+        return {
+            "required": {
+                "image": ("IMAGE", {
+                    "tooltip": (
+                        "The edited crop to paste back (after upscaling, "
+                        "inpainting, color work, etc). It is resized to the "
+                        "original crop region automatically if its size differs."
+                    ),
+                }),
+            },
+            "optional": {
+                "mask": ("MASK", {
+                    "tooltip": (
+                        "Optional. The mask for the crop region - it updates that "
+                        "area of the full-frame 'mask' output (the rest keeps the "
+                        "original mask). Wire Image Crop's mask straight across to "
+                        "carry the whole transparency through. Resized to the crop "
+                        "region automatically. It does NOT limit the image paste; "
+                        "the whole region is pasted."
+                    ),
+                }),
+                "crop_info": (PIXAROMA_CROP_INFO, {
+                    "tooltip": (
+                        "Wire the 'crop_info' output of Image Crop Pixaroma here. "
+                        "It carries the original image and where the crop came "
+                        "from, so the edited crop can be placed back exactly. "
+                        "If left unwired, the edited image just passes through."
+                    ),
+                }),
+                "feather": ("INT", {
+                    "default": 0, "min": 0, "max": 1024, "step": 1,
+                    "tooltip": (
+                        "Softens the edge of the pasted area by this many pixels "
+                        "so it blends into the original. 0 = hard edge."
+                    ),
+                }),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", PIXAROMA_CROP_INFO)
+    RETURN_NAMES = ("image", "mask", "crop_info")
+    OUTPUT_TOOLTIPS = (
+        "The original image with the edited crop pasted back in place.",
+        "The full-frame mask: the original mask with the crop region updated from "
+        "the wired mask (or unchanged if none). Use it to keep transparency, e.g. "
+        "feed it into Join Image with Alpha.",
+        "The same crop_info passed straight through, so you can forward it to "
+        "another node without re-routing the wire from Image Crop.",
+    )
+    FUNCTION = "uncrop"
+    CATEGORY = "👑 Pixaroma/✂️ Resize & Crop"
+
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _resize_bhwc(self, t, target_w, target_h):
+        """Resize an image tensor [B,H,W,3] to [B,target_h,target_w,3]."""
+        x = t.permute(0, 3, 1, 2)  # [B,3,H,W]
+        x = F.interpolate(x, size=(int(target_h), int(target_w)),
+                          mode="bilinear", align_corners=False)
+        return x.permute(0, 2, 3, 1).contiguous()
+
+    def _resize_mask(self, m, target_w, target_h):
+        """Resize a mask tensor [B,H,W] to [B,target_h,target_w]."""
+        x = m[:, None, ...]  # [B,1,H,W]
+        x = F.interpolate(x, size=(int(target_h), int(target_w)),
+                          mode="bilinear", align_corners=False)
+        return x[:, 0, ...].contiguous()
+
+    def _feather_alpha(self, alpha, feather):
+        """Feather the alpha INWARD: ramp from 0 at the rectangle edge up to the
+        alpha's own value `feather` pixels inward, so a pasted crop fades all the
+        way to nothing at its boundary and blends seamlessly into the original.
+
+        NOTE: a box blur was tried first and was wrong - it bottomed out at ~0.5
+        at the edge (a 50%/50% blend right at the boundary), leaving a visible
+        hard step. A distance-to-edge ramp reaches a true 0 at the edge."""
+        k = int(feather)
+        if k <= 0:
+            return alpha
+        ch, cw = int(alpha.shape[-2]), int(alpha.shape[-1])
+        ys = torch.arange(ch, dtype=torch.float32).view(ch, 1)
+        xs = torch.arange(cw, dtype=torch.float32).view(1, cw)
+        dist_y = torch.minimum(ys, (ch - 1) - ys)
+        dist_x = torch.minimum(xs, (cw - 1) - xs)
+        dist = torch.minimum(dist_y, dist_x)            # px to the nearest edge
+        ramp = (dist / float(k)).clamp(0.0, 1.0)        # 0 at edge -> 1 at k px in
+        return (alpha * ramp).clamp(0.0, 1.0)
+
+    def _build_alpha(self, mask, cw, ch, feather):
+        """Alpha map [ch,cw] in 0..1 for the paste: from the optional mask (else
+        all-ones), with the edges feathered by `feather` px."""
+        if isinstance(mask, torch.Tensor):
+            m = mask
+            # squeeze a singleton channel dim ([B,1,H,W] / [B,H,W,1]) like
+            # _passthrough_mask does; a 4-D mask fell to all-ones before
+            if m.dim() == 4:
+                if m.shape[1] == 1:
+                    m = m[:, 0]
+                elif m.shape[-1] == 1:
+                    m = m[..., 0]
+            if m.dim() == 2:
+                m = m[None, ...]
+            if m.dim() == 3:
+                a = self._resize_mask(m[:1], cw, ch)[0]  # [ch,cw]
+            else:
+                a = torch.ones((ch, cw), dtype=torch.float32)
+        else:
+            a = torch.ones((ch, cw), dtype=torch.float32)
+        a = a.to(torch.float32)
+        return self._feather_alpha(a.clamp(0.0, 1.0), feather)
+
+    def _passthrough_mask(self, mask, image):
+        """When there's nothing to paste (no crop_info), forward the WIRED mask
+        unchanged so transparency survives. Falls back to all-zeros (every pixel
+        opaque, ComfyUI convention) sized to the image only when no mask is
+        wired. Returned on the image's device so the two outputs pair up."""
+        dev = image.device if isinstance(image, torch.Tensor) else "cpu"
+        if isinstance(mask, torch.Tensor):
+            m = mask
+            if m.dim() == 4:  # squeeze a singleton channel dim ([B,1,H,W] / [B,H,W,1])
+                if m.shape[1] == 1:
+                    m = m[:, 0]
+                elif m.shape[-1] == 1:
+                    m = m[..., 0]
+            if m.dim() == 2:
+                m = m[None, ...]
+            if m.dim() == 3:
+                return m.to(dev, torch.float32)
+        h = int(image.shape[1]) if isinstance(image, torch.Tensor) and image.dim() == 4 else 1
+        w = int(image.shape[2]) if isinstance(image, torch.Tensor) and image.dim() == 4 else 1
+        return torch.zeros((1, h, w), dtype=torch.float32, device=dev)
+
+    def uncrop(self, image, crop_info=None, mask=None, feather=0):
+        # No crop_info wired -> nothing to paste back, so pass the image AND the
+        # mask straight through (the mask must NOT be blanked, or transparency is
+        # lost - this is the "Load Image -> Uncrop directly" case).
+        if not isinstance(crop_info, dict) or not isinstance(crop_info.get("image"), torch.Tensor):
+            print("[PixaromaUncrop] no crop_info wired - passing image + mask through")
+            # Don't forward a non-dict garbage value down the typed wire.
+            ci_out = crop_info if isinstance(crop_info, dict) else None
+            return (image, self._passthrough_mask(mask, image), ci_out)
+
+        base = crop_info["image"]
+        if base.dim() != 4:
+            return (image, self._passthrough_mask(mask, image), crop_info)
+
+        H, W = int(base.shape[1]), int(base.shape[2])
+        x = int(crop_info.get("x", 0))
+        y = int(crop_info.get("y", 0))
+        cw = int(crop_info.get("w", image.shape[2] if image.dim() == 4 else W))
+        ch = int(crop_info.get("h", image.shape[1] if image.dim() == 4 else H))
+
+        # Clamp the paste region to the base image bounds (defensive against a
+        # hand-edited / stale crop_info).
+        x = max(0, min(x, W - 1))
+        y = max(0, min(y, H - 1))
+        cw = max(1, min(cw, W - x))
+        ch = max(1, min(ch, H - y))
+
+        # Resize the edited crop to exactly fill the original crop region. This
+        # handles the common upscale-then-paste-back case (and is a no-op when
+        # the crop was edited at its original size).
+        patch = image
+        if patch.dim() != 4:
+            patch = base.new_zeros((1, ch, cw, base.shape[3]))
+        if int(patch.shape[1]) != ch or int(patch.shape[2]) != cw:
+            patch = self._resize_bhwc(patch, cw, ch)
+
+        # Match the patch's channels to the base (drop alpha, pad gray if needed).
+        if patch.shape[3] != base.shape[3]:
+            if patch.shape[3] > base.shape[3]:
+                patch = patch[..., :base.shape[3]]
+            else:
+                pad_c = base.shape[3] - patch.shape[3]
+                patch = torch.cat([patch, patch[..., -1:].repeat(1, 1, 1, pad_c)], dim=-1)
+
+        # ---- IMAGE: paste the edited crop into the whole region --------------
+        # The mask input is NOT a paste-limiter: the entire crop rectangle is
+        # pasted and only `feather` softens the seam, so an edited/upscaled crop
+        # drops straight back in. (Mask travels separately, below.)
+        seam = self._build_alpha(None, cw, ch, feather)  # [ch,cw] ones, feathered edges (cpu)
+        a = seam[None, ..., None].to(base.device, base.dtype)  # [1,ch,cw,1]
+
+        out = base.clone()
+        B = int(out.shape[0])
+
+        # Align the patch batch to the base batch.
+        if patch.shape[0] != B:
+            if patch.shape[0] == 1:
+                patch = patch.repeat(B, 1, 1, 1)
+            elif B == 1:
+                out = out.repeat(patch.shape[0], 1, 1, 1)
+                B = patch.shape[0]
+            else:
+                n = min(B, patch.shape[0])
+                out = out[:n]
+                patch = patch[:n]
+                B = n
+
+        patch = patch.to(out.device, out.dtype)
+        region = out[:, y:y + ch, x:x + cw, :]
+        out[:, y:y + ch, x:x + cw, :] = patch * a + region * (1.0 - a)
+
+        # ---- MASK: full-frame original mask, region updated if one is wired ---
+        # crop_info carries the original full mask so the output is the whole
+        # frame (not just the crop rectangle). With no mask wired, the region
+        # keeps the original mask, so the full transparency passes through
+        # unchanged. Wire an edited region mask in to replace just that area.
+        base_mask = crop_info.get("mask")
+        if isinstance(base_mask, torch.Tensor):
+            bm = base_mask
+            if bm.dim() == 4:  # squeeze a singleton channel dim ([B,1,H,W] / [B,H,W,1])
+                if bm.shape[1] == 1:
+                    bm = bm[:, 0]
+                elif bm.shape[-1] == 1:
+                    bm = bm[..., 0]
+            if bm.dim() == 2:
+                bm = bm[None, ...]
+            if bm.dim() == 3 and int(bm.shape[-2]) == H and int(bm.shape[-1]) == W:
+                bm = bm[:1].detach().to("cpu", torch.float32)
+            else:
+                bm = torch.zeros((1, H, W), dtype=torch.float32)
+        else:
+            bm = torch.zeros((1, H, W), dtype=torch.float32)
+
+        out_mask = bm.clone()
+        if isinstance(mask, torch.Tensor):
+            region_mask = self._build_alpha(mask, cw, ch, 0).detach().to("cpu", torch.float32)
+            sa = seam.detach().to("cpu", torch.float32)  # feathered rectangle seam (region blend)
+            cur = out_mask[:, y:y + ch, x:x + cw]
+            out_mask[:, y:y + ch, x:x + cw] = region_mask[None, ...] * sa + cur * (1.0 - sa)
+
+        out_mask = out_mask.clamp(0.0, 1.0)
+        # Pair the mask with the IMAGE output: same device, and same batch (the
+        # image batch may have grown to match a multi-frame edited crop).
+        # The mask is 3-D [1,H,W]: THREE repeat args. A 4th one PREPENDS a dim and
+        # gave [B,1,H,W] for any batch > 1 (outpaint.md warns about this exact line).
+        out_mask = out_mask.to(out.device)
+        if out_mask.shape[0] == 1 and out.shape[0] > 1:
+            out_mask = out_mask.repeat(out.shape[0], 1, 1)
+
+        # Pass crop_info straight through so it can be forwarded downstream.
+        return (out.clamp(0.0, 1.0), out_mask, crop_info)
+
+
+NODE_CLASS_MAPPINGS = {
+    "PixaromaUncrop": PixaromaUncrop,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "PixaromaUncrop": "Image Uncrop Pixaroma",
+}

@@ -1,0 +1,653 @@
+// ============================================================
+// Pixaroma 3D Editor — Per-object Shape parameter panel
+// Shown in the right sidebar. Displays sliders for the active
+// object's geoParams, rebuilds geometry on change.
+// ============================================================
+import { Pixaroma3DEditor, getTHREE } from "./core.mjs";
+import { pixAsset } from "../shared/api_url.mjs";
+import { SHAPES, buildGeometry } from "./shapes.mjs";
+import { isCompositeType, COMPOSITES, buildComposite, getCompositeDefaults } from "./composites.mjs";
+
+const DEBOUNCE_MS = 60;
+
+// Refresh the framework --pxf-fill CSS var so the orange slider fill
+// aligns with the thumb. The framework only auto-updates this for
+// sliders already mounted inside .pxf-overlay; we call it manually.
+function refreshFill(slider) {
+  if (window._pxfUpdateFill) window._pxfUpdateFill(slider);
+}
+
+// Create the Shape panel container. Called once during _buildRight.
+// Returns the panel element; body is filled by _rebuildShapePanel on
+// every selection change.
+Pixaroma3DEditor.prototype._createShapePanel = function (createPanel) {
+  const p = createPanel("Shape", { collapsible: true, collapsed: false });
+  this._shapePanel = p;
+  this._shapePanelBody = document.createElement("div");
+  this._shapePanelBody.className = "p3d-shape-panel-body";
+  p.content.appendChild(this._shapePanelBody);
+  this._showShapePanelEmpty("Select an object to edit its shape.");
+  return p.el;
+};
+
+Pixaroma3DEditor.prototype._showShapePanelEmpty = function (msg) {
+  if (!this._shapePanelBody) return;
+  this._shapePanelBody.innerHTML =
+    `<div style="font-size:10px;color:#888;padding:8px 2px;">${msg}</div>`;
+};
+
+// Called from _select() whenever selection changes. Rebuilds slider
+// UI to match the active object's type.
+Pixaroma3DEditor.prototype._rebuildShapePanel = function () {
+  const body = this._shapePanelBody;
+  if (!body) return;
+  body.innerHTML = "";
+
+  const obj = this.activeObj;
+  if (!obj) {
+    this._showShapePanelEmpty("Select an object to edit its shape.");
+    return;
+  }
+
+  const type = obj.userData.type;
+
+  // Multi-select with mixed types
+  if (this.selectedObjs.size > 1) {
+    let allSame = true;
+    for (const o of this.selectedObjs) {
+      if (o.userData.type !== type) { allSame = false; break; }
+    }
+    if (!allSame) {
+      this._showShapePanelEmpty(
+        "Multiple types selected - pick one object to edit shape.");
+      return;
+    }
+  }
+
+  // Composite groups — parametric, same UX as SHAPES primitives:
+  // sliders, optional "Show Books"/"Seed" checkbox+reroll, reset
+  // button, AND the "Use Original Material" toggle (since composites
+  // are multi-mesh Groups with baked per-part colors).
+  if (isCompositeType(type)) {
+    const composite = COMPOSITES[type];
+    body.innerHTML = "";
+    // Header: icon + name
+    const head = document.createElement("div");
+    head.style.cssText =
+      "display:flex;align-items:center;gap:6px;margin-bottom:6px;";
+    const icon = document.createElement("img");
+    icon.src = pixAsset(`icons/3D/${composite.icon}`);
+    icon.style.cssText = "width:16px;height:16px;filter:invert(90%);";
+    const name = document.createElement("span");
+    name.textContent = composite.label;
+    name.style.cssText = "font-size:11px;color:#ccc;font-weight:600;";
+    head.append(icon, name);
+    body.appendChild(head);
+    // Ensure geoParams exist (older saved groups or freshly-built may miss some)
+    if (!obj.userData.geoParams) {
+      obj.userData.geoParams = { ...composite.defaults };
+    } else {
+      // Backfill any params missing in older saves with their default
+      for (const pf of composite.params) {
+        if (obj.userData.geoParams[pf.key] === undefined) {
+          obj.userData.geoParams[pf.key] = composite.defaults[pf.key];
+        }
+      }
+    }
+    const locked = !!obj.userData.locked;
+    // Sliders / checkboxes for each param
+    this._shapePanelRows = [];
+    composite.params.forEach((f) => {
+      if (f.key === "showBooks" || f.min === 0 && f.max === 1 && f.step === 1) {
+        // Render as checkbox — more natural for boolean-like params.
+        const row = document.createElement("label");
+        row.style.cssText =
+          "display:flex;align-items:center;gap:6px;font-size:11px;color:#ccc;margin:4px 0;cursor:pointer;";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!obj.userData.geoParams[f.key];
+        cb.disabled = locked;
+        cb.addEventListener("change", () => {
+          if (locked) return;
+          this._pushUndo();
+          for (const o of this.selectedObjs) {
+            if (o.userData.type !== type) continue;
+            o.userData.geoParams[f.key] = cb.checked ? 1 : 0;
+            this._rebuildCompositeGroup(o);
+          }
+        });
+        row.append(cb, document.createTextNode(" " + f.label));
+        body.appendChild(row);
+      } else {
+        const row = this._buildCompositeParamRow(obj, composite, f, locked);
+        body.appendChild(row);
+        const slider = row.querySelector("input[type=range]");
+        if (slider) refreshFill(slider);
+      }
+    });
+    // Re-roll seed button
+    if (composite.params.some((pp) => pp.key === "seed")) {
+      const reroll = document.createElement("button");
+      reroll.className = "p3d-btn";
+      reroll.style.cssText =
+        "width:100%;margin-top:4px;font-size:10px;padding:4px 8px;";
+      reroll.textContent = "\ud83c\udfb2 Re-roll Seed";
+      reroll.disabled = locked;
+      reroll.addEventListener("click", () => {
+        if (locked) return;
+        this._pushUndo();
+        const newSeed = Math.floor(Math.random() * 9999) + 1;
+        for (const o of this.selectedObjs) {
+          if (o.userData.type !== type) continue;
+          o.userData.geoParams.seed = newSeed;
+          this._rebuildCompositeGroup(o);
+        }
+        this._rebuildShapePanel();
+      });
+      body.appendChild(reroll);
+    }
+    // Reset defaults
+    const reset = document.createElement("button");
+    reset.className = "p3d-btn";
+    reset.style.cssText =
+      "width:100%;margin-top:4px;font-size:10px;padding:4px 8px;";
+    reset.textContent = "\u21ba Reset Shape Defaults";
+    reset.disabled = locked;
+    reset.addEventListener("click", () => {
+      if (locked) return;
+      this._pushUndo();
+      for (const o of this.selectedObjs) {
+        if (o.userData.type !== type) continue;
+        o.userData.geoParams = { ...composite.defaults };
+        this._rebuildCompositeGroup(o);
+      }
+      this._rebuildShapePanel();
+    });
+    body.appendChild(reset);
+    // "Use Original Material" — toggles between baked per-part colors
+    // and the unified Pixaroma clay override. Still visible for
+    // composites because multi-mesh Groups carry both material sets.
+    if (obj.userData._origMaterials && obj.userData._overrideMat) {
+      const row = document.createElement("label");
+      row.style.cssText =
+        "display:flex;align-items:center;gap:6px;font-size:11px;color:#ccc;margin:8px 0 2px;cursor:pointer;";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!obj.userData.keepOriginalMaterials;
+      cb.disabled = !!obj.userData.locked;
+      cb.addEventListener("change", () => {
+        this._pushUndo();
+        for (const o of this.selectedObjs) {
+          if (o.userData.type !== type) continue;
+          o.userData.keepOriginalMaterials = cb.checked;
+          this._applyImportMaterialMode(o);
+        }
+        this._syncProps();
+      });
+      row.append(cb, document.createTextNode(" Use Original Material"));
+      body.appendChild(row);
+    }
+    return;
+  }
+
+  // Imported models (GLB / OBJ uploads) and bunny — no parametric
+  // shape, just the "Use Original Material" toggle.
+  if (type === "import" || type === "bunny") {
+    body.innerHTML = "";
+    const head = document.createElement("div");
+    head.style.cssText =
+      "font-size:11px;color:#ccc;margin-bottom:6px;font-weight:600;";
+    head.textContent = type === "bunny"
+      ? "Bunny"
+      : (obj.userData.name || "Imported Model");
+    body.appendChild(head);
+    const info = document.createElement("div");
+    info.style.cssText = "font-size:10px;color:#888;margin-bottom:8px;";
+    info.textContent = "No shape parameters for imported models.";
+    body.appendChild(info);
+    // Only offer the toggle if we have the original materials stashed
+    // (bunny loaded in this session, user import). Restored sessions
+    // without the stash just get the info line.
+    if (obj.userData._origMaterials && obj.userData._overrideMat) {
+      const row = document.createElement("label");
+      row.style.cssText =
+        "display:flex;align-items:center;gap:6px;font-size:11px;color:#ccc;margin:4px 0;cursor:pointer;";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!obj.userData.keepOriginalMaterials;
+      cb.disabled = !!obj.userData.locked;
+      cb.addEventListener("change", () => {
+        this._pushUndo();
+        for (const o of this.selectedObjs) {
+          if (o.userData.type !== type) continue;
+          o.userData.keepOriginalMaterials = cb.checked;
+          this._applyImportMaterialMode(o);
+        }
+        this._syncProps();
+      });
+      row.append(cb, document.createTextNode(" Use Original Material"));
+      body.appendChild(row);
+    }
+    return;
+  }
+
+  const shape = SHAPES[type];
+  if (!shape) {
+    this._showShapePanelEmpty(`Unknown shape type: ${type}`);
+    return;
+  }
+
+  // Header: icon + name
+  const head = document.createElement("div");
+  head.style.cssText =
+    "display:flex;align-items:center;gap:6px;margin-bottom:6px;";
+  const icon = document.createElement("img");
+  icon.src = pixAsset(`icons/3D/${shape.icon}`);
+  icon.style.cssText = "width:16px;height:16px;filter:invert(90%);";
+  const name = document.createElement("span");
+  name.textContent = shape.label;
+  name.style.cssText = "font-size:11px;color:#ccc;font-weight:600;";
+  head.append(icon, name);
+  body.appendChild(head);
+
+  // Sliders. _shapePanelRows is a per-panel registry of refreshBounds()
+  // callbacks so any apply() can shrink/expand sibling slider tracks
+  // when a related geoParam changes (e.g. dragging gear's Inner Hole
+  // shrinks Tooth Depth's max).
+  const locked = !!obj.userData.locked;
+  this._shapePanelRows = [];
+  shape.params.forEach((f) => {
+    const row = this._buildShapeParamRow(obj, shape, f, locked);
+    body.appendChild(row);
+    // Refresh fill AFTER the row (and its slider) is in the DOM.
+    const slider = row.querySelector("input[type=range]");
+    if (slider) refreshFill(slider);
+  });
+  // Initial bounds pass so dynamic-bound sliders show the correct
+  // track range on selection (not just after the first interaction).
+  if (shape.bounds) {
+    for (const r of this._shapePanelRows) r.refreshBounds();
+  }
+
+  // Re-roll Seed (only for shapes with a "seed" param — Terrain, Blob, Rock)
+  if (shape.params.some((pp) => pp.key === "seed")) {
+    const reroll = document.createElement("button");
+    reroll.className = "p3d-btn";
+    reroll.style.cssText =
+      "width:100%;margin-top:4px;font-size:10px;padding:4px 8px;";
+    reroll.textContent = "\ud83c\udfb2 Re-roll Seed";
+    reroll.disabled = locked;
+    reroll.addEventListener("click", () => {
+      if (locked) return;
+      this._pushUndo();
+      const newSeed = Math.floor(Math.random() * 9999) + 1;
+      for (const o of this.selectedObjs) {
+        if (o.userData.type !== type) continue;
+        o.userData.geoParams.seed = newSeed;
+        this._rebuildObjectGeometry(o);
+      }
+      this._rebuildShapePanel();
+    });
+    body.appendChild(reroll);
+  }
+
+  // Reset defaults button
+  const reset = document.createElement("button");
+  reset.className = "p3d-btn";
+  reset.style.cssText =
+    "width:100%;margin-top:4px;font-size:10px;padding:4px 8px;";
+  reset.textContent = "\u21ba Reset Shape Defaults";
+  reset.disabled = locked;
+  reset.addEventListener("click", () => {
+    if (locked) return;
+    this._pushUndo();
+    for (const o of this.selectedObjs) {
+      if (o.userData.type !== type) continue;
+      o.userData.geoParams = { ...shape.defaults };
+      this._rebuildObjectGeometry(o);
+    }
+    this._rebuildShapePanel();
+  });
+  body.appendChild(reset);
+};
+
+// One slider row: label + range + number input.
+// Live rebuild for shape.live=true; debounced rebuild otherwise.
+// One undo snapshot per drag (pushed on first input event).
+Pixaroma3DEditor.prototype._buildShapeParamRow = function (obj, shape, f, locked) {
+  const row = document.createElement("div");
+  row.className = "p3d-row";
+  const lbl = document.createElement("div");
+  lbl.className = "p3d-label";
+  lbl.textContent = f.label;
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.className = "p3d-range";
+  slider.min = f.min; slider.max = f.max; slider.step = f.step;
+  slider.value = obj.userData.geoParams[f.key];
+  slider.disabled = locked;
+
+  const numIn = document.createElement("input");
+  numIn.type = "number";
+  numIn.className = "p3d-input";
+  numIn.min = f.min; numIn.max = f.max; numIn.step = f.step;
+  numIn.value = slider.value;
+  numIn.disabled = locked;
+
+  const isInt = Number.isInteger(f.step);
+  const fmt = (v) => isInt
+    ? String(+v)
+    : (+v).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+
+  // Debounce state (closure per row)
+  let debounceT = null;
+  let draggingSnapshot = false;
+
+  const apply = (v, isFinal) => {
+    // One undo snapshot per drag
+    if (!draggingSnapshot) {
+      this._pushUndo();
+      draggingSnapshot = true;
+    }
+    // Optional per-shape constraint (e.g. tube: innerR < outerR). Runs
+    // against the ACTIVE object's geoParams so cross-slider invariants
+    // stay consistent. If the constraint clamps the value, sync the UI
+    // so the slider visually sticks at the boundary.
+    let val = +v;
+    if (shape.constraint) {
+      val = shape.constraint(obj.userData.geoParams, f.key, val);
+      if (val !== +v) sync(val);
+    }
+    // Stage 1: write new value into geoParams for every selected obj
+    // of the same type. Done BEFORE refreshing sibling bounds so the
+    // bounds() function reads the just-updated value.
+    for (const o of this.selectedObjs) {
+      if (o.userData.type !== obj.userData.type) continue;
+      o.userData.geoParams[f.key] = val;
+    }
+    // Stage 2: refresh sibling slider bounds so their tracks resize to
+    // reflect the new constraint envelope. May clamp a sibling value
+    // into geoParams if the new max is below its current value — the
+    // build call below will then use the clamped value.
+    if (shape.bounds && this._shapePanelRows) {
+      for (const r of this._shapePanelRows) {
+        if (r.key !== f.key) r.refreshBounds();
+      }
+    }
+    // Stage 3: rebuild geometry (live or debounced).
+    for (const o of this.selectedObjs) {
+      if (o.userData.type !== obj.userData.type) continue;
+      if (shape.live) {
+        this._rebuildObjectGeometry(o);
+      } else {
+        if (debounceT) clearTimeout(debounceT);
+        debounceT = setTimeout(() => {
+          this._rebuildObjectGeometry(o);
+          debounceT = null;
+        }, DEBOUNCE_MS);
+      }
+    }
+    // On final change (mouse up / number input blur), flush any
+    // pending debounced rebuild immediately.
+    if (isFinal && debounceT) {
+      clearTimeout(debounceT);
+      for (const o of this.selectedObjs) {
+        if (o.userData.type === obj.userData.type) {
+          this._rebuildObjectGeometry(o);
+        }
+      }
+      debounceT = null;
+    }
+  };
+
+  const sync = (v) => {
+    slider.value = v;
+    numIn.value = fmt(v);
+    refreshFill(slider);
+  };
+
+  // Recompute the slider's min/max from shape.bounds (clamped to the
+  // static f.min/f.max) and clamp the current value into the new
+  // envelope. Mutates geoParams[f.key] if the value got clamped, so a
+  // subsequent geometry rebuild reflects reality. Pushed onto the
+  // panel-wide registry so apply() can call siblings.
+  const refreshBounds = () => {
+    let minV = f.min, maxV = f.max;
+    if (shape.bounds) {
+      const b = shape.bounds(obj.userData.geoParams, f.key) || {};
+      if (b.min !== undefined) minV = Math.max(minV, b.min);
+      if (b.max !== undefined) maxV = Math.min(maxV, b.max);
+    }
+    if (minV > maxV) minV = maxV;
+    slider.min = minV;
+    numIn.min = minV;
+    slider.max = maxV;
+    numIn.max = maxV;
+    const cur = +slider.value;
+    let clamped = cur;
+    if (cur > maxV) clamped = maxV;
+    else if (cur < minV) clamped = minV;
+    if (clamped !== cur) {
+      slider.value = clamped;
+      numIn.value = fmt(clamped);
+      obj.userData.geoParams[f.key] = clamped;
+    }
+    refreshFill(slider);
+  };
+  this._shapePanelRows.push({ key: f.key, refreshBounds });
+
+  slider.addEventListener("input", () => {
+    sync(slider.value);
+    apply(slider.value, false);
+  });
+  slider.addEventListener("change", () => {
+    apply(slider.value, true);
+    draggingSnapshot = false;
+  });
+  numIn.addEventListener("change", () => {
+    const v = Math.max(f.min, Math.min(f.max, +numIn.value || f.min));
+    sync(v);
+    apply(v, true);
+    draggingSnapshot = false;
+  });
+
+  row.append(lbl, slider, numIn);
+  return row;
+};
+
+// Flip an imported group between its original materials (as loaded
+// by GLTFLoader / OBJLoader) and the unified Pixaroma clay override.
+// Called from the Shape panel "Use Original Material" checkbox and
+// from the persistence restore path after re-loading a saved model.
+Pixaroma3DEditor.prototype._applyImportMaterialMode = function (group) {
+  const keep = !!group.userData.keepOriginalMaterials;
+  const override = group.userData._overrideMat;
+  const origs = group.userData._origMaterials;
+  if (!override || !origs) return;
+  let i = 0;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = keep ? (origs[i] || override) : override;
+    i++;
+  });
+};
+
+// Swap the mesh's geometry using the registry builder.
+// Preserves transform, material, userData. Disposes old geometry.
+//
+// When a shape param changes (e.g. cone Height, sphere Radius), the new
+// geometry typically has a different local bb.min.y than the old one.
+// Without compensation, the world-space "bottom" of the mesh drifts and
+// the object appears to float / sink as the user drags a slider.
+//
+// The fix preserves the world-space bottom by shifting position.y by
+// the delta in local bb.min.y (scaled by the current Y scale to handle
+// non-uniform scaling). Plane has special positioning in _addObject and
+// is excluded.
+Pixaroma3DEditor.prototype._rebuildObjectGeometry = function (obj) {
+  const THREE = getTHREE();
+  const type = obj.userData.type;
+  const gp = obj.userData.geoParams;
+  let oldMinY = 0;
+  if (type !== "plane" && obj.geometry) {
+    obj.geometry.computeBoundingBox();
+    oldMinY = obj.geometry.boundingBox?.min.y ?? 0;
+  }
+  const newGeo = buildGeometry(THREE, type, gp);
+  obj.geometry?.dispose();
+  obj.geometry = newGeo;
+  if (type !== "plane") {
+    newGeo.computeBoundingBox();
+    const newMinY = newGeo.boundingBox?.min.y ?? 0;
+    obj.position.y += (oldMinY - newMinY) * (obj.scale.y || 1);
+  }
+  // Geometry changed → layer thumbnail must re-render next time.
+  obj.userData._thumbCache = null;
+  obj.userData._thumbCacheKey = null;
+  // Recompute shadow frustum — the new geometry may be larger or
+  // smaller than the old, and without this the shadow visibly lags
+  // behind the slider until the 1s setInterval fires.
+  this._updateShadowFrustum?.();
+};
+
+// Slider row for a composite param — same UX as primitive param row
+// but writes to userData.geoParams and invokes _rebuildCompositeGroup
+// instead of _rebuildObjectGeometry. Live rebuild (composites are
+// cheap to regenerate at this scale).
+Pixaroma3DEditor.prototype._buildCompositeParamRow = function (obj, composite, f, locked) {
+  const row = document.createElement("div");
+  row.className = "p3d-row";
+  const lbl = document.createElement("div");
+  lbl.className = "p3d-label";
+  lbl.textContent = f.label;
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.className = "p3d-range";
+  slider.min = f.min; slider.max = f.max; slider.step = f.step;
+  slider.value = obj.userData.geoParams[f.key];
+  slider.disabled = locked;
+  const numIn = document.createElement("input");
+  numIn.type = "number";
+  numIn.className = "p3d-input";
+  numIn.min = f.min; numIn.max = f.max; numIn.step = f.step;
+  numIn.value = slider.value;
+  numIn.disabled = locked;
+  const isInt = Number.isInteger(f.step);
+  const fmt = (v) => isInt
+    ? String(+v)
+    : (+v).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  let draggingSnapshot = false;
+  const apply = (v) => {
+    if (!draggingSnapshot) {
+      this._pushUndo();
+      draggingSnapshot = true;
+    }
+    const val = +v;
+    for (const o of this.selectedObjs) {
+      if (o.userData.type !== obj.userData.type) continue;
+      o.userData.geoParams[f.key] = val;
+      this._rebuildCompositeGroup(o);
+    }
+  };
+  const sync = (v) => {
+    slider.value = v;
+    numIn.value = fmt(v);
+    refreshFill(slider);
+  };
+  slider.addEventListener("input", () => { sync(slider.value); apply(slider.value); });
+  slider.addEventListener("change", () => { draggingSnapshot = false; });
+  numIn.addEventListener("change", () => {
+    let v = +numIn.value;
+    if (isNaN(v)) v = +slider.value;
+    v = Math.max(f.min, Math.min(f.max, v));
+    sync(v); apply(v); draggingSnapshot = false;
+  });
+  this._shapePanelRows.push({ key: f.key, refreshBounds: () => {} });
+  row.append(lbl, slider, numIn);
+  return row;
+};
+
+// Regenerate a composite Group in place with its current geoParams.
+// Mirrors the add / restore / undo pipeline: builds a fresh inner
+// group via buildComposite, runs it through prepareImportedGroup
+// (stash original materials + build override) and wrapImportPivot
+// (center the gizmo pivot on the mesh base), then swaps into the
+// scene preserving id, position, rotation, scale, user material tweaks.
+Pixaroma3DEditor.prototype._rebuildCompositeGroup = function (obj) {
+  const type = obj.userData.type;
+  if (!isCompositeType(type)) return;
+  const gp = obj.userData.geoParams;
+  import("./importer.mjs").then((mod) => {
+    if (this._closed) return;
+    const THREE = getTHREE();
+    const { prepareImportedGroup } = mod;
+    try {
+      const inner = buildComposite(type, gp);
+      const { origMaterials, overrideMat } =
+        prepareImportedGroup(inner, obj.userData.colorHex);
+      // Composites are built with pivot at base-center origin — no
+      // wrapImportPivot call. This prevents the trunk from drifting
+      // when asymmetric bumps/arms shift the bbox XZ center.
+      const newGroup = inner;
+      const bb = new THREE.Box3().setFromObject(newGroup);
+      if (bb.min.y !== 0) newGroup.position.y -= bb.min.y;
+      // Overwrite with saved transform (bb.min.y snap above only runs
+      // on the fresh-built content before we copy user transforms).
+      newGroup.position.copy(obj.position);
+      newGroup.rotation.copy(obj.rotation);
+      newGroup.scale.copy(obj.scale);
+      newGroup.visible = obj.visible;
+      // Preserve selection / gizmo attachment through the swap.
+      const idx = this.objects.indexOf(obj);
+      if (idx === -1) return;
+      const wasAttached = this.transformCtrl?.object === obj;
+      const wasSelected = this.selectedObjs.has(obj);
+      const wasActive = this.activeObj === obj;
+      if (wasAttached) this.transformCtrl.detach();
+      // Preserve saved material tweaks onto the fresh overrideMat so
+      // the user's colour / rough / metal / opacity survive the swap.
+      const oldOverride = obj.userData._overrideMat;
+      if (oldOverride) {
+        overrideMat.color.copy(oldOverride.color);
+        overrideMat.roughness = oldOverride.roughness;
+        overrideMat.metalness = oldOverride.metalness;
+        overrideMat.opacity = oldOverride.opacity;
+        overrideMat.transparent = oldOverride.transparent;
+      }
+      newGroup.userData = {
+        ...obj.userData,
+        geoParams: { ...gp },
+        _origMaterials: origMaterials,
+        _overrideMat: overrideMat,
+        // Geometry/materials changed — drop the stale thumb cache so
+        // the layer panel re-renders this composite on next refresh.
+        _thumbCache: null,
+        _thumbCacheKey: null,
+      };
+      this.scene.remove(obj);
+      obj.traverse?.((c) => {
+        if (c.isMesh) {
+          c.geometry?.dispose();
+          if (Array.isArray(c.material)) c.material.forEach((m) => m?.dispose?.());
+          else c.material?.dispose?.();
+        }
+      });
+      this.objects[idx] = newGroup;
+      this.scene.add(newGroup);
+      this._applyImportMaterialMode?.(newGroup);
+      if (wasSelected) {
+        this.selectedObjs.delete(obj);
+        this.selectedObjs.add(newGroup);
+      }
+      if (wasActive) this.activeObj = newGroup;
+      if (wasAttached && !newGroup.userData.locked)
+        this.transformCtrl.attach(newGroup);
+      if (this._syncOutlineSelection) this._syncOutlineSelection();
+      this._updateLayers?.();
+      this._updateShadowFrustum?.();
+    } catch (e) {
+      console.warn(`[P3D] composite "${type}" rebuild failed`, e);
+    }
+  });
+};

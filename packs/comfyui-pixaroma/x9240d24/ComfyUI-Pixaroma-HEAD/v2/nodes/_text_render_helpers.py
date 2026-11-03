@@ -1,0 +1,432 @@
+"""Text Overlay Pixaroma render engine (PIL backend).
+
+Mirror of js/framework/text_render.mjs. Both implementations MUST follow the
+algorithm in docs/text-overlay-render.md. Parity is enforced by
+scripts/text_overlay_parity_check.py.
+"""
+from __future__ import annotations
+import os
+import math
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+from functools import lru_cache
+
+# Resolve plugin root (this file is at nodes/_text_render_helpers.py)
+_PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+_FONTS_DIR = _PLUGIN_ROOT / "assets" / "fonts"
+
+from ._font_catalog import full_catalog, resolve_custom_file
+
+
+def _get_catalog():
+    """Merged builtin + custom catalog (see nodes/_font_catalog.py)."""
+    return full_catalog()
+
+
+def resolve_font_variant(font_id: str, weight: int, italic: bool):
+    """Best-match per math doc section 1. Returns dict with file + source + flags."""
+    catalog = _get_catalog()
+    font = next((f for f in catalog if f["id"] == font_id), None)
+    if not font:
+        font = next((f for f in catalog if f["id"] == "Inter"), None)
+        if not font:
+            raise RuntimeError("No fonts in catalog (assets/fonts/ empty?). Run scripts/download_fonts.py")
+
+    def _mk(v, synth):
+        return {"file": v["file"], "weight": v["weight"], "italic": v["italic"],
+                "wght": v.get("wght"), "source": font.get("source", "builtin"),
+                "synthesized_italic": synth}
+
+    # exact
+    for v in font["weights"]:
+        if v["weight"] == weight and v["italic"] == bool(italic):
+            return _mk(v, False)
+    # italic flip
+    if italic:
+        for v in font["weights"]:
+            if v["weight"] == weight and not v["italic"]:
+                return _mk(v, True)
+    # closest weight (italic preference if available)
+    same = [v for v in font["weights"] if v["italic"] == bool(italic)]
+    pool = same if same else font["weights"]
+    v = sorted(pool, key=lambda v: abs(v["weight"] - weight))[0]
+    return _mk(v, bool(italic) and not v["italic"])
+
+
+def _set_axes(font, wght, opsz):
+    """Set a variable font's axes BY NAME, the way the browser draws it.
+
+    Pillow's set_variation_by_axes is POSITIONAL (one value per axis, in the
+    font's own order), and Inter lists Optical size BEFORE Weight: the old
+    set_variation_by_axes([wght]) set Inter's optical size and left it Regular,
+    so "Inter Bold" rendered Regular while the preview showed Bold. The optical
+    size follows the browser's canvas: the font size in px, clamped to the axis
+    (docs/text-overlay-render.md 1b). A font with no axis NAMED weight keeps the
+    old positional behaviour, which is what every other bundled font relies on.
+    """
+    axes = font.get_variation_axes()
+    names = []
+    for axis in axes:
+        n = axis.get("name", b"")
+        names.append((n.decode("utf-8", "ignore") if isinstance(n, bytes) else str(n)).strip().lower())
+    if not any(n.startswith("weight") for n in names):
+        font.set_variation_by_axes([wght])
+        return
+    values = []
+    for axis, name in zip(axes, names):
+        if name.startswith("weight"):
+            want = wght
+        elif name.startswith("optical"):
+            want = opsz
+        else:
+            want = axis.get("default", axis["minimum"])
+        values.append(max(axis["minimum"], min(axis["maximum"], want)))
+    font.set_variation_by_axes(values)
+
+
+@lru_cache(maxsize=128)
+def _cached_pil_font(file: str, size: int, wght: int, source: str, opsz: int = 0):
+    """Cache PIL ImageFont per (file, size, wght, source, opsz) for the process lifetime.
+    Builtin fonts load from assets/fonts/; custom fonts resolve across the
+    registered fonts dirs. For variable fonts (wght != 0), activate the axes
+    by name (_set_axes). `opsz` is the LOGICAL font size (0 = use `size`)."""
+    if source == "custom":
+        path = resolve_custom_file(file)
+        if not path:
+            # Custom file vanished after the catalog cached it (rare race) —
+            # fall back to bundled Inter rather than erroring the whole render.
+            path = str(_FONTS_DIR / "Inter-Variable.ttf")
+    else:
+        path = str(_FONTS_DIR / file)
+    f = ImageFont.truetype(path, size=int(size))
+    if wght:
+        try:
+            _set_axes(f, wght, opsz or int(size))
+        except Exception:
+            # Static font without variation axes — silently fall through; getlength still works
+            pass
+    return f
+
+
+def load_pil_font(font_id: str, weight: int, italic: bool, size: int, opsz=None):
+    """Returns (PIL.ImageFont.FreeTypeFont, synthesized_italic_bool).
+
+    `opsz` is the LOGICAL font size for the optical-size axis; pass it whenever
+    `size` is supersampled (render_text_layer draws rotated text at 3x), or the
+    optical size would follow the bigger size and not what the browser shows.
+    """
+    variant = resolve_font_variant(font_id, weight, italic)
+    wght = variant.get("wght") or 0
+    src = variant.get("source", "builtin")
+    size_i = int(round(size))
+    opsz_i = int(round(opsz)) if opsz is not None else size_i
+    return _cached_pil_font(variant["file"], size_i, wght, src, opsz_i), variant["synthesized_italic"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Rendering
+# ────────────────────────────────────────────────────────────────────────────
+
+def _hex_to_rgb(hex_str: str):
+    h = hex_str.lstrip("#")
+    if len(h) != 6:
+        return (0, 0, 0)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _measure_line(font, text, letter_spacing):
+    if letter_spacing == 0:
+        return font.getlength(text)
+    w = sum(font.getlength(c) for c in text)
+    return w + max(0, len(text) - 1) * letter_spacing
+
+
+def _line_origin_x(align, pad_x, max_line_w, line_w):
+    if align == "right":
+        return pad_x + (max_line_w - line_w)
+    if align == "center":
+        return pad_x + (max_line_w - line_w) / 2.0
+    return pad_x
+
+
+def _draw_line(draw, font, text, x, y, letter_spacing, color, stroke_width=0, stroke_fill=None):
+    """Draw one line at baseline (x, y). Supports per-character draw for letter-spacing.
+    Uses anchor='ls' (left baseline) to match the JS canvas 'alphabetic' baseline."""
+    if letter_spacing == 0:
+        kwargs = {"font": font, "fill": color, "anchor": "ls"}
+        if stroke_width:
+            kwargs["stroke_width"] = stroke_width
+            kwargs["stroke_fill"] = stroke_fill
+        draw.text((x, y), text, **kwargs)
+        return
+    cx = x
+    for ch in text:
+        kwargs = {"font": font, "fill": color, "anchor": "ls"}
+        if stroke_width:
+            kwargs["stroke_width"] = stroke_width
+            kwargs["stroke_fill"] = stroke_fill
+        draw.text((cx, y), ch, **kwargs)
+        cx += font.getlength(ch) + letter_spacing
+
+
+def _round_rect(draw, x, y, w, h, r, fill):
+    """Filled rounded rect via PIL's rounded_rectangle (8.2.0+, always present in modern ComfyUI)."""
+    draw.rounded_rectangle((x, y, x + w, y + h), radius=r, fill=fill)
+
+
+def _render_vertical_layer(pil_font, lines, char_step, col_gap, align,
+                           ascender, descender, fill_color, bg_color,
+                           pad_x, pad_y, bg_radius):
+    """Vertical (top-to-bottom, upright) text. Columns = lines, left-to-right.
+    Returns (layer_img, bbox_w, bbox_h). Mirror of
+    js/framework/text_render.mjs::renderVerticalToCanvas. Docs section 5b."""
+    cols = []
+    for line in lines:
+        chars = list(line)
+        col_w = 0.0
+        for ch in chars:
+            col_w = max(col_w, pil_font.getlength(ch))
+        cols.append((chars, col_w))
+    max_chars = max((len(c[0]) for c in cols), default=0)
+    content_h = ascender + descender + max(0, max_chars - 1) * char_step
+    total_col_w = sum(c[1] for c in cols) + max(0, len(cols) - 1) * col_gap
+    bbox_w = max(1, int(round(total_col_w + 2 * pad_x)))
+    bbox_h = max(1, int(round(content_h + 2 * pad_y)))
+
+    layer_img = Image.new("RGBA", (bbox_w, bbox_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer_img)
+    if bg_color:
+        bg_rgba = _hex_to_rgb(bg_color) + (255,)
+        r = min(bg_radius, bbox_w // 2, bbox_h // 2)
+        _round_rect(draw, 0, 0, bbox_w - 1, bbox_h - 1, r, bg_rgba)
+
+    col_origin_x = pad_x
+    for chars, col_w in cols:
+        col_content_h = ascender + descender + max(0, len(chars) - 1) * char_step
+        if align == "center":
+            v_off = (content_h - col_content_h) / 2.0
+        elif align == "right":
+            v_off = content_h - col_content_h
+        else:
+            v_off = 0
+        for i, ch in enumerate(chars):
+            gw = pil_font.getlength(ch)
+            cx = col_origin_x + (col_w - gw) / 2.0
+            ly = pad_y + v_off + ascender + i * char_step
+            draw.text((cx, ly), ch, font=pil_font, fill=fill_color, anchor="ls")
+        col_origin_x += col_w + col_gap
+
+    return layer_img, bbox_w, bbox_h
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Hardcoded bg-pill defaults (user can't tune; spec §3, §4)
+# ────────────────────────────────────────────────────────────────────────────
+_BG_PAD_X = 16
+_BG_PAD_Y = 10
+_BG_RADIUS = 0
+
+
+def compute_text_bbox(layer):
+    """Return (bbox_w, bbox_h) for the rendered layer, in pixels.
+    Used by the graphToPrompt-time auto-center path in node_text_overlay.py
+    so we can pre-position a fresh node based on the upstream image dims
+    without going through the full render_text_layer pipeline.
+    Matches the math in render_text_layer exactly."""
+    text = str(layer.get("text", ""))
+    if not text:
+        return (0, 0)
+    font_id = layer.get("font", "Roboto")
+    weight = int(layer.get("weight", 400))
+    italic = bool(layer.get("italic", False))
+    font_size = float(layer.get("fontSize", 64))
+    line_height_mult = float(layer.get("lineHeight", 1.2))
+    letter_spacing = float(layer.get("letterSpacing", 0))
+    bg_color = layer.get("bgColor")
+
+    pil_font, _ = load_pil_font(font_id, weight, italic, font_size)
+    lines = text.split("\n")
+    line_widths = [_measure_line(pil_font, ln, letter_spacing) for ln in lines]
+    max_line_w = max(line_widths) if line_widths else 0
+    line_height_px = round(font_size * line_height_mult)
+    pad_x = _BG_PAD_X if bg_color else 0
+    pad_y = _BG_PAD_Y if bg_color else 0
+    try:
+        left, top, right, bottom = pil_font.getbbox("Mg", anchor="ls")
+        ascender = max(0, -top)
+        descender = max(0, bottom)
+    except TypeError:
+        ascender, descender = pil_font.getmetrics()
+    glyph_h = ascender + descender
+    if layer.get("direction", "horizontal") == "vertical":
+        # Mirror _render_vertical_layer's bbox math (ss=1 here). char_step =
+        # line_height_px; col_gap = letter_spacing.
+        cols = [list(ln) for ln in lines]
+        col_widths = [max((pil_font.getlength(ch) for ch in c), default=0) for c in cols]
+        max_chars = max((len(c) for c in cols), default=0)
+        content_h = glyph_h + max(0, max_chars - 1) * line_height_px
+        total_col_w = sum(col_widths) + max(0, len(cols) - 1) * letter_spacing
+        bbox_w = max(1, int(round(total_col_w + 2 * pad_x)))
+        bbox_h = max(1, int(round(content_h + 2 * pad_y)))
+        return (bbox_w, bbox_h)
+    bbox_w = max(1, int(round(max_line_w + 2 * pad_x)))
+    bbox_h = max(1, int(round(glyph_h + max(0, len(lines) - 1) * line_height_px + 2 * pad_y)))
+    return (bbox_w, bbox_h)
+
+
+def render_text_layer(base_img, layer):
+    """Render one text overlay onto base_img (PIL.Image, RGBA, mutated in place).
+
+    Mirror of js/framework/text_render.mjs::renderTextLayer.
+    Algorithm: docs/text-overlay-render.md.
+
+    Single-text-only (no layers param, no effects). Schema fields supported:
+    text, font, weight, italic, align, fontSize, lineHeight, letterSpacing,
+    x, y, rotation, opacity, color, bgColor.
+    """
+    if not layer:
+        return base_img
+    text = str(layer.get("text", ""))
+    if not text:
+        return base_img
+
+    # Defaults intentionally match js/text_overlay/defaults.mjs DEFAULT_STATE
+    # so a state dict with missing keys renders identically in editor + output.
+    font_id = layer.get("font", "Roboto")
+    weight = int(layer.get("weight", 400))
+    italic = bool(layer.get("italic", False))
+    font_size = float(layer.get("fontSize", 64))
+    line_height_mult = float(layer.get("lineHeight", 1.2))
+    letter_spacing = float(layer.get("letterSpacing", 0))
+    align = layer.get("align", "center")
+    color_hex = layer.get("color", "#FFFFFF")
+    opacity = float(layer.get("opacity", 1.0))
+    rotation = float(layer.get("rotation", 0))
+    bg_color = layer.get("bgColor")  # None or hex string
+
+    # Supersample factor for rotation: render the layer at SS x intended
+    # size, rotate at the larger size, then downsample with LANCZOS for
+    # proper anti-aliased diagonal edges. PIL's Image.rotate caps out at
+    # BICUBIC which still leaves stair-step pixels along rotated edges of
+    # the bg pill / text bounding box. Supersampling gives the LANCZOS
+    # downsample enough pixels to average for smooth edges.
+    # Skip supersampling when no rotation — the 1x render is already
+    # crisp and we'd just waste memory + time.
+    ss = 3 if rotation else 1
+
+    font_size_eff = font_size * ss
+    letter_spacing_eff = letter_spacing * ss
+
+    # opsz from the LOGICAL size: the 3x supersample is ours, the browser draws at font_size
+    pil_font, synthesized_italic = load_pil_font(font_id, weight, italic, font_size_eff, opsz=font_size)
+
+    lines = text.split("\n")
+    line_widths = [_measure_line(pil_font, ln, letter_spacing_eff) for ln in lines]
+    max_line_w = max(line_widths) if line_widths else 0
+    line_height_px = round(font_size_eff * line_height_mult)
+
+    pad_x = (_BG_PAD_X * ss) if bg_color else 0
+    pad_y = (_BG_PAD_Y * ss) if bg_color else 0
+
+    # Use the ACTUAL ink bounding box of "Mg" RELATIVE TO THE BASELINE
+    # so the values match canvas measureText("Mg").actualBoundingBox*
+    # used by the JS renderer. CRITICAL: pass anchor="ls" (left
+    # baseline). Without it, getbbox defaults to anchor="la" (left
+    # ascender top) and the returned `top` is a POSITIVE offset from
+    # the font's ascender line down to the visible glyph top — not the
+    # negative ascender-from-baseline we want. Misreading that as a
+    # negative ascender caused ascender=0 and text was drawn mostly
+    # ABOVE the layer_img (clipped) instead of inside it. Fall back to
+    # getmetrics() for very old PIL builds that don't support the
+    # anchor parameter on getbbox.
+    try:
+        left, top, right, bottom = pil_font.getbbox("Mg", anchor="ls")
+        ascender  = max(0, -top)     # top is negative for glyphs above baseline
+        descender = max(0, bottom)   # bottom is positive for glyphs below baseline
+    except TypeError:
+        ascender, descender = pil_font.getmetrics()
+    glyph_h = ascender + descender
+    bbox_w = max(1, int(round(max_line_w + 2 * pad_x)))
+    bbox_h = max(1, int(round(glyph_h + max(0, len(lines) - 1) * line_height_px + 2 * pad_y)))
+
+    fill_color = _hex_to_rgb(color_hex) + (255,)
+    direction = layer.get("direction", "horizontal")
+    if direction == "vertical":
+        # Vertical skips synthesized italic (upright stacking). char_step =
+        # line_height_px (already round(font_size_eff*line_height_mult));
+        # col_gap = letter_spacing_eff. Docs section 5b.
+        layer_img, bbox_w, bbox_h = _render_vertical_layer(
+            pil_font, lines, line_height_px, letter_spacing_eff, align,
+            ascender, descender, fill_color, bg_color, pad_x, pad_y,
+            _BG_RADIUS * ss,
+        )
+    elif synthesized_italic:
+        # Italic: pill stays axis-aligned; ONLY the text is skewed. The skew
+        # shifts the bottom of glyphs LEFT by m*bbox_h, so widen the canvas by
+        # that overhang (slant) and shift the text RIGHT by it (AFFINE c =
+        # -slant) so the lean isn't clipped. Text is drawn on its own layer,
+        # skewed, then composited over the rectangular pill. Mirror of
+        # js/framework/text_render.mjs.
+        m = math.tan(math.radians(12))
+        slant = int(math.ceil(m * bbox_h))
+        final_w = bbox_w + slant
+        layer_img = Image.new("RGBA", (final_w, bbox_h), (0, 0, 0, 0))
+        if bg_color:
+            bg_rgba = _hex_to_rgb(bg_color) + (255,)
+            r = min(_BG_RADIUS * ss, final_w // 2, bbox_h // 2)
+            _round_rect(ImageDraw.Draw(layer_img), 0, 0, final_w - 1, bbox_h - 1, r, bg_rgba)
+        text_img = Image.new("RGBA", (bbox_w, bbox_h), (0, 0, 0, 0))
+        tdraw = ImageDraw.Draw(text_img)
+        for i, ln in enumerate(lines):
+            lx = _line_origin_x(align, pad_x, max_line_w, line_widths[i])
+            ly = pad_y + ascender + i * line_height_px
+            _draw_line(tdraw, pil_font, ln, lx, ly, letter_spacing_eff, fill_color)
+        text_img = text_img.transform(
+            (final_w, bbox_h), Image.AFFINE, (1, m, -slant, 0, 1, 0),
+            resample=Image.BICUBIC,
+        )
+        layer_img.alpha_composite(text_img)
+        bbox_w = final_w
+    else:
+        layer_img = Image.new("RGBA", (bbox_w, bbox_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer_img)
+        # 1. Background pill (only if bgColor is set)
+        if bg_color:
+            bg_rgba = _hex_to_rgb(bg_color) + (255,)
+            r = min(_BG_RADIUS * ss, bbox_w // 2, bbox_h // 2)
+            _round_rect(draw, 0, 0, bbox_w - 1, bbox_h - 1, r, bg_rgba)
+        # 2. Fill text
+        for i, ln in enumerate(lines):
+            lx = _line_origin_x(align, pad_x, max_line_w, line_widths[i])
+            ly = pad_y + ascender + i * line_height_px
+            _draw_line(draw, pil_font, ln, lx, ly, letter_spacing_eff, fill_color)
+
+    # 4. Layer-level opacity (final pass)
+    if opacity < 1.0:
+        alpha = layer_img.split()[-1]
+        alpha = alpha.point(lambda a: int(a * opacity))
+        layer_img.putalpha(alpha)
+
+    # 5. Rotation (around bbox center). When supersampling (rotation
+    # branch), rotate at SS resolution then downsample to 1x with
+    # LANCZOS for anti-aliased edges.
+    paste_x = int(round(layer.get("x", 0)))
+    paste_y = int(round(layer.get("y", 0)))
+    if rotation:
+        layer_img = layer_img.rotate(-rotation, expand=True, resample=Image.BICUBIC)
+        after_w_ss, after_h_ss = layer_img.size
+        # Downsample to 1x
+        target_w = max(1, round(after_w_ss / ss))
+        target_h = max(1, round(after_h_ss / ss))
+        layer_img = layer_img.resize((target_w, target_h), Image.LANCZOS)
+        # paste offset uses the 1x equivalent bbox
+        bbox_w_1x = max(1, round(bbox_w / ss))
+        bbox_h_1x = max(1, round(bbox_h / ss))
+        paste_x -= (target_w - bbox_w_1x) // 2
+        paste_y -= (target_h - bbox_h_1x) // 2
+
+    # 6. Composite onto base
+    if base_img.mode != "RGBA":
+        base_img = base_img.convert("RGBA")
+    base_img.alpha_composite(layer_img, dest=(paste_x, paste_y))
+    return base_img

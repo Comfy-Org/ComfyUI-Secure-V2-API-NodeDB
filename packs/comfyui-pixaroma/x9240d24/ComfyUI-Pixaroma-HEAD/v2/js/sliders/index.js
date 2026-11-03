@@ -1,0 +1,543 @@
+import { app } from "../../../scripts/app.js";
+import { isVueNodes } from "../shared/nodes2.mjs";
+import { isGraphLoading } from "../shared/graph_loading.mjs";
+import { registerNodeHelp } from "../shared/help.mjs";
+import { registerNodeSettings } from "../shared/node_settings.mjs";
+import { registerRunWorkflowPatcher, readNodeProp, writeNodeProp } from "../shared/run_seed_embed.mjs";
+import { narrowSlotType } from "../shared/slot_types.mjs";
+import { notifyGraphChanged } from "../shared/graph_changed.mjs";
+import {
+  BRAND, MAX_SLIDERS, STATE_PROP,
+  readState, normalizeSliders, syncOutputs, addSlider, resolveAutoType, resetRowOnDisconnect,
+  comboOptionsOf, randomSeed, refreshComboRows,
+} from "./core.mjs";
+
+// A Control Panel can only drive widget-style value inputs (numbers, on/off,
+// dropdowns, seeds, text) - never structural pipes (MODEL, LATENT, ...).
+function isValueTarget(node, link) {
+  const target = node.graph?.getNodeById?.(link.target_id);
+  const inp = target?.inputs?.[link.target_slot];
+  // Narrowed, not read raw: a multi-type input ("FLOAT,INT,BOOLEAN") matched none
+  // of these and the caller severed the wire a tick after it was drawn.
+  const t = narrowSlotType(inp?.type);
+  if (t === "INT" || t === "FLOAT" || t === "BOOLEAN" || t === "COMBO" || t === "STRING") return true;
+  // "*" or no type = a pass-through / any input (Reroute, Set, Preview) - a valid,
+  // common routing target, so never sever it.
+  if (t === "*" || t === "") return true;
+  return !!comboOptionsOf(target, inp?.widget?.name || inp?.name);
+}
+
+// A small self-contained toast (no dependency on ComfyUI's toast API, which varies).
+function showPanelToast(msg) {
+  let t = document.getElementById("pix-sld-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "pix-sld-toast";
+    t.style.cssText =
+      "position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:11000;background:#1d1d1d;" +
+      "border:1px solid #f66744;border-radius:8px;color:#fff;font:13px 'Segoe UI',sans-serif;padding:10px 16px;" +
+      "box-shadow:0 8px 30px rgba(0,0,0,0.5);max-width:80vw;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s;";
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = "1";
+  clearTimeout(t._hideT);
+  t._hideT = setTimeout(() => { t.style.opacity = "0"; }, 3500);
+}
+import {
+  injectCSS, syncRowWidgets, renderAll, alignOutputsLegacy, watchAlign, unwatchAlign, scheduleAlign,
+  closeComboPopup, ROW_H, ROW_GAP, ADD_H, MIN_W, DEFAULT_W,
+} from "./ui.mjs";
+import { openSlidersPanel, closeSlidersPanelFor, rebuildSlidersPanelFor } from "./settings.mjs";
+
+// Sliders Pixaroma - a panel of sliders that drives numbers across the workflow.
+//
+// One DOM row widget per slider (they render in BOTH renderers), one output per
+// slider, and each output dot parked on its own row - by slot.pos in legacy, by
+// the nudge in Nodes 2.0 (see ui.mjs for both).
+//
+// State lives on node.properties.slidersState and is injected into the hidden
+// SlidersState input by the graphToPrompt hook at the bottom (Vue Compat #9).
+
+const CLASS = "PixaromaSliders";
+const HIDDEN_INPUT = "SlidersState";
+
+// Body height in legacy: our rows only. Without this, LiteGraph's computeSize
+// reserves a 20px slot row PER OUTPUT at the top of the node (rows = max(inputs,
+// outputs)), so an 8-slider panel would carry 160px of empty slot column above
+// the sliders that our dots do not even use.
+function bodyHeight(node) {
+  const n = readState(node).sliders.length;
+  return n * (ROW_H + ROW_GAP) + ADD_H + 12;
+}
+
+function refresh(node) {
+  syncRowWidgets(node, () => {
+    if (addSlider(node)) {
+      refresh(node);
+      fitNode(node);
+    }
+  });
+  renderAll(node);
+  node.setDirtyCanvas?.(true, true);
+}
+
+// Grow / shrink the node to its rows. USER ACTIONS ONLY - never on the load
+// path, or the saved size gets rewritten and a clean workflow opens "modified"
+// (Vue Compat #18).
+function fitNode(node) {
+  if (isGraphLoading()) return;
+  const w = Math.max(node.size?.[0] || DEFAULT_W, MIN_W);
+  if (isVueNodes()) {
+    // Nodes 2.0 grows to content on its own but never shrinks, so a removed
+    // slider would leave a gap. VUE_CHROME = title + the category chip.
+    node.setSize?.([w, bodyHeight(node) + 52]);
+  } else {
+    node.setSize?.([w, bodyHeight(node)]);
+  }
+  scheduleAlign(node);
+}
+
+app.registerExtension({
+  name: "Pixaroma.Sliders",
+  // No Settings-panel row: this node's colour lives in its OWN panel (the
+  // gear / right-click entry). It used to be registered here with
+  // defaultValue BRAND, which made getSettingValue ALWAYS return the orange -
+  // so the node-type default permanently outranked the master accent and
+  // "Every Pixaroma node" could never reach this node. Unregistered, the key
+  // is written ONLY by an explicit "New ... nodes" press, so stored == chosen.
+
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== CLASS) return;
+    if (nodeType.prototype._pixSldPatched) return; // hot-reload guard
+    nodeType.prototype._pixSldPatched = true;
+
+    injectCSS();
+
+    // ── Creation ─────────────────────────────────────────────────────────
+    const _created = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      _created?.apply(this, arguments);
+      readState(this);
+      syncOutputs(this);
+
+      // Pin the rows to the top of the body - set BEFORE the first refresh
+      // (matching onConfigure) so no synchronous legacy layout pass can compute
+      // widget.y from the old slot-bound formula. WITHOUT this, _arrangeWidgets
+      // starts the widgets below the measured slot bounds - and since we park
+      // each output ON a row, the slot bounds then depend on widget.y, which
+      // depends on the slot bounds... a feedback loop that walks the node taller
+      // on every frame (measured: 62 -> 102px and climbing). This is the field
+      // litegraph itself points at for custom slot layouts.
+      this.widgets_start_y = 2;
+
+      refresh(this);
+
+      // Legacy reserves a slot row per output; our dots live on the rows, so we
+      // own the size. MIN_W (not the live width) keeps the drag-min honest -
+      // returning this.size[0] would pin the floor at the current width and the
+      // node could then only ever grow.
+      if (!isVueNodes()) {
+        this.computeSize = function () { return [MIN_W, bodyHeight(this)]; };
+      }
+
+      // Always snap a FRESH node to its content height. (Gating this on width let
+      // ComfyUI's default size through whenever its default width was >= MIN_W,
+      // leaving a giant empty body - user-reported.) configure() restores a saved
+      // size immediately after onNodeCreated, so saved / duplicated nodes keep theirs.
+      if (!Array.isArray(this.size)) this.size = [DEFAULT_W, DEFAULT_W];
+      this.size[0] = DEFAULT_W;
+      this.size[1] = bodyHeight(this) + (isVueNodes() ? 52 : 0);
+
+      queueMicrotask(() => {
+        normalizeSliders(this);
+        syncOutputs(this);
+        refresh(this);
+        watchAlign(this);
+        scheduleAlign(this);
+      });
+    };
+
+    // ── Configure gate: wrap `configure`, NOT the `onConfigure` hook ──
+    // LiteGraph calls the onConfigure hook as the LAST statement of configure(),
+    // after it has replayed onConnectionsChange for the restored slots, so a
+    // flag raised in the hook never covered that replay. Nothing reaches our
+    // handler through it today (a copy or paste carries no output links, and a
+    // load is caught by isGraphLoading()), but the gate belongs where the replay
+    // is. Same fix as Switch (CLAUDE.md Vue Compat #17).
+    const _configureFn = nodeType.prototype.configure;
+    nodeType.prototype.configure = function () {
+      this._pixSldConfiguring = true;
+      try {
+        // Not `?.apply`: a silent no-op would restore no saved state at all.
+        if (typeof _configureFn !== "function") {
+          console.error("[Control Panel Pixaroma] node configure() is missing - saved state was not restored");
+          return undefined;
+        }
+        return _configureFn.apply(this, arguments);
+      } finally {
+        this._pixSldConfiguring = false;
+      }
+    };
+
+    // ── Configure hook (workflow load / undo / paste) ────────────────────
+    // Runs INSIDE configure, so the gate above is still up. Do not set or clear
+    // the flag here: this hook runs partway through, and dropping it early would
+    // reopen the window the wrapper closes.
+    const _configure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (info) {
+      const r = _configure?.apply(this, arguments);
+      this.widgets_start_y = 2;   // see onNodeCreated: breaks the slot/widget loop
+      normalizeSliders(this);
+      syncOutputs(this);
+      refresh(this);          // rebuild the rows for the restored sliders
+      queueMicrotask(() => {
+        watchAlign(this);
+        scheduleAlign(this);
+      });
+      return r;
+    };
+
+    // ── Connections: Auto -> Int / Float on the first wire ───────────────
+    // Gated on the configure flag AND isGraphLoading (Vue Compat #17 + #19):
+    // the link replay on load must never rewrite a saved type.
+    const _conn = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link) {
+      if (type === 2 /* OUTPUT */ && !this._pixSldConfiguring && !isGraphLoading()) {
+        if (isConnected) {
+          if (resolveAutoType(this, slotIndex, link)) {
+            refresh(this);
+            rebuildSlidersPanelFor(this);   // the row just became wired: relock its type in the open panel
+          } else if (link && !isValueTarget(this, link)) {
+            // Refuse a wire to an input the panel can't drive (MODEL, LATENT,
+            // CONDITIONING, ...); drop it on the next tick and tell the user.
+            const self = this, lk = link;
+            setTimeout(() => {
+              if (!self.graph || isGraphLoading()) return;   // node gone / a load replay - leave it
+              try {
+                const tgt = self.graph.getNodeById?.(lk.target_id);
+                const inp = tgt?.inputs?.[lk.target_slot];
+                // Only sever if that slot STILL holds the exact link we refused - a
+                // fast rewire / undo could have put a VALID wire there meanwhile.
+                if (tgt && inp && inp.link === lk.id) {
+                  tgt.disconnectInput(lk.target_slot);
+                  self.setDirtyCanvas?.(true, true);
+                  showPanelToast("A Control Panel drives numbers, on/off switches, and dropdowns - not that kind of input.");
+                }
+              } catch {}
+            }, 0);
+          } else {
+            // A valid connection that did not re-type the row (re-wired to the
+            // SAME kind, or a "*" pass-through): re-narrow the freed output slot
+            // and repaint (it may have shown as an auto slider while unplugged).
+            syncOutputs(this);
+            refresh(this);
+            rebuildSlidersPanelFor(this);
+          }
+        } else if (!this._pixSldRemovingRow) {
+          // Unplugged BY THE USER (not our own removeOutput during a row delete,
+          // whose stale slotIndex would reset whatever row shifted into it).
+          // A number slider drops back to auto so it can be re-wired to a boolean
+          // (and become a switch) or a different number. LiteGraph clears
+          // output.links AFTER this callback returns, so defer the check one tick
+          // until the slot's remaining connections have settled.
+          // Capture the input we were just unplugged from (LiteGraph hands us the
+          // removed link here) so a replug to the SAME input keeps the value while
+          // a re-wire to a DIFFERENT input re-adopts it (pattern #19).
+          const self = this;
+          const prevTarget = link ? { id: link.target_id, slot: link.target_slot } : null;
+          // The reported slotIndex is UNRELIABLE on a disconnect: disconnectInput
+          // and removeLink (both real unwire paths) report the origin output as
+          // slot 0 no matter which row was actually unwired - only disconnectOutput
+          // reports it correctly. The link object carries the true origin_slot, so
+          // trust that. Then capture the ROW object (not the index) so a later row
+          // delete can't retarget the deferred reset onto a shifted-in row.
+          const outSlot = (link && Number.isInteger(link.origin_slot)) ? link.origin_slot : slotIndex;
+          const row = readState(this).sliders[outSlot] || null;
+          setTimeout(() => {
+            if (!self.graph || isGraphLoading()) return;
+            if (resetRowOnDisconnect(self, row, prevTarget)) refresh(self);
+            rebuildSlidersPanelFor(self);   // the row dropped to auto: unlock its type in the open panel
+          }, 0);
+        }
+      }
+      return _conn?.apply(this, arguments);
+    };
+
+    // ── Legacy: park each output dot at its row's Y ──────────────────────
+    // arrange() computes widget.y, so we re-run it once the positions are set:
+    // the second pass re-measures the slots with our pos in place.
+    const _arrange = nodeType.prototype.arrange;
+    nodeType.prototype.arrange = function () {
+      const r = _arrange?.apply(this, arguments);
+      if (!isVueNodes()) {
+        alignOutputsLegacy(this);
+        _arrange?.apply(this, arguments);
+      }
+      return r;
+    };
+
+    // ── Serialize: keep our render-time slot geometry out of the file ────
+    // Legacy writes output.pos into the workflow; that value is meaningless in
+    // Nodes 2.0 and would make a file saved in one renderer differ from the
+    // other (and flag a clean workflow "modified"). It is rebuilt on every
+    // arrange, so strip it. onSerialize, not a serialize() wrapper: from frontend
+    // 1.53 the graph saves each node from its store and never calls
+    // node.serialize() (Vue Compat #29).
+    const _onSerialize = nodeType.prototype.onSerialize;
+    nodeType.prototype.onSerialize = function (o) {
+      const r = _onSerialize?.apply(this, arguments);
+      if (o?.outputs) for (const out of o.outputs) { if (out && out.pos) delete out.pos; }
+      return r;
+    };
+
+    // Right-click lives on the extension-level getNodeMenuItems hook below (the
+    // current context-menu API, Vue Compat #20) - patching getNodeMenuOptions
+    // here as well would show the item twice.
+
+    // ── Removal ──────────────────────────────────────────────────────────
+    const _removed = nodeType.prototype.onRemoved;
+    nodeType.prototype.onRemoved = function () {
+      closeSlidersPanelFor(this);
+      closeComboPopup();
+      unwatchAlign(this);
+      return _removed?.apply(this, arguments);
+    };
+  },
+
+  // R (Refresh Node Definitions, also run on a reconnect). ComfyUI refreshes its
+  // own pickers, but a dropdown row holds a COPY of its picker's list taken when
+  // it was wired, so a new or deleted model never showed (Discord 2026-10-16).
+  // Core calls this after every node has its fresh list, with the fresh defs.
+  refreshComboInNodes(defs) {
+    if (isGraphLoading()) return;
+    let changed = false;
+    for (const node of allControlPanels()) {
+      try {
+        if (refreshComboRows(node, defs)) { refresh(node); changed = true; }
+      } catch {}
+    }
+    // An open option popup still lists the OLD options: close it, or a click on a
+    // deleted one saves a pick that is not in the list (review round 1).
+    if (changed) { closeComboPopup(); notifyGraphChanged(); }
+  },
+
+  // The extension-level right-click hook (the new context-menu API) so the item
+  // shows in both renderers.
+  getNodeMenuItems(node) {
+    if (node?.comfyClass !== CLASS) return [];
+    return [
+      {
+        content: "⚙ Control settings",
+        callback: () => openSlidersPanel(node, () => { refresh(node); fitNode(node); }),
+      },
+    ];
+  },
+});
+
+// Every Control Panel in the workflow, subgraphs included (a list, not an id map:
+// ids repeat across subgraph levels).
+function allControlPanels() {
+  const found = [];
+  const seen = new Set();
+  const visit = (graph) => {
+    if (!graph || seen.has(graph)) return;
+    seen.add(graph);
+    for (const n of graph._nodes || graph.nodes || []) {
+      if (!n) continue;
+      if (n.comfyClass === CLASS || n.type === CLASS) found.push(n);
+      if (n.subgraph) visit(n.subgraph);
+    }
+  };
+  visit(app.rootGraph || app.graph);
+  return found;
+}
+
+// ── graphToPrompt: inject the slider values ─────────────────────────────────
+// INJECT ONLY - never prune here (Export (API) serialises this same output).
+function buildIndex() {
+  const index = new Map();
+  const seen = new Set();
+  const visit = (graph) => {
+    if (!graph || seen.has(graph)) return;   // guard against a subgraph-reference cycle (would stack-overflow)
+    seen.add(graph);
+    const nodes = graph._nodes || graph.nodes || [];
+    for (const n of nodes) {
+      if (!n) continue;
+      if (n.comfyClass === CLASS || n.type === CLASS) index.set(String(n.id), n);
+      const inner = n.subgraph || n.graph || n._graph;
+      if (inner) visit(inner);
+    }
+  };
+  visit(app.graph);
+  return index;
+}
+
+function findNode(index, id) {
+  const s = String(id);
+  if (index.has(s)) return index.get(s);
+  const tail = s.includes(":") ? s.slice(s.lastIndexOf(":") + 1) : null;
+  return tail && index.has(tail) ? index.get(tail) : null;
+}
+
+const _origGraphToPrompt_fn = app.graphToPrompt;
+const _origGraphToPrompt = (...a) => _origGraphToPrompt_fn.apply(app, a);
+app.graphToPrompt = async function (...args) {
+  const result = await _origGraphToPrompt(...args);
+  try {
+    const out = result?.output;
+    if (out) {
+      let index = null;
+      for (const id in out) {
+        const entry = out[id];
+        if (!entry || entry.class_type !== CLASS) continue;
+        if (!index) index = buildIndex();
+        const node = findNode(index, id);
+        if (!node) continue;
+        const st = readState(node);
+        let seedRolled = false;
+        entry.inputs = entry.inputs || {};
+        entry.inputs[HIDDEN_INPUT] = JSON.stringify({
+          version: 1,
+          // Only what changes the OUTPUT goes in here - a toggle also sends its
+          // adopted kind (out). The state words / default / dropdown options are
+          // display-only and are deliberately left out, so renaming never re-runs.
+          sliders: st.sliders.slice(0, MAX_SLIDERS).map((s, i) => {
+            if (s.type === "toggle") return { type: "toggle", value: s.value ? 1 : 0, out: s.out || "auto" };
+            if (s.type === "seed") {
+              // Random mode rolls a fresh seed each run; the rolled value lives in
+              // a RUNTIME field (never node.properties) so a run can't dirty the
+              // saved workflow - only shown on the node face.
+              // Clamp to the seed contract (0 .. 1e12) - matches ensureSeed, in
+              // case a value slipped past normalize (e.g. an external script wrote
+              // node.properties directly). Python clamps magnitude but not sign.
+              let v = Math.max(0, Math.min(Math.floor(Number(s.value) || 0), 1e12));
+              if (s.mode === "random") {
+                v = randomSeed();
+                (node._pixSeedRun = node._pixSeedRun || {})[i] = v;
+                seedRolled = true;
+              }
+              return { type: "seed", value: v };
+            }
+            return { type: s.type, value: s.value };
+          }),
+        });
+        if (seedRolled) queueMicrotask(() => { try { renderAll(node); } catch {} });
+      }
+    }
+  } catch (e) {
+    console.warn("[Sliders Pixaroma] could not inject slider values:", (e && e.message) || e);
+  }
+  return result;
+};
+
+// ── Bake each run's seed into the workflow embedded in the output image ─────
+// Same fix, same reason as the Seed node (see js/seed/index.js and
+// js/shared/run_seed_embed.mjs): a randomize-each-run seed row keeps its
+// rolled value in the RUNTIME map `_pixSeedRun` so a Run can't dirty the
+// saved workflow, which left the PNG carrying the stale stored value. We
+// rewrite the QUEUED copy only, so Export and Ctrl+S are untouched.
+registerRunWorkflowPatcher((workflow, output) => {
+  const ran = new Map();
+  for (const id in output) {
+    const entry = output[id];
+    if (!entry || entry.class_type !== CLASS) continue;
+    try {
+      const injected = JSON.parse(entry.inputs?.[HIDDEN_INPUT] || "{}");
+      if (Array.isArray(injected.sliders)) ran.set(String(id), injected.sliders);
+    } catch { /* a malformed entry just means no rewrite for that node */ }
+  }
+  if (!ran.size) return;
+
+  for (const wfNode of workflow.nodes) {
+    if (!wfNode || wfNode.type !== CLASS) continue;
+    const injected = ran.get(String(wfNode.id));
+    if (!injected) continue;
+    const cur = readNodeProp(wfNode, STATE_PROP);
+    const rows = cur?.value?.sliders;
+    if (!Array.isArray(rows)) continue;
+
+    let changed = false;
+    for (let i = 0; i < injected.length; i++) {
+      // Only a seed row, and only where the SAVED row agrees it is one - an
+      // index mismatch must never stamp a seed onto a slider or a text field.
+      if (injected[i]?.type !== "seed") continue;
+      const row = rows[i];
+      if (!row || typeof row !== "object" || row.type !== "seed") continue;
+      if (!Number.isFinite(injected[i].value)) continue;
+      row.value = injected[i].value;
+      row.mode = "fixed";
+      changed = true;
+    }
+    if (changed) writeNodeProp(wfNode, STATE_PROP, cur.value, cur.wasString);
+  }
+});
+
+registerNodeHelp(CLASS, {
+  title: "Control Panel Pixaroma",
+  tagline: "Every dial and switch you care about, gathered into one panel that drives your whole workflow.",
+  sections: [
+    {
+      heading: "What it does",
+      body:
+        "Gather every dial, switch and setting you care about into one node and wire each straight to where it " +
+        "belongs, instead of hunting through the graph. Add a control, name it, then connect its output to any " +
+        "input. Each control becomes whatever you plug it into, and changes to match if you re-wire it elsewhere.",
+    },
+    {
+      heading: "The kinds of control",
+      defs: [
+        ["Slider", "For a number: steps, cfg, denoise, a LoRA strength, a width. Drag it (hold Shift for fine control) or double-click to type. Whole number or decimal is decided by the input you plug it into."],
+        ["Switch", "For a true / false setting. Click to flip it. Sends true / false, or 1 / 0 for a number input. You can rename its two states and set which one it starts in."],
+        ["Dropdown", "For a picker: sampler, scheduler, checkpoint, VAE, a LoRA name. It learns the whole list from the input; in the settings you tick which options to show, so it only offers the ones you actually use. For a long list, type part of a name in the filter box at the top, then All or None ticks or unticks just the matching ones. Added or deleted a model? Press R on the canvas (Refresh Node Definitions) and the dropdown takes the new list, also when it is wired through Set and Get nodes. A dropdown made before this update needs one direct re-wire to its picker first. Your pick stays; if its file is gone, the run tells you."],
+        ["Seed", "For a seed input. R randomizes it on every run, N rolls a new fixed one, or click the number to type an exact seed."],
+        ["Text", "For words: a prompt, a filename, a style tag. Type straight into it on the node."],
+      ],
+    },
+    {
+      heading: "It matches whatever you plug it into",
+      body:
+        "A fresh control is blank until you connect it. Wire it to a number and it is a slider, to a true / false " +
+        "and it is a switch, to a picker and it is a dropdown, to a seed and it is a seed, to a text box and it is " +
+        "a text field. Unplug it and wire it somewhere else and it changes to match. It will not connect to things " +
+        "it cannot drive, like a model or an image - it tells you if you try.",
+    },
+    {
+      heading: "Settings",
+      body:
+        "Right-click the node for the settings panel: add and remove controls, rename them, set a slider's range, " +
+        "choose which options a dropdown shows, and pick the colour the node paints with (per node, and you can save " +
+        "it as the default for every new Control Panel node). Reset values sends the sliders to the middle of their " +
+        "range and the switches and dropdowns to their default, leaving seeds and text as they are. Once a control " +
+        "is wired its type is fixed to match that input, so unplug it if you want to change the type.",
+    },
+    {
+      heading: "Step size, and what it does to your value",
+      body:
+        "A slider's `Step` is how far one nudge moves it, and it also decides how many decimals the control keeps: "
+        + "`1` gives whole numbers, `0.1` one decimal, `0.01` two, `0.001` three.\n\n"
+        + "Changing the step re-snaps the current value onto the new grid, and that happens quietly. Coarsen a "
+        + "denoise of `0.7` to a step of `1` and it becomes `1`, which is a real change to your render and will "
+        + "make that run take longer. If a run suddenly costs more after you touched the settings, check the "
+        + "value on the control rather than the step itself.",
+      bullets: [
+        "The step is a control setting only. It never reaches the sampler, so no choice of step or decimals is "
+          + "slower than another: measured at 512x512 and 25 steps, three decimals ran 2030 ms against 2027 ms "
+          + "for whole numbers.",
+        "Changing the step alone does not re-run anything either. Only a changed VALUE does.",
+      ],
+    },
+  ],
+  footer: "Up to 16 controls per node - sliders, switches, dropdowns, seeds and text, mixed freely.",
+});
+
+// The gear in the node selection toolbar opens the same panel the right-click
+// entry does. ownMenuItem: this node already adds its own menu line.
+registerNodeSettings(CLASS, {
+  title: "Control Panel",
+  // This node paints from its OWN --acc var (set on inner elements), so the
+  // generic repaint cannot reach it - run its own render instead.
+  onChange: (node) => refresh(node),
+  ownMenuItem: true,
+  open: (node) => openSlidersPanel(node, () => { refresh(node); fitNode(node); }),
+});

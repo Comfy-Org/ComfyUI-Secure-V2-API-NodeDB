@@ -1,0 +1,28 @@
+<!-- secure-conversion-report-v1 -->
+Converted45 of96 declared IDs as backend adapters within bounded/partial scopes;51 full named refusals. No whole-pack or frontend qualification is claimed. See ADAPTER-DISPOSITIONS.json for exact derived arrays and every scoped refusal.
+
+Source pin:9240d24b60ab234b355cedea11045965b6683843. All96 real frozen schemas preserve IDs, display names, category, public inputs/options/defaults and outputs. Descriptions come from source DESCRIPTION. Original computation and pure helpers are retained; only host/SDK boundaries change.
+
+Minimum guest base0cd9adec273a703eb3d1c715d83ff1c7d2bb00746330c866c7e3ac644c80ebbb. ImageRef.from_value and GraphDomain.execution_metadata are absent from older0b86765f. SDK-CHECK.json records method definitions and call sites; public sdk export is used. No additional dependency profile is installed or invented. Duration custom formula/simpleeval and inpaint SciPy paths refuse explicitly.
+
+Final evidence is gate, B13 sources38f28c98: Core6257422b, overlay6f58bcec/e4d93d0d, engine SDK038019fa, selected development GuestSession with sandbox_kind=none. This is real out-of-process execution, not live B13, OS isolation or browser proof. The child import finder remains active during all calls and derives its allowed set from sealed guest_common.lock plus the declared empty profile.
+
+The finite1129-case Guest matrix yields911 exact values,140 pixel/value cases with explicit preview boundaries,20 pixels/values/semantic PNGmetadata exact with managed UI ownership,8 LoRA recording-op orchestration cases,50 named refusals and0 mismatches.41 R1 lifecycle and58 IO lifecycle checks pass;12 global disable-metadata cases and10 further lifecycle checks pass. A deliberate child SciPy import is denied. Full receipts stay in the private handoff.
+
+Known differences and explicit limits:
+
+- WEB_DIRECTORY and manifest web_directory are None. Retained JS is inert. Custom hidden state reads the node's own current/dynamic prompt via public graph methods; node0 refuses. Supplying state in backend tests proves no browser injection or workflow serialization fidelity.
+- Full additional holds: XYPlot global eight-session LRU eviction/cell-grid cleanup, FreeVram cleanup order/force, LoadImagesFolder host folder/absolute path, InpaintCrop SciPy hole filling on every wired image. All 51 full-refusal IDs retain named schema refusals.
+- InpaintStitch mixed-mask positive softness requires SciPy and refuses. No Gaussian/kernel approximation is substituted. Custom fonts outside bundled families refuse.
+- SaveImage is partial: managed PNG and metadata-free WebP are supported. JPEG, embedded WebP workflow, Civitai, external folders, folder counters and cleanup-needed preview refuse. Normal PNG save preserves cleaned workflow/prompt; clean-workflow previews preserve metadata. Managed logical UI folder replaces the original absolute host path. Host metadata policy is respected; no explicit png_text/a1111_parameters bypass is used.
+- Preview refuses metadata exceeding the exact Guest UI depth rule (root depth0; reject any value at depth>8) or256KiB. Nothing is dropped or stringified. XYPlot fully refuses validation, execution and fingerprint lifecycle before any KV/file work. The source global eight-session LRU evicts cells and deletes old grids; independent per-session KV does not preserve that contract. All 15 previous XY inputs and the disable-metadata repeat remain named refusal evidence, including lifecycle calls.
+- Compare/Crop/ImageResize/TextOverlay source previews have no embedded workflow; broker previews add host-owned prompt/workflow and names. Their decoded pixels and UI values are checked, with that exact metadata addition disclosed. Preview/SaveImage metadata is compared separately, without such normalization.
+- Loaders use brokered original bytes and native dtype, preserving original PIL/resize and fingerprint state bytes. PromptReader's content digest replaces unavailable host mtime:size cache keys; recursive editor tracing refuses. Editor/source-path Crop branches refuse. Live engine refs cannot be stringified as source objects.
+- Selected SDK bounds finite nonempty BHWC publication and latent allocation; unsupported values refuse visibly. Output filenames are broker-owned where declared; SaveImage's supported naming patterns/counter behavior are checked exactly.
+- LoRA active paths have recording-operation evidence only. Actual trained model weights and cache policy belong to live Tier2; no real-weight parity claim.
+
+Fonts: all11 TTF files and NOTICE.md are byte-identical to source. Each font's own name13/14 metadata states OFL1.1 (Roboto included); original NOTICE's Apache wording is stale and retained. Exact OFL1.1 and Apache2.0 licence texts are added. No fonts are relicensed. Source logos and the entire frontend helper containing the embedded logo are omitted in both siblings. The pristine sibling contains exact upstream bytes plus canonical file omissions; no inline editing is used. Standard-policy frontend media is retained. Frontend remains unqualified.
+
+Tests use synthetic fixtures only. No HTTP routes, network calls, runtime changes or new public APIs are introduced. API/transport gaps and Tier2 items are explicit in TIER2.json.
+
+R2 preserves all 1129 R1 input cases byte-for-byte. The 15 XY cases are reclassified as full named refusals (11 previously claimed managed-UI parity); the XY disable-metadata case is retained the same way. There are 16 named XY fingerprint lifecycle refusals. All non-XY lifecycle checks are retained. R1 evidence is preserved privately and superseded for XY qualification.

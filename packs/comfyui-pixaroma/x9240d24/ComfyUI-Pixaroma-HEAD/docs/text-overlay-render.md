@@ -1,0 +1,144 @@
+# Text Overlay Render Math (Simplified)
+
+Single source of truth for the rendering algorithm used by:
+- `js/framework/text_render.mjs` (browser canvas)
+- `nodes/_text_render_helpers.py` (PIL backend)
+
+ANY change to these formulas MUST update this doc first, then both implementations, then re-run `scripts/text_overlay_parity_check.py`.
+
+This is the SIMPLIFIED (v2) renderer. The multi-layer / effects version had §11 (transform stack) and §12 (blend modes); both removed.
+
+## 1. Font Resolution
+
+Given `(font_id, weight, italic)`:
+1. Walk catalog's `weights` for the font with matching `id`
+2. Exact match (`weight == w && italic == i`) → use it
+3. Italic variant unavailable → try non-italic at same weight (mark `synthesizedItalic = true`)
+4. Weight unavailable → pick closest weight by absolute distance
+5. font_id not in catalog → fall back to `Inter`
+6. Even Inter missing → hard error
+
+Synthesized italic skews canvas/PIL transform by 12° horizontally, applied to
+ONLY the text (the background pill stays an axis-aligned rectangle). The skew
+shifts the bottom of glyphs LEFT by `tan(12°)*bbox_h`; the bitmap is widened by
+that overhang (`slant = ceil(tan(12°)*bbox_h)`) and the text is shifted RIGHT by
+`slant`, so the lean is never clipped at the left edge (both engines). Python
+draws the text on its own layer, skews it, then composites over the pill; canvas
+draws the pill un-skewed then the text under a skew transform.
+
+## 1b. Variable Font Handling
+
+Most bundled fonts are variable. Catalog entry has a `wght` field activated at draw time. Browser: FontFace loaded with `weight: "100 900"`, canvas font string picks weight. Static fonts (Bebas Neue, Anton) skip the axis step.
+
+Python PIL sets the axes BY NAME, never by position (`set_variation_by_axes` takes one value per axis in the FONT's own order):
+- the Weight axis -> `wght`;
+- the Optical size axis -> the LOGICAL font size in px (`fontSize`, never the 3x supersampled size of §13), clamped to the axis range. This is what the browser's canvas does: measured in Chrome with the font genuinely loaded, 10 and 12 px use 14, 16 -> 16, 20 -> 20, 28 -> 28, 40 -> 32 (Inter's range is 14..32);
+- every other axis -> its default.
+
+Why: Inter lists Optical size BEFORE Weight, so the old `set_variation_by_axes([wght])` set Inter's optical size to the weight (clamped to 32) and left it Regular - "Inter Bold" rendered Regular in the output while the preview showed Bold (measured: 638 px wide against the browser's 685 at 40 px). A font whose axes carry no recognisable "weight" name falls back to the old positional behaviour (first axis = weight), which is what every other bundled font already gets right.
+
+## 2. Text Measurement
+
+For each line in `text.split("\n")`:
+- Set font to (resolvedFile, fontSize)
+- Browser: `ctx.measureText(line).width`, plus per-glyph letter-spacing if non-zero
+- Python: `font.getlength` per character, plus letter-spacing
+- `line_width_i = measured + max(0, len-1) * letter_spacing`
+
+Native canvas does NOT honor CSS letter-spacing. We add it manually by drawing each character separately when `letterSpacing != 0`. PIL has no letter-spacing; always per-character draw when non-zero.
+
+`lineHeight_px = round(fontSize * lineHeight)` (multiplier, default 1.2).
+
+`bbox_width = max(line_width_i) + 2 * padX`  (padX = 16 if bgColor else 0)
+`bbox_height = ascender + descender + (lineCount - 1) * lineHeight_px + 2 * padY`  (padY = 10 if bgColor else 0)
+
+`ascender + descender` is the visible glyph extent measured from the ACTUAL ink bounding box of `"Mg"`. Browser: `ctx.measureText("Mg").actualBoundingBoxAscent/Descent`. Python: `pil_font.getbbox("Mg")` returns `(left, top, right, bottom)` where `top` is negative for glyphs above baseline; `ascender = max(0, -top)`, `descender = max(0, bottom)`. NOT `font.getmetrics()` (which returns the font's design ascender/descender including a safety zone for diacritics — typically ~30 px larger than the visible ink at 74 px font size and causes Python output to look taller than the editor preview). lineHeight multiplier adds spacing BETWEEN lines only.
+
+## 3. Background Pill
+
+When `layer.bgColor` is a hex string (not null / not empty):
+- Filled rounded rect at `(0, 0)` to `(bbox_width, bbox_height)`
+- Radius: `min(BG_RADIUS, bbox_width/2, bbox_height/2)` where `BG_RADIUS = 0` (sharp rectangle, per user preference)
+- Color: `bgColor` opaque (no alpha — pill is always full alpha; the layer's `opacity` applies to the whole composition including the pill)
+
+Hardcoded defaults: `BG_PAD_X = 16`, `BG_PAD_Y = 10`, `BG_RADIUS = 0`. No user controls for these in v2.
+
+## 4. Draw Order
+
+For the single text:
+1. **Background pill** (if `bgColor` set, see §3)
+2. **Fill text**: for each line at `(lineOriginX, padY + ascender + i * lineHeightPx)` with `layer.color`
+
+Then transforms (§5).
+
+`lineOriginX`:
+- align "left" → `padX`
+- align "center" → `padX + (max_line_width - line_width_i) / 2`
+- align "right" → `padX + (max_line_width - line_width_i)`
+
+## 5. Transform (Opacity + Rotation)
+
+Layer position `(x, y)` is the top-left of the UNROTATED bbox in canvas coordinates. Rotation pivots around the bbox center.
+
+Browser:
+1. Render bg pill + text to a scratch canvas at `bboxW × bboxH`
+2. `ctx.save()` → `translate(x + bboxW/2, y + bboxH/2)` → `rotate(rot * π / 180)` → `translate(-bboxW/2, -bboxH/2)`
+3. `ctx.globalAlpha = layer.opacity` → `drawImage(scratch, 0, 0)` → `ctx.restore()`
+
+Python:
+1. Render bg pill + text to `layer_img = Image.new("RGBA", (bboxW, bboxH))`
+2. Synthesized italic skew (if needed)
+3. Apply opacity: alpha = `alpha.point(lambda a: int(a * opacity))`, `layer_img.putalpha(alpha)` (skip if opacity == 1.0)
+4. Rotate: `layer_img.rotate(-rotation, expand=True, resample=BICUBIC)` (compensate paste origin for `expand=True` growth)
+5. `base_img.alpha_composite(layer_img, dest=(paste_x, paste_y))`
+
+## 5b. Vertical Direction
+
+When `layer.direction == "vertical"` (default `"horizontal"`), the §2-§4 horizontal path is replaced by:
+
+- `lines = text.split("\n")` — each line is a COLUMN, placed left-to-right (line 0 leftmost).
+- Characters stack top-to-bottom, upright, iterated by code point.
+- `charStep = round(fontSize * lineHeight)` is the vertical advance per character (Line Height remaps to character spacing).
+- `colGap = letterSpacing` is the horizontal gap between columns (Letter Spacing remaps to column gap; it does NOT feed per-character measurement here).
+- `ascender`, `descender` are the `"Mg"` ink metric, same as horizontal.
+- Per column j: `colWidth_j = max(0, glyphWidth(each char))`, `numChars_j = count`.
+
+```
+maxChars  = max(numChars_j)
+contentH  = ascender + descender + max(0, maxChars - 1) * charStep
+totalColW = sum(colWidth_j) + max(0, numCols - 1) * colGap
+bbox_width  = max(1, ceil(totalColW + 2*padX))
+bbox_height = max(1, ceil(contentH  + 2*padY))
+```
+
+Draw (bg pill fills the whole bbox first, exactly as §3):
+```
+colOriginX = padX
+for column j:
+    colContentH = ascender + descender + max(0, numChars_j - 1) * charStep
+    vOffset = align=="center" ? (contentH - colContentH)/2
+            : align=="right"  ? (contentH - colContentH)
+            : 0                                   # align=="left" -> top
+    for i, ch in column:
+        cx = colOriginX + (colWidth_j - glyphWidth(ch))/2   # center in column
+        ly = padY + vOffset + ascender + i*charStep         # shared baseline grid
+        drawChar(ch, cx, ly)
+    colOriginX += colWidth_j + colGap
+```
+
+Align chips keep the left/center/right icons; their EFFECT becomes top/middle/bottom of shorter columns. Position (x/y), rotation, opacity, and the bg pill act on the finished bitmap unchanged.
+
+## 6. Color Format
+
+All `color` and `bgColor` fields are 6-char hex strings (`"#RRGGBB"`). `bgColor` is `null` (or empty string) when no pill.
+
+## 7. Parity Tolerance
+
+`scripts/text_overlay_parity_check.py` renders 10 reference configs through the Python renderer and diffs against committed goldens. Tolerance: under 2% of pixels may deviate by ΔE > 10. Goldens lock the Python output; JS side checked visually by the human at editor save time.
+
+## 8. Known Approximations
+
+- Synthesized italic skew differs slightly between canvas (matrix transform) and PIL (Image transform). Acceptable.
+- Sub-pixel positioning rounded to nearest integer pixel in both renderers.
+- Variable font interpolation: browser's variable-font rasterizer and PIL's `set_variation_by_axes` use different interpolation paths.
+- Vertical direction skips synthesized italic (characters render upright, no shear). Real-italic font files still render their italic glyphs upright-stacked.

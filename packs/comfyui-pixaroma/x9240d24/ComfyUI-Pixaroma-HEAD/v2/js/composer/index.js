@@ -1,0 +1,707 @@
+import { app } from "../../../scripts/app.js";
+import { pixApiUrl } from "../shared/api_url.mjs";
+// api is used at the top level (pixaroma-composer-preview WebSocket
+// listener) AND inside the execution-events try block further down.
+// Importing it once here keeps both call sites using the same module.
+import { api } from "../../../scripts/api.js";
+import { applyFx, isNeutral, fxSeed } from "./fx_engine.mjs";
+import {
+  allow_debug,
+  createNodePreview,
+  showNodePreview,
+  restoreNodePreview,
+  activateNodePreview,
+  downloadDataURL,
+  applyAdaptiveCanvasOnly,
+  installCanvasZoomPassthrough,
+} from "../shared/index.mjs";
+
+// Import core class first, then mixins as side-effects
+import { PixaromaEditor } from "./core.mjs";
+import "./eraser.mjs";
+import "./crop.mjs";
+import "./render.mjs";
+import "./interaction.mjs";
+import "./placeholder.mjs";
+import { getUpstreamImageUrlForNode } from "./placeholder.mjs";
+import { isGraphLoading } from "../shared/graph_loading.mjs";
+import { isLiveNode } from "../shared/live_node.mjs";
+import { growToCoreMinHeight, capComputeSizeInNodes2 } from "../shared/core_min_size.mjs";
+
+// Re-export so other modules can import from index
+export { PixaromaEditor };
+
+// ── DEBUG — set to true to trace preview updates in the console ──
+const DBG = false;
+function dbg(...args) { if (DBG) console.log("[PXR-DEBUG]", ...args); }
+
+// Same mapping used by the in-editor canvas (see composer/render.mjs).
+// Must stay in sync — the mini-preview client recomposite needs to
+// honor blend modes, or it overwrites the correct save with a
+// Normal-only render after execution.
+const BLEND_MAP = {
+  Normal: "source-over",
+  Multiply: "multiply",
+  Screen: "screen",
+  Overlay: "overlay",
+  Darken: "darken",
+  Lighten: "lighten",
+  "Color Dodge": "color-dodge",
+  "Color Burn": "color-burn",
+  "Hard Light": "hard-light",
+  "Soft Light": "soft-light",
+  Difference: "difference",
+  Exclusion: "exclusion",
+  Hue: "hue",
+  Saturation: "saturation",
+  Color: "color",
+  Luminosity: "luminosity",
+};
+
+// Check if the editor is truly open (overlay is in the DOM)
+function isEditorOpen(node) {
+  if (!node._pixaromaEditor) return false;
+  const overlay = node._pixaromaEditor.overlay;
+  if (!overlay || !overlay.isConnected) {
+    // Editor was removed from DOM without close handler — clean up. Release the
+    // Ctrl+Z graph-undo guard (Vue Compat #6), then drop the stale reference.
+    dbg("editor overlay gone — clearing stale reference");
+    try { node._pixaromaEditor._restoreGraphPatches?.(); } catch {}
+    try { node._pixaromaEditor._cleanupKeys?.(); } catch {}
+    node._pixaromaEditor = null;
+    return false;
+  }
+  return true;
+}
+
+app.registerExtension({
+  name: "Pixaroma.ImageComposer",
+
+  async beforeRegisterNodeDef(nodeType, nodeData, app) {
+    if (nodeData.name !== "PixaromaImageComposition") return;
+    capComputeSizeInNodes2(nodeType); // Nodes 2.0 Ctrl+Z grow on frontend 1.53 (composer.md #8)
+
+    const originalOnExecuted = nodeType.prototype.onExecuted;
+    nodeType.prototype.onExecuted = function (message) {
+      originalOnExecuted?.apply(this, arguments);
+      dbg("onExecuted fired", { hasRebuild: !!this._pixaromaRebuildPreview, editorOpen: isEditorOpen(this) });
+      // If the "pixaroma-composer-preview" WebSocket event already
+      // pushed the correct server-rendered image into our top
+      // preview (dynamic re-compose path: placeholders / auto-rembg
+      // / masks), DO NOT run rebuildPreview — it would re-composite
+      // the raw upstream images client-side without rembg and
+      // overwrite the good result with the wrong one.
+      //
+      // The flag is set by _onComposerPreview and cleared on
+      // execution_start so the next run starts fresh.
+      if (this._pixaromaWsPreviewApplied) {
+        dbg("onExecuted → WS preview already applied, skipping rebuild");
+        return;
+      }
+      // Fast-path: no placeholders / auto-rembg / masks. Python's
+      // load_composite() loaded the pre-baked composite_path PNG that
+      // the editor saved on close, AND that file is what Preview Image
+      // downstream gets. No re-composite needed - the mini preview
+      // already shows the same image (loaded by restoreNodePreview on
+      // workflow load / setValue). Calling rebuildPreview here would
+      // render the layers client-side WITHOUT the user's bg color
+      // (CLAUDE.md Image Composer Pattern: bg color isn't in
+      // project_json, only in the saved composite PNG) and could
+      // misrender layer transforms, manifesting as "the bg disappears
+      // after I run" + "image rescales after I run" bugs.
+      // ONLY rebuild client-side when there are placeholder slots that
+      // need a fresh upstream render — that's the path that genuinely
+      // benefits from a client rebuild.
+      if (
+        this._pixaromaRebuildPreview &&
+        !isEditorOpen(this) &&
+        this._pixaromaHasPlaceholders?.()
+      ) {
+        const rebuild = this._pixaromaRebuildPreview;
+        setTimeout(() => { dbg("onExecuted → delayed rebuildPreview"); rebuild(); }, 300);
+      }
+    };
+  },
+
+  async nodeCreated(node) {
+    if (node.comfyClass !== "PixaromaImageComposition") return;
+
+    node.size = [300, 300];
+    node.imgs = null; // suppress native ComfyUI preview
+
+    // ── Shared preview system ──
+    const parts = createNodePreview(
+      "Image Composer",
+      "Pixaroma",
+      "Click 'Open Image Composer' to start",
+    );
+
+    // ── State — mirrors the hidden project_json widget ──
+    let projectJson = "{}";
+
+    // ── Open button ──
+    node.addWidget("button", "Open Image Composer", null, () => {
+      // Don't stack a second editor on this node — that would orphan the first
+      // (leaked listeners + graph patches, stacked overlays). The drop-to-open
+      // path already guards this; the button must too.
+      if (isEditorOpen(node)) return;
+      const editor = new PixaromaEditor(node);
+      node._pixaromaEditor = editor;
+
+      editor.onSave = (jsonStr, dataURL) => {
+        dbg("editor.onSave", { jsonLen: jsonStr.length, hasDataURL: !!dataURL, editorOpen: !!node._pixaromaEditor });
+        projectJson = jsonStr;
+        widget.value = { project_json: jsonStr };
+
+        if (dataURL) {
+          let dimText = null;
+          try {
+            const meta = JSON.parse(jsonStr);
+            dimText = `${meta.doc_w || "?"}\u00d7${meta.doc_h || "?"}`;
+          } catch {}
+          showNodePreview(parts, dataURL, dimText, node);
+        }
+
+        node.setDirtyCanvas(true, true);
+      };
+
+      editor.onSaveToDisk = (dataURL) =>
+        downloadDataURL(dataURL, "pixaroma_composer");
+
+      editor.onClose = () => {
+        dbg("editor.onClose");
+        editor.syncNodeInputs();
+        node._pixaromaEditor = null;
+        _lastUpstreamSnapshot = "";
+        node.setDirtyCanvas(true, true);
+      };
+    });
+
+    // ── DOM widget ──
+    installCanvasZoomPassthrough(parts.container);
+    let widget = node.addDOMWidget(
+      "ComposerWidget",
+      "custom",
+      parts.container,
+      {
+        // canvasOnly set adaptively below (CLAUDE.md Nodes 2.0)
+        getValue: () => ({ project_json: projectJson }),
+        setValue: (v) => {
+          dbg("setValue called", { type: typeof v, hasProjectJson: !!(v && v.project_json), projectJsonLen: v?.project_json?.length });
+          if (v && typeof v === "object" && v.project_json) {
+            const incoming = v.project_json;
+            if (incoming && incoming !== "{}" && incoming !== projectJson) {
+              dbg("setValue → updating projectJson", { oldLen: projectJson.length, newLen: incoming.length });
+              projectJson = incoming;
+            }
+            let hasPlaceholders = false;
+            try {
+              const m = JSON.parse(projectJson);
+              hasPlaceholders = (m.layers || []).some((l) => l.isPlaceholder);
+            } catch {}
+            dbg("setValue → hasPlaceholders:", hasPlaceholders, "editorOpen:", isEditorOpen(node));
+            if (isEditorOpen(node)) {
+              // Editor is open — it handles its own preview, skip rebuild
+            } else if (hasPlaceholders) {
+              rebuildPreview();
+            } else {
+              restoreNodePreview(parts, projectJson, node);
+            }
+          }
+        },
+        getMinHeight: () => 210,
+        margin: 5,
+      },
+    );
+    applyAdaptiveCanvasOnly(widget);
+    // Classic fresh drop: start at core's own height (312), or the first Ctrl+Z
+    // grows the node and jams undo (composer.md #7).
+    growToCoreMinHeight(node);
+
+    // cleanup handled in API listener section below
+
+    // ── Drag-and-drop on the closed node ──
+    // Drops always add as a NEW layer on top — never replace, never delete.
+    // If the editor is closed, we open it and wait for restore() to finish
+    // so the new layer stacks predictably above any restored layers.
+    // Behaviour matches Photoshop/Figma/Affinity: drop = add layer.
+    parts.container.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer?.types?.includes("Files")) return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    parts.container.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file || !file.type?.startsWith("image/")) return;
+      // If the editor is already open, route directly to its add-as-layer
+      // entry point. Drop on the closed node opens the editor first; the
+      // open-button widget callback wires onSave/onClose for us, so we
+      // reuse it instead of duplicating that setup.
+      if (!isEditorOpen(node)) {
+        const openBtn = (node.widgets || []).find(
+          (w) => w?.type === "button" && w?.name === "Open Image Composer",
+        );
+        if (openBtn?.callback) openBtn.callback();
+      }
+      const editor = node._pixaromaEditor;
+      if (!editor) return;
+      try {
+        await editor.ready;
+        editor.addImageAsLayer?.(file);
+      } catch (err) {
+        console.warn("[PixaromaComposer] drop add-layer failed:", err);
+      }
+    });
+
+    // Default auto-preview
+    node._pixaromaAutoPreview = true;
+
+    // Full re-composite: render all layers in z-order, replacing connected
+    // placeholders with their upstream image (respecting fill mode).
+    const rebuildPreview = () => {
+      let meta;
+      try { meta = JSON.parse(projectJson); } catch {
+        dbg("rebuildPreview → JSON parse failed");
+        return;
+      }
+      if (!meta) { dbg("rebuildPreview → meta is null"); return; }
+
+      const docW = meta.doc_w || 1024;
+      const docH = meta.doc_h || 1024;
+      const layers = meta.layers || [];
+      if (layers.length === 0) {
+        dbg("rebuildPreview → no layers, projectJson starts with:", projectJson.substring(0, 100));
+        return;
+      }
+
+      dbg("rebuildPreview → processing", layers.length, "layers");
+
+      // Build load list for every visible layer
+      const loadList = [];
+      for (const layer of layers) {
+        if (layer.visible === false) { loadList.push({ layer, url: null, maskUrl: null }); continue; }
+        let maskUrl = null;
+        if (layer.maskSrc) {
+          const maskFn = layer.maskSrc.split(/[\\/]/).pop();
+          maskUrl = pixApiUrl(`/view?filename=${encodeURIComponent(maskFn)}&type=input&subfolder=pixaroma&t=${Date.now()}`);
+        }
+        if (layer.isPlaceholder) {
+          const url = getUpstreamImageUrlForNode(node, `image_${layer.inputIndex}`);
+          dbg("  placeholder layer", layer.name, "→ url:", url ? url.substring(0, 80) : "NULL");
+          loadList.push({ layer, url, maskUrl, isPlaceholder: true });
+        } else {
+          const src = layer.src;
+          if (!src || src === "__placeholder__") { loadList.push({ layer, url: null, maskUrl: null }); continue; }
+          const fn = src.split(/[\\/]/).pop();
+          const url = pixApiUrl(`/view?filename=${encodeURIComponent(fn)}&type=input&subfolder=pixaroma&t=${Date.now()}`);
+          dbg("  regular layer", layer.name, "→ url:", url.substring(0, 80));
+          loadList.push({ layer, url, maskUrl });
+        }
+      }
+
+      // Load all images + masks
+      const images = new Array(loadList.length);
+      const maskImages = new Array(loadList.length);
+      let pending = 0;
+      loadList.forEach((item) => { if (item.url) pending++; if (item.maskUrl) pending++; });
+      dbg("rebuildPreview → pending image loads:", pending);
+      if (pending === 0) { dbg("rebuildPreview → no images to load, compositing immediately"); compositeAll(); return; }
+
+      let done = 0;
+      const check = () => {
+        if (++done === pending) {
+          dbg("rebuildPreview → all images loaded, compositing");
+          compositeAll();
+        }
+      };
+      loadList.forEach((item, i) => {
+        if (item.url) {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.onload = () => { images[i] = img; dbg("  img loaded", i, img.naturalWidth + "x" + img.naturalHeight); check(); };
+          img.onerror = (e) => { dbg("  img FAILED", i, item.url.substring(0, 80)); check(); };
+          img.src = item.url;
+        }
+        if (item.maskUrl) {
+          const msk = new Image();
+          msk.crossOrigin = "Anonymous";
+          msk.onload = () => { maskImages[i] = msk; check(); };
+          msk.onerror = check;
+          msk.src = item.maskUrl;
+        }
+      });
+
+      function applyFillMode(img, phW, phH, mode) {
+        const c = document.createElement("canvas");
+        c.width = phW; c.height = phH;
+        const ctx = c.getContext("2d");
+        const sw = img.naturalWidth, sh = img.naturalHeight;
+        if (mode === "fill") {
+          ctx.drawImage(img, 0, 0, phW, phH);
+        } else if (mode === "contain") {
+          const s = Math.min(phW / sw, phH / sh);
+          const dw = sw * s, dh = sh * s;
+          ctx.drawImage(img, (phW - dw) / 2, (phH - dh) / 2, dw, dh);
+        } else {
+          const s = Math.max(phW / sw, phH / sh);
+          const dw = sw * s, dh = sh * s;
+          ctx.drawImage(img, (phW - dw) / 2, (phH - dh) / 2, dw, dh);
+        }
+        return c;
+      }
+
+      function drawLayer(ctx, layer, img, maskImg) {
+        // Apply non-destructive crop (source-image pixels). Saved cx/cy already
+        // hold the cropped center, so once img is the cropped sub-rect the rest
+        // of the math positions it correctly. Matches the editor + Python.
+        if (layer.cropRect && !layer.isPlaceholder && img) {
+          const cr = layer.cropRect;
+          const cc = document.createElement("canvas");
+          cc.width = Math.max(1, Math.round(cr.w));
+          cc.height = Math.max(1, Math.round(cr.h));
+          cc.getContext("2d").drawImage(img, cr.x, cr.y, cr.w, cr.h, 0, 0, cc.width, cc.height);
+          img = cc;
+        }
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        const sx = Math.abs(layer.scaleX || 1), sy = Math.abs(layer.scaleY || 1);
+        const w = natW * sx, h = natH * sy;
+
+        let src = img;
+        if (maskImg) {
+          const tc = document.createElement("canvas");
+          tc.width = natW; tc.height = natH;
+          const tCtx = tc.getContext("2d");
+          tCtx.drawImage(img, 0, 0);
+          tCtx.globalCompositeOperation = "destination-out";
+          tCtx.drawImage(maskImg, 0, 0, natW, natH);
+          src = tc;
+        }
+
+        const cx = layer.cx ?? docW / 2, cy = layer.cy ?? docH / 2;
+        const rot = (layer.rotation || 0) * Math.PI / 180;
+        ctx.save();
+        ctx.globalAlpha = layer.opacity ?? 1;
+        if (layer.blendMode && BLEND_MAP[layer.blendMode])
+          ctx.globalCompositeOperation = BLEND_MAP[layer.blendMode];
+        // Quadratic curve: slider 0-100 maps to actual blur 0-50px (finer control
+        // at low end). Must match render.mjs + node_composition.py.
+        if (layer.blur && layer.blur > 0)
+          ctx.filter = "blur(" + (Math.pow(layer.blur / 100, 2) * 50) + "px)";
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.scale(layer.flippedX ? -1 : 1, layer.flippedY ? -1 : 1);
+        ctx.drawImage(src, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
+
+      function compositeAll() {
+        const cvs = document.createElement("canvas");
+        cvs.width = docW; cvs.height = docH;
+        const ctx = cvs.getContext("2d");
+
+        // Fill the user's saved BG colour FIRST, then draw layers on top.
+        // Mirrors the editor's _drawImpl + the Python dynamic-compose path
+        // (node_composition.py). Without this the canvas stays transparent
+        // and the resulting PNG flashes black where the bg should be when
+        // the mini preview switches from the saved composite to this
+        // client recomposite (placeholder workflows). Older saves missing
+        // bg_color get the same default the editor's BG picker uses.
+        const bgColor = (typeof meta.bg_color === "string" && meta.bg_color) || "#1e1e1e";
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, docW, docH);
+
+        loadList.forEach((item, i) => {
+          if (item.layer.visible === false) return;
+
+          // FX adjustment layer: grade everything drawn so far (mirrors the
+          // editor _drawImpl + the Python dynamic-compose path). Keeps the node
+          // mini-preview matching the editor for placeholder workflows.
+          if (item.layer.isAdjustment) {
+            const ly = item.layer;
+            const amount01 = ly.opacity ?? 1;
+            if (isNeutral(ly.adjustments, amount01)) return;
+            const id = ctx.getImageData(0, 0, docW, docH);
+            applyFx(id.data, docW, docH, ly.adjustments, amount01, fxSeed(ly.id));
+            ctx.putImageData(id, 0, 0);
+            return;
+          }
+
+          const img = images[i];
+          const mask = maskImages[i] || null;
+
+          if (item.isPlaceholder) {
+            if (img) {
+              const phW = item.layer.naturalWidth || Math.round(docW / 2);
+              const phH = item.layer.naturalHeight || Math.round(docH / 2);
+              const fitted = applyFillMode(img, phW, phH, item.layer.fillMode || "cover");
+              drawLayer(ctx, item.layer, fitted, mask);
+            } else {
+              const phW = item.layer.naturalWidth || Math.round(docW / 2);
+              const phH = item.layer.naturalHeight || Math.round(docH / 2);
+              const color = item.layer.placeholderColor || "#808080";
+              const pc = document.createElement("canvas");
+              pc.width = phW; pc.height = phH;
+              const pCtx = pc.getContext("2d");
+              pCtx.fillStyle = color;
+              pCtx.fillRect(0, 0, phW, phH);
+              const fontSize = Math.max(14, Math.min(phW, phH) / 6);
+              pCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+              pCtx.textAlign = "center";
+              pCtx.textBaseline = "middle";
+              pCtx.fillStyle = "rgba(255,255,255,0.85)";
+              pCtx.fillText(item.layer.name || `image_${item.layer.inputIndex}`, phW / 2, phH / 2);
+              drawLayer(ctx, item.layer, pc);
+            }
+          } else if (img) {
+            drawLayer(ctx, item.layer, img, mask);
+          }
+        });
+
+        const dataURL = cvs.toDataURL("image/png");
+        const dimText = `${docW}\u00d7${docH}`;
+        dbg("compositeAll → calling showNodePreview, dataURL length:", dataURL.length);
+        showNodePreview(parts, dataURL, dimText, node);
+      }
+    };
+
+    // Expose for onExecuted
+    node._pixaromaRebuildPreview = rebuildPreview;
+
+    // Helper to check whether the current project has any placeholder
+    // layers - used by post-run rebuild gates to decide if a client-
+    // side re-composite adds value. Without placeholders, the saved
+    // composite_path image (loaded by Python and shown by the existing
+    // mini preview) is already the workflow output, and rebuilding
+    // would only re-render WITHOUT the saved bg color (which lives in
+    // the composite PNG, not project_json). Exposed on the node so the
+    // beforeRegisterNodeDef-installed onExecuted hook can reach it
+    // without a closure reference.
+    const _hasPlaceholderLayers = () => {
+      try {
+        const m = JSON.parse(projectJson);
+        return Array.isArray(m?.layers) && m.layers.some((l) => l.isPlaceholder);
+      } catch {
+        return false;
+      }
+    };
+    node._pixaromaHasPlaceholders = _hasPlaceholderLayers;
+
+    // Preferred onExecuted path: Python sends back the exact final
+    // composed PNG via the ui.images channel. This helper fetches it
+    // and pushes it to the node's mini preview — no client-side
+    // re-compositing needed, and critically it includes any server-
+    // applied auto-rembg so the mini preview matches downstream
+    // PreviewImage nodes.
+    node._pixaromaShowPreviewFromUI = (uiImage) => {
+      if (!uiImage || !uiImage.filename) return;
+      const params = new URLSearchParams({
+        filename: uiImage.filename,
+        type: uiImage.type || "temp",
+        subfolder: uiImage.subfolder || "",
+        // Cache-bust so the same filename with different content reloads.
+        t: Date.now(),
+      });
+      const url = pixApiUrl(`/view?${params.toString()}`);
+      // Pull dims from the current project json so the label reads right.
+      let dimText = null;
+      try {
+        const meta = JSON.parse(projectJson);
+        if (meta && meta.doc_w && meta.doc_h) {
+          dimText = `${meta.doc_w}\u00d7${meta.doc_h}`;
+        }
+      } catch {}
+      dbg("pixaromaShowPreviewFromUI → loading", url);
+      showNodePreview(parts, url, dimText, node);
+    };
+
+    // Listen for the server-side "pixaroma-composer-preview" event the
+    // Python node sends after a dynamic re-compose (placeholders /
+    // auto-rembg / masks). It carries the filename of the exact PNG
+    // that was baked as the workflow output, so we can push that same
+    // image into this node's top preview. Scoped to this node via
+    // project_id so multiple composer nodes in the same workflow
+    // don't clobber each other.
+    const _onComposerPreview = (event) => {
+      // A Ctrl+C copy carries the same project_id and never gets onRemoved, so it
+      // used to take this event too and reload the preview nobody sees. Real
+      // nodes, inside subgraphs too, always pass (js/shared/live_node.mjs).
+      if (!isLiveNode(node)) return;
+      const data = event?.detail;
+      if (!data || !data.filename) return;
+      // Match the event to this node. If project_id is missing (shouldn't
+      // happen but defensive), fall back to accepting the event so a
+      // single-node workflow still works.
+      let myProjectId = null;
+      try {
+        myProjectId = JSON.parse(projectJson)?.project_id || null;
+      } catch {}
+      if (data.project_id && myProjectId && data.project_id !== myProjectId) return;
+      if (isEditorOpen(node)) return; // don't fight the editor's own saves
+      node._pixaromaShowPreviewFromUI({
+        filename: data.filename,
+        subfolder: data.subfolder,
+        type: data.type,
+      });
+      // Flag the node so onExecuted (which fires AFTER this WS event)
+      // knows the preview is already correct and skips its fallback
+      // rebuildPreview call — otherwise it would overwrite this
+      // server-rendered image with a client-side recomposite that
+      // doesn't include auto-rembg, causing the "good image flashes
+      // then goes bad" symptom.
+      node._pixaromaWsPreviewApplied = true;
+    };
+    api.addEventListener("pixaroma-composer-preview", _onComposerPreview);
+
+    node.onConnectionsChange = (type, slotIndex, connected) => {
+      if (type !== LiteGraph.INPUT) return;
+      const inputName = node.inputs?.[slotIndex]?.name;
+      if (!inputName || !inputName.startsWith("image_")) return;
+
+      dbg("onConnectionsChange", inputName, connected);
+      if (isEditorOpen(node)) {
+        node._pixaromaEditor.ui.updateActiveLayerUI();
+      } else if (node._pixaromaAutoPreview && !isGraphLoading()) {
+        // Skip during workflow load: LiteGraph replays every saved link here,
+        // which would fire one rebuildPreview (N async image loads) per slot
+        // for nothing, and can flicker the preview (Vue Compat #19).
+        rebuildPreview();
+      }
+    };
+
+    // ── Auto-detect upstream image changes via polling ──
+    // onDrawForeground doesn't fire in Vue-based ComfyUI, so use setInterval
+    let _lastUpstreamSnapshot = "";
+
+    function getUpstreamSnapshot() {
+      const inputs = node.inputs || [];
+      const pieces = [];
+      const graph = node.graph;
+      if (!graph) return "";
+      for (const inp of inputs) {
+        if (!inp.name?.startsWith("image_") || inp.link == null) continue;
+        // Support both plain object and Map for graph.links
+        let link = graph.links?.[inp.link];
+        if (!link && typeof graph.links?.get === "function") link = graph.links.get(inp.link);
+        if (!link) continue;
+        const src = graph.getNodeById(link.origin_id);
+        if (!src) continue;
+        if (src.comfyClass === "LoadImage" || src.type === "LoadImage") {
+          const w = src.widgets?.find((w) => w.name === "image");
+          if (w) pieces.push(`${inp.name}=${w.value}`);
+        }
+        if (src.imgs?.length) {
+          const img = src.imgs[link.origin_slot] || src.imgs[0];
+          const s = typeof img === "string" ? img : img?.src || "";
+          pieces.push(`${inp.name}_prev=${s}`);
+        }
+      }
+      return pieces.join("|");
+    }
+
+    // Poll every 500ms for upstream changes (widget swaps, execution results)
+    const pollInterval = setInterval(() => {
+      if (!node.graph) { clearInterval(pollInterval); return; }
+      if (!node._pixaromaAutoPreview || isEditorOpen(node)) return;
+      const snap = getUpstreamSnapshot();
+      if (snap && snap !== _lastUpstreamSnapshot) {
+        dbg("poll → snapshot changed", { old: _lastUpstreamSnapshot.substring(0, 60), new: snap.substring(0, 60) });
+        _lastUpstreamSnapshot = snap;
+        // If the server-side WS event already applied the correct
+        // post-execute preview (dynamic compose path), don't undo it
+        // by rebuilding client-side from raw upstream images. The
+        // snapshot update that triggered this poll is just the
+        // upstream LoadImage getting its exec result — not a real
+        // user-initiated change. Keep _lastUpstreamSnapshot updated
+        // so a later genuine change is detected.
+        if (node._pixaromaWsPreviewApplied) {
+          dbg("poll → WS preview already applied, skipping rebuild");
+          return;
+        }
+        rebuildPreview();
+      }
+    }, 500);
+
+    // ── Listen for ComfyUI API execution events to auto-rebuild preview ──
+    try {
+      // `api` already imported at top of file — no need for dynamic import.
+
+      let executionRunning = false;
+      // Copies (Ctrl+C / Clone / Convert to Subgraph) and Composers left inside a
+      // subgraph by a workflow switch never get onRemoved, so these listeners
+      // stayed registered for them. With a placeholder layer each one re-composited
+      // an invisible preview after EVERY run (measured: 3 copies = 3 extra image
+      // draws per run). Skip anything not on an open canvas.
+      const _onExecStart = () => {
+        if (!isLiveNode(node)) return;
+        executionRunning = true;
+        // Reset the WS-preview flag so if this run doesn't hit the
+        // dynamic re-compose path (no placeholders / auto-rembg /
+        // masks), onExecuted falls back to rebuildPreview correctly.
+        node._pixaromaWsPreviewApplied = false;
+      };
+      api.addEventListener("execution_start", _onExecStart);
+
+      // "executing" with null detail means execution finished
+      const _onExecuting = (event) => {
+        if (!isLiveNode(node)) return;
+        const detail = event?.detail;
+        if (detail === null || detail?.node === null) {
+          if (executionRunning && !isEditorOpen(node)) {
+            executionRunning = false;
+            // Same gate as onExecuted and the poll: if the WS event
+            // already pushed the correct server-rendered preview,
+            // don't clobber it with a client-side recomposite.
+            if (node._pixaromaWsPreviewApplied) {
+              dbg("executing-null → WS preview already applied, skipping rebuild");
+              return;
+            }
+            // Same fast-path skip as onExecuted - without placeholders,
+            // the saved composite_path PNG (already shown via
+            // restoreNodePreview) is the correct preview. A client
+            // rebuild here would lose the bg color and risk misscaling
+            // the layers (CLAUDE.md Image Composer Patterns).
+            if (!_hasPlaceholderLayers()) {
+              dbg("executing-null → no placeholders, saved composite is correct, skipping rebuild");
+              return;
+            }
+            setTimeout(() => rebuildPreview(), 200);
+          }
+        }
+      };
+      api.addEventListener("executing", _onExecuting);
+
+      const origRemoved = node.onRemoved;
+      node.onRemoved = () => {
+        origRemoved?.call(node);
+        clearInterval(pollInterval);
+        // If the node is deleted while its editor is open, tear the editor
+        // down properly: release the Ctrl+Z graph-undo guard (Vue Compat #6)
+        // and detach window listeners, or the guard stays held and the
+        // listeners leak.
+        try {
+          const ed = node._pixaromaEditor;
+          if (ed) {
+            ed._restoreGraphPatches?.();
+            ed._cleanupKeys?.();
+            node._pixaromaEditor = null;
+          }
+        } catch {}
+        // Detach all API listeners so removed nodes don't leak handlers /
+        // update phantom previews on later runs.
+        try {
+          api.removeEventListener("pixaroma-composer-preview", _onComposerPreview);
+          api.removeEventListener("execution_start", _onExecStart);
+          api.removeEventListener("executing", _onExecuting);
+        } catch {}
+        widget = null;
+      };
+    } catch (e) {
+      dbg("Failed to register API event listeners:", e);
+    }
+
+    activateNodePreview(parts, node);
+  },
+});

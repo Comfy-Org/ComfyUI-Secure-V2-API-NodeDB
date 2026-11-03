@@ -1,0 +1,329 @@
+import { app } from "../../../scripts/app.js";
+import { isVueNodes, registerNodeHelp } from "../shared/index.mjs";
+import { registerNodeSettings } from "../shared/node_settings.mjs";
+import { HIDDEN_INPUT, promptState, widgetOf } from "./core.mjs";
+import {
+  injectCSS, installFields, uninstallFields, reseedFields, paintRows,
+  bindInputDots, alignInputsLegacy, bodyComputeSize, defaultNodeHeight,
+  applyFieldsRenderer, MIN_W, DEFAULT_W, ZW,
+} from "./fields.mjs";
+import { openTextJoinPanel, closeTextJoinPanelFor } from "./settings.mjs";
+import { onRendererChange, refreshVueNodeSlots } from "../shared/renderer_switch.mjs";
+import { isLiveNode } from "../shared/live_node.mjs";
+import { refuseRowPromotion } from "../shared/subgraph_wire.mjs";
+
+// Text Join Two / Three / Four Pixaroma - two to four multi-line text boxes, EACH
+// with a real input dot on its row (type OR wire), joined into one `text` output.
+// The separator / skip-empty settings open from the node's right-click menu.
+// Value + settings flow through hidden widgets + a graphToPrompt inject, so wiring
+// a text node overrides the box. Structural recipe ported from Outpaint Stitch.
+
+const NODE_SLOT_H = 20;
+
+// class_type -> the ordered list of its text fields ({name, label}).
+const CLASSES = {
+  PixaromaTextJoinTwo: [
+    { name: "text_1", label: "text 1" },
+    { name: "text_2", label: "text 2" },
+  ],
+  PixaromaTextJoinThree: [
+    { name: "text_1", label: "text 1" },
+    { name: "text_2", label: "text 2" },
+    { name: "text_3", label: "text 3" },
+  ],
+  PixaromaTextJoinFour: [
+    { name: "text_1", label: "text 1" },
+    { name: "text_2", label: "text 2" },
+    { name: "text_3", label: "text 3" },
+    { name: "text_4", label: "text 4" },
+  ],
+};
+
+function fieldNamesFor(className) {
+  return (CLASSES[className] || []).map((f) => f.name);
+}
+function isFieldName(className, name) {
+  return fieldNamesFor(className).includes(name);
+}
+
+// Legacy layout: reserve one slot row for the `text` output, own the height, and
+// park each field's input dot on its row. USER-action safe (never resizes on load).
+function applyLegacyLayout(node) {
+  if (isVueNodes()) return;
+  node.widgets_start_y = Math.max((node.outputs || []).length, 1) * NODE_SLOT_H + 4;
+  node.computeSize = function () { return bodyComputeSize(this); };
+}
+
+function scheduleAlignLegacy(node) {
+  if (isVueNodes()) return;
+  const go = () => { if (node.graph) { alignInputsLegacy(node); node.setDirtyCanvas?.(true, true); } };
+  requestAnimationFrame(go);
+  setTimeout(go, 150);
+}
+
+// Everything installFields / applyLegacyLayout / bindInputDots set up for ONE
+// renderer, re-applied for the other on a live switch of "Nodes 2.0". Without
+// it, after Nodes 2.0 -> Classic the field dots were NOT DRAWN (the Nodes 2.0
+// widget marker hides a Classic dot), so no text could be wired in until the
+// workflow was reopened; the other way they sat in the top column instead of on
+// their fields (measured 2026-09-26, flip_audit_lib.js). A user action, never a load.
+function applyTextJoinRenderer(node, vue, fieldNames) {
+  applyFieldsRenderer(node, vue);
+  if (vue) {
+    // A node built in Classic carries Classic's own layout on the instance, and
+    // its field dots carry a Classic position; a node built in Nodes 2.0 has none.
+    if (Object.prototype.hasOwnProperty.call(node, "computeSize")) delete node.computeSize;
+    if (node.widgets_start_y != null) node.widgets_start_y = undefined;
+    for (const inp of node.inputs || []) if (fieldNames.includes(inp?.name) && inp.pos) delete inp.pos;
+  } else {
+    applyLegacyLayout(node);
+  }
+  bindInputDots(node);
+  paintRows(node);
+  // Nodes 2.0 has already mounted this node and never notices the new markers
+  // or the rows' new sizing hooks - make it re-read them. No-op in Classic.
+  refreshVueNodeSlots(node);
+  scheduleAlignLegacy(node);
+  node.setDirtyCanvas?.(true, true);
+}
+
+app.registerExtension({
+  name: "Pixaroma.TextJoin",
+
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (!CLASSES[nodeData.name]) return;
+    if (nodeType.prototype._pixTjPatched) return;
+    nodeType.prototype._pixTjPatched = true;
+    const CLASS = nodeData.name;
+    const FIELDS = CLASSES[CLASS];
+    // A Nodes 2.0 field row offered in a subgraph's widget list must not be
+    // promoted (the outside gets no box and the Run sent "" instead of the typed
+    // text); a dragged wire still works.
+    refuseRowPromotion(nodeType, "pixtj_row_");
+
+    injectCSS();
+
+    const _created = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      _created?.apply(this, arguments);
+      this._pixTjFields = FIELDS;
+      installFields(this);
+      applyLegacyLayout(this);
+      // Fresh-node default size (configure overrides it for saved workflows).
+      if (!this.size || this.size[0] < MIN_W) this.size[0] = DEFAULT_W;
+      const defH = defaultNodeHeight(FIELDS.length);
+      if (!this.size[1] || this.size[1] < defH) this.size[1] = defH;
+      queueMicrotask(() => {
+        bindInputDots(this); paintRows(this); scheduleAlignLegacy(this);
+        this.setDirtyCanvas?.(true, true);
+      });
+      // Re-apply on a live renderer switch. A copy that is never added to a
+      // graph, or a node left inside a subgraph of a closed workflow, is skipped.
+      const names = FIELDS.map((f) => f.name);
+      this._pixTjRendererOff = onRendererChange((vue) => {
+        if (isLiveNode(this)) applyTextJoinRenderer(this, vue, names);
+      });
+    };
+
+    const _configure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (info) {
+      const r = _configure?.apply(this, arguments);
+      this._pixTjFields = FIELDS;
+      installFields(this);
+      applyLegacyLayout(this);
+      queueMicrotask(() => {
+        reseedFields(this); bindInputDots(this); paintRows(this); scheduleAlignLegacy(this);
+        this.setDirtyCanvas?.(true, true);
+      });
+      return r;
+    };
+
+    // Re-bind + repaint on connect/disconnect of a field input. Never mutates
+    // serialized state, so no loading guard is needed.
+    const _conn = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+      const res = _conn?.apply(this, arguments);
+      if (type === 1 /* INPUT */ && ioSlot && isFieldName(CLASS, ioSlot.name)) {
+        bindInputDots(this);
+        paintRows(this);
+      }
+      return res;
+    };
+
+    // Legacy: re-run our dot parking after arrange recomputes widget.y.
+    const _arrange = nodeType.prototype.arrange;
+    nodeType.prototype.arrange = function () {
+      const r = _arrange?.apply(this, arguments);
+      if (!isVueNodes()) alignInputsLegacy(this);
+      return r;
+    };
+
+    // Legacy: as the node is resized the fields grow (via each row widget's
+    // computeSize); re-park the dots at their new centres. Never resizes on load.
+    const _resize = nodeType.prototype.onResize;
+    nodeType.prototype.onResize = function (size) {
+      const r = _resize?.apply(this, arguments);
+      if (!isVueNodes()) alignInputsLegacy(this);
+      return r;
+    };
+
+    // Keep our render-time slot geometry / marker out of the saved file (rebuilt
+    // on load): legacy writes input.pos, Nodes 2.0 writes the widget marker;
+    // either would differ per renderer and flag a clean workflow "modified".
+    // onSerialize, not a serialize() wrapper: from frontend 1.53 the graph saves
+    // each node from its store and never calls node.serialize() (Vue Compat #29).
+    const _onSerialize = nodeType.prototype.onSerialize;
+    nodeType.prototype.onSerialize = function (o) {
+      const r = _onSerialize?.apply(this, arguments);
+      if (o?.inputs) {
+        for (const inp of o.inputs) {
+          if (inp && isFieldName(CLASS, inp.name)) {
+            delete inp.pos;
+            delete inp.widget;
+            if (inp.label === ZW) delete inp.label;
+          }
+        }
+      }
+      return r;
+    };
+
+    const _removed = nodeType.prototype.onRemoved;
+    nodeType.prototype.onRemoved = function () {
+      try { this._pixTjRendererOff?.(); } catch { /* ignore */ }
+      this._pixTjRendererOff = null;
+      closeTextJoinPanelFor(this);
+      uninstallFields(this);
+      return _removed?.apply(this, arguments);
+    };
+  },
+
+  getNodeMenuItems(node) {
+    if (!node || !CLASSES[node.comfyClass]) return [];
+    return [
+      {
+        content: "⚙ Text Join settings",
+        callback: () => openTextJoinPanel(node, () => {
+          paintRows(node);                   // live-refresh box names + tooltips as you type
+          node.setDirtyCanvas?.(true, true);
+        }),
+      },
+    ];
+  },
+});
+
+// ── graphToPrompt: feed each unwired field's typed text + the JoinState ───────
+function buildIndex() {
+  const index = new Map();
+  const seen = new Set();   // guard against any (theoretical) subgraph cycle
+  const visit = (graph) => {
+    if (!graph || seen.has(graph)) return;
+    seen.add(graph);
+    const nodes = graph._nodes || graph.nodes || [];
+    for (const n of nodes) {
+      if (!n) continue;
+      if (CLASSES[n.comfyClass] || CLASSES[n.type]) index.set(String(n.id), n);
+      visit(n.subgraph || n.graph || n._graph);
+    }
+  };
+  visit(app.graph);
+  return index;
+}
+function findNode(index, id) {
+  const s = String(id);
+  if (index.has(s)) return index.get(s);
+  const tail = s.includes(":") ? s.slice(s.lastIndexOf(":") + 1) : null;
+  return tail && index.has(tail) ? index.get(tail) : null;
+}
+
+const _origGraphToPrompt_fn = app.graphToPrompt;
+const _origGraphToPrompt = (...a) => _origGraphToPrompt_fn.apply(app, a);
+app.graphToPrompt = async function (...args) {
+  const result = await _origGraphToPrompt(...args);
+  try {
+    const out = result?.output;
+    if (out) {
+      let index = null;
+      for (const id in out) {
+        const entry = out[id];
+        if (!entry || !CLASSES[entry.class_type]) continue;
+        if (!index) index = buildIndex();
+        const node = findNode(index, id);
+        if (!node) continue;
+        entry.inputs = entry.inputs || {};
+        // Typed text for each UNWIRED field (a wire keeps ComfyUI's link).
+        for (const cfg of CLASSES[entry.class_type]) {
+          const inp = node.inputs?.find((i) => i.name === cfg.name);
+          if (inp && inp.link != null) continue;
+          const w = widgetOf(node, cfg.name);
+          entry.inputs[cfg.name] = (w && typeof w.value === "string") ? w.value : "";
+        }
+        // Separator / skip-empty (cache-stable: customSep dropped unless custom).
+        entry.inputs[HIDDEN_INPUT] = JSON.stringify(promptState(node));
+      }
+    }
+  } catch (e) {
+    console.warn("[Text Join Pixaroma] could not inject values:", (e && e.message) || e);
+  }
+  return result;
+};
+
+// ── Help (selection-toolbar ? popup) ─────────────────────────────────────────
+const HELP_SECTIONS = [
+  {
+    heading: "What it does",
+    body: "Joins your text pieces into one string. Type in a box, or drag a wire "
+      + "onto its dot to pull text from another node - the wire wins when connected "
+      + "and the box greys out. Wire the `text` output into any node that takes text.",
+  },
+  {
+    heading: "Each field",
+    bullets: [
+      "Type directly, or wire a text source onto the dot on its row.",
+      "Hover a field for a copy and a paste button in its corner.",
+      "A wired field locks and greys - unplug the wire to type again.",
+      "The fields grow when you make the node bigger.",
+    ],
+  },
+  {
+    heading: "Settings (right-click the node)",
+    defs: [
+      ["Field names", "Rename each box (e.g. trigger words, prompt, camera, lighting). Just a label - the wiring and output don't change."],
+      ["Separator", "What goes between the pieces: comma, space, new line, none, or your own custom text."],
+      ["Skip empty fields", "On by default, so a blank piece never leaves a stray separator."],
+      ["Set as default", "Remember these settings (and names) for every new Text Join node."],
+    ],
+  },
+];
+
+registerNodeHelp("PixaromaTextJoinTwo", {
+  title: "Text Join Two Pixaroma",
+  tagline: "Join two pieces of text into one (type or wire each).",
+  sections: HELP_SECTIONS,
+  footer: "Need more pieces? Use Text Join Three or Four Pixaroma.",
+});
+registerNodeHelp("PixaromaTextJoinThree", {
+  title: "Text Join Three Pixaroma",
+  tagline: "Join three pieces of text into one (type or wire each).",
+  sections: HELP_SECTIONS,
+  footer: "Need two or four pieces? Use Text Join Two or Four Pixaroma.",
+});
+registerNodeHelp("PixaromaTextJoinFour", {
+  title: "Text Join Four Pixaroma",
+  tagline: "Join four pieces of text into one (type or wire each).",
+  sections: HELP_SECTIONS,
+  footer: "Need fewer pieces? Use Text Join Two or Three Pixaroma.",
+});
+
+// The gear in the node selection toolbar opens the same panel the right-click
+// entry does, for all three sizes. ownMenuItem: the node adds its own line.
+for (const cls of Object.keys(CLASSES)) {
+  registerNodeSettings(cls, {
+    // no title: the derived one ("Text Join Two/Three/Four") is what the colour
+    // block's "New ... nodes" button should say, since each size saves its own.
+    ownMenuItem: true,
+    open: (node) => openTextJoinPanel(node, () => {
+      paintRows(node);
+      node.setDirtyCanvas?.(true, true);
+    }),
+  });
+}

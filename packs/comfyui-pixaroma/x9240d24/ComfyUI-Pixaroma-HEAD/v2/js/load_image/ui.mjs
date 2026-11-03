@@ -1,0 +1,1499 @@
+import { app } from "../../../scripts/app.js";
+import { pixApiUrl, pixAsset } from "../shared/api_url.mjs";
+import { BRAND } from "../shared/index.mjs";
+
+let _cssInjected = false;
+
+export function injectCSS() {
+  if (_cssInjected) return;
+  _cssInjected = true;
+  const css = `
+    .pix-li-root {
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+      background: #2a2a2a;
+      border-radius: 4px;
+      color: #ddd;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 11px;
+    }
+    /* The flex column lives on an inner layer that fills the root (absolute
+       inset:0). ComfyUI forces the widget ROOT to display:block on rebuild /
+       collapse, which would kill a flex column ON the root (the 7px gaps
+       collapse and the flex:1 image canvas drops to its min height, then
+       visibly grows back when flex is restored - the flicker). The inner is
+       never touched by ComfyUI, so the layout is ALWAYS flex: no transition,
+       no flicker. Padding lives here so the absolute inner respects it. */
+    .pix-li-inner {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      /* Small top padding pulls the Upload button up tight under the output
+         dots (the body can't sit higher than the slot area). */
+      padding: 2px 8px 8px;
+      box-sizing: border-box;
+    }
+    .pix-li-upload-btn {
+      width: 100%;
+      background: var(--pix-acc,#f66744);
+      border: none;
+      border-radius: 4px;
+      padding: 7px 8px;
+      font-size: 11px;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-family: inherit;
+      transition: background 0.08s;
+    }
+    .pix-li-upload-btn:hover { background: #ff7e5a; }
+    .pix-li-upload-btn .ico {
+      width: 14px; height: 14px;
+      background-color: currentColor;
+      -webkit-mask: url("${pixAsset("icons/ui/upload.svg")}") center/14px 14px no-repeat;
+              mask: url("${pixAsset("icons/ui/upload.svg")}") center/14px 14px no-repeat;
+    }
+    .pix-li-hint {
+      font-size: 9px;
+      color: #777;
+      text-align: center;
+      letter-spacing: 0.3px;
+      margin-top: -3px;
+    }
+    .pix-li-hint kbd {
+      color: #aaa;
+      font-family: inherit;
+      background: transparent;
+      padding: 0;
+    }
+    /* File row: [◀] [ dropdown ] [▶] - arrow buttons let the user flip
+       through images visually, matching native ComfyUI LoadImage. */
+    .pix-li-filerow {
+      display: flex;
+      gap: 6px;
+      align-items: stretch;
+    }
+    .pix-li-filerow .pix-li-dropdown { flex: 1; min-width: 0; }
+    /* File nav arrows match the resample picker exactly (orange, 30px, solid). */
+    .pix-li-nav {
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: var(--pix-acc,#f66744);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      transition: background 0.08s, border-color 0.08s, color 0.08s;
+      flex-shrink: 0;
+    }
+    .pix-li-nav:hover:not(.disabled) { border-color: var(--pix-acc,#f66744); }
+    /* Top row: [ Upload Image ][gear]. The gear opens this node's settings
+       (picture folders, thumbnail size, colour). Same box as the arrows below;
+       the icon is the bundled gear as a mask (node UI convention #28), coloured
+       by currentColor so its hover follows the button. */
+    .pix-li-toprow { display: flex; gap: 6px; align-items: stretch; }
+    .pix-li-toprow .pix-li-upload-btn { flex: 1; width: auto; min-width: 0; }
+    .pix-li-gear {
+      flex: none; width: 30px; padding: 0;
+      background: #1d1d1d; border: 1px solid #444; border-radius: 4px;
+      color: #aaa; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.08s, color 0.08s;
+    }
+    .pix-li-gear::before {
+      content: ""; display: block; width: 14px; height: 14px; background: currentColor;
+      -webkit-mask: url("${pixAsset("icons/note/gear.svg")}") center/contain no-repeat;
+              mask: url("${pixAsset("icons/note/gear.svg")}") center/contain no-repeat;
+    }
+    .pix-li-gear:hover { border-color: var(--pix-acc,#f66744); color: #ddd; }
+    .pix-li-nav.disabled { opacity: 0.3; cursor: default; }
+    .pix-li-dropdown {
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #ccc;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .pix-li-dropdown:hover { border-color: var(--pix-acc,#f66744); }
+    .pix-li-dropdown .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pix-li-dropdown .arrow { color: var(--pix-acc,#f66744); font-size: 13px; margin-left: 6px; line-height: 1; }
+    .pix-li-dropdown .counter {
+      color: #777;
+      font-size: 9px;
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+    .pix-li-chips {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+    }
+    .pix-li-chip {
+      box-sizing: border-box;
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 6px 3px;
+      text-align: center;
+      font-size: 9.5px;
+      color: #ccc;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.08s, border-color 0.08s;
+    }
+    .pix-li-chip:hover { border-color: var(--pix-acc,#f66744); color: #ddd; }
+    .pix-li-chip.active {
+      background: var(--pix-acc,#f66744);
+      color: #fff;
+      border-color: var(--pix-acc,#f66744);
+    }
+    .pix-li-panel {
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .pix-li-panel-row { display: flex; align-items: center; gap: 8px; }
+    .pix-li-panel-label {
+      font-size: 9px;
+      color: var(--pix-acc,#f66744);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .pix-li-panel input[type="range"] {
+      flex: 1;
+      accent-color: var(--pix-acc,#f66744);
+    }
+    .pix-li-panel input[type="text"], .pix-li-panel input[type="number"] {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 3px;
+      padding: 4px 6px;
+      color: var(--pix-acc,#f66744);
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .pix-li-panel input[type="text"]:focus, .pix-li-panel input[type="number"]:focus {
+      outline: none;
+      border-color: var(--pix-acc,#f66744);
+    }
+    .pix-li-panel-readout {
+      font-size: 9px;
+      color: #888;
+      font-family: inherit;
+      text-align: center;
+      margin-top: 6px;
+    }
+    .pix-li-quickpicks {
+      display: grid;
+      gap: 3px;
+      margin-bottom: 8px;
+    }
+    .pix-li-quickpick {
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #aaa;
+      padding: 4px 0;
+      text-align: center;
+      font-size: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .pix-li-quickpick:hover { border-color: #666; color: #ddd; }
+    .pix-li-quickpick.active {
+      background: var(--pix-acc,#f66744);
+      color: #fff;
+      border-color: var(--pix-acc,#f66744);
+    }
+    .pix-li-value {
+      font-family: inherit;
+      font-size: 12px;
+      color: var(--pix-acc,#f66744);
+      font-weight: 600;
+      min-width: 50px;
+      text-align: right;
+    }
+    .pix-li-ratio-chips {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      margin-bottom: 8px;
+    }
+    .pix-li-ratio-chip {
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 3px;
+      padding: 4px 0;
+      text-align: center;
+      font-size: 9px;
+      color: #aaa;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .pix-li-ratio-chip:hover { border-color: #666; color: #ddd; }
+    .pix-li-ratio-chip.active {
+      background: var(--pix-acc,#f66744);
+      color: #fff;
+      border-color: var(--pix-acc,#f66744);
+    }
+    .pix-li-cropped {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .pix-li-cropped > div {
+      text-align: center;
+      font-size: 10px;
+      padding: 5px 0;
+      color: #aaa;
+      cursor: pointer;
+      user-select: none;
+    }
+    .pix-li-cropped > div.active { background: var(--pix-acc,#f66744); color: #fff; }
+    .pix-li-pad-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #888;
+    }
+    .pix-li-pad-swatch {
+      width: 22px; height: 22px;
+      border-radius: 3px;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    .pix-li-custom-ratio-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    /* Custom ratio inputs sit inside a .pix-li-numinput wrapper — the
+       wrapper supplies border/background; we just fix the width. */
+    .pix-li-custom-ratio-input-wrap { width: 64px; }
+    .pix-li-custom-ratio-swap {
+      width: 24px;
+      height: 22px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #aaa;
+      cursor: pointer;
+      position: relative;
+      padding: 0;
+      display: inline-block;
+    }
+    .pix-li-custom-ratio-swap::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-color: currentColor;
+      -webkit-mask: url("${pixAsset("icons/ui/swap.svg")}") center/14px 14px no-repeat;
+              mask: url("${pixAsset("icons/ui/swap.svg")}") center/14px 14px no-repeat;
+      pointer-events: none;
+    }
+    .pix-li-custom-ratio-swap:hover { color: var(--pix-acc,#f66744); border-color: var(--pix-acc,#f66744); }
+    /* Center single-input panel rows (Max MP / Longest side / Scale by ×). */
+    .pix-li-panel-row.pix-li-centered { justify-content: center; }
+    .pix-li-input-wide {
+      width: 70% !important;
+      max-width: 200px;
+    }
+    /* makeNumericInput wrapper — flex row with input + stacked +/- spinners. */
+    .pix-li-numinput {
+      display: inline-flex;
+      align-items: stretch;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .pix-li-numinput:focus-within { border-color: var(--pix-acc,#f66744); }
+    .pix-li-numinput input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 2px 6px;
+      color: var(--pix-acc,#f66744);
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+      font-family: inherit;
+      width: 100%;
+      min-width: 0;
+    }
+    .pix-li-spin {
+      display: flex;
+      flex-direction: column;
+      width: 12px;
+      border-left: 1px solid #444;
+    }
+    .pix-li-spin > button {
+      flex: 1;
+      background: #232323;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      color: #aaa;
+      font-size: 8px;
+      line-height: 1;
+      position: relative;
+    }
+    .pix-li-spin > button:hover { background: #333; color: var(--pix-acc,#f66744); }
+    .pix-li-spin-up { border-bottom: 1px solid #444; }
+    /* CSS chevron arrows (no extra SVG needed). */
+    .pix-li-spin-up::before,
+    .pix-li-spin-down::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      border-top: 1px solid currentColor;
+      border-right: 1px solid currentColor;
+    }
+    .pix-li-spin-up::before {
+      transform: translate(-50%, -25%) rotate(-45deg);
+    }
+    .pix-li-spin-down::before {
+      transform: translate(-50%, -75%) rotate(135deg);
+    }
+    /* Width × Height panels (Fit inside, Crop to fill) with swap between. */
+    .pix-li-wh-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 6px;
+      align-items: end;
+    }
+    .pix-li-wh-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .pix-li-wh-label {
+      font-size: 9px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: center;
+    }
+    /* W/H input is inside a .pix-li-numinput wrap — wrap provides
+       border/background. The default 11px input font is fine. */
+    .pix-li-wh-input-wrap { width: 100%; }
+    /* Generic swap button used between W and H inputs. Height matches
+       the trimmed .pix-li-numinput control height (~22 px). */
+    .pix-li-swap {
+      width: 26px;
+      height: 22px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #aaa;
+      cursor: pointer;
+      padding: 0;
+      position: relative;
+      align-self: end;
+    }
+    .pix-li-swap::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-color: currentColor;
+      -webkit-mask: url("${pixAsset("icons/ui/swap.svg")}") center/12px 12px no-repeat;
+              mask: url("${pixAsset("icons/ui/swap.svg")}") center/12px 12px no-repeat;
+      pointer-events: none;
+    }
+    .pix-li-swap:hover { color: var(--pix-acc,#f66744); border-color: var(--pix-acc,#f66744); }
+    /* Aspect-ratio preview block under W / H fields. */
+    .pix-li-wh-preview {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .pix-li-wh-rect {
+      background: color-mix(in srgb, var(--pix-acc,#f66744) 18%, transparent);
+      border: 1px solid var(--pix-acc,#f66744);
+      border-radius: 2px;
+      transition: width 0.12s ease, height 0.12s ease;
+    }
+    .pix-li-wh-rect-label {
+      font-size: 9px;
+      color: #999;
+      font-family: inherit;
+    }
+    /* Tiny aspect-ratio shape rendered INSIDE each Match-ratio chip,
+       same idea Resolution Pixaroma uses to make every ratio recognisable
+       at a glance without reading the label. */
+    .pix-li-ratio-chip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .pix-li-shape {
+      display: inline-block;
+      background: rgba(180,180,180,0.25);
+      border: 1px solid #888;
+      border-radius: 1px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+    .pix-li-ratio-chip.active .pix-li-shape {
+      background: rgba(255,255,255,0.4);
+      border-color: rgba(255,255,255,0.85);
+    }
+    /* Custom chip has no shape (no fixed aspect) — keep text-only. */
+    .pix-li-ratio-chip.pix-li-ratio-custom-chip { display: block; }
+    .pix-li-global {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .pix-li-rs-popup {
+      position: fixed;
+      z-index: 99999;
+      background: #1d1d1d;
+      border: 1px solid #444;
+      border-radius: 4px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      font-size: 11px;
+      color: #ccc;
+      min-width: 200px;
+      overflow: hidden;
+    }
+    .pix-li-rs-item {
+      padding: 6px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .pix-li-rs-item:last-child { border-bottom: none; }
+    .pix-li-rs-item:hover { background: #2a2a2a; }
+    .pix-li-rs-item.active .pix-li-rs-item-label { color: var(--pix-acc,#f66744); font-weight: 600; }
+    .pix-li-rs-item-label { font-size: 11px; }
+    .pix-li-rs-item-hint { font-size: 9px; color: #777; }
+    /* ── Image Resize design language, scoped to .pix-li-root ── */
+    /* Centered snap footer: magnet + "Snap" + chips. */
+    .pix-li-foot { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
+    .pix-li-snap2 { display:inline-flex; align-items:center; gap:5px; }
+    .pix-li-snap-icon { display:inline-block; width:12px; height:12px; background-color:#888; flex:none;
+      -webkit-mask:url("${pixAsset("icons/ui/magnet.svg")}") center/12px 12px no-repeat;
+              mask:url("${pixAsset("icons/ui/magnet.svg")}") center/12px 12px no-repeat; }
+    .pix-li-snap-lbl { font-size:9px; color:#7d7d7d; text-transform:uppercase; letter-spacing:.5px; }
+    .pix-li-schip { background:#1d1d1d; border:1px solid #444; border-radius:3px; color:#aaa;
+      font-size:8.5px; padding:3px 5px; min-width:16px; text-align:center; cursor:pointer; user-select:none; }
+    .pix-li-schip:hover { border-color:var(--pix-acc,#f66744); color:#ddd; }
+    .pix-li-schip.active { background:var(--pix-acc,#f66744); color:#fff; border-color:var(--pix-acc,#f66744); }
+    /* Resample picker: [◀] [ Resample: Auto ▾ ] [▶] */
+    .pix-li-rs2-row { display:flex; align-items:stretch; gap:6px; }
+    .pix-li-rs2-nav { flex:0 0 30px; background:#1d1d1d; border:1px solid #444; border-radius:4px;
+      color:var(--pix-acc,#f66744); font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+    .pix-li-rs2-nav:hover { border-color:var(--pix-acc,#f66744); }
+    .pix-li-rs2-dd { flex:1; display:flex; align-items:center; justify-content:space-between;
+      background:#1d1d1d; border:1px solid #444; border-radius:4px; padding:6px 10px; cursor:pointer; user-select:none; }
+    .pix-li-rs2-dd:hover { border-color:var(--pix-acc,#f66744); }
+    .pix-li-rs2-value { color:#ddd; font-size:11px; }
+    .pix-li-rs2-arrow { color:var(--pix-acc,#f66744); font-size:13px; margin-left:6px; line-height:1; }
+    /* Upscaling toggle button. */
+    .pix-li-upbtn { align-self:center; background:#1d1d1d; border:1px solid #444; border-radius:5px;
+      color:#aaa; font-size:11px; padding:7px 18px; cursor:pointer; user-select:none; transition:background .08s,border-color .08s; }
+    .pix-li-upbtn:hover { border-color:var(--pix-acc,#f66744); color:#ddd; }
+    .pix-li-upbtn.is-on, .pix-li-upbtn.is-on:hover { background:var(--pix-acc,#f66744); border-color:var(--pix-acc,#f66744); color:#fff; }
+    /* Per-mode panel overrides (mirror image_resize .pix-ir-root .pix-li-* block). */
+    .pix-li-root .pix-li-panel { background:rgba(255,255,255,.04); border:none; border-radius:6px; padding:9px 10px; }
+    .pix-li-root .pix-li-panel-readout { display:none; }
+    .pix-li-root .pix-li-ratio-chips { margin-bottom:0; }
+    .pix-li-root .pix-li-custom-ratio-row { margin:8px 0 0; }
+    .pix-li-root .pix-li-input-wide { width:100% !important; max-width:none; }
+    .pix-li-root .pix-li-numinput { background:#1d1d1d !important; align-items:center; min-height:28px; }
+    .pix-li-root .pix-li-numinput .pix-li-spin { align-self:stretch; }
+    .pix-li-root .pix-li-numinput input { line-height:1.2; background:transparent !important; border:none !important; border-radius:0 !important; }
+    .pix-li-root .pix-li-inline-label { display:flex; align-items:center; color:var(--pix-acc,#f66744); font-size:9px; font-weight:600;
+      text-transform:uppercase; letter-spacing:.5px; padding:0 4px 0 9px; white-space:nowrap; flex:none; }
+    .pix-li-root .pix-li-num-labeled input { text-align:right !important; padding-right:8px !important; }
+    .pix-li-root .pix-li-swap { background:#1d1d1d !important; }
+    .pix-li-root .pix-li-wh-header { text-align:center !important; color:#d6d6d6 !important; }
+    .pix-li-root .pix-li-wh-rect { background:color-mix(in srgb, var(--pix-acc,#f66744) 35%, transparent); border-width:2px; }
+    .pix-li-root .pix-li-wh-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center; }
+    .pix-li-root .pix-li-wh-col { display:flex; flex-direction:column; gap:6px; min-width:0; }
+    .pix-li-root .pix-li-wh-col .pix-li-swap { width:100%; height:24px; align-self:auto; }
+    .pix-li-root .pix-li-wh-grid .pix-li-wh-preview { margin-top:0; justify-content:center; }
+    /* Filled triangle spinner glyphs (replace shared outline chevrons). NOTE:
+       use the literal triangle characters - a backslash-escape inside a JS
+       template literal throws (CLAUDE.md UI Pattern #12). */
+    .pix-li-root .pix-li-spin { width:16px; border-left:none; }
+    .pix-li-root .pix-li-spin > button { background:transparent; }
+    .pix-li-root .pix-li-spin-up::before, .pix-li-root .pix-li-spin-down::before {
+      border:none; width:auto; height:auto; font-size:8px; line-height:1; transform:translate(-50%,-50%); }
+    .pix-li-root .pix-li-spin-up::before { content:"▲"; }
+    .pix-li-root .pix-li-spin-down::before { content:"▼"; }
+    /* Crop-to-fill extras: Fill/Crop toggle + 3x3 anchor grid. */
+    .pix-li-root .pix-li-swaprow { display:flex; gap:6px; align-items:stretch; }
+    .pix-li-root .pix-li-wh-col .pix-li-swaprow .pix-li-swap { flex:0 0 46px; width:auto; height:auto; align-self:stretch; }
+    .pix-li-root .pix-li-fillcrop { flex:1; display:grid; grid-template-columns:1fr 1fr; background:#1d1d1d; border:1px solid #444; border-radius:4px; overflow:hidden; }
+    .pix-li-root .pix-li-fillcrop > div { display:flex; align-items:center; justify-content:center; font-size:9.5px; padding:5px 0; color:#aaa; cursor:pointer; user-select:none; }
+    .pix-li-root .pix-li-fillcrop > div:hover { color:#ddd; background:rgba(255,255,255,.08); }
+    .pix-li-root .pix-li-fillcrop > div.active { background:var(--pix-acc,#f66744); color:#fff; }
+    .pix-li-root .pix-li-anchor { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:3px;
+      width:100%; max-width:96px; aspect-ratio:1; margin:0 auto; background:#1d1d1d; border:1px solid #444; border-radius:5px; padding:5px; box-sizing:border-box; }
+    .pix-li-root .pix-li-anchor-cell { background:rgba(255,255,255,.07); border-radius:2px; cursor:pointer; transition:background .08s; }
+    .pix-li-root .pix-li-anchor-cell:hover { background:rgba(255,255,255,.18); }
+    .pix-li-root .pix-li-anchor-cell.active { background:var(--pix-acc,#f66744); }
+    /* Bring shared quick-pick + ratio chips in line (orange hover). */
+    .pix-li-root .pix-li-quickpick { box-sizing:border-box; }
+    .pix-li-root .pix-li-quickpick:hover { border-color:var(--pix-acc,#f66744); color:#ddd; }
+    .pix-li-root .pix-li-ratio-chip { box-sizing:border-box; }
+    .pix-li-root .pix-li-ratio-chip:hover { border-color:var(--pix-acc,#f66744); color:#ddd; }
+    /* ── B2 thumbnail dropdown popup ── */
+    .pix-li-popup {
+      background:#1d1d1d; border:1px solid #444; border-radius:6px;
+      box-shadow:0 4px 16px rgba(0,0,0,.4); font-size:11px;
+      font-family:ui-sans-serif,system-ui,sans-serif; color:#ccc; overflow:hidden;
+    }
+    .pix-li-pop-search { display:flex; align-items:center; gap:7px; padding:7px 9px;
+      background:#161616; border-bottom:1px solid #333; }
+    .pix-li-pop-mag { width:12px; height:12px; flex:none; border:1.6px solid #777; border-radius:50%; position:relative; }
+    .pix-li-pop-mag::after { content:""; position:absolute; width:5px; height:1.6px; background:#777;
+      transform:rotate(45deg); right:-3px; bottom:0; }
+    .pix-li-pop-search input { flex:1; min-width:0; background:transparent; border:none; outline:none;
+      color:#ddd; font-size:11px; font-family:inherit; }
+    .pix-li-pop-search input::placeholder { color:#777; }
+    .pix-li-pop-sizetoggle { flex:none; display:flex; border:1px solid #444; border-radius:4px; overflow:hidden; }
+    .pix-li-pop-sizetoggle span { padding:2px 7px; font-size:10px; color:#aaa; cursor:pointer; user-select:none; line-height:1.4; }
+    .pix-li-pop-sizetoggle span.on { background:var(--pix-acc,#f66744); color:#fff; }
+    .pix-li-pop-sizetoggle span:not(.on):hover { color:#ddd; }
+    .pix-li-bsplit { display:flex; max-height:320px; }
+    .pix-li-bfolders { width:104px; flex:none; border-right:1px solid #333; background:#141414; overflow:auto; }
+    .pix-li-bfolder { padding:8px 9px; font-size:10.5px; color:#aaa; cursor:pointer; display:flex;
+      justify-content:space-between; gap:4px; align-items:center; }
+    .pix-li-bfolder:hover { background:#2a2a2a; }
+    .pix-li-bfolder.on { background:color-mix(in srgb, var(--pix-acc,#f66744) 16%, transparent); color:var(--pix-acc,#f66744); border-left:2px solid var(--pix-acc,#f66744); padding-left:7px; }
+    .pix-li-bfolder.all { border-bottom:1px solid #333; color:#cfcfcf; }
+    .pix-li-bfolder.all.on { color:var(--pix-acc,#f66744); }
+    .pix-li-bfolder-n { color:#888; font-size:9px; flex:none; }
+    .pix-li-bfolder > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    .pix-li-bpane { flex:1; min-width:0; overflow:auto; max-height:320px; }
+    .pix-li-pop-sec { padding:5px 10px 4px; font-size:9px; color:#777; text-transform:uppercase; letter-spacing:.5px;
+      background:#141414; border-bottom:1px solid #333; display:flex; align-items:center; gap:6px; position:sticky; top:0; z-index:1; }
+    .pix-li-pop-sec-c { margin-left:auto; color:#888; }
+    .pix-li-imgrow { display:flex; align-items:center; gap:9px; padding:4px 10px; cursor:pointer; }
+    .pix-li-imgrow:hover { background:#2a2a2a; }
+    .pix-li-imgrow.cur { background:color-mix(in srgb, var(--pix-acc,#f66744) 12%, transparent); }
+    .pix-li-imgrow.cur .pix-li-imgrow-lbl { color:var(--pix-acc,#f66744); font-weight:600; }
+    .pix-li-imgrow-lbl { flex:1; min-width:0; font-size:11px; color:#ccc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pix-li-pop-thumb { position:relative; flex:none; border-radius:4px; overflow:hidden;
+      background:linear-gradient(135deg,#3a3f4a,#222); }
+    .pix-li-pop-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+    .pix-li-pop-glyph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:10px; color:rgba(255,255,255,.3); }
+    .pix-li-bsplit.thumb-sm .pix-li-pop-thumb { width:32px; height:32px; }
+    .pix-li-bsplit.thumb-lg .pix-li-pop-thumb { width:48px; height:48px; }
+    .pix-li-pop-empty { padding:10px; color:#666; text-align:center; }
+    .pix-li-pop-foot { padding:6px 10px; font-size:9px; color:#777; background:#141414;
+      border-top:1px solid #333; text-align:center; }
+    /* The user's own picture folders (folders.mjs). */
+    .pix-li-pop-addfolder { flex:none; padding:2px 7px; font-size:10px; color:#aaa; border:1px solid #444;
+      border-radius:4px; cursor:pointer; user-select:none; white-space:nowrap; line-height:1.4; }
+    .pix-li-pop-addfolder:hover { border-color:var(--pix-acc,#f66744); color:#ddd; }
+    .pix-li-pop-addfolder.busy { opacity:.5; cursor:default; }
+    .pix-li-bfold-h { padding:7px 9px 3px; font-size:9px; color:#777; text-transform:uppercase;
+      letter-spacing:.5px; border-top:1px solid #333; }
+    .pix-li-pop-msg { padding:10px; color:#999; font-size:10.5px; line-height:1.45; white-space:pre-wrap; }
+    .pix-li-pop-link { display:inline-block; margin:0 10px 10px; color:var(--pix-acc,#f66744);
+      font-size:10.5px; cursor:pointer; text-decoration:underline; }
+  `;
+  const el = document.createElement("style");
+  el.id = "pixaroma-load-image-css";
+  el.textContent = css;
+  document.head.appendChild(el);
+}
+
+export function buildRoot() {
+  const root = document.createElement("div");
+  root.className = "pix-li-root";
+
+  // Upload button (orange, prominent, primary action) + the settings gear.
+  const top = document.createElement("div");
+  top.className = "pix-li-toprow";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "pix-li-upload-btn";
+  const ico = document.createElement("span");
+  ico.className = "ico";
+  const lbl = document.createElement("span");
+  lbl.textContent = "Upload Image";
+  btn.append(ico, lbl);
+  const gear = document.createElement("button");
+  gear.type = "button";
+  gear.className = "pix-li-gear";
+  gear.dataset.role = "gear";
+  gear.dataset.pixSettingsGear = "1";   // the settings panel lets this toggle it
+  gear.title = "Settings: your picture folders, thumbnail size, colour";
+  top.append(btn, gear);
+  root.appendChild(top);
+
+  // Hint line for alternate upload methods (shown when no image yet).
+  const hint = document.createElement("div");
+  hint.className = "pix-li-hint";
+  hint.dataset.role = "hint";
+  hint.innerHTML = `or drag here · paste with <kbd>Ctrl+V</kbd>`;
+  root.appendChild(hint);
+
+  // File row: [◀ prev] [ filename dropdown ] [▶ next]. Arrow buttons cycle
+  // through input/ images so users can flip through them visually, matching
+  // native ComfyUI LoadImage. Both the prev/next arrows and PageUp/PageDown
+  // (wired in index.js) route through setSelectedImage so the bottom preview
+  // updates immediately.
+  const fileRow = document.createElement("div");
+  fileRow.className = "pix-li-filerow";
+
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.className = "pix-li-nav";
+  prev.dataset.role = "prev";
+  prev.title = "Previous image (PageUp)";
+  prev.textContent = "◀";
+
+  const dd = document.createElement("div");
+  dd.className = "pix-li-dropdown";
+  dd.dataset.role = "dropdown";
+  dd.innerHTML = `<span class="name">— no image —</span><span class="counter" data-role="counter"></span><span class="arrow">▼</span>`;
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "pix-li-nav";
+  next.dataset.role = "next";
+  next.title = "Next image (PageDown)";
+  next.textContent = "▶";
+
+  fileRow.append(prev, dd, next);
+  root.appendChild(fileRow);
+
+  // The input/output size readout is no longer a DOM bar here — it is painted
+  // by onDrawForeground (INPUT → OUTPUT cards in the output-slot dead space).
+
+  return root;
+}
+
+// Hides every auto-created widget so we can render our own UI in the DOM
+// widget. `image_upload: True` creates TWO widgets in INPUT_TYPES on the
+// Vue frontend: the `image` combo + a separate `upload` button widget — both
+// need to be hidden, plus any other auto-created widget that isn't ours.
+//
+// Uses the same multi-technique pattern as shared/utils.mjs `hideJsonWidget`:
+// setting `canvasOnly` alone is not enough for canvas drawing on the current
+// Vue frontend — must also set `hidden=true`, zero `computeSize`, and hide
+// any DOM element. Returns the `image` combo widget so callers can read /
+// write its `.value` (that drives the actual file selection).
+export function hideNativeImageCombo(node) {
+  let imageWidget = null;
+  for (const w of (node.widgets || [])) {
+    if (!w) continue;
+    if (w.name === "image") imageWidget = w;
+    w.hidden = true;
+    w.computeSize = () => [0, -4];
+    if (!w.options) w.options = {};
+    w.options.canvasOnly = true;
+    if (w.element) w.element.style.display = "none";
+  }
+  // Vue may DOM-render an upload widget AFTER nodeCreated — re-hide on the
+  // next animation frame as a belt-and-braces. Mirrors hideJsonWidget.
+  requestAnimationFrame(() => {
+    for (const w of (node.widgets || [])) {
+      if (!w || w.name === "pixaroma_load_image_ui") continue;
+      const _el = w.element || w.inputEl; // prefer .element; .inputEl only on old builds (no deprecation warning)
+      if (_el) _el.style.display = "none";
+    }
+  });
+  return imageWidget;
+}
+
+import { updateNativePreview, setSelectedImage, splitFilenameSubfolder } from "./api.mjs";
+import {
+  isFolderCopy, getFolders, folderName, folderFiles, folderThumbURL, pickFromFolder, takeFolderPicture,
+  addFolderViaDialog, removeFolder, folderContext, sameFolder,
+} from "./folders.mjs";
+
+// Group combo values by subfolder so the popup renders:
+//   ─ root ─
+//      file1.png
+//      file2.png
+//   ─ Studio1 ─
+//      bunny.png
+// Returns an array of { folder, files } in display order (root first, then
+// folders alphabetised). Each `files` entry is { full, name } where `full`
+// is the value to write back and `name` is the bare filename to display.
+function groupValuesByFolder(values) {
+  const map = new Map();
+  for (const v of values) {
+    const { subfolder, filename } = splitFilenameSubfolder(v);
+    if (!map.has(subfolder)) map.set(subfolder, []);
+    map.get(subfolder).push({ full: v, name: filename });
+  }
+  // Sort the file lists alphabetically. Folders: root first, then ABC.
+  for (const list of map.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const folders = [...map.keys()].sort((a, b) => {
+    if (a === "" && b !== "") return -1;
+    if (a !== "" && b === "") return 1;
+    return a.localeCompare(b);
+  });
+  return folders.map((folder) => ({ folder, files: map.get(folder) }));
+}
+
+// Build a same-origin /view URL for a combo value like "3d/cat.png".
+// Relative path → works on whatever host/port ComfyUI runs on. No cache-buster
+// so the browser caches thumbnails across re-opens.
+function thumbURL(full) {
+  const { subfolder, filename } = splitFilenameSubfolder(full);
+  return pixApiUrl(`/view?filename=${encodeURIComponent(filename)}&type=input&subfolder=${encodeURIComponent(subfolder)}`);
+}
+
+// Read/write the persisted thumbnail size ("Small" | "Large"). Falls back to
+// "Large" if the setting isn't registered yet or settings aren't ready.
+function getThumbSize() {
+  try {
+    const v = app.ui.settings.getSettingValue("Pixaroma.LoadImage.ThumbSize");
+    return v === "Small" ? "Small" : "Large";
+  } catch (_e) { return "Large"; }
+}
+function setThumbSize(v) {
+  try {
+    const s = app.ui.settings;
+    // Prefer the async setter when present (newer ComfyUI persists reliably
+    // through it; the sync form can no-op on disk on some builds) — same guard
+    // node_colors/index.js uses.
+    if (typeof s.setSettingValueAsync === "function") s.setSettingValueAsync("Pixaroma.LoadImage.ThumbSize", v);
+    else s.setSettingValue("Pixaroma.LoadImage.ThumbSize", v);
+  } catch (_e) { /* ignore */ }
+}
+
+// Open a thumbnail picker popup anchored below the file row.
+//  - Search box filters across ALL folders while it has text.
+//  - Left sidebar (only when subfolders exist) lists All + each folder.
+//  - Right pane shows thumbnail rows; opens to "All" grouped by folder.
+//  - Small/Large thumbnail size toggle, persisted via the ThumbSize setting.
+// Reuses groupValuesByFolder, splitFilenameSubfolder, setSelectedImage.
+//
+// `target` (optional) picks for something that is NOT a loader's image widget
+// (H3 Timeline's scene pictures): { values, current, actions }. A pick then only
+// calls onPick(name) (a folder picture is copied into input first), and
+// `actions` adds buttons to the top row: [{ label, title, cls, onClick }], each
+// closing the popup first. Without it, everything below is exactly as before.
+// Returns the popup.
+export function openImageDropdown(node, anchorEl, onPick, target = null) {
+  const imageWidget = node?._pixLiImageWidget;
+  if (!target && !imageWidget) return null;
+  // Copies of pictures taken from the user's own folders live in
+  // input/pixaroma_folders. They are shown under their FOLDER, not here.
+  const values = ((target ? target.values : imageWidget.options?.values) || []).filter((v) => !isFolderCopy(v));
+
+  // Close any existing popup. Call its stored cleanup (not a bare remove) so
+  // the prior popup's document-level capture listeners are detached too.
+  const _existingPopup = document.querySelector(".pix-li-popup");
+  if (_existingPopup) {
+    if (typeof _existingPopup._pixClose === "function") _existingPopup._pixClose();
+    else _existingPopup.remove();
+  }
+
+  const popup = document.createElement("div");
+  popup.className = "pix-li-popup";
+  // On <body> it inherits no node colour: take the accent of the control that opened it.
+  popup.style.setProperty("--pix-acc", getComputedStyle(anchorEl).getPropertyValue("--pix-acc"));
+  const rect = anchorEl.getBoundingClientRect();
+  const width = Math.max(rect.width, 360); // widen so sidebar + thumbs fit
+  Object.assign(popup.style, {
+    position: "fixed",
+    zIndex: 99999,
+    left: `${rect.left}px`,
+    top: `${rect.bottom + 2}px`,
+    width: `${width}px`,
+  });
+
+  // ── close handling (defined early so row click handlers can call it) ──
+  function closePopup() {
+    popup._pixClosed = true;   // async folder work checks this after its await
+    popup.remove();
+    document.removeEventListener("mousedown", onDocDown, true);
+    document.removeEventListener("pointerdown", onDocDown, true);
+    document.removeEventListener("wheel", onWheel, true);
+    document.removeEventListener("keydown", onKey, true);
+  }
+  const onDocDown = (e) => { if (!popup.contains(e.target)) closePopup(); };
+  const onWheel = (e) => { if (!popup.contains(e.target)) closePopup(); };
+  const onKey = (e) => { if (e.key === "Escape") closePopup(); };
+  popup._pixClose = closePopup; // so a later open can detach our listeners
+
+  // (An empty input folder used to get a bare "(no images uploaded yet)" box
+  // with nothing else in it. It now gets the full picker, so the "+ Folder"
+  // button is reachable before anything was ever uploaded; the input pane says
+  // the same sentence.)
+  const groups = groupValuesByFolder(values); // [{folder, files:[{full,name}]}], root first
+  const curVal = target ? target.current : imageWidget.value;
+  const hasSubfolders = groups.some((g) => g.folder !== "");
+
+  // The user's own picture folders (per person, see folders.mjs). A folder is
+  // an active pane keyed "src:<path>", which cannot collide with an input
+  // subfolder key ("" or a relative name) or "__all".
+  let folders = getFolders();
+  const isSrc = (key) => typeof key === "string" && key.startsWith("src:");
+  const ctx = target ? null : folderContext(node); // where the CURRENT picture came from
+  let loaded = null;                               // {path, res} of the folder on screen
+  let folderReq = 0;
+  let taking = false;
+
+  // ── state ──
+  let activeFolder = "__all"; // "__all" | "" (root) | "<FolderName>" | "src:<path>"
+  if (ctx) {
+    const hit = folders.find((f) => sameFolder(f, ctx.folder));
+    if (hit) activeFolder = "src:" + hit;          // open on the folder the picture came from
+  }
+  let query = "";
+  let thumbSize = getThumbSize();
+  let scrollTarget = null;
+
+  // ── search row (filter + size toggle) ──
+  const searchRow = document.createElement("div");
+  searchRow.className = "pix-li-pop-search";
+  const mag = document.createElement("span");
+  mag.className = "pix-li-pop-mag";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Filter images…";
+  const sizeToggle = document.createElement("div");
+  sizeToggle.className = "pix-li-pop-sizetoggle";
+  const segS = document.createElement("span"); segS.textContent = "S"; segS.title = "Small thumbnails";
+  const segL = document.createElement("span"); segL.textContent = "L"; segL.title = "Large thumbnails";
+  sizeToggle.append(segS, segL);
+  // Add one of the user's own picture folders. The folder window opens on the
+  // computer running ComfyUI; picking there is also what approves the folder.
+  const addFolderBtn = document.createElement("span");
+  addFolderBtn.className = "pix-li-pop-addfolder";
+  addFolderBtn.textContent = "+ Folder";
+  addFolderBtn.title = "Add a folder of pictures. A folder window opens; the folder you pick there shows up on the left.";
+  const extra = (target?.actions || []).map((a) => {
+    const b = document.createElement("span");
+    b.className = "pix-li-pop-addfolder" + (a.cls ? " " + a.cls : "");
+    b.setAttribute("role", "button");
+    b.textContent = a.label;
+    if (a.title) b.title = a.title;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closePopup();
+      a.onClick();
+    });
+    return b;
+  });
+  searchRow.append(mag, input, ...extra, addFolderBtn, sizeToggle);
+  popup.appendChild(searchRow);
+
+  // ── body: sidebar (optional) + scrollable pane ──
+  const body = document.createElement("div");
+  body.className = "pix-li-bsplit";
+  const sidebar = document.createElement("div");
+  sidebar.className = "pix-li-bfolders";
+  const pane = document.createElement("div");
+  pane.className = "pix-li-bpane";
+  // The left column exists when there is something to choose between: input
+  // subfolders (as before) or any of the user's folders.
+  let showSidebar = hasSubfolders || folders.length > 0;
+  if (showSidebar) body.append(sidebar, pane);
+  else body.append(pane);
+  popup.appendChild(body);
+  const ensureSidebar = () => {
+    if (showSidebar) return;
+    showSidebar = true;
+    body.insertBefore(sidebar, pane);
+  };
+
+  // ── footer ──
+  const footer = document.createElement("div");
+  footer.className = "pix-li-pop-foot";
+  popup.appendChild(footer);
+
+  // ── element builders ──
+  const makeRow = (entry) => {
+    const row = document.createElement("div");
+    row.className = "pix-li-imgrow" + (entry.full === curVal ? " cur" : "");
+    const th = document.createElement("span");
+    th.className = "pix-li-pop-thumb";
+    const glyph = document.createElement("span");
+    glyph.className = "pix-li-pop-glyph";
+    glyph.textContent = "▣";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.onerror = () => { img.style.display = "none"; };
+    img.src = thumbURL(entry.full);
+    th.append(glyph, img);
+    const lbl = document.createElement("span");
+    lbl.className = "pix-li-imgrow-lbl";
+    lbl.textContent = entry.name;
+    lbl.title = entry.full;
+    row.append(th, lbl);
+    if (entry.full === curVal) scrollTarget = row;
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!target) setSelectedImage(node, entry.full);
+      closePopup();
+      if (onPick) onPick(entry.full);
+    });
+    return row;
+  };
+  const makeSec = (label, count) => {
+    const s = document.createElement("div");
+    s.className = "pix-li-pop-sec";
+    s.textContent = label;
+    const c = document.createElement("span");
+    c.className = "pix-li-pop-sec-c";
+    c.textContent = String(count);
+    s.appendChild(c);
+    return s;
+  };
+  // A picture in one of the user's folders. Clicking copies it into input and
+  // makes it the node's picture (folders.mjs pickFromFolder); the popup stays
+  // open with the reason if that is refused.
+  const makeFolderRow = (path, f) => {
+    const row = document.createElement("div");
+    const isCur = !!ctx && sameFolder(ctx.folder, path) && ctx.file === f.file;
+    row.className = "pix-li-imgrow" + (isCur ? " cur" : "");
+    const th = document.createElement("span");
+    th.className = "pix-li-pop-thumb";
+    const glyph = document.createElement("span");
+    glyph.className = "pix-li-pop-glyph";
+    glyph.textContent = "▣";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.onerror = () => { img.style.display = "none"; };
+    img.src = folderThumbURL(path, f.file, f.mtime);
+    th.append(glyph, img);
+    const lbl = document.createElement("span");
+    lbl.className = "pix-li-imgrow-lbl";
+    lbl.textContent = f.name || f.file;
+    lbl.title = f.file;
+    row.append(th, lbl);
+    if (isCur) scrollTarget = row;
+    row.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (taking) return;
+      taking = true;
+      footer.textContent = "Taking the picture…";
+      let r;
+      try {
+        r = target ? await takeFolderPicture(path, f.file) : await pickFromFolder(node, path, f.file);
+      } finally { taking = false; }
+      if (popup._pixClosed) return;
+      if (r.ok) {
+        closePopup();
+        if (onPick) onPick(r.name);
+      } else {
+        footer.textContent = r.message || "Could not take the picture.";
+      }
+    });
+    return row;
+  };
+  const makeMsg = (text) => {
+    const m = document.createElement("div");
+    m.className = "pix-li-pop-msg";
+    m.textContent = text;
+    return m;
+  };
+  const folderLabel = (key) => (key === "" ? "root" : key);
+  // Scroll the current image's row into view (deferred so the pane is laid out).
+  // Called on every non-search render so a folder switch / search-clear re-centers it.
+  const scrollCurrentIntoView = () => {
+    if (!scrollTarget) return;
+    const t = scrollTarget;
+    queueMicrotask(() => { try { t.scrollIntoView({ block: "nearest" }); } catch (_e) { /* ignore */ } });
+  };
+
+  // ── renderers ──
+  const renderSidebar = () => {
+    if (!showSidebar) return;
+    sidebar.replaceChildren();
+    // With folders present the first entry means "ComfyUI's input folder", so
+    // it says so; without them it keeps its old name.
+    const entries = [["__all", folders.length ? "Input" : "All", values.length]];
+    if (hasSubfolders) for (const g of groups) entries.push([g.folder, folderLabel(g.folder), g.files.length]);
+    if (folders.length) entries.push(null);         // the "Folders" heading
+    for (const p of folders) {
+      const known = loaded && sameFolder(loaded.path, p) && loaded.res.ok ? loaded.res.files.length : "";
+      entries.push(["src:" + p, folderName(p), known, p]);
+    }
+    for (const entry of entries) {
+      if (entry === null) {
+        const h = document.createElement("div");
+        h.className = "pix-li-bfold-h";
+        h.textContent = "Folders";
+        sidebar.appendChild(h);
+        continue;
+      }
+      const [key, label, count, fullPath] = entry;
+      const f = document.createElement("div");
+      // A folder stays lit while filtering, since the filter searches inside it.
+      const lit = key === activeFolder && (isSrc(key) || !query.trim());
+      f.className = "pix-li-bfolder"
+        + (key === "__all" ? " all" : "")
+        + (lit ? " on" : "");
+      if (fullPath) f.title = fullPath;
+      const t = document.createElement("span");
+      t.textContent = label;
+      const n = document.createElement("span");
+      n.className = "pix-li-bfolder-n";
+      n.textContent = String(count);
+      f.append(t, n);
+      f.addEventListener("click", (e) => {
+        e.stopPropagation();
+        activeFolder = key;
+        input.value = "";
+        query = "";
+        renderSidebar();
+        renderPane();
+      });
+      sidebar.appendChild(f);
+    }
+  };
+
+  // One of the user's folders: listed fresh on every open (a rename or a new
+  // file on disk shows up at once - node UI convention #18), then filtered here.
+  const ROW_CAP = 1500;
+  const renderFolderPane = () => {
+    const path = activeFolder.slice(4);
+    if (!loaded || !sameFolder(loaded.path, path)) {
+      pane.appendChild(makeMsg("Loading…"));
+      footer.textContent = folderName(path);
+      const my = ++folderReq;
+      folderFiles(target ? null : node, path, { fresh: true }).then((res) => {
+        if (my !== folderReq || popup._pixClosed) return;
+        loaded = { path, res };
+        renderSidebar();
+        renderPane();
+      });
+      return;
+    }
+    const res = loaded.res;
+    if (!res.ok) {
+      pane.appendChild(makeMsg(res.message || "Could not read this folder."));
+      const rm = document.createElement("span");
+      rm.className = "pix-li-pop-link";
+      rm.textContent = "Remove it from the list";
+      rm.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await removeFolder(path);
+        if (popup._pixClosed) return;
+        folders = getFolders();
+        activeFolder = "__all";
+        loaded = null;
+        renderSidebar();
+        renderPane();
+      });
+      pane.appendChild(rm);
+      footer.textContent = folderName(path) + " · not available";
+      return;
+    }
+    const q = query.trim().toLowerCase();
+    const files = q ? res.files.filter((f) => (f.name || f.file).toLowerCase().includes(q)) : res.files;
+    if (!files.length) {
+      pane.appendChild(makeMsg(q ? "(no matches)" : "(no pictures in this folder)"));
+      footer.textContent = `0 pictures · ${folderName(path)}`;
+      return;
+    }
+    // Group by subfolder inside the folder, under the same sticky headers the
+    // input side uses. A folder with no subfolders gets no header at all.
+    const dirOf = (f) => { const i = f.file.lastIndexOf("/"); return i >= 0 ? f.file.slice(0, i) : ""; };
+    const multi = files.some((f) => dirOf(f) !== "");
+    let shown = 0;
+    let lastDir = null;
+    for (const f of files) {
+      if (shown >= ROW_CAP) break;
+      const d = dirOf(f);
+      if (multi && d !== lastDir) {
+        lastDir = d;
+        pane.appendChild(makeSec(d || folderName(path), files.filter((x) => dirOf(x) === d).length));
+      }
+      pane.appendChild(makeFolderRow(path, f));
+      shown += 1;
+    }
+    footer.textContent = `${files.length} picture${files.length === 1 ? "" : "s"} · ${folderName(path)}`
+      + (files.length > shown ? ` · showing the first ${shown}, type to filter` : "");
+    scrollCurrentIntoView();
+  };
+
+  const renderPane = () => {
+    pane.replaceChildren();
+    scrollTarget = null;
+    if (isSrc(activeFolder)) { renderFolderPane(); return; }
+    if (values.length === 0) {
+      pane.appendChild(makeMsg("(no images uploaded yet)"));
+      footer.textContent = "0 images";
+      return;
+    }
+    const q = query.trim().toLowerCase();
+
+    if (q) {
+      // Search across ALL folders; show only matches, grouped by folder.
+      let matches = 0;
+      for (const g of groups) {
+        const hit = g.files.filter((f) => f.name.toLowerCase().includes(q));
+        if (hit.length === 0) continue;
+        matches += hit.length;
+        pane.appendChild(makeSec(folderLabel(g.folder), hit.length));
+        for (const entry of hit) pane.appendChild(makeRow(entry));
+      }
+      if (matches === 0) {
+        const none = document.createElement("div");
+        none.className = "pix-li-pop-empty";
+        none.textContent = "(no matches)";
+        pane.appendChild(none);
+      }
+      footer.textContent = `${matches} match${matches === 1 ? "" : "es"}`;
+      return;
+    }
+
+    if (!hasSubfolders) {
+      // Flat input/ — plain thumbnail list, no sidebar.
+      for (const g of groups) for (const entry of g.files) pane.appendChild(makeRow(entry));
+      footer.textContent = `${values.length} image${values.length === 1 ? "" : "s"}`;
+      scrollCurrentIntoView();
+      return;
+    }
+
+    if (activeFolder === "__all") {
+      // All images, grouped by folder with sticky section headers.
+      for (const g of groups) {
+        pane.appendChild(makeSec(folderLabel(g.folder), g.files.length));
+        for (const entry of g.files) pane.appendChild(makeRow(entry));
+      }
+      footer.textContent = `${values.length} image${values.length === 1 ? "" : "s"} · all`;
+    } else {
+      const g = groups.find((x) => x.folder === activeFolder);
+      const files = g ? g.files : [];
+      for (const entry of files) pane.appendChild(makeRow(entry));
+      footer.textContent = `${files.length} image${files.length === 1 ? "" : "s"} · ${folderLabel(activeFolder)}`;
+    }
+    scrollCurrentIntoView();
+  };
+
+  const applyThumbSize = () => {
+    body.classList.toggle("thumb-sm", thumbSize === "Small");
+    body.classList.toggle("thumb-lg", thumbSize !== "Small");
+    segS.classList.toggle("on", thumbSize === "Small");
+    segL.classList.toggle("on", thumbSize !== "Small");
+  };
+
+  // ── events ──
+  input.addEventListener("input", () => { query = input.value; renderSidebar(); renderPane(); });
+  input.addEventListener("click", (e) => e.stopPropagation());
+  // Keep LiteGraph's canvas shortcuts (Delete/Backspace = delete the selected
+  // node, arrows = nudge, etc.) from firing while typing in the filter box —
+  // the node is selected whenever this popup is open. Mirrors makeNumericInput
+  // (Load Image Pattern #6). Enter picks the first listed match.
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      pane.querySelector(".pix-li-imgrow")?.click();
+    }
+    e.stopImmediatePropagation();
+  });
+  segS.addEventListener("click", (e) => {
+    e.stopPropagation();
+    thumbSize = "Small"; setThumbSize(thumbSize); applyThumbSize();
+  });
+  segL.addEventListener("click", (e) => {
+    e.stopPropagation();
+    thumbSize = "Large"; setThumbSize(thumbSize); applyThumbSize();
+  });
+  addFolderBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (addFolderBtn.classList.contains("busy")) return;
+    addFolderBtn.classList.add("busy");
+    footer.textContent = "Pick a folder in the folder window…";
+    let r;
+    try { r = await addFolderViaDialog(); } finally { addFolderBtn.classList.remove("busy"); }
+    if (popup._pixClosed) return;       // added all the same; it is there next time
+    if (r.ok) {
+      folders = getFolders();
+      const hit = folders.find((f) => sameFolder(f, r.path)) || r.path;
+      ensureSidebar();
+      activeFolder = "src:" + hit;
+      input.value = "";
+      query = "";
+      loaded = null;
+      renderSidebar();
+      renderPane();
+      if (r.message) footer.textContent = r.message;
+    } else {
+      renderPane();                     // put the footer back
+      if (r.message) footer.textContent = r.message;
+    }
+  });
+
+  // ── initial render ──
+  applyThumbSize();
+  renderSidebar();
+  renderPane();
+
+  document.body.appendChild(popup);
+
+  // Keep the popup on-screen: clamp horizontally and flip above the row when it
+  // would overflow the bottom of the viewport (now measurable post-append).
+  const pr = popup.getBoundingClientRect();
+  let left = rect.left;
+  if (left + pr.width > window.innerWidth - 4) left = Math.max(4, window.innerWidth - pr.width - 4);
+  popup.style.left = `${left}px`;
+  if (pr.bottom > window.innerHeight - 4) {
+    const above = rect.top - pr.height - 2;
+    popup.style.top = `${above >= 4 ? above : Math.max(4, window.innerHeight - pr.height - 4)}px`;
+  }
+
+  // renderPane() already scrolls the current row into view. Focus the filter box.
+  queueMicrotask(() => { try { input.focus(); } catch (_e) { /* ignore */ } });
+
+  // Attach close listeners after the opening click settles (capture phase so we
+  // preempt LiteGraph; each gated on !popup.contains so inside scroll/clicks
+  // don't close — Load Image Pattern #14).
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDocDown, true);
+    document.addEventListener("pointerdown", onDocDown, true);
+    document.addEventListener("wheel", onWheel, true);
+    document.addEventListener("keydown", onKey, true);
+  }, 0);
+  return popup;
+}
+
+const MODE_CHIPS = [
+  { id: "off",          label: "Off",          title: "No resize. (Snap still applies if set.)" },
+  { id: "max_mp",       label: "Max MP",       title: "Scale so the total pixel count stays under a megapixel cap. Keeps aspect ratio." },
+  { id: "longest_side", label: "Longest side", title: "Scale so the longest side equals this many pixels. Keeps aspect ratio." },
+  { id: "scale_factor", label: "Scale by ×",   title: "Multiply both dimensions by a factor. Keeps aspect ratio." },
+  { id: "fit_inside",   label: "Fit inside",   title: "Scale to fit entirely within W×H without cropping. Keeps aspect ratio." },
+  { id: "cover",        label: "Crop to fill", title: "Resize to exactly W×H. Fill scales then crops the overflow; Crop cuts a 1:1-pixel piece. The anchor picks which part is kept." },
+  { id: "match_ratio",  label: "Match ratio",  title: "Crop the image to a target aspect ratio (no scaling)." },
+  { id: "pad",          label: "Pad",          title: "Add a pixel border on chosen sides. The new area becomes the white inpaint-mask region." },
+];
+
+export function renderChips(state) {
+  const wrap = document.createElement("div");
+  wrap.className = "pix-li-chips";
+  for (const c of MODE_CHIPS) {
+    const el = document.createElement("div");
+    el.className = "pix-li-chip" + (state.mode === c.id ? " active" : "");
+    el.dataset.modeId = c.id;
+    el.textContent = c.label;
+    el.title = c.title || "";
+    wrap.appendChild(el);
+  }
+  return wrap;
+}
+
+const SNAP_OPTIONS = [0, 8, 16, 32, 64];
+const RESAMPLE_OPTIONS = [
+  { id: "auto",     label: "Auto",     hint: "Lanczos for shrink, Bilinear for grow" },
+  { id: "nearest",  label: "Nearest",  hint: "Pixel-perfect, no smoothing" },
+  { id: "bilinear", label: "Bilinear", hint: "Fast, smooth" },
+  { id: "bicubic",  label: "Bicubic",  hint: "Slower, sharper" },
+  { id: "lanczos",  label: "Lanczos",  hint: "Slowest, sharpest" },
+];
+
+// Custom resample dropdown popup. Same look as the file dropdown popup —
+// fixed-position list anchored to the row, click an item to commit.
+function openResamplePopup(anchorEl, currentValue, onPick) {
+  document.querySelector(".pix-li-rs-popup")?.remove();
+
+  const popup = document.createElement("div");
+  popup.className = "pix-li-rs-popup";
+  popup.style.setProperty("--pix-acc", getComputedStyle(anchorEl).getPropertyValue("--pix-acc"));   // the opener's accent (on <body>)
+  const rect = anchorEl.getBoundingClientRect();
+  popup.style.left = `${rect.left}px`;
+  popup.style.top  = `${rect.bottom + 2}px`;
+  popup.style.width = `${rect.width}px`;
+
+  for (const opt of RESAMPLE_OPTIONS) {
+    const item = document.createElement("div");
+    item.className = "pix-li-rs-item" + (opt.id === currentValue ? " active" : "");
+    const lbl = document.createElement("span");
+    lbl.className = "pix-li-rs-item-label";
+    lbl.textContent = opt.label;
+    const hint = document.createElement("span");
+    hint.className = "pix-li-rs-item-hint";
+    hint.textContent = opt.hint;
+    item.append(lbl, hint);
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onPick(opt.id);
+      close();
+    });
+    popup.appendChild(item);
+  }
+
+  document.body.appendChild(popup);
+
+  function close() {
+    popup.remove();
+    document.removeEventListener("mousedown", onDocDown, true);
+    document.removeEventListener("pointerdown", onDocDown, true);
+    document.removeEventListener("wheel", onWheel, true);
+    document.removeEventListener("keydown", onKey, true);
+  }
+  const onDocDown = (e) => {
+    if (!popup.contains(e.target)) close();
+  };
+  const onWheel = (e) => {
+    if (!popup.contains(e.target)) close();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDocDown, true);
+    document.addEventListener("pointerdown", onDocDown, true);
+    document.addEventListener("wheel", onWheel, true);
+    document.addEventListener("keydown", onKey, true);
+  }, 0);
+}
+
+export function renderGlobalControls(node, state, writeState, onChange) {
+  const wrap = document.createElement("div");
+  wrap.className = "pix-li-global";
+
+  // Centered snap footer: magnet + "Snap" + chips.
+  const foot = document.createElement("div");
+  foot.className = "pix-li-foot";
+  const snap = document.createElement("div");
+  snap.className = "pix-li-snap2";
+  const icon = document.createElement("span");
+  icon.className = "pix-li-snap-icon";
+  snap.appendChild(icon);
+  const lbl = document.createElement("span");
+  lbl.className = "pix-li-snap-lbl";
+  lbl.textContent = "Snap";
+  snap.appendChild(lbl);
+  for (const v of SNAP_OPTIONS) {
+    const b = document.createElement("div");
+    b.className = "pix-li-schip" + (v === (state.snap || 0) ? " active" : "");
+    b.dataset.v = String(v);
+    b.textContent = v === 0 ? "Off" : String(v);
+    b.title = v === 0 ? "No snapping."
+      : `Round the output dimensions down to a multiple of ${v} px (keeps latents aligned).`;
+    snap.appendChild(b);
+  }
+  foot.appendChild(snap);
+  wrap.appendChild(foot);
+
+  // Resample picker: [◀] [ Resample: Auto ▾ ] [▶]
+  const rsRow = document.createElement("div");
+  rsRow.className = "pix-li-rs2-row";
+  const prev = document.createElement("button");
+  prev.type = "button"; prev.className = "pix-li-rs2-nav"; prev.title = "Previous resample filter"; prev.textContent = "◀";
+  const dd = document.createElement("div");
+  dd.className = "pix-li-rs2-dd";
+  dd.title = "Resampling filter used when scaling. Click to pick, or use the arrows.";
+  const rsValue = document.createElement("span");
+  rsValue.className = "pix-li-rs2-value";
+  rsValue.textContent = "Resample: " + resampleLabel(state.resample || "auto");
+  const rsArrow = document.createElement("span");
+  rsArrow.className = "pix-li-rs2-arrow"; rsArrow.textContent = "▼";
+  dd.append(rsValue, rsArrow);
+  const next = document.createElement("button");
+  next.type = "button"; next.className = "pix-li-rs2-nav"; next.title = "Next resample filter"; next.textContent = "▶";
+  rsRow.append(prev, dd, next);
+  wrap.appendChild(rsRow);
+
+  // Upscaling toggle button.
+  const upBtn = document.createElement("button");
+  upBtn.type = "button";
+  upBtn.title = "Allow the image to grow larger than its original size. Off = never upscale.";
+  const upOn = state.allow_upscale !== false;
+  upBtn.className = "pix-li-upbtn" + (upOn ? " is-on" : "");
+  upBtn.textContent = upOn ? "Upscaling: On" : "Upscaling: Off";
+  wrap.appendChild(upBtn);
+
+  // ── events ──
+  const RESAMPLE_IDS = RESAMPLE_OPTIONS.map((o) => o.id);
+  const setResample = (id) => {
+    const s = readStateLocal(node);
+    writeState(node, { ...s, resample: id });
+    rsValue.textContent = "Resample: " + resampleLabel(id);
+    onChange?.();
+  };
+  const cycleResample = (delta) => {
+    const cur = (readStateLocal(node).resample) || "auto";
+    let i = RESAMPLE_IDS.indexOf(cur); if (i < 0) i = 0;
+    i = (i + delta + RESAMPLE_IDS.length) % RESAMPLE_IDS.length;
+    setResample(RESAMPLE_IDS[i]);
+  };
+  foot.addEventListener("click", (e) => {
+    const b = e.target.closest(".pix-li-schip");
+    if (!b) return;
+    e.stopPropagation();
+    const v = parseInt(b.dataset.v, 10);
+    for (const x of foot.querySelectorAll(".pix-li-schip")) x.classList.toggle("active", x === b);
+    writeState(node, { ...readStateLocal(node), snap: v });
+    onChange?.();
+  });
+  dd.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openResamplePopup(dd, (readStateLocal(node).resample) || "auto", setResample);
+  });
+  prev.addEventListener("click", (e) => { e.stopPropagation(); cycleResample(-1); });
+  next.addEventListener("click", (e) => { e.stopPropagation(); cycleResample(1); });
+  upBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const on = !(readStateLocal(node).allow_upscale !== false);
+    writeState(node, { ...readStateLocal(node), allow_upscale: on });
+    upBtn.classList.toggle("is-on", on);
+    upBtn.textContent = on ? "Upscaling: On" : "Upscaling: Off";
+    onChange?.();
+  });
+
+  return wrap;
+}
+
+// Local state read for event handlers (avoids depending on index.js import).
+function readStateLocal(node) {
+  try { return JSON.parse(node.properties?.loadImagePixState || "{}"); }
+  catch { return {}; }
+}
+
+// Map a resample id to its display label.
+function resampleLabel(id) {
+  const o = RESAMPLE_OPTIONS.find((x) => x.id === id) || RESAMPLE_OPTIONS[0];
+  return o.label;
+}

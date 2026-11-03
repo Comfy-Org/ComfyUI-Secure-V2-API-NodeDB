@@ -1,0 +1,1172 @@
+import { app } from "../../../scripts/app.js";
+import { api } from "../../../scripts/api.js";
+import { hideJsonWidget, BRAND,
+  installCanvasZoomPassthrough, installNodeAccent, registerNodeAccent, accentOf, accentRgba,
+} from "../shared/index.mjs";
+import { isVueNodes, applyAdaptiveCanvasOnly, canvasBackingScale } from "../shared/nodes2.mjs";
+import { onRendererChange } from "../shared/renderer_switch.mjs";
+import { isLiveNode } from "../shared/live_node.mjs";
+import { runTab, eachRestoredOutput } from "../shared/run_tab.mjs";
+import { attachCanvasSnapshot } from "../shared/canvas_snapshot.mjs";
+import { buildModePanel, previewResize, injectResizePanelCSS } from "../shared/resize_panel.mjs";
+import {
+  injectCSS, buildModeChips, buildFooter, buildResampleAndUpscale,
+  openResamplePopup, closeResamplePopup, RESAMPLE_IDS, resampleLabel,
+} from "./ui.mjs";
+
+injectCSS();
+injectResizePanelCSS();
+
+const STATE_PROP = "imageResizeState";
+const HIDDEN_INPUT = "ImageResizeState";
+const DEFAULT_STATE = {
+  mode: "off", max_mp: 1.0, longest_side: 1024, scale_factor: 1.0,
+  fit_w: 1024, fit_h: 1024, cover_w: 1024, cover_h: 1024,
+  ratio_preset: "1:1", ratio_w: 1, ratio_h: 1, ratio_action: "crop",
+  pad_color: "#808080", pad_top: 0, pad_bottom: 0, pad_left: 0, pad_right: 0,
+  crop_anchor: "center", crop_scale: true,
+  snap: 0, resample: "auto", allow_upscale: true,
+};
+const WH_MODES = new Set(["fit_inside", "cover"]);
+const MIN_W = 360; // minimum node width (the two IN/OUT cards need the room)
+
+// True while a workflow is loading. The per-node _pixIrConfiguring flag does
+// NOT cover connection restoration: LiteGraph restores links at the GRAPH level
+// AFTER each node's onConfigure has returned (and cleared its flag), so the
+// auto-swap in onConnectionsChange would see the restored wires as fresh user
+// connections and disconnect the saved longest_side / width / height wire on
+// every open. Wrapping app.loadGraphData (the funnel for workflow open, tab
+// switch, and Ctrl+Z undo - same pattern as Connection FX) gives a load-wide
+// guard with a trailing window for link restoration that settles a tick later.
+let _irLoadingGraph = false;
+if (app && app.loadGraphData && !app._pixIrLoadWrapped) {
+  app._pixIrLoadWrapped = true;
+  const _origLoadGraphData_fn = app.loadGraphData;
+  const _origLoadGraphData = (...a) => _origLoadGraphData_fn.apply(app, a);
+  app.loadGraphData = function (...args) {
+    _irLoadingGraph = true;
+    let r;
+    try { r = _origLoadGraphData(...args); }
+    finally {
+      Promise.resolve(r).finally(() => setTimeout(() => { _irLoadingGraph = false; }, 300));
+    }
+    return r;
+  };
+}
+
+function readState(node) {
+  const v = node.properties?.[STATE_PROP];
+  if (typeof v === "string" && v) {
+    try { return { ...DEFAULT_STATE, ...JSON.parse(v) }; } catch {}
+  }
+  return { ...DEFAULT_STATE };
+}
+function writeState(node, state) {
+  if (!node.properties) node.properties = {};
+  node.properties[STATE_PROP] = JSON.stringify(state);
+}
+
+// Below this root width the node is not laid out yet, and a height read then is
+// GARBAGE in the dangerous direction: the rows wrap and it inflates. MEASURED
+// 2026-09-27 during a workflow open (Classic): root 16 px wide, children
+// 95/19/91, so getMinHeight answered 237 and core grew the node 289 -> 343. Same
+// guard as XY Plot and Load Images from Folder (CLAUDE.md #39 C2): hand back the
+// last good value, and getMinHeight (only a FLOOR) keeps the saved size.
+const LAYOUT_READY_W = 100;
+const _lastGoodHeight = new WeakMap();
+
+// Sum children intrinsic heights (NOT scrollHeight — LiteGraph stretches the
+// root, so scrollHeight feeds back; see Load Image Pattern #4). Root is a flex
+// column with 8px gap + 8px padding top/bottom.
+function measureContentHeight(root) {
+  if (!root) return 120;
+  if (!root.isConnected || root.offsetWidth < LAYOUT_READY_W) {
+    return _lastGoodHeight.get(root) ?? 120;
+  }
+  let h = 0;
+  for (const c of root.children) h += c.offsetHeight;
+  h += Math.max(0, root.children.length - 1) * 8; // row gaps
+  h += 16; // root padding (top + bottom)
+  const out = Math.max(120, h);
+  _lastGoodHeight.set(root, out);
+  return out;
+}
+
+// Refit node height to content. ONLY call on genuine user actions — never on
+// the load path (Vue Compat #18: resizing during configure dirties the saved
+// workflow). rAF so the freshly-rendered panel has laid out before measuring.
+function refit(node) {
+  if (!node._pixIrRoot) return;
+  requestAnimationFrame(() => {
+    if (!node._pixIrRoot) return;
+    const sz = node.computeSize();
+    if (Math.abs(node.size[1] - sz[1]) > 1) {
+      node.size[1] = sz[1];
+      node.setDirtyCanvas(true, true);
+    }
+  });
+}
+
+// Grow the node when its content no longer fits; never shrink it. For a COPY
+// (paste / Ctrl+D / Alt-drag), which keeps the copied height instead of being
+// refit (see the configure wrapper): its own content can be TALLER than the
+// original's, when a wire that forced a shorter panel did not come along.
+// MEASURED 2026-09-27 (Classic): saved mode Pad (424 of content) showing the
+// forced Longest side panel (349); a copy pasted without the longest_side wire
+// kept 349 and 59 px of its content hung below the frame. Classic only: Nodes
+// 2.0 lays the body out in normal flow, so its node grows with the content.
+// Retries while the copy is not laid out yet, because a measure taken then is
+// only a fallback (see LAYOUT_READY_W) and would miss the growth.
+function growToFit(node, tries = 10) {
+  if (!node._pixIrRoot || isVueNodes()) return;
+  requestAnimationFrame(() => {
+    const root = node._pixIrRoot;
+    if (!root || isVueNodes()) return;
+    if (!root.isConnected || root.offsetWidth < LAYOUT_READY_W) {
+      if (tries > 1) growToFit(node, tries - 1);
+      return;
+    }
+    const h = node.computeSize()[1];
+    if (h > node.size[1] + 1) {
+      node.size[1] = h;
+      node.setDirtyCanvas(true, true);
+    }
+  });
+}
+
+// The INPUT half of the Input -> Output card.
+//
+// ⚠️ DELIBERATELY NOT using js/shared/upstream_image_size.mjs, though it exists
+// and does exactly this with two extra guards. Tried on 2026-08-05 and REVERTED
+// the same day, because this node's readout has a fallback that Longest Side's
+// does not: when the reader returns null, `getReadoutInfo` drops to
+// `node.properties.pixIrDims`, the LAST RUN's dims, painted identically to a
+// live reading with no caveat. So refusing an upstream does not show "no size",
+// it shows a CACHED size - and that made a common case worse:
+//   rewire to a Pixaroma loader with its inline resize OFF (the default) and
+//   the card showed the PREVIOUS upstream's size, where reading live was right.
+//
+// Making this correct needs two things this node does not have yet: the reader
+// must distinguish "refused" from "no preview available" (the cache is genuinely
+// right for a KSampler upstream, and genuinely wrong for a bypassed one), and
+// pixIrDims needs invalidating on a link change the way Longest Side clears its
+// run cache. Both are recorded as a follow-up, together with the five other
+// nodes that read an upstream preview unguarded.
+function getInputDims(node) {
+  const inp = node.inputs?.find((i) => i.name === "image");
+  if (!inp || inp.link == null) return null;
+  let l = node.graph?.links?.[inp.link];
+  if (!l && typeof node.graph?.links?.get === "function") l = node.graph.links.get(inp.link);
+  if (!l) return null;
+  const up = node.graph.getNodeById(l.origin_id);
+  const img = up?.imgs?.[0];
+  if (img?.naturalWidth) return { w: img.naturalWidth, h: img.naturalHeight };
+  return null;
+}
+
+function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { const t = b; b = a % b; a = t; } return a || 1; }
+function ratioLabel(w, h) {
+  const g = gcd(w, h);
+  const rw = w / g, rh = h / g;
+  const known = ["1:1","16:9","9:16","2:1","1:2","3:2","2:3","4:3","3:4","4:5","5:4","21:9"];
+  const s = `${rw}:${rh}`;
+  if (known.includes(s)) return s;
+  const r = w / h;
+  return r >= 1 ? `~${r.toFixed(2)}:1` : `~1:${(1 / r).toFixed(2)}`;
+}
+
+// The size info is painted in the dead space between the input and output
+// slot columns (onDrawForeground), not as a body row — saves height and uses
+// empty space. Returns either a two-line INPUT/OUTPUT block or a message.
+function getReadoutInfo(node, wi) {
+  const state = readState(node);
+  const cached = node.properties?.pixIrDims;       // {in_w,in_h,out_w,out_h} from last run
+  const live = getInputDims(node);
+  const info = wi || wireInfo(node);
+
+  // Wired inputs: predict via the wired mirror so the card matches Python.
+  // longest_side wins over width/height (precedence), so when it's wired only
+  // its readability matters.
+  if ((info.count > 0 || info.wiredLongest) && live) {
+    const needL = info.wiredLongest && info.valLongest == null;
+    const needW = !info.wiredLongest && info.wiredW && info.valW == null;
+    const needH = !info.wiredLongest && info.wiredH && info.valH == null;
+    if (!needW && !needH && !needL) {
+      const eff = effectiveWiredState(state, info, live.w, live.h);
+      const { w, h } = previewResize(live.w, live.h, eff);
+      return { mode: "dual", inW: live.w, inH: live.h, outW: w, outH: h };
+    }
+    // Wired from a source we can't read at edit time (math/reroute): show the
+    // real dims if a run happened, else say it's wire-driven (no wrong number).
+    if (cached) return { mode: "dual", inW: live.w, inH: live.h, outW: cached.out_w, outH: cached.out_h };
+    return { mode: "msg", text: "Output set by wired inputs" };
+  }
+
+  if (live) {
+    const { w, h } = previewResize(live.w, live.h, state);
+    return { mode: "dual", inW: live.w, inH: live.h, outW: w, outH: h };
+  }
+  if (cached) {
+    return { mode: "dual", inW: cached.in_w, inH: cached.in_h, outW: cached.out_w, outH: cached.out_h };
+  }
+  if (!isWired(node, "image")) return { mode: "msg", text: "Connect an image" };
+  return { mode: "msg", text: "Run once to read size" };
+}
+
+// Rectangle scaled to a w:h aspect inside a max box (the little ratio shape).
+function aspectRectDims(w, h, maxW, maxH) {
+  const a = w / h;
+  let rw, rh;
+  if (a >= maxW / maxH) { rw = maxW; rh = maxW / a; }
+  else { rh = maxH; rw = maxH * a; }
+  return { rw: Math.max(2, Math.round(rw)), rh: Math.max(2, Math.round(rh)) };
+}
+
+// Rounded rectangle (all corners).
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function isWired(node, name) {
+  const inp = node.inputs?.find((i) => i.name === name);
+  return !!(inp && inp.link != null);
+}
+
+// Small toast (Image Resize). Silent no-op if the toast API isn't present
+// (older Easy Install builds), so it never throws on a connect.
+function toast(msg) {
+  const t = app?.extensionManager?.toast;
+  if (t?.add) t.add({ severity: "info", summary: "Image Resize Pixaroma", detail: msg, life: 2500 });
+}
+
+// Disconnect a named input if it currently has a wire. Returns true if it did.
+function disconnectInputByName(node, name) {
+  const i = node.inputs?.findIndex((inp) => inp?.name === name);
+  if (i != null && i >= 0 && node.inputs[i]?.link != null) {
+    node.disconnectInput(i);
+    return true;
+  }
+  return false;
+}
+
+// Best-effort read of a wired INT input's value at edit time. Works for
+// Resolution Pixaroma (value lives in properties.resolutionState; the link's
+// origin_slot picks w vs h) and plain INT widget nodes. Returns null for
+// sources we can't read (math/reroute/computed) — callers then fall back to a
+// "set by wires" state / post-run dims.
+function readWiredInt(node, name) {
+  const inp = node.inputs?.find((i) => i.name === name);
+  if (!inp || inp.link == null) return null;
+  let l = node.graph?.links?.[inp.link];
+  if (!l && typeof node.graph?.links?.get === "function") l = node.graph.links.get(inp.link);
+  if (!l) return null;
+  const up = node.graph.getNodeById(l.origin_id);
+  if (!up) return null;
+  if (up.comfyClass === "PixaromaResolution" || up.type === "PixaromaResolution") {
+    try {
+      const s = JSON.parse(up.properties.resolutionState);
+      const v = l.origin_slot === 1 ? s.h : s.w; // slot 0 = width, 1 = height
+      return Number.isFinite(v) ? Math.round(v) : null;
+    } catch { return null; }
+  }
+  // Plain INT source: only trust it when there's exactly ONE numeric widget
+  // (unambiguous). Multi-widget nodes (seed/steps/cfg…) would give a wrong
+  // guess — return null so the card shows "set by wires" rather than a lie.
+  const nums = (up.widgets || []).filter((x) => typeof x.value === "number");
+  return nums.length === 1 && Number.isFinite(nums[0].value) ? Math.round(nums[0].value) : null;
+}
+
+// Central wired-input state: which axes are wired + their best-effort values.
+function wireInfo(node) {
+  const wiredW = isWired(node, "width");
+  const wiredH = isWired(node, "height");
+  const wiredLongest = isWired(node, "longest_side");
+  return {
+    wiredW, wiredH, wiredLongest,
+    count: (wiredW ? 1 : 0) + (wiredH ? 1 : 0),
+    valW: wiredW ? readWiredInt(node, "width") : null,
+    valH: wiredH ? readWiredInt(node, "height") : null,
+    valLongest: wiredLongest ? readWiredInt(node, "longest_side") : null,
+  };
+}
+
+// JS mirror of Python `_apply_wired_size` (keep in lockstep). Returns the
+// effective state to feed previewResize so the OUTPUT card matches Python.
+// Single wire = aspect scale to that dim; both = exact box (Fit/Crop).
+function effectiveWiredState(state, info, ow, oh) {
+  // longest_side wins over width/height (mirrors Python _apply_wired_size).
+  if (info.wiredLongest) {
+    if (info.valLongest == null) return state; // unreadable wire — caller falls back
+    if (info.valLongest <= 0) return { ...state, mode: "off" }; // 0/neg = no target, passthrough
+    // Respect the Upscaling toggle (state.allow_upscale flows through via ...state).
+    return { ...state, mode: "longest_side", longest_side: info.valLongest };
+  }
+  if (!info.wiredW && !info.wiredH) return state;
+  if (info.wiredW !== info.wiredH) { // exactly one wired
+    const v = info.wiredW ? info.valW : info.valH;
+    const od = info.wiredW ? ow : oh;
+    if (v == null || !od) return state; // unreadable wire — caller falls back
+    if (v <= 0) return { ...state, mode: "off" }; // 0/neg = no target, passthrough
+    // Respect the Upscaling toggle (state.allow_upscale flows through via ...state).
+    return { ...state, mode: "scale_factor", scale_factor: v / od };
+  }
+  if (info.valW == null || info.valH == null) return state; // unreadable wire
+  if (state.mode === "fit_inside") return { ...state, mode: "fit_inside", fit_w: info.valW, fit_h: info.valH };
+  return { ...state, mode: "cover", cover_w: info.valW, cover_h: info.valH };
+}
+
+// Lock the W/H field(s) of the active Fit/Crop panel to the wire(s) (both-wired
+// case). buildWHPanel renders Width then Height as the first two text inputs.
+// Only the fit/cover panels have these inputs, so this is a no-op elsewhere
+// (single-wire shows a summary panel; no-wire modes have no wires).
+function applyWiredLocks(node, root) {
+  const info = wireInfo(node);
+  const numEls = [...root.querySelectorAll(".pix-li-numinput input")];
+  const wInp = info.wiredW ? numEls[0] : null;
+  const hInp = info.wiredH ? numEls[1] : null;
+  if (wInp) lockField(wInp, info.valW);
+  if (hInp) lockField(hInp, info.valH);
+  // Cache so onDrawForeground can refresh the shown value live (the upstream
+  // wired value can change after render — same staleness class as the summary).
+  if (wInp || hInp) node._pixIrLockedInputs = { wInp, hInp };
+}
+function lockField(inp, val) {
+  inp.readOnly = true;
+  inp.title = "Driven by wired input";
+  if (val != null) inp.value = String(val); // show the actual wired number
+  // Dim the whole field (input + spinner arrows) so it reads as disabled; the
+  // arrows are also made inert by the readOnly guard in makeNumericInput.step1.
+  const wrap = inp.closest(".pix-li-numinput");
+  if (wrap) { wrap.style.opacity = "0.55"; wrap.title = "Driven by wired input"; }
+}
+
+// NOTE: there is intentionally no "auto-switch mode on connect". When both
+// width/height are wired the RENDER forces a Crop-to-fill display (dispMode)
+// and Python/effectiveWiredState force cover at run time - all WITHOUT writing
+// state.mode. That keeps the user's chosen mode intact so disconnecting the
+// wires restores it (and avoids dirtying the workflow on a connect/disconnect).
+
+// Single-wire summary panel: shows the wired dimension + the auto-computed
+// other dimension (keeps aspect). Read-only — no mode applies here.
+function buildSingleWirePanel(node, info, live) {
+  const panel = document.createElement("div");
+  panel.className = "pix-li-panel pix-ir-wirepanel";
+  const wv = info.wiredW ? info.valW : info.valH;
+  let aw = null, ah = null;
+  if (live && wv != null) {
+    // Compute via the same path as the OUTPUT card (snap-aware) so the first
+    // render matches the value onDrawForeground will paint — no one-frame flash.
+    const r = previewResize(live.w, live.h, effectiveWiredState(readState(node), info, live.w, live.h));
+    aw = r.w; ah = r.h;
+  } else if (info.wiredW) { aw = wv; } else { ah = wv; }
+  const mkRow = (label, val, tag) => {
+    const r = document.createElement("div");
+    r.className = "pix-ir-wirerow";
+    const l = document.createElement("span"); l.className = "pix-ir-wirelbl"; l.textContent = label;
+    const v = document.createElement("span"); v.className = "pix-ir-wireval"; v.textContent = val == null ? "—" : String(val);
+    const t = document.createElement("span"); t.className = "pix-ir-wiretag"; t.textContent = tag;
+    r.append(l, v, t);
+    return { row: r, valEl: v };
+  };
+  const wRow = mkRow("W", aw, info.wiredW ? "from wire" : "auto · keeps aspect");
+  const hRow = mkRow("H", ah, info.wiredW ? "auto · keeps aspect" : "from wire");
+  panel.append(wRow.row, hRow.row);
+  // Cache the value cells so onDrawForeground can refresh them live when the
+  // upstream wired value changes (DOM has no event for that; the draw loop is
+  // the only signal, same one the OUTPUT card already rides).
+  node._pixIrWireCells = { wEl: wRow.valEl, hEl: hRow.valEl };
+  return panel;
+}
+
+// longest_side wired summary: one row "LONGEST SIDE | value | from wire". The
+// OUTPUT card paints the resulting W×H; this just confirms the wired target.
+// Read-only (the value comes from the wire). Reuses the single-wire row CSS.
+function buildLongestWirePanel(node, info) {
+  const panel = document.createElement("div");
+  panel.className = "pix-li-panel pix-ir-wirepanel";
+  const row = document.createElement("div");
+  row.className = "pix-ir-wirerow";
+  const l = document.createElement("span"); l.className = "pix-ir-wirelbl is-wide"; l.textContent = "LONGEST SIDE";
+  const v = document.createElement("span"); v.className = "pix-ir-wireval";
+  v.textContent = info.valLongest == null ? "—" : String(info.valLongest);
+  const t = document.createElement("span"); t.className = "pix-ir-wiretag"; t.textContent = "from wire";
+  row.append(l, v, t);
+  panel.append(row);
+  // Cache the value cell so onDrawForeground can refresh it live when the
+  // upstream wired value changes (same draw-loop pattern as the single-wire panel).
+  node._pixIrLongestCell = v;
+  return panel;
+}
+
+// Single-input modes: drop the section header and move its name INTO the
+// input (orange, left), value pushed right next to the arrows. Saves vertical
+// space. Multi-input modes (Fit/Crop/Match ratio) keep their headers.
+const INLINE_LABELS = {
+  max_mp: "Max megapixels",
+  longest_side: "Longest side",
+  scale_factor: "Scale by ×",
+};
+function applyInlineLabel(panel, mode) {
+  const label = INLINE_LABELS[mode];
+  if (!label) return;
+  panel.querySelector(".pix-li-panel-label")?.remove();
+  const num = panel.querySelector(".pix-li-numinput");
+  if (!num || num.querySelector(".pix-ir-inline-label")) return;
+  const lab = document.createElement("span");
+  lab.className = "pix-ir-inline-label";
+  lab.textContent = label;
+  num.insertBefore(lab, num.firstChild);
+  num.classList.add("pix-ir-num-labeled");
+}
+
+// Fit / Crop (W x H) panels: drop the per-field WIDTH/HEIGHT labels and put
+// short W / H labels INSIDE each input, and remove the redundant size text
+// under the aspect rectangle. (The mode title row is removed by the caller.)
+function applyWHLayout(panel) {
+  const fields = [...panel.querySelectorAll(".pix-li-wh-field")];
+  const tags = ["W", "H"];
+  fields.forEach((f, i) => {
+    f.querySelector(".pix-li-wh-label")?.remove();
+    const num = f.querySelector(".pix-li-numinput");
+    if (num && !num.querySelector(".pix-ir-inline-label")) {
+      const lab = document.createElement("span");
+      lab.className = "pix-ir-inline-label";
+      lab.textContent = tags[i] || "";
+      num.insertBefore(lab, num.firstChild);
+      num.classList.add("pix-ir-num-labeled");
+    }
+  });
+  panel.querySelector(".pix-li-wh-rect-label")?.remove();
+
+  // Reflow into two columns: W / H / swap stacked on the left, ratio rect right.
+  const row = panel.querySelector(".pix-li-wh-row");
+  const swap = panel.querySelector(".pix-li-swap");
+  const preview = panel.querySelector(".pix-li-wh-preview");
+  if (row && fields.length === 2 && preview && !panel.querySelector(".pix-ir-wh-grid")) {
+    const grid = document.createElement("div");
+    grid.className = "pix-ir-wh-grid";
+    const col = document.createElement("div");
+    col.className = "pix-ir-wh-col";
+    col.append(fields[0], fields[1]);
+    if (swap) col.append(swap);
+    grid.append(col, preview);
+    row.replaceWith(grid);
+  }
+}
+
+// Crop-to-fill extras (cover mode only): a Fill/Crop scale toggle next to a
+// shrunk swap button, and a 3×3 anchor picker replacing the aspect-rect
+// preview. Anchor sets WHICH part is kept (works for both Fill and Crop);
+// Fill scales then trims, Crop cuts a 1:1-pixel piece (no scaling).
+function applyCoverControls(node, panel) {
+  const state = readState(node);
+
+  const swap = panel.querySelector(".pix-li-swap");
+  if (swap && !panel.querySelector(".pix-ir-fillcrop")) {
+    const row = document.createElement("div");
+    row.className = "pix-ir-swaprow";
+    const toggle = document.createElement("div");
+    toggle.className = "pix-ir-fillcrop";
+    const fillOpt = document.createElement("div");
+    fillOpt.textContent = "Fill";
+    fillOpt.dataset.cropScale = "1";
+    fillOpt.title = "Scale to fill exactly, trim overflow";
+    const cropOpt = document.createElement("div");
+    cropOpt.textContent = "Crop";
+    cropOpt.dataset.cropScale = "0";
+    cropOpt.title = "Cut a 1:1-pixel piece, no scaling";
+    const scaleOn = state.crop_scale !== false;
+    fillOpt.classList.toggle("active", scaleOn);
+    cropOpt.classList.toggle("active", !scaleOn);
+    toggle.append(fillOpt, cropOpt);
+    swap.replaceWith(row);
+    row.append(swap, toggle);
+    toggle.addEventListener("click", (e) => {
+      const opt = e.target.closest("[data-crop-scale]");
+      if (!opt) return;
+      const on = opt.dataset.cropScale === "1";
+      writeState(node, { ...readState(node), crop_scale: on });
+      fillOpt.classList.toggle("active", on);
+      cropOpt.classList.toggle("active", !on);
+      node.setDirtyCanvas(true, true); // OUTPUT card reflects the new size
+    });
+  }
+
+  const preview = panel.querySelector(".pix-li-wh-preview");
+  if (preview && !panel.querySelector(".pix-ir-anchor")) {
+    const ANCHORS = [
+      "top-left", "top", "top-right",
+      "left", "center", "right",
+      "bottom-left", "bottom", "bottom-right",
+    ];
+    const cur = state.crop_anchor || "center";
+    const grid = document.createElement("div");
+    grid.className = "pix-ir-anchor";
+    grid.title = "Where to crop from";
+    for (const a of ANCHORS) {
+      const cell = document.createElement("div");
+      cell.className = "pix-ir-anchor-cell" + (a === cur ? " active" : "");
+      cell.dataset.anchor = a;
+      cell.title = a.replace("-", " ");
+      grid.appendChild(cell);
+    }
+    preview.replaceWith(grid);
+    grid.addEventListener("click", (e) => {
+      const cell = e.target.closest(".pix-ir-anchor-cell");
+      if (!cell) return;
+      writeState(node, { ...readState(node), crop_anchor: cell.dataset.anchor });
+      for (const c of grid.children) c.classList.toggle("active", c === cell);
+    });
+  }
+}
+
+function renderUI(node) {
+  const root = node._pixIrRoot;
+  // Render even when the root is not yet attached to the document: on a fresh
+  // drop the DOM widget element can still be detached at queueMicrotask time,
+  // and building into a detached node is fine (Vue mounts it moments later).
+  // Bailing on !isConnected here left the body blank until the first wire/edit.
+  if (!root) return;
+  const state = readState(node);
+  // Null the live-refresh caches BEFORE wiping the DOM (their old elements are
+  // about to be detached); the panels below re-set whichever applies.
+  node._pixIrWireCells = null;
+  node._pixIrLockedInputs = null;
+  node._pixIrLongestCell = null;
+  root.innerHTML = "";
+
+  // Nodes 2.0: re-assert the readout cards canvas as the FIRST child (root was
+  // just wiped). Force a redraw next frame, once it has laid out. Legacy has no
+  // cards canvas - it paints the cards in the slot dead-space (onDrawForeground).
+  if (isVueNodes() && node._pixIrCardsCanvas) {
+    root.appendChild(node._pixIrCardsWrap || node._pixIrCardsCanvas);
+    requestAnimationFrame(() => node._pixIrRenderCards?.(true));
+  }
+
+  const info = wireInfo(node);
+  const live = getInputDims(node);
+
+  const chips = buildModeChips(state);
+  root.appendChild(chips);
+
+  // When width/height are wired, restrict the modes (Wired W/H design):
+  //  1 wired -> fixed aspect scale, NO mode applies (all chips disabled).
+  //  2 wired -> exact box, only Fit inside / Crop to fill apply (others disabled).
+  // Display mode for 2-wired: honour Fit if active, else show Crop to fill.
+  let dispMode = state.mode;
+  if (info.wiredLongest) {
+    // longest_side wire wins: force Longest side display, lock every chip.
+    dispMode = "longest_side";
+    for (const c of chips.querySelectorAll(".pix-ir-chip")) {
+      c.classList.add("disabled");
+      c.classList.toggle("active", c.dataset.mode === "longest_side");
+    }
+  } else if (info.count === 1) {
+    for (const c of chips.querySelectorAll(".pix-ir-chip")) { c.classList.add("disabled"); c.classList.remove("active"); }
+  } else if (info.count === 2) {
+    dispMode = WH_MODES.has(state.mode) ? state.mode : "cover";
+    for (const c of chips.querySelectorAll(".pix-ir-chip")) {
+      const m = c.dataset.mode;
+      c.classList.toggle("disabled", m !== "fit_inside" && m !== "cover");
+      c.classList.toggle("active", m === dispMode);
+    }
+  }
+
+  let panel = null;
+  if (info.wiredLongest) {
+    panel = buildLongestWirePanel(node, info);
+  } else if (info.count === 1) {
+    panel = buildSingleWirePanel(node, info, live);
+  } else {
+    panel = buildModePanel(dispMode, node, state, writeState,
+      () => node.setDirtyCanvas(true, true), STATE_PROP,
+      { previewMaxW: 134, previewMaxH: 96, cropOnly: true, inputDims: live, oneLine: true });
+    if (panel) {
+      applyInlineLabel(panel, dispMode);
+      if (dispMode === "fit_inside" || dispMode === "cover") applyWHLayout(panel);
+      if (dispMode === "cover") applyCoverControls(node, panel);
+      // No redundant title row — the highlighted button names the mode. Saves a
+      // row of height; matches the Pad panel which never had a title.
+      panel.querySelector(".pix-li-panel-label")?.remove();
+    }
+  }
+  if (panel) root.appendChild(panel);
+
+  const footer = buildFooter(state);
+  root.appendChild(footer);
+
+  const { wrap: ruWrap, upBtn, prev, dd, next, valueEl } = buildResampleAndUpscale(state);
+  root.appendChild(ruWrap);
+
+  applyWiredLocks(node, root);
+  node.setDirtyCanvas(true, true); // repaint the canvas-painted size readout
+
+  // ── wiring ──
+  chips.addEventListener("click", (e) => {
+    const c = e.target.closest(".pix-ir-chip");
+    if (!c || c.classList.contains("disabled")) return; // disabled while wired
+    writeState(node, { ...readState(node), mode: c.dataset.mode });
+    renderUI(node);
+    refit(node);
+  });
+  footer.addEventListener("click", (e) => {
+    const s = e.target.closest(".pix-ir-schip");
+    if (!s) return;
+    writeState(node, { ...readState(node), snap: parseInt(s.dataset.snap, 10) });
+    // snap doesn't change panel height — update active chip + readout only.
+    for (const el of footer.querySelectorAll(".pix-ir-schip")) {
+      el.classList.toggle("active", el === s);
+    }
+    node.setDirtyCanvas(true, true);
+  });
+  const setResample = (id) => {
+    writeState(node, { ...readState(node), resample: id });
+    valueEl.textContent = "Resample: " + resampleLabel(id);
+    node.setDirtyCanvas(true, true);
+  };
+  const cycleResample = (delta) => {
+    const cur = readState(node).resample || "auto";
+    let i = RESAMPLE_IDS.indexOf(cur);
+    if (i < 0) i = 0;
+    i = (i + delta + RESAMPLE_IDS.length) % RESAMPLE_IDS.length;
+    setResample(RESAMPLE_IDS[i]);
+  };
+  dd.addEventListener("click", () => openResamplePopup(dd, readState(node).resample || "auto", setResample));
+  prev.addEventListener("click", () => cycleResample(-1));
+  next.addEventListener("click", () => cycleResample(1));
+  upBtn.addEventListener("click", () => {
+    const on = !(readState(node).allow_upscale !== false); // flip current state
+    writeState(node, { ...readState(node), allow_upscale: on });
+    upBtn.classList.toggle("is-on", on);
+    upBtn.textContent = on ? "Upscaling: On" : "Upscaling: Off";
+    node.setDirtyCanvas(true, true);
+  });
+}
+
+// Re-read the wired inputs and mirror the live values into the DOM readout
+// cells (the single-wire / longest-side summaries + the locked W/H fields).
+// DOM has no event for an upstream widget-value change, so this is polled:
+// from the legacy onDrawForeground loop, and from the Nodes 2.0 setInterval
+// (onDrawForeground doesn't fire there). Returns { wi, info } for the painter.
+function refreshReadout(node) {
+  const wi = wireInfo(node);
+  const info = getReadoutInfo(node, wi);
+  if (node._pixIrWireCells && info.mode === "dual") {
+    const c = node._pixIrWireCells, w = String(info.outW), h = String(info.outH);
+    if (c.wEl.textContent !== w) c.wEl.textContent = w;
+    if (c.hEl.textContent !== h) c.hEl.textContent = h;
+  }
+  if (node._pixIrLongestCell && wi.valLongest != null) {
+    const s = String(wi.valLongest);
+    if (node._pixIrLongestCell.textContent !== s) node._pixIrLongestCell.textContent = s;
+  }
+  if (node._pixIrLockedInputs) {
+    const li = node._pixIrLockedInputs;
+    if (li.wInp && wi.valW != null && li.wInp.value !== String(wi.valW)) li.wInp.value = String(wi.valW);
+    if (li.hInp && wi.valH != null && li.hInp.value !== String(wi.valH)) li.hInp.value = String(wi.valH);
+  }
+  return { wi, info };
+}
+
+// Paint the INPUT -> OUTPUT readout (two joined mini cards, or a single message
+// box) centered horizontally in width W, vertically at midY. The two-card
+// design aligns INPUT over column 2 / OUTPUT over column 3 of a 4-column grid
+// spanning W (same grid the mode chips use), joined by a center bridge.
+// SHARED by the legacy slot-dead-space paint (W = node.size[0], midY = 54) and
+// the Nodes 2.0 cards canvas (W = canvas width, midY = canvas center).
+function paintReadout(ctx, node, W, midY, info) {
+  const acc = accentOf(node);   // a canvas cannot read the CSS variable
+  const cx = W / 2;
+  const fam = "ui-sans-serif, system-ui, sans-serif";
+  const capFont = `8px ${fam}`;
+  const dimsFont = `bold 10px ${fam}`;
+  const ratioFont = `8px ${fam}`;
+  ctx.save();
+  ctx.textBaseline = "middle";
+
+  if (info.mode === "msg") {
+    ctx.font = `13px ${fam}`;
+    const tw = ctx.measureText(info.text).width;
+    const bw = tw + 26, bh = 28;
+    roundRectPath(ctx, cx - bw / 2, midY - bh / 2, bw, bh, 8);
+    ctx.fillStyle = "#1d1d1d"; ctx.fill();
+    ctx.textAlign = "center"; ctx.fillStyle = acc;
+    ctx.fillText(info.text, cx, midY);
+    ctx.restore();
+    return;
+  }
+
+  const GRID_PAD = 16, COL_GAP = 5, NECK_INSET = 3;
+  const gridW = Math.max(40, W - GRID_PAD * 2);
+  const colW = (gridW - COL_GAP * 3) / 4;
+  const cardW = colW - NECK_INSET, cardH = 90;
+  const L1 = GRID_PAD + colW + COL_GAP;          // INPUT left  (column 2 left)
+  const R1 = L1 + cardW;                          // INPUT right (inset)
+  const R2 = GRID_PAD + 3 * colW + 2 * COL_GAP;   // OUTPUT right (column 3 right)
+  const L2 = R2 - cardW;                          // OUTPUT left (inset)
+  const arrowCx = (R1 + L2) / 2;                  // bridge center
+  const cardY = midY - cardH / 2, T = cardY, Bm = cardY + cardH;
+  const R = 6, bridgeH = 22, bT = midY - bridgeH / 2, bB = midY + bridgeH / 2;
+  const rectMaxW = 46, rectMaxH = 30;
+
+  // Single connected outline: rounded OUTER corners on both cards, joined by a
+  // center bridge (square inner junctions), with the gap above and below the
+  // bridge left open. One fill + one 1px stroke so the border flows as one shape.
+  ctx.beginPath();
+  ctx.moveTo(L1 + R, T);
+  ctx.lineTo(R1 - R, T);
+  ctx.arcTo(R1, T, R1, T + R, R);          // INPUT top-right
+  ctx.lineTo(R1, bT);                       // down to bridge top
+  ctx.lineTo(L2, bT);                       // bridge top across
+  ctx.lineTo(L2, T + R);                    // up OUTPUT inner edge
+  ctx.arcTo(L2, T, L2 + R, T, R);          // OUTPUT top-left
+  ctx.lineTo(R2 - R, T);
+  ctx.arcTo(R2, T, R2, T + R, R);          // OUTPUT top-right
+  ctx.lineTo(R2, Bm - R);
+  ctx.arcTo(R2, Bm, R2 - R, Bm, R);        // OUTPUT bottom-right
+  ctx.lineTo(L2 + R, Bm);
+  ctx.arcTo(L2, Bm, L2, Bm - R, R);        // OUTPUT bottom-left
+  ctx.lineTo(L2, bB);                       // up to bridge bottom
+  ctx.lineTo(R1, bB);                       // bridge bottom across
+  ctx.lineTo(R1, Bm - R);                   // down INPUT inner edge
+  ctx.arcTo(R1, Bm, R1 - R, Bm, R);        // INPUT bottom-right
+  ctx.lineTo(L1 + R, Bm);
+  ctx.arcTo(L1, Bm, L1, Bm - R, R);        // INPUT bottom-left
+  ctx.lineTo(L1, T + R);
+  ctx.arcTo(L1, T, L1 + R, T, R);          // INPUT top-left
+  ctx.closePath();
+  ctx.fillStyle = "#1d1d1d"; ctx.fill();
+  ctx.strokeStyle = "#444"; ctx.lineWidth = 1; ctx.stroke();
+
+  const drawContent = (x, label, w, h, accent) => {
+    const ccx = x + cardW / 2;
+    ctx.textAlign = "center";
+    const maxTxt = cardW - 8; // keep text inside the card (5-digit dims, etc.)
+    ctx.font = capFont; ctx.fillStyle = "#9a9a9a";
+    ctx.fillText(label, ccx, cardY + 15, maxTxt);
+    ctx.font = dimsFont; ctx.fillStyle = acc;
+    ctx.fillText(`${w}×${h}`, ccx, cardY + 27, maxTxt);
+    const { rw, rh } = aspectRectDims(w, h, rectMaxW, rectMaxH);
+    const rx = Math.round(ccx - rw / 2) + 0.5, ry = Math.round(cardY + 53 - rh / 2) + 0.5;
+    if (accent) { ctx.fillStyle = accentRgba(node, 0.20); ctx.fillRect(rx, ry, rw, rh); }
+    ctx.strokeStyle = accent ? acc : "rgba(200,200,200,0.7)"; ctx.lineWidth = 1;
+    ctx.strokeRect(rx, ry, rw, rh);
+    ctx.font = ratioFont; ctx.fillStyle = "#9a9a9a";
+    ctx.fillText(ratioLabel(w, h), ccx, cardY + 77, maxTxt);
+  };
+
+  const changed = info.inW !== info.outW || info.inH !== info.outH;
+  drawContent(L1, "INPUT", info.inW, info.inH, false);
+  drawContent(L2, "OUTPUT", info.outW, info.outH, changed);
+
+  // Compact ">" chevron centered on the bridge, 1px to match the buttons.
+  ctx.strokeStyle = "#9a9a9a"; ctx.lineWidth = 1;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(arrowCx - 2.5, midY - 4);
+  ctx.lineTo(arrowCx + 2.5, midY);
+  ctx.lineTo(arrowCx - 2.5, midY + 4);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Nodes 2.0 only: the readout cards can't paint in the slot dead-space (slots
+// are Vue-rendered, no canvas band), so render them into a <canvas> child of the
+// controls panel (renderUI prepends it). A ResizeObserver keeps it DPR-sized,
+// and a low-rate poll replaces the legacy onDrawForeground loop for live
+// upstream-value changes (Vue Compat #1). Change-gated so the poll is cheap.
+const CARDS_CANVAS_H = 100;
+function setupVueCards(node) {
+  // A canvas on screen costs the GPU work on every frame the page draws, which
+  // slows every render; while static the cards show a picture of themselves
+  // instead (js/shared/canvas_snapshot.mjs). That picture has to sit ON the
+  // canvas, so the canvas lives in a positioned WRAPPER that carries the row's
+  // 100px height: renderUI wipes the root (innerHTML) on every render and
+  // re-adds the wrapper whole, picture included, and measureContentHeight sees
+  // one 100px child exactly as it saw the bare canvas.
+  const wrap = document.createElement("div");
+  wrap.className = "pix-ir-cards-wrap";
+  wrap.style.cssText = `position:relative; width:100%; height:${CARDS_CANVAS_H}px; display:block;`;
+  const cv = document.createElement("canvas");
+  cv.className = "pix-ir-cards-canvas";
+  cv.style.cssText = "position:absolute; inset:0; width:100%; height:100%; display:block;";
+  wrap.appendChild(cv);
+  node._pixIrCardsWrap = wrap;
+  node._pixIrCardsCanvas = cv;
+  node._pixIrCardsSnap = attachCanvasSnapshot(cv);
+
+  const render = (force) => {
+    const canvas = node._pixIrCardsCanvas;
+    if (!canvas || !canvas.isConnected) return;
+    const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+    if (!cssW || !cssH) return;
+    const { info } = refreshReadout(node);
+    const sig = info.mode === "msg"
+      ? `m:${info.text}`
+      : `d:${info.inW}x${info.inH}>${info.outW}x${info.outH}`;
+    // Backing store at dpr x graph-zoom so the cards stay crisp when zoomed in.
+    // The ResizeObserver doesn't fire on zoom, so fold the scale into the
+    // size-sig - the existing 250ms poll then re-renders on a zoom change (a
+    // ~250ms lag is fine for these static text/arrow cards; no extra rAF loop).
+    const s = canvasBackingScale(cssW, cssH);
+    const sizeSig = `${cssW}x${cssH}@${s.toFixed(2)}`;
+    if (!force && sig === node._pixIrLastSig && sizeSig === node._pixIrLastSize) return;
+    node._pixIrLastSig = sig;
+    node._pixIrLastSize = sizeSig;
+    const W = Math.round(cssW * s), H = Math.round(cssH * s);
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    paintReadout(ctx, node, cssW, cssH / 2, info);
+    node._pixIrCardsSnap?.changed();
+  };
+  node._pixIrRenderCards = render;
+
+  const ro = new ResizeObserver(() => render());
+  ro.observe(cv);
+  node._pixIrCardsRO = ro;
+  node._pixIrPoll = setInterval(() => render(), 250);
+}
+
+function teardownVueCards(node) {
+  if (node._pixIrPoll) { clearInterval(node._pixIrPoll); node._pixIrPoll = null; }
+  if (node._pixIrCardsRO) { node._pixIrCardsRO.disconnect(); node._pixIrCardsRO = null; }
+  try { node._pixIrCardsSnap?.dispose(); } catch {}
+  node._pixIrCardsSnap = null;
+  try { (node._pixIrCardsWrap || node._pixIrCardsCanvas)?.remove(); } catch {}
+  node._pixIrCardsWrap = null;
+  node._pixIrCardsCanvas = null;
+  node._pixIrRenderCards = null;
+  node._pixIrLastSig = null;
+  node._pixIrLastSize = null;
+}
+
+// The cards the CURRENT renderer needs. onNodeCreated chooses once, but "Nodes
+// 2.0" can be switched with the page open: without this a node made in Classic
+// had no size cards in Nodes 2.0, and one made in Nodes 2.0 showed them TWICE in
+// Classic (the leftover canvas plus the painted pair), 126px taller than a fresh
+// one (measured 2026-09-26, flip_audit_lib.js). A switch is a user action, never
+// the load path, so re-fitting Classic's height to the content here is the same
+// refit every other user action already does.
+function applyImageResizeRenderer(node, vue) {
+  if (!node._pixIrRoot) return;
+  if (vue) {
+    if (!node._pixIrCardsCanvas) setupVueCards(node);
+    renderUI(node);
+    return;
+  }
+  teardownVueCards(node);
+  renderUI(node);
+  requestAnimationFrame(() => {
+    if (!node._pixIrRoot || isVueNodes()) return;
+    const h = node.computeSize()[1];
+    // setSize, not size[1] = h: a raw index write is reverted when the size was
+    // last committed under the other renderer, which is exactly this moment.
+    if (Math.abs(node.size[1] - h) > 1) node.setSize?.([node.size[0], h]);
+    node.setDirtyCanvas(true, true);
+  });
+}
+
+app.registerExtension({
+  name: "Pixaroma.ImageResize",
+  // A Run that ended while another workflow tab was open (js/shared/run_tab.mjs).
+  onNodeOutputsUpdated(nodeOutputs) {
+    eachRestoredOutput(nodeOutputs, "PixaromaImageResize", (node, output) => {
+      const frames = output?.pixaroma_image_resize;
+      if (Array.isArray(frames) && frames.length) applyResizeDims(node, frames);
+    });
+  },
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== "PixaromaImageResize") return;
+
+    const _origCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      const r = _origCreated?.apply(this, arguments);
+      // Is a workflow open building this node? Decided NOW (see the refit below).
+      const bornInLoad = _irLoadingGraph;
+      hideJsonWidget(this.widgets, HIDDEN_INPUT);
+      const root = document.createElement("div");
+      root.className = "pix-ir-root";
+      installCanvasZoomPassthrough(root);
+      installNodeAccent(this, root);   // the face follows this node's accent colour
+      const w = this.addDOMWidget("image_resize_ui", "custom", root, {
+        serialize: false,
+        getMinHeight: () => measureContentHeight(root),
+      });
+      applyAdaptiveCanvasOnly(w); // true in legacy (out of Parameters tab), false in 2.0 (render body)
+      this._pixIrRoot = root;
+      // Nodes 2.0 only: build the INPUT->OUTPUT cards canvas (renderUI prepends
+      // it into the panel). Legacy paints the cards in the slot dead-space via
+      // onDrawForeground instead.
+      if (isVueNodes()) setupVueCards(this);
+      // ...and again whenever the renderer is switched live. A copy that is never
+      // added to a graph, or a node left inside a subgraph of a closed workflow,
+      // is skipped (js/shared/live_node.mjs).
+      this._pixIrRendererOff = onRendererChange((vue) => {
+        if (isLiveNode(this)) applyImageResizeRenderer(this, vue);
+      });
+      // Fresh-node default size (saved workflows restore their own via configure).
+      if (!this.size || this.size[0] < MIN_W) this.size = [360, 340];
+      // Deferred initial render so configure() can land the saved state first
+      // (Vue Compat #8). By microtask time, configure() has already run for a
+      // loaded node, so node.properties[STATE_PROP] is set — we use that to
+      // refit ONLY on a genuine fresh drop, never on load (Vue Compat #18).
+      // ⚠️ The state test ALONE is not enough: a node that was dropped and never
+      // edited is SAVED with no state, so every open treated it as a fresh drop
+      // and refit it - and the refit's frame lands after the load window when
+      // frames are slow. MEASURED 2026-09-27 in Nodes 2.0, frames delayed 600 ms:
+      // 416 -> 398 while the drawn node stayed 416. bornInLoad closes that.
+      // A copy / paste / duplicate is not a load, so bornInLoad cannot see it:
+      // _pixIrConfigured (set by the configure wrapper) does. Without it a copy
+      // of a never-edited node was refit to its content height (390 -> 290).
+      // This microtask runs after a paste has reconnected the copied wires, so a
+      // copy's content is final here: keep the copied height, but never less
+      // than that content (growToFit). A copy left inside no graph (Ctrl+C builds
+      // one to serialize) is skipped.
+      queueMicrotask(() => {
+        const wasConfigured = this.properties?.[STATE_PROP] !== undefined;
+        renderUI(this);
+        if (!wasConfigured && !bornInLoad && !this._pixIrConfigured) refit(this);
+        else if (this._pixIrConfigured && !bornInLoad && this.graph) growToFit(this);
+      });
+      return r;
+    };
+
+    // ── Configure gate: wrap `configure`, NOT the `onConfigure` hook ──
+    // LiteGraph calls the onConfigure hook as the LAST statement of configure(),
+    // after it has replayed onConnectionsChange once per input (isConnected is
+    // true for every one of them, wired or not). A flag raised in the hook never
+    // covered that replay, and on a copy / paste / duplicate - not a workflow
+    // load, so _irLoadingGraph is down as well - the replay ran refit() and the
+    // copy came out at its content height instead of the copied one. MEASURED
+    // 2026-09-27: 475 -> 375 in Classic, 600 -> 500 in Nodes 2.0. Same fix as
+    // Switch (CLAUDE.md Vue Compat #17).
+    const _origConfigureFn = nodeType.prototype.configure;
+    nodeType.prototype.configure = function () {
+      this._pixIrConfiguring = true;
+      // Runtime only, never saved: "this node was restored, not dropped fresh".
+      // The creation microtask reads it (see onNodeCreated).
+      this._pixIrConfigured = true;
+      try {
+        // Not `?.apply`: a silent no-op would restore no saved state at all.
+        if (typeof _origConfigureFn !== "function") {
+          console.error("[Image Resize Pixaroma] node configure() is missing - saved state was not restored");
+          return undefined;
+        }
+        return _origConfigureFn.apply(this, arguments);
+      } finally {
+        this._pixIrConfiguring = false;
+        // Paste, Ctrl+D and Alt-drag reconnect the copied wires right AFTER
+        // configure returns, in the same tick (LGraphCanvas._deserializeItems).
+        // Those are the copy's own wires coming back, not the user wiring
+        // something new, so they must not refit a copy that already carries the
+        // copied size (MEASURED: a pasted copy with its wires 475 -> 375). A 0 ms
+        // timer drops the flag as the tick ends, so a real wire right after
+        // still refits. Same window as Switch's _pixSwRestoring (switch-family.md).
+        this._pixIrRestoring = true;
+        clearTimeout(this._pixIrRestoreTimer);
+        this._pixIrRestoreTimer = setTimeout(() => {
+          this._pixIrRestoring = false;
+          this._pixIrRestoreTimer = null;
+        }, 0);
+      }
+    };
+
+    // Runs INSIDE configure, so the gate above is still up. Do not set or clear
+    // the flag here: this hook runs partway through, and dropping it early would
+    // reopen the window the wrapper closes.
+    const _origConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function (info) {
+      const res = _origConfigure?.apply(this, arguments);
+      if (this._pixIrRoot) renderUI(this); // render only — no refit (Vue Compat #18)
+      return res;
+    };
+
+    const INPUT_TYPE = (typeof LiteGraph !== "undefined" && LiteGraph.INPUT != null) ? LiteGraph.INPUT : 1;
+    const _origConn = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function (type, idx, connected, link, ioSlot) {
+      const r = _origConn?.apply(this, arguments);
+      // Auto-swap sizing sources: longest_side and width/height are competing
+      // ways to set the size, so connecting one drops the other(s). width and
+      // height may coexist (exact box) - only longest_side is exclusive vs them.
+      // Only on a genuine user connect; never during configure/load. Three
+      // guards: _pixIrConfiguring (this node's onConfigure window),
+      // _irLoadingGraph (the graph-level link-restore window that fires AFTER
+      // onConfigure - this is the one that was disconnecting saved wires on
+      // open), and _pixIrAutoSwapping (re-entrancy from the disconnectInput
+      // calls below).
+      if (type === INPUT_TYPE && connected && !this._pixIrConfiguring && !this._pixIrAutoSwapping && !_irLoadingGraph) {
+        const name = this.inputs?.[idx]?.name || ioSlot?.name;
+        this._pixIrAutoSwapping = true;
+        try {
+          if (name === "longest_side") {
+            const dW = disconnectInputByName(this, "width");
+            const dH = disconnectInputByName(this, "height");
+            if (dW || dH) toast("longest_side now drives the size, so width/height was disconnected.");
+          } else if (name === "width" || name === "height") {
+            if (disconnectInputByName(this, "longest_side"))
+              toast("width/height now drive the size, so longest_side was disconnected.");
+          }
+        } finally {
+          this._pixIrAutoSwapping = false;
+        }
+      }
+      if (!this._pixIrConfiguring && !this._pixIrAutoSwapping && this._pixIrRoot) {
+        renderUI(this); // re-render for the new wire count (no state mutation)
+        // Refit only for a REAL wire change. While a workflow opens, ComfyUI
+        // replays this handler once per input (Vue Compat #17), and
+        // _pixIrConfiguring is not up yet at that point. Read the load flag NOW:
+        // refit's own frame can land after the 300 ms window when frames are slow,
+        // and it then rewrote node.size on open. MEASURED 2026-09-27 in Nodes 2.0
+        // with frames delayed 600 ms: 416 -> 398 while the drawn node stayed 416.
+        // _pixIrRestoring: a paste putting the copied wires back (see configure).
+        if (!_irLoadingGraph && !this._pixIrRestoring) refit(this);
+        // Upstream loader may populate its image a tick after the wire lands;
+        // re-read the size shortly after so the readout updates without a run.
+        setTimeout(() => this.setDirtyCanvas(true, true), 200);
+      }
+      return r;
+    };
+
+    const _origRemoved = nodeType.prototype.onRemoved;
+    nodeType.prototype.onRemoved = function () {
+      try { this._pixIrRendererOff?.(); } catch {}
+      this._pixIrRendererOff = null;
+      if (this._pixIrRestoreTimer) {
+        clearTimeout(this._pixIrRestoreTimer);
+        this._pixIrRestoreTimer = null;
+        this._pixIrRestoring = false;
+      }
+      this._pixIrRoot = null;
+      this._pixIrWireCells = null;
+      this._pixIrLockedInputs = null;
+      this._pixIrLongestCell = null;
+      // Nodes 2.0 cards-canvas teardown: stop the poll + observer so a deleted
+      // node doesn't keep re-reading wires / leak the ResizeObserver.
+      if (this._pixIrPoll) { clearInterval(this._pixIrPoll); this._pixIrPoll = null; }
+      if (this._pixIrCardsRO) { this._pixIrCardsRO.disconnect(); this._pixIrCardsRO = null; }
+      try { this._pixIrCardsSnap?.dispose(); } catch {}
+      this._pixIrCardsSnap = null;
+      this._pixIrCardsWrap = null;
+      this._pixIrCardsCanvas = null;
+      this._pixIrRenderCards = null;
+      closeResamplePopup(); // tear down popup + its document listeners if open
+      return _origRemoved?.apply(this, arguments);
+    };
+
+    // Belt-and-braces minimum width: onResize is unreliable in the Vue
+    // frontend (Vue Compat #13) and Align Pixaroma writes node.size directly,
+    // so clamp here too (Pixaroma UI conventions #7).
+    const _origResize = nodeType.prototype.onResize;
+    nodeType.prototype.onResize = function (size) {
+      if (this.size[0] < MIN_W) this.size[0] = MIN_W;
+      return _origResize?.apply(this, arguments);
+    };
+
+    // Paint the size readout in the empty space between the input and output
+    // slot columns, on a dark panel, so it uses dead space and costs no body
+    // height. Vertical center of the 4 slot rows is y=44 (TOP_PAD 4 + 4*20/2).
+    const _origDraw = nodeType.prototype.onDrawForeground;
+    nodeType.prototype.onDrawForeground = function (ctx) {
+      const r = _origDraw?.apply(this, arguments);
+      if (this.flags?.collapsed) return r;
+      // Nodes 2.0 paints the readout into a DOM cards canvas (+ a poll); skip the
+      // canvas paint + the min-W self-heal here (the DOM widget drives the body).
+      if (isVueNodes()) return r;
+      if (this.size[0] < MIN_W) { this.size[0] = MIN_W; this.setDirtyCanvas(true, true); }
+      const { info } = refreshReadout(this);
+      // Paint the INPUT->OUTPUT readout in the slot dead-space, midY=54 (the
+      // vertical center of the 5 slot rows: TOP_PAD 4 + 5*20/2).
+      paintReadout(ctx, this, this.size[0], 54, info);
+      return r;
+    };
+  },
+});
+
+// ── executed payload: learn real in/out dims + result preview ──
+api.addEventListener("executed", ({ detail }) => {
+  const frames = detail?.output?.pixaroma_image_resize;
+  if (!frames || !frames.length) return;
+  // Decided after this message's listeners ran: a Run that ended while ANOTHER
+  // workflow tab is open belongs to that tab (ids repeat across workflows, so
+  // the lookup below would hit a stranger with the same id). Core keeps it and
+  // hands it back when that tab opens again: onNodeOutputsUpdated below
+  // (js/shared/run_tab.mjs).
+  queueMicrotask(() => {
+    if (runTab(detail.output) === "other") return;
+    let node = app.graph.getNodeById(detail.node);
+    if (!node && typeof detail.node === "string") node = app.graph.getNodeById(parseInt(detail.node, 10));
+    if (!node || node.comfyClass !== "PixaromaImageResize") return;
+    applyResizeDims(node, frames);
+  });
+});
+
+function applyResizeDims(node, frames) {
+  const f = frames[0];
+  if (!node.properties) node.properties = {};
+  node.properties.pixIrDims = { in_w: f.in_w, in_h: f.in_h, out_w: f.out_w, out_h: f.out_h };
+  node.setDirtyCanvas(true, true);
+  node._pixIrRenderCards?.(true); // Nodes 2.0: refresh the cards canvas now (no-op in legacy)
+}
+
+// ── graphToPrompt: inject state into the hidden input (subgraph-safe) ──
+const _origG2P_fn = app.graphToPrompt;
+const _origG2P = (...a) => _origG2P_fn.apply(app, a);
+app.graphToPrompt = async function (...args) {
+  const result = await _origG2P(...args);
+  // FAIL OPEN - see the note in pause_image: a throw here rejects ComfyUI's
+  // own graphToPrompt and breaks Run for the whole workflow. Never wrap the
+  // `await _origG2P` above; a failure in CORE must propagate.
+  try {
+    const out = result?.output;
+    if (out) {
+      let index = null;
+      const buildIndex = () => {
+        const m = new Map();
+        const visit = (g) => {
+          if (!g) return;
+          for (const n of (g._nodes || g.nodes || [])) {
+            if (!n) continue;
+            if (n.comfyClass === "PixaromaImageResize" || n.type === "PixaromaImageResize")
+              m.set(String(n.id), n);
+            const inner = n.subgraph || n.graph || n._graph;
+            if (inner && inner !== g) visit(inner);
+          }
+        };
+        visit(app.graph);
+        return m;
+      };
+      for (const id in out) {
+        if (out[id]?.class_type !== "PixaromaImageResize") continue;
+        if (!index) index = buildIndex();
+        const sId = String(id);
+        let node = index.get(sId);
+        if (!node && sId.includes(":")) node = index.get(sId.slice(sId.lastIndexOf(":") + 1));
+        const state = node?.properties?.[STATE_PROP] || JSON.stringify(DEFAULT_STATE);
+        out[id].inputs = out[id].inputs || {};
+        out[id].inputs[HIDDEN_INPUT] = state;
+      }
+    }
+  } catch (e) {
+    console.error("[Pixaroma] Image Resize prompt injection failed; prompt sent unchanged", e);
+  }
+  return result;
+};
+
+// The colour option: a right-click "Image Resize settings" entry, the gear in the
+// selection toolbar, and the shared colour panel behind both.
+registerNodeAccent("PixaromaImageResize", {
+  title: "Image Resize",
+  // Explicit rather than relying on this node's repaint poll to happen to catch
+  // it - the cards canvas cannot read the CSS variable.
+  onChange: (node) => node._pixIrRenderCards?.(true),
+});

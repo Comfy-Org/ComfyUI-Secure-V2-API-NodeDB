@@ -1,0 +1,223 @@
+// Allowlist-based HTML sanitizer. No external dependencies.
+// Input: arbitrary HTML string. Output: sanitized HTML string.
+// Drops tags/attributes not on the allowlist. Forces target/rel on anchors.
+
+const ALLOWED_TAGS = new Set([
+  "h1","h2","h3","p","br","hr","ul","ol","li","b","i","u","s","strike","strong","em",
+  "code","pre","span","div","a","blockquote","label",
+  // Grid / table support — see spec 2026-04-21-note-grid-design.md.
+  // No colspan/rowspan (V1); hand-edit via Code view if needed.
+  "table","thead","tbody","tr","th","td",
+]);
+
+// Tags whose content is ALSO discarded when removed (vs. unwrapped).
+// Anything not in ALLOWED_TAGS and not here is unwrapped so inner text/nodes
+// survive — e.g. Chrome wraps strikeThrough in <strike>; if that tag weren't
+// allowed we'd still want the wrapped text to remain.
+const DANGEROUS_TAGS = new Set([
+  "script","style","iframe","object","embed","link","meta",
+  "form","button","select","textarea","svg","math",
+  "applet","frame","frameset","base",
+]);
+
+// Pixaroma block classes are the ONLY allowed class values.
+const ALLOWED_CLASS_VALUES = new Set([
+  "pix-note-dl","pix-note-yt","pix-note-discord",
+  "pix-note-vp","pix-note-rm",
+  // Plain button pill (no icon) — added with the per-instance colour
+  // overhaul; renders the same pill shell as dl/vp/rm minus the
+  // ::before icon. CSS rules grouped with the others below.
+  "pix-note-btn-plain",
+  // Wrapper + decoration pieces for the Button Design output
+  "pix-note-btnblock","pix-note-folderhint","pix-note-btnsize",
+  // Grid (table) marker class
+  "pix-note-grid",
+  // Inline-icon span marker (data-ic slug on <span>)
+  "pix-note-ic",
+  // Separator (<hr>) variant classes — each instance carries inline
+  // color so they're independent of the toolbar Ln colour picker.
+  "pix-note-hr-solid",
+  "pix-note-hr-dashed",
+  "pix-note-hr-dotted",
+  "pix-note-hr-double",
+  "pix-note-hr-thick",
+]);
+
+// Inline-style properties we allow. Values are validated separately.
+// CSS custom properties prefixed with --pix-note-grid- carry per-instance
+// grid colours (border + header bg) so each table is self-contained
+// instead of tracking the toolbar Ln picker. Sanitiser validates them
+// as colours via COLOR_RE the same way as `color` / `background-color`.
+const ALLOWED_STYLE_PROPS = new Set([
+  "color", "background-color", "text-align",
+  "--pix-note-grid-border",
+  "--pix-note-grid-header-bg",
+]);
+
+// Color pattern: #abc, #aabbcc, rgb(), rgba(), or a narrow set of named colors.
+const COLOR_RE = /^(#[0-9a-f]{3}([0-9a-f]{3})?|rgba?\([^)]+\)|transparent|inherit|currentColor|black|white|red|green|blue|yellow|orange|purple|gray|grey)$/i;
+const ALIGN_RE = /^(left|right|center|justify)$/i;
+
+const ALLOWED_HREF_PROTOCOLS = ["http:", "https:", "mailto:"];
+
+// Inline-icon slug shape: matches registered icon filenames. Mixed case is
+// intentional — acronym filenames (CLIP / VAE / GGUF / LORA) ship with the
+// library. Slug is NOT cross-checked against the live icon list here —
+// drop-and-discover means user A's note may reference an icon user B doesn't
+// have; sanitizer has no view into the filesystem.
+const IC_SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+// Inline-icon size attribute: must be one of the 4 presets. Anything else
+// strips the attribute (icon falls back to M default).
+const IC_SIZE_RE = /^(s|m|l|xl)$/;
+
+// Per-tag attribute allowlist. "*" means "any tag".
+const ALLOWED_ATTRS = {
+  "*": new Set(["class", "style"]),
+  a: new Set(["class","style","href","target","rel","data-folder","data-size","data-label"]),
+  label: new Set(["class","style"]),
+  span: new Set(["class","style","data-ic","data-size","contenteditable"]),
+};
+
+function filterClass(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .split(/\s+/)
+    .filter((c) => ALLOWED_CLASS_VALUES.has(c))
+    .join(" ");
+}
+
+function filterStyle(value) {
+  if (typeof value !== "string") return "";
+  const out = [];
+  for (const chunk of value.split(";")) {
+    const ix = chunk.indexOf(":");
+    if (ix < 0) continue;
+    const prop = chunk.slice(0, ix).trim().toLowerCase();
+    const val = chunk.slice(ix + 1).trim();
+    if (!ALLOWED_STYLE_PROPS.has(prop)) continue;
+    // Validate every colour-bearing property the same way — extending
+    // the allowlist with new colour custom-properties adds an entry
+    // here, not a new branch.
+    const isColorProp =
+      prop === "color" ||
+      prop === "background-color" ||
+      prop === "--pix-note-grid-border" ||
+      prop === "--pix-note-grid-header-bg";
+    if (isColorProp && !COLOR_RE.test(val)) continue;
+    if (prop === "text-align" && !ALIGN_RE.test(val)) continue;
+    out.push(`${prop}: ${val}`);
+  }
+  return out.join("; ");
+}
+
+function filterHref(value) {
+  try {
+    const u = new URL(value);  // no base — throws on relative URLs
+    if (!ALLOWED_HREF_PROTOCOLS.includes(u.protocol)) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function unwrap(el) {
+  const parent = el.parentNode;
+  if (!parent) { el.remove(); return []; }
+  const kids = Array.from(el.childNodes);
+  for (const c of kids) parent.insertBefore(c, el);
+  parent.removeChild(el);
+  return kids;
+}
+
+function filterElement(el) {
+  const tag = el.tagName.toLowerCase();
+
+  if (!ALLOWED_TAGS.has(tag)) {
+    if (DANGEROUS_TAGS.has(tag)) {
+      el.remove();
+      return;
+    }
+    // Unknown/benign wrapper: keep children so user text isn't lost.
+    const kids = unwrap(el);
+    for (const c of kids) {
+      if (c.nodeType === 1) filterElement(c);
+    }
+    return;
+  }
+  // Scan attributes; mutate list while iterating via snapshot.
+  const attrs = Array.from(el.attributes);
+  const allowedForTag = ALLOWED_ATTRS[tag] || ALLOWED_ATTRS["*"];
+
+  for (const a of attrs) {
+    const name = a.name.toLowerCase();
+    // Drop all event handlers unconditionally.
+    if (name.startsWith("on")) { el.removeAttribute(a.name); continue; }
+    if (!allowedForTag.has(name) && !ALLOWED_ATTRS["*"].has(name)) {
+      el.removeAttribute(a.name);
+      continue;
+    }
+    if (name === "class") {
+      const cleaned = filterClass(a.value);
+      if (cleaned) el.setAttribute("class", cleaned);
+      else el.removeAttribute("class");
+    } else if (name === "style") {
+      const cleaned = filterStyle(a.value);
+      if (cleaned) el.setAttribute("style", cleaned);
+      else el.removeAttribute("style");
+    } else if (name === "href") {
+      const cleaned = filterHref(a.value);
+      if (cleaned) {
+        el.setAttribute("href", cleaned);
+      } else {
+        // Invalid URL — strip the link but KEEP the inner text. Removing
+        // the whole element silently deleted the user's text on save
+        // (e.g. if they hit Insert on the link dialog without changing
+        // the default 'https://' placeholder, or pasted a relative URL).
+        const kids = unwrap(el);
+        for (const c of kids) {
+          if (c.nodeType === 1) filterElement(c);
+        }
+        return;
+      }
+    } else if (name === "data-ic") {
+      // Malformed slug strips ONLY the attribute, keeping the span intact
+      // (unwrap-not-remove policy, Pattern #1). Cross-file contract with
+      // js/note/icons.mjs (cache + inject) and server_routes.py (list).
+      if (!IC_SLUG_RE.test(a.value)) el.removeAttribute(a.name);
+    } else if (name === "data-size" && tag === "span") {
+      // Inline-icon size: only validate on <span>. The <a> tag uses
+      // data-size for Button Design pill sizing with its own values, so
+      // we must NOT apply this regex there.
+      if (!IC_SIZE_RE.test(a.value)) el.removeAttribute(a.name);
+    } else if (name === "contenteditable" && tag === "span") {
+      // Inline-icon atomic flag: only "false" is allowed (the spans we
+      // emit). Any other value or non-icon span gets stripped.
+      const v = (a.value || "").toLowerCase();
+      const isIconSpan = el.classList?.contains("pix-note-ic");
+      if (!isIconSpan || v !== "false") el.removeAttribute(a.name);
+    }
+  }
+
+  // All anchors: force safe target/rel
+  if (tag === "a" && el.getAttribute("href")) {
+    el.setAttribute("target", "_blank");
+    el.setAttribute("rel", "noopener noreferrer");
+  }
+
+  // Recurse into children (snapshot before removal)
+  const kids = Array.from(el.children);
+  for (const c of kids) filterElement(c);
+}
+
+export function sanitize(html) {
+  if (typeof html !== "string" || html.length === 0) return "";
+  const doc = new DOMParser().parseFromString(
+    `<!doctype html><body>${html}</body>`, "text/html"
+  );
+  const body = doc.body;
+  // Walk top-level and descendants
+  const topKids = Array.from(body.children);
+  for (const c of topKids) filterElement(c);
+  return body.innerHTML;
+}
