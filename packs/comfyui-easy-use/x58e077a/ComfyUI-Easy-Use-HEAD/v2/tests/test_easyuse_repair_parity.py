@@ -24,7 +24,7 @@ import sys
 TESTS = Path(__file__).resolve().parent
 RESULTS = Path('/results')
 WORK = Path('/tmp/amy-easyuse-parity')
-ROUNDS = ['r1', 'r2']
+ROUNDS = ['r1', 'r2', 'r3']
 ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
 UPSCALE_MODEL = 'amy-x2-compact.safetensors'
@@ -44,6 +44,24 @@ def make_fixtures():
     net = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type='prelu')
     state = {k: v.detach().contiguous() for k, v in net.state_dict().items()}
     save_file(state, str(folder / UPSCALE_MODEL))
+    # LoRA files without metadata, keyed for the worker's stand-in MODEL/CLIP key maps
+    keys = {'lora_unet_input_blocks_0_0': (4, 2), 'lora_unet_middle_block_1_proj_in': (3, 2),
+            'lora_te_text_model_encoder_layers_0_mlp_fc1': (5, 2)}
+
+    def lora(seed):
+        out = {}
+        for index, (key, (rows, rank)) in enumerate(keys.items()):
+            base = torch.arange(rows * rank, dtype=torch.float32) / (7.0 + seed + index)
+            out[f'{key}.lora_up.weight'] = base.reshape(rows, rank).contiguous()
+            out[f'{key}.lora_down.weight'] = (base.reshape(rank, rows) * 0.5).contiguous()
+            out[f'{key}.alpha'] = torch.tensor(float(rank + seed))
+        return out
+
+    for seed, name in enumerate(('amy-lora.safetensors', 'sub/amy-sub-lora.safetensors', 'zz-amy-lora.safetensors')):
+        path = WORK / 'fixtures' / 'loras' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_file(lora(seed), str(path))
+    (WORK / 'fixtures' / 'easy_wildcards').mkdir(parents=True, exist_ok=True)
 
 
 def n(node_id, class_type, **inputs):
@@ -222,7 +240,63 @@ HIRES_CASES = [
          expect='platform:sdk-pipe-classification',
          note='PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification)'),
 ]
-CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES}
+
+
+def lora_apply(positive, negative=None, node_id='22'):
+    inputs = {'model': ['mc', 0], 'clip': ['mc', 1], 'positive': positive}
+    if negative is not None:
+        inputs['negative'] = negative
+    return g(n('mc', 'AMYLoraModelClip'), n(node_id, 'easy loraPromptApply', **inputs))
+
+
+def lora_probes(node_id='22'):
+    return g(*[probe([node_id, slot], node_id=f'p-{name}', label=name)
+               for slot, name in enumerate(('model', 'clip', 'positive', 'negative'))])
+
+
+LORA_CASES = [
+    case('lora-stem', g(lora_apply('<lora:amy-lora:0.65> a red ceramic teapot', 'blur'), lora_probes()),
+         note='live A/B defect: a LoRA named by its file stem was not resolved like the original'),
+    case('lora-full-filename', g(lora_apply('<lora:amy-lora.safetensors:1.0> a red ceramic teapot', 'blur'),
+                                 lora_probes()),
+         note='the original appends a second .safetensors and skips the LoRA; V2 now does the same'),
+    case('lora-full-filename-linked', g(n('t', 'AMYTestString', text='<lora:amy-lora.safetensors:0.65> a red teapot'),
+                                        lora_apply(['t', 0], 'blur'), lora_probes())),
+    case('lora-two-weights', g(lora_apply('<lora:amy-lora:0.5:0.25> two weights'), lora_probes())),
+    case('lora-subfolder-suffix', g(lora_apply('<lora:amy-sub-lora:0.8> sub'), lora_probes())),
+    case('lora-suffix-first-match', g(lora_apply('<lora:lora:0.4> first'), lora_probes())),
+    case('lora-missing', g(lora_apply('<lora:nope:1> missing', '<lora:gone> neg'), lora_probes())),
+    case('lora-negative-unconnected', g(lora_apply('<lora:amy-lora:0.3> x'), lora_probes())),
+    case('lora-in-both', g(lora_apply('<lora:amy-lora:0.4> a', '<lora:amy-lora:0.2> b'), lora_probes())),
+    case('lora-duplicate', g(lora_apply('<lora:amy-lora:0.5> <lora:amy-lora:0.9> dup  '), lora_probes())),
+    case('lora-extended-strength', g(lora_apply('<lora:amy-lora:150> big'), lora_probes())),
+    case('lora-zero-strength', g(lora_apply('<lora:amy-lora:0:0> zero'), lora_probes())),
+    case('lora-options', g(lora_apply('{a red|a red} <lora:amy-lora:0.7> teapot'), lora_probes())),
+    case('lora-none', g(lora_apply('plain text, no tags', 'neg'), lora_probes())),
+]
+
+
+def color(method, output='Hide', ref_seed=52, target_seed=51, target_batch=1, ref_batch=1, width=96, height=64):
+    return g(img('t', target_seed, batch=target_batch, width=width, height=height),
+             img('r', ref_seed, batch=ref_batch, width=width, height=height),
+             n('21', 'easy imageColorMatch', image_ref=['r', 0], image_target=['t', 0], method=method,
+               image_output=output, save_prefix='color-match'),
+             save(['21', 0], 'matched', 'matched'))
+
+
+COLOR_CASES = [
+    case('colormatch-reinhard', color('reinhard'),
+         note='live A/B defect: V2 ignored the method (a plain mean/std transfer)'),
+    *[case(f'colormatch-{method}', color(method)) for method in ('wavelet', 'adain', 'mkl', 'hm', 'mvgd',
+                                                                 'hm-mvgd-hm', 'hm-mkl-hm')],
+    case('colormatch-reinhard-batch2', color('reinhard', target_batch=2)),
+    case('colormatch-mvgd-batch2-refs', color('mvgd', target_batch=2, ref_batch=2)),
+    case('colormatch-batch-mismatch', color('reinhard', target_batch=2, ref_batch=3), expect='error'),
+    case('colormatch-save', color('adain', output='Save')),
+    case('colormatch-hide-save', color('hm', output='Hide/Save')),
+    case('colormatch-preview', color('wavelet', output='Preview'), expect='known:preview-name'),
+]
+CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES, 'r3': LORA_CASES + COLOR_CASES}
 CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 if FILTER:
     CASES = [c for c in CASES if FILTER in c['name']]
@@ -302,11 +376,18 @@ def compare(spec, orig, conv):
         # Same preview pixels; the original's temp file is named easyPreview_temp_*, the platform preview's is not.
         files_o = [f for f in co['files'] if f['path'].startswith('temp/')]
         files_c = [f for f in cc['files'] if f['path'].startswith('temp/')]
-        ui_o, ui_c = co['ui'].get('20', {}).get('images', []), cc['ui'].get('20', {}).get('images', [])
+
+        def previews(c):
+            return [image for value in c['ui'].values() for image in value.get('images', [])
+                    if image.get('type') == 'temp']
+        ui_o, ui_c = previews(co), previews(cc)
+        rest_o = {k: v for k, v in co['ui'].items() if not any(i.get('type') == 'temp' for i in v.get('images', []))}
+        rest_c = {k: v for k, v in cc['ui'].items() if not any(i.get('type') == 'temp' for i in v.get('images', []))}
+        outputs_o = [f for f in co['files'] if f['path'].startswith('output/')]
+        outputs_c = [f for f in cc['files'] if f['path'].startswith('output/')]
         ok = (len(files_o) == len(files_c) == 1 and files_o[0]['pixels_sha256'] == files_c[0]['pixels_sha256']
               and files_o[0]['size'] == files_c[0]['size'] and len(ui_o) == len(ui_c) == 1
-              and ui_o[0].get('type') == ui_c[0].get('type') == 'temp'
-              and not [f for f in co['files'] + cc['files'] if f['path'].startswith('output/')])
+              and rest_o == rest_c and outputs_o == outputs_c)
         return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
                 'names': [ui_o, ui_c], 'files': [files_o, files_c]}
     if co != cc:

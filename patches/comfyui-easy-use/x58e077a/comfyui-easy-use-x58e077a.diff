@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,110 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `58e077a7435631301cf7443412515cf958e7f3d1`.
@@ -69,6 +69,48 @@
 +- The original's "Preview" saves temp files named `easyPreview_temp_…`. V2 previews through the platform preview,
 +  which names them differently. The pixels are the same.
 +- "Sender" and "Sender&Save" save the image like the original, but do not send the frontend `img-send` event.
++
++## Repair round r3: `easy loraPromptApply`, `easy imageColorMatch`
++
++`easy loraPromptApply` handles prompts the way the original does (`py/libs/wildcards.py:279-308`,
++`py/libs/loader.py:326-426`):
++- Each prompt first goes through the wildcard pass. Text without `{options}` or `__wildcards__` is unchanged. Other
++  text uses the pack's wildcard port with an unseeded choice, as the original's `seed=None` does.
++- Every `<lora:name[:model[:clip]]>` tag is applied in order: first the positive prompt's tags, then the negative's.
++  - The model and clip strengths each default to 1.0.
++  - A name repeated within one prompt applies once.
++- Tags are removed with the surrounding spaces kept. An unconnected negative returns `""`.
++- Names resolve like the original's `resolve_lora_name`:
++  - ".safetensors" is appended. The original's extension test always appends it, so a full file name ends in a doubled
++    extension and is not found.
++  - The name resolves to the first LoRA in the catalogue (sorted) whose path ends with it. A file stem resolves; a full
++    file name does not.
++  - A LoRA that isn't found is skipped, as in the original, instead of failing the node.
++- LoRAs are applied through `ModelRef.apply_lora` with the native loader's behaviour: `skip_zero=False`,
++  `allow_extended_strengths=True`. On a runtime base whose `apply_lora` lacks those keywords (0b86765f), the
++  platform instead skips zero-strength LoRAs and refuses strengths outside [-100, 100].
++
++`easy imageColorMatch` now runs the selected method. The previous handler applied one mean/std transfer whatever the
++method.
++- "wavelet" and "adain" use the pack's own colour-fix functions (`py/libs/colorfix.py`), copied verbatim. torchvision's
++  `ToTensor`/`ToPILImage` conversions are reproduced exactly.
++- The other methods use color-matcher 0.6.0, the package the original installs. It is vendored in `_color_matcher/`
++  and uses numpy only. It is GPL-3.0, the same as this pack. The files are verbatim except that three package
++  imports in `top_level.py` are relative.
++- "Hide", "Preview", "Save" and "Hide/Save" behave as the original's `easySave`. The node declares `output` and `ui`
++  for that.
++
++Known differences:
++- loraPromptApply refuses by name for a LoRA block-weight tag (`LBW=`). The original hands those to another pack's
++  block-weight loader.
++- loraPromptApply skips the original's local-path lookup (`os.path.exists(name)`, relative to the server's working
++  directory).
++- loraPromptApply searches a LoRA catalogue larger than the listing cap (4096 names) by exact name only.
++- When a LoRA file carries metadata, the platform loader attaches it to the patched model as `lora_metadata`. The
++  original's loader call passes no metadata.
++- color-matcher modifies the original's input images in place: zero pixels become 1/255. A guest works on copies, so a
++  later node that reads those same inputs sees unmodified pixels.
++- imageColorMatch "Preview" temp-file names differ from the original's `easyPreview_temp_…`. The pixels are the same.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,95 +1,12 @@
@@ -175,6 +217,620 @@
 +    "NODE_DISPLAY_NAME_MAPPINGS",
 +    "WEB_DIRECTORY",
 +]
+--- /dev/null
++++ b/v2/_color_matcher/__init__.py
+@@ -0,0 +1,25 @@
++#!/usr/bin/env python
++
++__author__ = "Christopher Hahne"
++__email__ = "inbox@christopherhahne.de"
++__license__ = """
++Copyright (c) 2020 Christopher Hahne <inbox@christopherhahne.de>
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++"""
++
++__version__ = '0.6.0'
++
++from .top_level import ColorMatcher
++from .hist_matcher import HistogramMatcher
++from .mvgd_matcher import TransferMVGD
++from .reinhard_matcher import ReinhardMatcher
++from .baseclass import MatcherBaseclass
+--- /dev/null
++++ b/v2/_color_matcher/baseclass.py
+@@ -0,0 +1,105 @@
++#!/usr/bin/env python
++
++__author__ = "Christopher Hahne"
++__email__ = "inbox@christopherhahne.de"
++__license__ = """
++Copyright (c) 2020 Christopher Hahne <inbox@christopherhahne.de>
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++"""
++
++import numpy as np
++import warnings
++
++
++class MatcherBaseclass(object):
++
++    def __init__(self, *args, **kwargs):
++
++        self._src = None
++        self._ref = None
++        self._funs = []
++
++        if len(args) == 2:
++            self._src = args[0]
++            self._ref = args[1]
++
++        if bool(kwargs):
++            self._src = kwargs['src'] if 'src' in kwargs else self._src
++            self._ref = kwargs['ref'] if 'ref' in kwargs else self._ref
++
++    def validate_img_dims(self):
++        """
++        This function validates the image dimensions. It throws an exception if the dimension are unequal to 2 or 3.
++        """
++
++        # add third image dimension for monochromatic images
++        self._src = self._src[..., np.newaxis] if len(self._src.shape) == 2 else self._src
++        self._ref = self._ref[..., np.newaxis] if len(self._ref.shape) == 2 else self._ref
++
++        if len(self._src.shape) not in (2, 3) or len(self._ref.shape) not in (2, 3):
++            raise BaseException('Each image must have 2 or 3 dimensions')
++
++        return True
++
++    def validate_color_chs(self):
++        """
++        This function checks whether provided images consist of a valid number of color channels.
++        """
++
++        if len(self._src.shape) == 3 or len(self._ref.shape) == 3:
++            if self._src.shape[2] > 4 or self._ref.shape[2] > 4:
++                raise BaseException('Each image cannot have more than 4 color channels')
++            elif self._src.shape[2] == 3 and self._ref.shape[2] == 4:
++                self._ref = self._ref[..., :3]
++            elif self._src.shape[2] == 4 and self._ref.shape[2] == 3:
++                self._src = self._src[..., :3]
++            elif self._src.shape[2] == 1 and self._ref.shape[2] == 3:
++                self._ref = self.rgb2gray(self._ref)
++            elif self._src.shape[2] == 3 and self._ref.shape[2] == 1:
++                self._src = self.rgb2gray(self._src)
++
++            if self._src.shape[2] == 1 and self._ref.shape[2] == 1:
++                # restrict monochromatic transfer to histogram matching
++                self._funs = [self.hist_match]
++                warnings.warn('Transfer restricted to histogram matching due to monochromatic input')
++
++        return True
++
++    @staticmethod
++    def rgb2gray(rgb: np.ndarray = None, standard: str = 'HDTV') -> np.ndarray:
++        """ Convert RGB color space to monochromatic color space
++
++        :param rgb: input array in red, green and blue (RGB) space
++        :type rgb: :class:`~numpy:numpy.ndarray`
++        :param standard: option that determines whether head- and footroom are excluded ('HDTV') or considered otherwise
++        :type standard: :class:`string`
++        :return: array in monochromatic space
++        :rtype: ~numpy:np.ndarray
++
++        """
++
++        # store shape
++        shape = rgb.shape
++
++        # reshape image to channel vectors
++        rgb = rgb.reshape(-1, 3).T
++
++        # choose standard
++        mat = np.array([0.2126, 0.7152, 0.0722]) if standard == 'HDTV' else np.array([0.299, 0.587, 0.114])
++
++        # convert to gray
++        arr = np.dot(mat, rgb)
++
++        # reshape to 2-D image
++        arr = arr.reshape(shape[:2] + (1,))
++
++        return arr
+--- /dev/null
++++ b/v2/_color_matcher/hist_matcher.py
+@@ -0,0 +1,77 @@
++#!/usr/bin/env python
++
++__author__ = "Christopher Hahne"
++__email__ = "info@christopherhahne.de"
++__license__ = """
++    Copyright (c) 2020 Christopher Hahne <info@christopherhahne.de>
++
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++"""
++
++import numpy as np
++
++from .baseclass import MatcherBaseclass
++
++
++class HistogramMatcher(MatcherBaseclass):
++
++    def __init__(self, *args, **kwargs):
++        super(HistogramMatcher, self).__init__(*args, **kwargs)
++
++    def hist_match(self, src: np.ndarray = None, ref: np.ndarray = None) -> np.ndarray:
++        """
++
++        This function conducts channel-wise histogram matching which is invariant of image resolutions,
++        but requires the same number of color channels in both images.
++
++        :param src: Source image that requires transfer
++        :param ref: Palette image which serves as reference
++        :param res: Resulting image after the mapping
++
++        :type src: :class:`~numpy:numpy.ndarray`
++        :type ref: :class:`~numpy:numpy.ndarray`
++        :type res: :class:`~numpy:numpy.ndarray`
++
++        :return: **res**
++        :rtype: np.ndarray
++
++        """
++
++        # override source and reference image with arguments (if provided)
++        self._src = src if src is not None else self._src
++        self._ref = ref if ref is not None else self._ref
++
++        # parameter init
++        res = np.zeros_like(self._src)
++
++        for ch in range(self._src.shape[2]):
++
++            # convert to 1D arrays
++            src_vec = self._src[..., ch].ravel()
++            ref_vec = self._ref[..., ch].ravel()
++
++            # analyze histograms
++            _, src_idxs, src_cnts = np.unique(src_vec, return_inverse=True, return_counts=True)
++            ref_vals, ref_cnts = np.unique(ref_vec, return_counts=True)
++
++            # compute cumulative distribution functions
++            src_cdf = np.cumsum(src_cnts).astype(np.float64) / src_vec.size
++            ref_cdf = np.cumsum(ref_cnts).astype(np.float64) / ref_vec.size
++
++            # do the histogram mapping
++            interp_vals = np.interp(src_cdf, ref_cdf, ref_vals)
++            res[..., ch] = interp_vals[src_idxs].reshape(src[..., ch].shape)
++
++        return res
+--- /dev/null
++++ b/v2/_color_matcher/mvgd_matcher.py
+@@ -0,0 +1,207 @@
++#!/usr/bin/env python
++
++__author__ = "Christopher Hahne"
++__email__ = "info@christopherhahne.de"
++__license__ = """
++    Copyright (c) 2020 Christopher Hahne <info@christopherhahne.de>
++
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++"""
++
++import numpy as np
++
++from .baseclass import MatcherBaseclass
++from types import FunctionType
++
++
++class TransferMVGD(MatcherBaseclass):
++
++    def __init__(self, *args, **kwargs):
++        super(TransferMVGD, self).__init__(*args, **kwargs)
++
++        # extract method from kwargs (if available)
++        self._fun_dict = {'mvgd': self.analytical_solver, 'mkl': self.mkl_solver}
++        try:
++            self._fun_name = [kw for kw in list(self._fun_dict.keys()) if kwargs['method'].__contains__(kw)][0]
++        except (BaseException, IndexError):
++            # default function
++            self._fun_name = 'mkl'
++        self._fun_call = self._fun_dict[self._fun_name] if self._fun_name in self._fun_dict else self.mkl_solver
++
++        # initialize variables
++        self.r, self.z, self.cov_r, self.cov_z, self.mu_r, self.mu_z, self.transfer_mat = [None]*7
++
++    def init_vars(self):
++
++        # reshape source and reference images
++        self.r, self.z = self._src.reshape([-1, self._src.shape[2]]).T, self._ref.reshape([-1, self._ref.shape[2]]).T
++
++        # compute covariance matrices
++        self.cov_r, self.cov_z = np.cov(self.r), np.cov(self.z)
++
++        # compute color channel means
++        self.mu_r, self.mu_z = self.r.mean(axis=1)[..., np.newaxis], self.z.mean(axis=1)[..., np.newaxis]
++
++        # validate dimensionality
++        self.check_dims()
++
++    def multivar_transfer(self, src: np.ndarray = None, ref: np.ndarray = None, fun: FunctionType = None) -> np.ndarray:
++        """
++
++        Transfer function to map colors based on for Multi-Variate Gaussian Distributions (MVGDs).
++
++        :param src: Source image that requires transfer
++        :param ref: Palette image which serves as reference
++        :param fun: Optional argument to pass a transfer function to solve for covariance matrices
++        :param res: Resulting image after the mapping
++
++        :type src: :class:`~numpy:numpy.ndarray`
++        :type ref: :class:`~numpy:numpy.ndarray`
++        :type res: :class:`~numpy:numpy.ndarray`
++
++        :return: **res**
++        :rtype: np.ndarray
++
++        """
++
++        # override source and reference image with arguments (if provided)
++        self._src = src if src is not None else self._src
++        self._ref = ref if ref is not None else self._ref
++
++        # check if three color channels are provided
++        self.validate_color_chs()
++
++        # re-initialize variables to account for change in src and ref when passed to self.transfer()
++        self.init_vars()
++
++        # set solver function for transfer matrix
++        self._fun_call = fun if fun is FunctionType else self._fun_call
++
++        # compute transfer matrix
++        self.transfer_mat = self._fun_call()
++
++        # transfer the intensity distributions
++        res = np.dot(self.transfer_mat, self.r - self.mu_r) + self.mu_z
++
++        # reshape pixel array
++        res = res.T.reshape(self._src.shape)
++
++        return res
++
++    def mkl_solver(self):
++        """
++        This function computes the transfer matrix based on the Monge-Kantorovich Linearization (MKL).
++
++        :return: **transfer_mat**: Transfer matrix
++        :type transfer_mat: :class:`~numpy:numpy.ndarray`
++        :rtype: np.ndarray
++
++        """
++
++        # validate dimensionality
++        self.check_dims()
++
++        eig_val_r, eig_vec_r = np.linalg.eig(self.cov_r)
++        eig_val_r[eig_val_r < 0] = 0
++        val_r = np.diag(np.sqrt(eig_val_r[::-1]))
++        vec_r = np.array(eig_vec_r[:, ::-1])
++        inv_r = np.diag(1. / (np.diag(val_r + np.spacing(1))))
++
++        mat_c = val_r @ vec_r.T @ self.cov_z @ vec_r @ val_r
++        eig_val_c, eig_vec_c = np.linalg.eig(mat_c)
++        eig_val_c[eig_val_c < 0] = 0
++        val_c = np.diag(np.sqrt(eig_val_c))
++
++        self.transfer_mat = vec_r @ inv_r @ eig_vec_c @ val_c @ eig_vec_c.T @ inv_r @ vec_r.T
++
++        return self.transfer_mat
++
++    def analytical_solver(self) -> np.ndarray:
++        """
++        An analytical solution to the linear equation system of Multi-Variate Gaussian Distributions (MVGDs).
++
++        :return: **transfer_mat**: Transfer matrix
++        :type transfer_mat: :class:`~numpy:numpy.ndarray`
++        :rtype: np.ndarray
++
++        """
++
++        # validate dimensionality
++        self.check_dims()
++        if self.r.shape[-1] != self.z.shape[-1]:
++            raise Exception('Analytical MVGD solution requires spatial dimensions of both images to be equal')
++
++        cov_r_inv = np.linalg.pinv(self.cov_r)
++        cov_z_inv = np.linalg.pinv(self.cov_z)
++
++        # compute transfer matrix using analytical method
++        self.transfer_mat = np.linalg.pinv((self.z-self.mu_z).T @ cov_z_inv) @ (self.r-self.mu_r).T @ cov_r_inv
++
++        return self.transfer_mat
++
++    @staticmethod
++    def w2_dist(mu_a: np.ndarray, mu_b: np.ndarray, cov_a: np.ndarray, cov_b: np.ndarray) -> float:
++        """
++        Wasserstein-2 distance metric is a similarity measure for Gaussian distributions
++
++        :param mu_a: Gaussian mean of distribution *a*
++        :param mu_b: Gaussian mean of distribution *b*
++        :param cov_a: Covariance matrix of distribution *a*
++        :param cov_b: Covariance matrix of distribution *b*
++
++        :type mu_a: :class:`~numpy:numpy.ndarray`
++        :type mu_b: :class:`~numpy:numpy.ndarray`
++        :type cov_a: :class:`~numpy:numpy.ndarray`
++        :type cov_b: :class:`~numpy:numpy.ndarray`
++
++        :return: **scalar**: Wasserstein-2 metric as a scalar
++        :rtype: float
++        """
++
++        mean_dist = np.sum((mu_a-mu_b)**2)
++        vars_dist = np.trace(cov_a+cov_b - 2*(np.dot(np.abs(cov_b)**.5, np.dot(np.abs(cov_a), np.abs(cov_b)**.5))**.5))
++
++        return float(mean_dist + vars_dist)
++
++    def w2_img_dist(self, img_a: np.ndarray, img_b:np.ndarray):
++
++        """
++        Wasserstein-2 image distance metric is a similarity measure for Gaussian distributions
++
++        :param img_a: Image array *a*
++        :param img_b: Image array *b*
++
++        :type img_a: :class:`~numpy:numpy.ndarray`
++        :type img_b: :class:`~numpy:numpy.ndarray`
++
++        :return: **scalar**: Wasserstein-2 image metric as a scalar
++        :rtype: float
++        """
++
++        mu_a, mu_b = np.mean(img_a, axis=(0, 1)), np.mean(img_b, axis=(0, 1))
++        cov_a, cov_b = np.cov(img_a.reshape(-1, 3).T), np.cov(img_b.reshape(-1, 3).T)
++        w2_img_dist = self.w2_dist(mu_a, mu_b, cov_a, cov_b)
++
++        return w2_img_dist
++
++    def check_dims(self):
++        """
++        Catch error for wrong color channel number (e.g., gray scale image)
++
++        :return: None
++        """
++
++        if np.ndim(self.cov_r) == 0 or np.ndim(self.cov_z) == 0:
++            raise Exception('Wrong color channel dimensionality for %s method' % self._fun_name)
+--- /dev/null
++++ b/v2/_color_matcher/reinhard_matcher.py
+@@ -0,0 +1,84 @@
++import numpy as np
++
++from .baseclass import MatcherBaseclass
++
++LMS_MAT = np.array([[0.3811, 0.5783, 0.0402], [0.1967, 0.7244, 0.0782], [0.0241, 0.1288, 0.8444]])
++LMS_MAT_INV = np.array([[4.4679, -3.5873, 0.1193], [-1.2186, 2.3809, -0.1624], [0.0497, -0.2439, 1.2045]])
++
++
++class ReinhardMatcher(MatcherBaseclass):
++
++    def __init__(self, *args, **kwargs):
++        super(ReinhardMatcher, self).__init__(*args, **kwargs)
++
++    def reinhard(self, src: np.ndarray = None, ref: np.ndarray = None) -> np.ndarray:
++        """
++
++        This function conducts color matching based on the principles proposed by Reinhard et al.
++        The paper of the original work can be found at https://www.cs.tau.ac.il/~turkel/imagepapers/ColorTransfer.pdf
++
++        :param src: Source image that requires transfer
++        :param ref: Palette image which serves as reference
++        :param res: Resulting image after the mapping
++
++        :type src: :class:`~numpy:numpy.ndarray`
++        :type ref: :class:`~numpy:numpy.ndarray`
++        :type res: :class:`~numpy:numpy.ndarray`
++
++        :return: **res**
++        :rtype: np.ndarray
++
++        """
++
++        # override source and reference image with arguments (if provided)
++        self._src = src if src is not None else self._src
++        self._ref = ref if ref is not None else self._ref
++
++        # get image dimensions after validating that 3 color channels are present
++        m, n, p = self._src.shape if self.validate_color_chs() else self._src.shape + (1,)
++
++        # flatten images along spatial dimensions
++        src = self._src.reshape((-1, p)).transpose()
++        ref = self._ref.reshape((-1, p)).transpose()
++
++        # replace zeros with small value for numerical stability
++        src[src == 0] = 1/(2**8-1)
++        ref[ref == 0] = 1/(2**8-1)
++
++        # convert to LMS color space
++        lms_src = np.dot(LMS_MAT, src)
++        lms_ref = np.dot(LMS_MAT, ref)
++
++        # convert data to logarithmic LMS color space to eliminate skew
++        lms_src = np.log10(lms_src)
++        lms_ref = np.log10(lms_ref)
++
++        # PCA transform matrices according to Rudermann et al.
++        b = np.array([[1/np.sqrt(3), 0, 0], [0, 1/np.sqrt(6), 0], [0, 0, 1/np.sqrt(2)]])
++        c = np.array([[1, 1, 1], [1, 1, -2], [1, -1, 0]])
++
++        # convert to Lab space
++        lab_src = np.dot(np.dot(b, c), lms_src)
++        lab_ref = np.dot(np.dot(b, c), lms_ref)
++
++        # compute statistical measures
++        mean_src, std_src = np.mean(lab_src, axis=1), np.std(lab_src, axis=1)
++        mean_ref, std_ref = np.mean(lab_ref, axis=1), np.std(lab_ref, axis=1)
++
++        # compute ratios of standard deviations channel-wise
++        std_ratios = std_ref / std_src
++
++        # apply statistical alignment channel-wise
++        res_lab = ((lab_src.T - mean_src) * std_ratios + mean_ref).T
++
++        # convert back to LMS
++        lms_res = np.dot(np.dot(c.T, b), res_lab)
++        lms_res = 10**lms_res
++
++        # convert back to RGB
++        res = np.dot(LMS_MAT_INV, lms_res).transpose()
++
++        # reshape to 2-D image
++        res = res.reshape((m, n, p))
++
++        return res
+--- /dev/null
++++ b/v2/_color_matcher/top_level.py
+@@ -0,0 +1,98 @@
++#!/usr/bin/env python
++
++__author__ = "Christopher Hahne"
++__email__ = "info@christopherhahne.de"
++__license__ = """
++    Copyright (c) 2020 Christopher Hahne <info@christopherhahne.de>
++
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++"""
++
++from .hist_matcher import HistogramMatcher
++from .mvgd_matcher import TransferMVGD
++from .reinhard_matcher import ReinhardMatcher
++import numpy as np
++
++METHODS = ('default', 'hm', 'reinhard', 'mvgd', 'mkl', 'hm-mvgd-hm', 'hm-mkl-hm')
++
++
++class ColorMatcher(HistogramMatcher, ReinhardMatcher, TransferMVGD):
++
++    def __init__(self, *args, **kwargs):
++        super(ColorMatcher, self).__init__(*args, **kwargs)
++
++        self._method = kwargs['method'] if 'method' in kwargs else 'default'
++        self._funs = []
++
++    def main(self) -> np.ndarray:
++        """
++        The main function is the high-level entry point performing the mapping based on instantiation arguments.
++
++        :return: Resulting image after color mapping
++        :rtype: np.ndarray
++        """
++
++        self.transfer()
++
++        return self._src
++
++    def transfer(self, src: np.ndarray = None, ref: np.ndarray = None, method: str = None) -> np.ndarray:
++        """
++
++        Transfer function to map colors based on provided transfer method.
++
++        :param src: Source image that requires transfer
++        :param ref: Palette image which serves as reference
++        :param method: ('default', 'hm', 'reinhard', 'mvgd', 'mkl', 'hm-mvgd-hm', 'hm-mkl-hm') determining color mapping
++
++        :type src: :class:`~numpy:numpy.ndarray`
++        :type ref: :class:`~numpy:numpy.ndarray`
++        :type method: :class:`str`
++
++        :return: Resulting image after color mapping
++        :rtype: np.ndarray
++
++        """
++
++        # assign input arguments to variables (if provided)
++        self._method = self._method.lower() if method is None else method.lower()
++        self._src = src if src is not None else self._src
++        self._ref = ref if ref is not None else self._ref
++
++        # color transfer methods (to be iterated through)
++        if self._method == METHODS[0]:
++            self._funs = [self.multivar_transfer]
++        elif self._method == METHODS[1]:
++            self._funs = [self.hist_match]
++        elif self._method == METHODS[2]:
++            self._funs = [self.reinhard]
++        elif self._method in METHODS[3:5]:
++            self._funs = [self.multivar_transfer]
++        elif self._method in METHODS[5:]:
++            self._funs = [self.hist_match, self.multivar_transfer, self.hist_match]
++        else:
++            raise BaseException('Method type \'%s\' not recognized' % method)
++
++        # check if three color channels are provided
++        self.validate_img_dims()
++
++        # check provided color channels
++        self.validate_color_chs()
++
++        # proceed with the color match
++        for fun in self._funs:
++            self._src = fun(self._src, self._ref)
++
++        return self._src
 --- /dev/null
 +++ b/v2/_image_ops.py
 @@ -0,0 +1,150 @@
@@ -52683,7 +53339,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,5704 @@
+@@ -0,0 +1,5969 @@
 +"""Secure Nodes 2.0 implementations for the pinned Easy Use snapshot.
 +
 +The original pack mixes useful tensor/value helpers with model loading,
@@ -54690,14 +55346,287 @@
 +    return _one(torch.cat([value[index:index + 1] for index in indices]))
 +
 +
-+async def _color_match(image_ref, image_target, **_kwargs):
-+    reference, target = await _raw(image_ref), await _raw(image_target)
-+    reference = reference[:1]
-+    ref_mean = reference.mean(dim=(1, 2), keepdim=True)
-+    ref_std = reference.std(dim=(1, 2), keepdim=True).clamp_min(1e-6)
-+    target_mean = target.mean(dim=(1, 2), keepdim=True)
-+    target_std = target.std(dim=(1, 2), keepdim=True).clamp_min(1e-6)
-+    return _one(((target - target_mean) / target_std * ref_std + ref_mean).clamp(0, 1))
++_PROMPT_PT_EXTENSIONS = {'.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'}  # folder_paths.supported_pt_extensions
++
++
++_PROMPT_OPTIONS = re.compile(r'{([^{}]*?)}')
++
++
++_PROMPT_WILDCARD = re.compile(r"__([\w\s.\-+/*\\]+?)__")
++
++
++def _prompt_is_numeric_string(input_str):
++    """is_numeric_string (py/libs/wildcards.py:211-212), verbatim."""
++    return re.match(r'^-?\d+(\.\d+)?$', input_str) is not None
++
++
++def _prompt_safe_float(x):
++    """safe_float (py/libs/wildcards.py:215-219), verbatim."""
++    if _prompt_is_numeric_string(x):
++        return float(x)
++    else:
++        return 1.0
++
++
++def _prompt_lora_values(string):
++    """extract_lora_values (py/libs/wildcards.py:222-270), verbatim."""
++    pattern = r'<lora:([^>]+)>'
++    matches = re.findall(pattern, string)
++
++    def touch_lbw(text):
++        return re.sub(r'LBW=[A-Za-z][A-Za-z0-9_-]*:', r'LBW=', text)
++
++    items = [touch_lbw(match.strip(':')) for match in matches]
++
++    added = set()
++    result = []
++    for item in items:
++        item = item.split(':')
++
++        lora = None
++        a = None
++        b = None
++        lbw = None
++        lbw_a = None
++        lbw_b = None
++
++        if len(item) > 0:
++            lora = item[0]
++
++            for sub_item in item[1:]:
++                if _prompt_is_numeric_string(sub_item):
++                    if a is None:
++                        a = float(sub_item)
++                    elif b is None:
++                        b = float(sub_item)
++                elif sub_item.startswith("LBW="):
++                    for lbw_item in sub_item[4:].split(';'):
++                        if lbw_item.startswith("A="):
++                            lbw_a = _prompt_safe_float(lbw_item[2:].strip())
++                        elif lbw_item.startswith("B="):
++                            lbw_b = _prompt_safe_float(lbw_item[2:].strip())
++                        elif lbw_item.strip() != '':
++                            lbw = lbw_item
++
++        if a is None:
++            a = 1.0
++        if b is None:
++            b = 1.0
++
++        if lora is not None and lora not in added:
++            result.append((lora, a, b, lbw, lbw_a, lbw_b))
++            added.add(lora)
++
++    return result
++
++
++async def _prompt_wildcards(text):
++    """The original's process(text, seed=None) (py/libs/wildcards.py:68-208): text without {options} or __wildcards__
++    comes back unchanged; anything else goes through the pack's wildcard port with an unseeded choice, as the
++    original's seed=None does."""
++    if not (_PROMPT_OPTIONS.search(text) or _PROMPT_WILDCARD.search(text)):
++        return text
++    catalogue = await _load_wildcard_catalogue(_ctx(), "easy_wildcards", style="easy")
++    return _populate_catalogue_wildcards(text, random.randrange(2 ** 32), catalogue, style="easy")
++
++
++async def _prompt_resolve_lora(name):
++    """resolve_lora_name (py/libs/loader.py:407-426): the first catalogue name (sorted, as the loras list is) that ends
++    with `name`; None when nothing does. A catalogue larger than the listing cap is searched by exact name only."""
++    try:
++        names = await _ctx().assets.list("loras")
++    except ValueError:
++        return name if await _ctx().assets.exists("loras", name) else None
++    for candidate in names:
++        if candidate.endswith(name):
++            return candidate
++    return None
++
++
++async def _prompt_apply_lora(model, asset, clip, strength_model, strength_clip):
++    """ModelRef.apply_lora with the native loader's behaviour (skip_zero=False, allow_extended_strengths=True) on runtime
++    bases whose apply_lora takes those keywords (0cd9adec). Base 0b86765f's apply_lora has neither: there the platform
++    skips zero-strength LoRAs and refuses strengths outside [-100, 100] (SECURE_CONVERSION.md, repair round r3)."""
++    import inspect
++    if {'skip_zero', 'allow_extended_strengths'} <= set(inspect.signature(model.apply_lora).parameters):
++        return await model.apply_lora(asset, clip, strength_model, strength_clip,
++                                      skip_zero=False, allow_extended_strengths=True)
++    return await model.apply_lora(asset, clip, strength_model, strength_clip)
++
++
++async def _prompt_apply_loras(text, model, clip):
++    """process_with_loras (py/libs/wildcards.py:279-308) with easyCache.load_lora (py/libs/loader.py:326-405) for one
++    prompt: wildcards, then every <lora:...> tag applied in order, then the tags removed (surrounding spaces kept)."""
++    pass1 = await _prompt_wildcards(text)
++    loras = _prompt_lora_values(pass1)
++    pass2 = re.sub(r'<lora:[^>]+>', '', pass1)
++    for lora_name, model_weight, clip_weight, lbw, lbw_a, lbw_b in loras:
++        # The original's extension test compares "safetensors" with dotted extensions, so it always appends one.
++        if (lora_name.split('.')[-1]) not in _PROMPT_PT_EXTENSIONS:
++            lora_name = lora_name + ".safetensors"
++        if lbw:
++            raise RuntimeError(
++                "easy loraPromptApply is not available in this secure build for LoRA block weights (LBW=): the "
++                "original hands them to the Inspire pack's block-weight loader")
++        resolved = await _prompt_resolve_lora(lora_name)
++        if resolved is None:
++            continue  # the original logs "LORA NOT FOUND" and goes on without it
++        asset = await _ctx().assets.resolve("loras", resolved)
++        model, clip = await _prompt_apply_lora(model, asset, clip, float(model_weight), float(clip_weight))
++    return model, clip, pass2
++
++
++def _colorfix_to_tensor(pic):
++    """torchvision ToTensor() for an 8-bit PIL image (torchvision 0.23 transforms/functional.py to_tensor)."""
++    img = torch.from_numpy(np.array(pic, np.uint8, copy=True))
++    img = img.view(pic.size[1], pic.size[0], len(pic.getbands()))
++    img = img.permute((2, 0, 1)).contiguous()
++    return img.to(dtype=torch.get_default_dtype()).div(255)
++
++
++def _colorfix_to_pil(pic):
++    """torchvision ToPILImage() for a float C,H,W tensor of 1, 3 or 4 channels (to_pil_image)."""
++    npimg = pic.permute((1, 2, 0)).numpy(force=True)
++    npimg = (npimg * 255).astype(np.uint8)
++    # uint8 H,W / H,W,3 / H,W,4 arrays are L / RGB / RGBA, the modes to_pil_image picks
++    return Image.fromarray(npimg[:, :, 0] if npimg.shape[2] == 1 else npimg)
++
++
++def _colorfix_calc_mean_std(feat, eps=1e-5):
++    """calc_mean_std (py/libs/colorfix.py:40-53), verbatim."""
++    size = feat.size()
++    assert len(size) == 4, 'The input feature should be 4D tensor.'
++    b, c = size[:2]
++    feat_var = feat.view(b, c, -1).var(dim=2) + eps
++    feat_std = feat_var.sqrt().view(b, c, 1, 1)
++    feat_mean = feat.view(b, c, -1).mean(dim=2).view(b, c, 1, 1)
++    return feat_mean, feat_std
++
++
++def _colorfix_adaptive_instance_normalization(content_feat, style_feat):
++    """adaptive_instance_normalization (py/libs/colorfix.py:55-67), verbatim."""
++    size = content_feat.size()
++    style_mean, style_std = _colorfix_calc_mean_std(style_feat)
++    content_mean, content_std = _colorfix_calc_mean_std(content_feat)
++    normalized_feat = (content_feat - content_mean.expand(size)) / content_std.expand(size)
++    return normalized_feat * style_std.expand(size) + style_mean.expand(size)
++
++
++def _colorfix_wavelet_blur(image, radius):
++    """wavelet_blur (py/libs/colorfix.py:69-88), verbatim."""
++    kernel_vals = [
++        [0.0625, 0.125, 0.0625],
++        [0.125, 0.25, 0.125],
++        [0.0625, 0.125, 0.0625],
++    ]
++    kernel = torch.tensor(kernel_vals, dtype=image.dtype, device=image.device)
++    kernel = kernel[None, None]
++    kernel = kernel.repeat(3, 1, 1, 1)
++    image = torch.nn.functional.pad(image, (radius, radius, radius, radius), mode='replicate')
++    output = torch.nn.functional.conv2d(image, kernel, groups=3, dilation=radius)
++    return output
++
++
++def _colorfix_wavelet_decomposition(image, levels=5):
++    """wavelet_decomposition (py/libs/colorfix.py:90-102), verbatim."""
++    high_freq = torch.zeros_like(image)
++    for i in range(levels):
++        radius = 2 ** i
++        low_freq = _colorfix_wavelet_blur(image, radius)
++        high_freq += (image - low_freq)
++        image = low_freq
++
++    return high_freq, low_freq
++
++
++def _colorfix_wavelet_reconstruction(content_feat, style_feat):
++    """wavelet_reconstruction (py/libs/colorfix.py:104-115), verbatim."""
++    content_high_freq, content_low_freq = _colorfix_wavelet_decomposition(content_feat)
++    del content_low_freq
++    style_high_freq, style_low_freq = _colorfix_wavelet_decomposition(style_feat)
++    del style_high_freq
++    return content_high_freq + style_low_freq
++
++
++def _colorfix_adain_color_fix(target, source):
++    """adain_color_fix (py/libs/colorfix.py:8-21), verbatim apart from the torchvision conversions above."""
++    target_tensor = _colorfix_to_tensor(target).unsqueeze(0)
++    source_tensor = _colorfix_to_tensor(source).unsqueeze(0)
++    result_tensor = _colorfix_adaptive_instance_normalization(target_tensor, source_tensor)
++    return _colorfix_to_pil(result_tensor.squeeze(0).clamp_(0.0, 1.0))
++
++
++def _colorfix_wavelet_color_fix(target, source):
++    """wavelet_color_fix (py/libs/colorfix.py:23-38), verbatim apart from the torchvision conversions above."""
++    source = source.resize(target.size, resample=Image.Resampling.LANCZOS)
++    target_tensor = _colorfix_to_tensor(target).unsqueeze(0)
++    source_tensor = _colorfix_to_tensor(source).unsqueeze(0)
++    result_tensor = _colorfix_wavelet_reconstruction(target_tensor, source_tensor)
++    return _colorfix_to_pil(result_tensor.squeeze(0).clamp_(0.0, 1.0))
++
++
++def _colorfix_tensor2pil(image):
++    """tensor2pil (py/libs/image.py:17-18), verbatim."""
++    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
++
++
++def _colorfix_pil2tensor(image):
++    """pil2tensor (py/libs/image.py:14-15), verbatim."""
++    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
++
++
++async def _color_match(image_ref, image_target, method, image_output="Preview", save_prefix="ComfyUI", **_kwargs):
++    """easy imageColorMatch as the original (py/nodes/image.py:1098-1139): wavelet/adain through the pack's colorfix
++    functions, every other method through color-matcher (vendored in _color_matcher/, numpy only); then the original's
++    easySave outputs."""
++    image_ref = await _raw(image_ref)
++    image_target = await _raw(image_target)
++    if method in ["wavelet", "adain"]:
++        result_images = _colorfix_wavelet_color_fix(_colorfix_tensor2pil(image_target), _colorfix_tensor2pil(image_ref)) \
++            if method == 'wavelet' else _colorfix_adain_color_fix(_colorfix_tensor2pil(image_target),
++                                                                  _colorfix_tensor2pil(image_ref))
++        new_images = _colorfix_pil2tensor(result_images)
++    else:
++        from ._color_matcher import ColorMatcher
++        image_ref = image_ref.cpu()
++        image_target = image_target.cpu()
++        batch_size = image_target.size(0)
++        out = []
++        images_target = image_target.squeeze()
++        images_ref = image_ref.squeeze()
++
++        image_ref_np = images_ref.numpy()
++        images_target_np = images_target.numpy()
++        if image_ref.size(0) > 1 and image_ref.size(0) != batch_size:
++            raise ValueError("ColorMatch: Use either single reference image or a matching batch of reference images.")
++        cm = ColorMatcher()
++        for i in range(batch_size):
++            image_target_np = images_target_np if batch_size == 1 else images_target[i].numpy()
++            image_ref_np_i = image_ref_np if image_ref.size(0) == 1 else images_ref[i].numpy()
++            try:
++                image_result = cm.transfer(src=image_target_np, ref=image_ref_np_i, method=method)
++            except BaseException as e:
++                print(f"Error occurred during transfer: {e}")
++                break
++            out.append(torch.from_numpy(image_result))
++
++        new_images = torch.stack(out, dim=0).to(torch.float32)
++
++    image_out = await wrap_output(new_images, "IMAGE")
++    # easySave (py/libs/utils.py:255-266): Hide shows nothing; Preview previews; every other mode saves.
++    if image_output in ("Hide", "None"):
++        results = []
++    elif image_output in ("Preview", "Preview&Choose"):
++        results = (await _ctx().ui.preview_images(image_out)).get("images", [])
++    else:
++        results = (await _ctx().output.save_images(image_out, filename_prefix=save_prefix)).get("images", [])
++
++    if image_output in ("Hide", "Hide/Save"):
++        return {"ui": {},
++                "result": (image_out,)}
++
++    return {"ui": {"images": results},
++            "result": (image_out,)}
 +
 +
 +async def _detail_transfer(target, source, blend_factor, mask=None, **_kwargs):
@@ -55450,21 +56379,12 @@
 +    return _one(source)
 +
 +
-+async def _lora_prompt_apply(model, clip, positive, negative, **_kwargs):
-+    found = []
-+    for text in (str(positive), str(negative)):
-+        found.extend(_LORA_PATTERN.findall(text))
-+    seen = set()
-+    for name, strength in found:
-+        key = (name, strength)
-+        if key in seen:
-+            continue
-+        seen.add(key)
-+        value = float(strength or 1.0)
-+        model, clip = await _apply_lora_stack(model, clip, [(name, value, value)])
-+    clean_positive = _LORA_PATTERN.sub("", str(positive)).strip()
-+    clean_negative = _LORA_PATTERN.sub("", str(negative)).strip()
-+    return model, clip, clean_positive, clean_negative
++async def _lora_prompt_apply(model, clip, positive, negative=None, **_kwargs):
++    """easy loraPromptApply as the original (py/nodes/adapter.py:39-44)."""
++    model, clip, positive = await _prompt_apply_loras(positive, model, clip)
++    if negative is not None:
++        model, clip, negative = await _prompt_apply_loras(negative, model, clip)
++    return model, clip, positive, negative if negative is not None else ""
 +
 +
 +async def _pipe_in(pipe=None, model=None, pos=None, neg=None, latent=None,
@@ -58249,6 +59169,7 @@
 +    "raw",
 +)
 +_permissions({"easy imageSave"}, "output", "ui")
++_permissions({"easy imageColorMatch"}, "output", "raw", "ui")
 +_permissions({"easy imagesCountInDirectory"}, "assets")
 +_permissions({"easy loadImagesForLoop"}, "assets", "raw")
 +_permissions({"easy removeLocalImage"}, "assets", "assets.delete")
@@ -64090,7 +65011,7 @@
  Repository = "https://github.com/yolain/ComfyUI-Easy-Use"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,53609 @@
+@@ -0,0 +1,53611 @@
 +{
 +  "asset_directories": {
 +    "easy_wildcards": "wildcards"
@@ -83445,7 +84366,9 @@
 +      },
 +      "module": "_secure_nodes",
 +      "permissions": [
-+        "raw"
++        "output",
++        "raw",
++        "ui"
 +      ],
 +      "schema": {
 +        "attrs": {
@@ -117702,7 +118625,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/easyuse_parity_worker.py
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,415 @@
 +"""One side of the comfyui-easy-use repair-round parity run (to-50% gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -117751,7 +118674,7 @@
 +    (OUT / name).mkdir(parents=True, exist_ok=True)
 +    setter(str(OUT / name))
 +for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
-+                  ('upscale_models', {'.safetensors'})):
++                  ('upscale_models', {'.safetensors'}), ('easy_wildcards', {'.txt', '.yaml', '.yml', '.json'})):
 +    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 +CWD = OUT / 'cwd'
 +CWD.mkdir(parents=True, exist_ok=True)
@@ -117794,6 +118717,11 @@
 +# ---- test-only nodes
 +def _summary(value, depth=0):
 +    """Deterministic, comparable description of any value a node returns."""
++    if hasattr(value, 'patch_records'):  # LoRA stand-ins: every patch core's loader added, and attachments
++        return {'object': type(value).__name__, 'patches': _summary(value.patch_records, depth + 1),
++                'attachments': _summary(value.attachments, depth + 1)}
++    if hasattr(value, 'weights') and type(value).__module__.startswith('comfy.weight_adapter'):
++        return {'adapter': type(value).__name__, 'weights': _summary(list(value.weights), depth + 1)}
 +    if isinstance(value, torch.Tensor):
 +        data = value.detach().contiguous().cpu()
 +        return {'tensor': list(data.shape), 'dtype': str(data.dtype),
@@ -117853,6 +118781,85 @@
 +        return samples
 +
 +
++# ---- LoRA stand-ins: core's comfy.sd.load_lora_for_models runs for real on both sides; the MODEL and CLIP record
++# every patch it adds (keys, strengths, adapter weights) and every attachment, so a different LoRA, strength or order
++# shows up in the probe.
++import comfy.lora  # noqa: E402
++
++LORA_KEY_MAPS = {
++    'unet': {'lora_unet_input_blocks_0_0': 'diffusion_model.input_blocks.0.0.weight',
++             'lora_unet_middle_block_1_proj_in': 'diffusion_model.middle_block.1.proj_in.weight'},
++    'clip': {'lora_te_text_model_encoder_layers_0_mlp_fc1': 'clip_l.transformer.text_model.encoder.layers.0.mlp.fc1.weight'},
++}
++
++
++class _LoraRecorder:
++    def _init_records(self, records=None, attachments=None):
++        self.patch_records = list(records or [])
++        self.attachments = dict(attachments or {})
++
++    def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
++        self.patch_records.append({'keys': sorted(patches), 'strength_patch': strength_patch,
++                                   'strength_model': strength_model, 'patches': dict(sorted(patches.items()))})
++        return list(patches)
++
++    def set_attachments(self, key, value):
++        self.attachments[key] = value
++
++
++class LoraModel(_LoraRecorder):
++    """A MODEL as LoRA loaders use it (model_options + load_device make it a ModelPatcher to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['unet'])
++        self.model_options = {}
++        self.load_device = 'cpu'
++        self._init_records(records, attachments)
++
++    def clone(self):
++        return LoraModel(self.patch_records, self.attachments)
++
++
++class _LoraClipPatcher:
++    def __init__(self, owner):
++        self.owner = owner
++        self.forced_hooks = None
++
++    def set_attachments(self, key, value):
++        self.owner.attachments[key] = value
++
++
++class LoraClip(_LoraRecorder):
++    """A CLIP as LoRA loaders use it (tokenize makes it a CLIP to the SDK)."""
++
++    def __init__(self, records=None, attachments=None):
++        self.cond_stage_model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['clip'])
++        self.patcher = _LoraClipPatcher(self)
++        self._init_records(records, attachments)
++
++    def tokenize(self, text, **kwargs):
++        return {}
++
++    def clone(self):
++        return LoraClip(self.patch_records, self.attachments)
++
++
++def _key_map_unet(model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(model, 'amy_lora_keys', {}))
++    return key_map
++
++
++def _key_map_clip(cond_stage_model, key_map={}):
++    key_map = dict(key_map)
++    key_map.update(getattr(cond_stage_model, 'amy_lora_keys', {}))
++    return key_map
++
++
++comfy.lora.model_lora_keys_unet = _key_map_unet
++comfy.lora.model_lora_keys_clip = _key_map_clip
++
++
 +def _cond(seed):
 +    generator = torch.Generator().manual_seed(seed)
 +    return [[torch.rand((1, 4, 8), generator=generator), {'pooled_output': torch.rand((1, 8), generator=generator)}]]
@@ -117860,6 +118867,8 @@
 +
 +ANY = '*'
 +STANDINS = {
++    'AMYLoraModelClip': _standin('AMYLoraModelClip', lambda self: (LoraModel(), LoraClip()), lambda: {'required': {}},
++                                 ('MODEL', 'CLIP')),
 +    'AMYTestModel': _standin('AMYTestModel', lambda self: (StandinModel(),), lambda: {'required': {}}, ('MODEL',)),
 +    'AMYTestClip': _standin('AMYTestClip', lambda self: (StandinCLIP(),), lambda: {'required': {}}, ('CLIP',)),
 +    'AMYTestVAE': _standin('AMYTestVAE', lambda self: (StandinVAE(),), lambda: {'required': {}}, ('VAE',)),
@@ -118034,7 +119043,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/test_easyuse_repair_parity.py
-@@ -0,0 +1,357 @@
+@@ -0,0 +1,438 @@
 +"""Tier-1 parity for comfyui-easy-use repair rounds: the pristine pack (58e077a7) vs the repaired V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, original side only):
@@ -118061,7 +119070,7 @@
 +TESTS = Path(__file__).resolve().parent
 +RESULTS = Path('/results')
 +WORK = Path('/tmp/amy-easyuse-parity')
-+ROUNDS = ['r1', 'r2']
++ROUNDS = ['r1', 'r2', 'r3']
 +ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 +FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
 +UPSCALE_MODEL = 'amy-x2-compact.safetensors'
@@ -118081,6 +119090,24 @@
 +    net = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type='prelu')
 +    state = {k: v.detach().contiguous() for k, v in net.state_dict().items()}
 +    save_file(state, str(folder / UPSCALE_MODEL))
++    # LoRA files without metadata, keyed for the worker's stand-in MODEL/CLIP key maps
++    keys = {'lora_unet_input_blocks_0_0': (4, 2), 'lora_unet_middle_block_1_proj_in': (3, 2),
++            'lora_te_text_model_encoder_layers_0_mlp_fc1': (5, 2)}
++
++    def lora(seed):
++        out = {}
++        for index, (key, (rows, rank)) in enumerate(keys.items()):
++            base = torch.arange(rows * rank, dtype=torch.float32) / (7.0 + seed + index)
++            out[f'{key}.lora_up.weight'] = base.reshape(rows, rank).contiguous()
++            out[f'{key}.lora_down.weight'] = (base.reshape(rank, rows) * 0.5).contiguous()
++            out[f'{key}.alpha'] = torch.tensor(float(rank + seed))
++        return out
++
++    for seed, name in enumerate(('amy-lora.safetensors', 'sub/amy-sub-lora.safetensors', 'zz-amy-lora.safetensors')):
++        path = WORK / 'fixtures' / 'loras' / name
++        path.parent.mkdir(parents=True, exist_ok=True)
++        save_file(lora(seed), str(path))
++    (WORK / 'fixtures' / 'easy_wildcards').mkdir(parents=True, exist_ok=True)
 +
 +
 +def n(node_id, class_type, **inputs):
@@ -118259,7 +119286,63 @@
 +         expect='platform:sdk-pipe-classification',
 +         note='PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification)'),
 +]
-+CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES}
++
++
++def lora_apply(positive, negative=None, node_id='22'):
++    inputs = {'model': ['mc', 0], 'clip': ['mc', 1], 'positive': positive}
++    if negative is not None:
++        inputs['negative'] = negative
++    return g(n('mc', 'AMYLoraModelClip'), n(node_id, 'easy loraPromptApply', **inputs))
++
++
++def lora_probes(node_id='22'):
++    return g(*[probe([node_id, slot], node_id=f'p-{name}', label=name)
++               for slot, name in enumerate(('model', 'clip', 'positive', 'negative'))])
++
++
++LORA_CASES = [
++    case('lora-stem', g(lora_apply('<lora:amy-lora:0.65> a red ceramic teapot', 'blur'), lora_probes()),
++         note='live A/B defect: a LoRA named by its file stem was not resolved like the original'),
++    case('lora-full-filename', g(lora_apply('<lora:amy-lora.safetensors:1.0> a red ceramic teapot', 'blur'),
++                                 lora_probes()),
++         note='the original appends a second .safetensors and skips the LoRA; V2 now does the same'),
++    case('lora-full-filename-linked', g(n('t', 'AMYTestString', text='<lora:amy-lora.safetensors:0.65> a red teapot'),
++                                        lora_apply(['t', 0], 'blur'), lora_probes())),
++    case('lora-two-weights', g(lora_apply('<lora:amy-lora:0.5:0.25> two weights'), lora_probes())),
++    case('lora-subfolder-suffix', g(lora_apply('<lora:amy-sub-lora:0.8> sub'), lora_probes())),
++    case('lora-suffix-first-match', g(lora_apply('<lora:lora:0.4> first'), lora_probes())),
++    case('lora-missing', g(lora_apply('<lora:nope:1> missing', '<lora:gone> neg'), lora_probes())),
++    case('lora-negative-unconnected', g(lora_apply('<lora:amy-lora:0.3> x'), lora_probes())),
++    case('lora-in-both', g(lora_apply('<lora:amy-lora:0.4> a', '<lora:amy-lora:0.2> b'), lora_probes())),
++    case('lora-duplicate', g(lora_apply('<lora:amy-lora:0.5> <lora:amy-lora:0.9> dup  '), lora_probes())),
++    case('lora-extended-strength', g(lora_apply('<lora:amy-lora:150> big'), lora_probes())),
++    case('lora-zero-strength', g(lora_apply('<lora:amy-lora:0:0> zero'), lora_probes())),
++    case('lora-options', g(lora_apply('{a red|a red} <lora:amy-lora:0.7> teapot'), lora_probes())),
++    case('lora-none', g(lora_apply('plain text, no tags', 'neg'), lora_probes())),
++]
++
++
++def color(method, output='Hide', ref_seed=52, target_seed=51, target_batch=1, ref_batch=1, width=96, height=64):
++    return g(img('t', target_seed, batch=target_batch, width=width, height=height),
++             img('r', ref_seed, batch=ref_batch, width=width, height=height),
++             n('21', 'easy imageColorMatch', image_ref=['r', 0], image_target=['t', 0], method=method,
++               image_output=output, save_prefix='color-match'),
++             save(['21', 0], 'matched', 'matched'))
++
++
++COLOR_CASES = [
++    case('colormatch-reinhard', color('reinhard'),
++         note='live A/B defect: V2 ignored the method (a plain mean/std transfer)'),
++    *[case(f'colormatch-{method}', color(method)) for method in ('wavelet', 'adain', 'mkl', 'hm', 'mvgd',
++                                                                 'hm-mvgd-hm', 'hm-mkl-hm')],
++    case('colormatch-reinhard-batch2', color('reinhard', target_batch=2)),
++    case('colormatch-mvgd-batch2-refs', color('mvgd', target_batch=2, ref_batch=2)),
++    case('colormatch-batch-mismatch', color('reinhard', target_batch=2, ref_batch=3), expect='error'),
++    case('colormatch-save', color('adain', output='Save')),
++    case('colormatch-hide-save', color('hm', output='Hide/Save')),
++    case('colormatch-preview', color('wavelet', output='Preview'), expect='known:preview-name'),
++]
++CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES, 'r3': LORA_CASES + COLOR_CASES}
 +CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 +if FILTER:
 +    CASES = [c for c in CASES if FILTER in c['name']]
@@ -118339,11 +119422,18 @@
 +        # Same preview pixels; the original's temp file is named easyPreview_temp_*, the platform preview's is not.
 +        files_o = [f for f in co['files'] if f['path'].startswith('temp/')]
 +        files_c = [f for f in cc['files'] if f['path'].startswith('temp/')]
-+        ui_o, ui_c = co['ui'].get('20', {}).get('images', []), cc['ui'].get('20', {}).get('images', [])
++
++        def previews(c):
++            return [image for value in c['ui'].values() for image in value.get('images', [])
++                    if image.get('type') == 'temp']
++        ui_o, ui_c = previews(co), previews(cc)
++        rest_o = {k: v for k, v in co['ui'].items() if not any(i.get('type') == 'temp' for i in v.get('images', []))}
++        rest_c = {k: v for k, v in cc['ui'].items() if not any(i.get('type') == 'temp' for i in v.get('images', []))}
++        outputs_o = [f for f in co['files'] if f['path'].startswith('output/')]
++        outputs_c = [f for f in cc['files'] if f['path'].startswith('output/')]
 +        ok = (len(files_o) == len(files_c) == 1 and files_o[0]['pixels_sha256'] == files_c[0]['pixels_sha256']
 +              and files_o[0]['size'] == files_c[0]['size'] and len(ui_o) == len(ui_c) == 1
-+              and ui_o[0].get('type') == ui_c[0].get('type') == 'temp'
-+              and not [f for f in co['files'] + cc['files'] if f['path'].startswith('output/')])
++              and rest_o == rest_c and outputs_o == outputs_c)
 +        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
 +                'names': [ui_o, ui_c], 'files': [files_o, files_c]}
 +    if co != cc:

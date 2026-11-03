@@ -46,7 +46,7 @@ for name, setter in (('output', folder_paths.set_output_directory), ('temp', fol
     (OUT / name).mkdir(parents=True, exist_ok=True)
     setter(str(OUT / name))
 for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
-                  ('upscale_models', {'.safetensors'})):
+                  ('upscale_models', {'.safetensors'}), ('easy_wildcards', {'.txt', '.yaml', '.yml', '.json'})):
     folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 CWD = OUT / 'cwd'
 CWD.mkdir(parents=True, exist_ok=True)
@@ -89,6 +89,11 @@ core_nodes.NODE_CLASS_MAPPINGS['PreviewAny'] = PreviewAny
 # ---- test-only nodes
 def _summary(value, depth=0):
     """Deterministic, comparable description of any value a node returns."""
+    if hasattr(value, 'patch_records'):  # LoRA stand-ins: every patch core's loader added, and attachments
+        return {'object': type(value).__name__, 'patches': _summary(value.patch_records, depth + 1),
+                'attachments': _summary(value.attachments, depth + 1)}
+    if hasattr(value, 'weights') and type(value).__module__.startswith('comfy.weight_adapter'):
+        return {'adapter': type(value).__name__, 'weights': _summary(list(value.weights), depth + 1)}
     if isinstance(value, torch.Tensor):
         data = value.detach().contiguous().cpu()
         return {'tensor': list(data.shape), 'dtype': str(data.dtype),
@@ -148,6 +153,85 @@ class StandinVAE:
         return samples
 
 
+# ---- LoRA stand-ins: core's comfy.sd.load_lora_for_models runs for real on both sides; the MODEL and CLIP record
+# every patch it adds (keys, strengths, adapter weights) and every attachment, so a different LoRA, strength or order
+# shows up in the probe.
+import comfy.lora  # noqa: E402
+
+LORA_KEY_MAPS = {
+    'unet': {'lora_unet_input_blocks_0_0': 'diffusion_model.input_blocks.0.0.weight',
+             'lora_unet_middle_block_1_proj_in': 'diffusion_model.middle_block.1.proj_in.weight'},
+    'clip': {'lora_te_text_model_encoder_layers_0_mlp_fc1': 'clip_l.transformer.text_model.encoder.layers.0.mlp.fc1.weight'},
+}
+
+
+class _LoraRecorder:
+    def _init_records(self, records=None, attachments=None):
+        self.patch_records = list(records or [])
+        self.attachments = dict(attachments or {})
+
+    def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
+        self.patch_records.append({'keys': sorted(patches), 'strength_patch': strength_patch,
+                                   'strength_model': strength_model, 'patches': dict(sorted(patches.items()))})
+        return list(patches)
+
+    def set_attachments(self, key, value):
+        self.attachments[key] = value
+
+
+class LoraModel(_LoraRecorder):
+    """A MODEL as LoRA loaders use it (model_options + load_device make it a ModelPatcher to the SDK)."""
+
+    def __init__(self, records=None, attachments=None):
+        self.model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['unet'])
+        self.model_options = {}
+        self.load_device = 'cpu'
+        self._init_records(records, attachments)
+
+    def clone(self):
+        return LoraModel(self.patch_records, self.attachments)
+
+
+class _LoraClipPatcher:
+    def __init__(self, owner):
+        self.owner = owner
+        self.forced_hooks = None
+
+    def set_attachments(self, key, value):
+        self.owner.attachments[key] = value
+
+
+class LoraClip(_LoraRecorder):
+    """A CLIP as LoRA loaders use it (tokenize makes it a CLIP to the SDK)."""
+
+    def __init__(self, records=None, attachments=None):
+        self.cond_stage_model = types.SimpleNamespace(amy_lora_keys=LORA_KEY_MAPS['clip'])
+        self.patcher = _LoraClipPatcher(self)
+        self._init_records(records, attachments)
+
+    def tokenize(self, text, **kwargs):
+        return {}
+
+    def clone(self):
+        return LoraClip(self.patch_records, self.attachments)
+
+
+def _key_map_unet(model, key_map={}):
+    key_map = dict(key_map)
+    key_map.update(getattr(model, 'amy_lora_keys', {}))
+    return key_map
+
+
+def _key_map_clip(cond_stage_model, key_map={}):
+    key_map = dict(key_map)
+    key_map.update(getattr(cond_stage_model, 'amy_lora_keys', {}))
+    return key_map
+
+
+comfy.lora.model_lora_keys_unet = _key_map_unet
+comfy.lora.model_lora_keys_clip = _key_map_clip
+
+
 def _cond(seed):
     generator = torch.Generator().manual_seed(seed)
     return [[torch.rand((1, 4, 8), generator=generator), {'pooled_output': torch.rand((1, 8), generator=generator)}]]
@@ -155,6 +239,8 @@ def _cond(seed):
 
 ANY = '*'
 STANDINS = {
+    'AMYLoraModelClip': _standin('AMYLoraModelClip', lambda self: (LoraModel(), LoraClip()), lambda: {'required': {}},
+                                 ('MODEL', 'CLIP')),
     'AMYTestModel': _standin('AMYTestModel', lambda self: (StandinModel(),), lambda: {'required': {}}, ('MODEL',)),
     'AMYTestClip': _standin('AMYTestClip', lambda self: (StandinCLIP(),), lambda: {'required': {}}, ('CLIP',)),
     'AMYTestVAE': _standin('AMYTestVAE', lambda self: (StandinVAE(),), lambda: {'required': {}}, ('VAE',)),

@@ -2004,14 +2004,287 @@ async def _image_chooser(
     return _one(torch.cat([value[index:index + 1] for index in indices]))
 
 
-async def _color_match(image_ref, image_target, **_kwargs):
-    reference, target = await _raw(image_ref), await _raw(image_target)
-    reference = reference[:1]
-    ref_mean = reference.mean(dim=(1, 2), keepdim=True)
-    ref_std = reference.std(dim=(1, 2), keepdim=True).clamp_min(1e-6)
-    target_mean = target.mean(dim=(1, 2), keepdim=True)
-    target_std = target.std(dim=(1, 2), keepdim=True).clamp_min(1e-6)
-    return _one(((target - target_mean) / target_std * ref_std + ref_mean).clamp(0, 1))
+_PROMPT_PT_EXTENSIONS = {'.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'}  # folder_paths.supported_pt_extensions
+
+
+_PROMPT_OPTIONS = re.compile(r'{([^{}]*?)}')
+
+
+_PROMPT_WILDCARD = re.compile(r"__([\w\s.\-+/*\\]+?)__")
+
+
+def _prompt_is_numeric_string(input_str):
+    """is_numeric_string (py/libs/wildcards.py:211-212), verbatim."""
+    return re.match(r'^-?\d+(\.\d+)?$', input_str) is not None
+
+
+def _prompt_safe_float(x):
+    """safe_float (py/libs/wildcards.py:215-219), verbatim."""
+    if _prompt_is_numeric_string(x):
+        return float(x)
+    else:
+        return 1.0
+
+
+def _prompt_lora_values(string):
+    """extract_lora_values (py/libs/wildcards.py:222-270), verbatim."""
+    pattern = r'<lora:([^>]+)>'
+    matches = re.findall(pattern, string)
+
+    def touch_lbw(text):
+        return re.sub(r'LBW=[A-Za-z][A-Za-z0-9_-]*:', r'LBW=', text)
+
+    items = [touch_lbw(match.strip(':')) for match in matches]
+
+    added = set()
+    result = []
+    for item in items:
+        item = item.split(':')
+
+        lora = None
+        a = None
+        b = None
+        lbw = None
+        lbw_a = None
+        lbw_b = None
+
+        if len(item) > 0:
+            lora = item[0]
+
+            for sub_item in item[1:]:
+                if _prompt_is_numeric_string(sub_item):
+                    if a is None:
+                        a = float(sub_item)
+                    elif b is None:
+                        b = float(sub_item)
+                elif sub_item.startswith("LBW="):
+                    for lbw_item in sub_item[4:].split(';'):
+                        if lbw_item.startswith("A="):
+                            lbw_a = _prompt_safe_float(lbw_item[2:].strip())
+                        elif lbw_item.startswith("B="):
+                            lbw_b = _prompt_safe_float(lbw_item[2:].strip())
+                        elif lbw_item.strip() != '':
+                            lbw = lbw_item
+
+        if a is None:
+            a = 1.0
+        if b is None:
+            b = 1.0
+
+        if lora is not None and lora not in added:
+            result.append((lora, a, b, lbw, lbw_a, lbw_b))
+            added.add(lora)
+
+    return result
+
+
+async def _prompt_wildcards(text):
+    """The original's process(text, seed=None) (py/libs/wildcards.py:68-208): text without {options} or __wildcards__
+    comes back unchanged; anything else goes through the pack's wildcard port with an unseeded choice, as the
+    original's seed=None does."""
+    if not (_PROMPT_OPTIONS.search(text) or _PROMPT_WILDCARD.search(text)):
+        return text
+    catalogue = await _load_wildcard_catalogue(_ctx(), "easy_wildcards", style="easy")
+    return _populate_catalogue_wildcards(text, random.randrange(2 ** 32), catalogue, style="easy")
+
+
+async def _prompt_resolve_lora(name):
+    """resolve_lora_name (py/libs/loader.py:407-426): the first catalogue name (sorted, as the loras list is) that ends
+    with `name`; None when nothing does. A catalogue larger than the listing cap is searched by exact name only."""
+    try:
+        names = await _ctx().assets.list("loras")
+    except ValueError:
+        return name if await _ctx().assets.exists("loras", name) else None
+    for candidate in names:
+        if candidate.endswith(name):
+            return candidate
+    return None
+
+
+async def _prompt_apply_lora(model, asset, clip, strength_model, strength_clip):
+    """ModelRef.apply_lora with the native loader's behaviour (skip_zero=False, allow_extended_strengths=True) on runtime
+    bases whose apply_lora takes those keywords (0cd9adec). Base 0b86765f's apply_lora has neither: there the platform
+    skips zero-strength LoRAs and refuses strengths outside [-100, 100] (SECURE_CONVERSION.md, repair round r3)."""
+    import inspect
+    if {'skip_zero', 'allow_extended_strengths'} <= set(inspect.signature(model.apply_lora).parameters):
+        return await model.apply_lora(asset, clip, strength_model, strength_clip,
+                                      skip_zero=False, allow_extended_strengths=True)
+    return await model.apply_lora(asset, clip, strength_model, strength_clip)
+
+
+async def _prompt_apply_loras(text, model, clip):
+    """process_with_loras (py/libs/wildcards.py:279-308) with easyCache.load_lora (py/libs/loader.py:326-405) for one
+    prompt: wildcards, then every <lora:...> tag applied in order, then the tags removed (surrounding spaces kept)."""
+    pass1 = await _prompt_wildcards(text)
+    loras = _prompt_lora_values(pass1)
+    pass2 = re.sub(r'<lora:[^>]+>', '', pass1)
+    for lora_name, model_weight, clip_weight, lbw, lbw_a, lbw_b in loras:
+        # The original's extension test compares "safetensors" with dotted extensions, so it always appends one.
+        if (lora_name.split('.')[-1]) not in _PROMPT_PT_EXTENSIONS:
+            lora_name = lora_name + ".safetensors"
+        if lbw:
+            raise RuntimeError(
+                "easy loraPromptApply is not available in this secure build for LoRA block weights (LBW=): the "
+                "original hands them to the Inspire pack's block-weight loader")
+        resolved = await _prompt_resolve_lora(lora_name)
+        if resolved is None:
+            continue  # the original logs "LORA NOT FOUND" and goes on without it
+        asset = await _ctx().assets.resolve("loras", resolved)
+        model, clip = await _prompt_apply_lora(model, asset, clip, float(model_weight), float(clip_weight))
+    return model, clip, pass2
+
+
+def _colorfix_to_tensor(pic):
+    """torchvision ToTensor() for an 8-bit PIL image (torchvision 0.23 transforms/functional.py to_tensor)."""
+    img = torch.from_numpy(np.array(pic, np.uint8, copy=True))
+    img = img.view(pic.size[1], pic.size[0], len(pic.getbands()))
+    img = img.permute((2, 0, 1)).contiguous()
+    return img.to(dtype=torch.get_default_dtype()).div(255)
+
+
+def _colorfix_to_pil(pic):
+    """torchvision ToPILImage() for a float C,H,W tensor of 1, 3 or 4 channels (to_pil_image)."""
+    npimg = pic.permute((1, 2, 0)).numpy(force=True)
+    npimg = (npimg * 255).astype(np.uint8)
+    # uint8 H,W / H,W,3 / H,W,4 arrays are L / RGB / RGBA, the modes to_pil_image picks
+    return Image.fromarray(npimg[:, :, 0] if npimg.shape[2] == 1 else npimg)
+
+
+def _colorfix_calc_mean_std(feat, eps=1e-5):
+    """calc_mean_std (py/libs/colorfix.py:40-53), verbatim."""
+    size = feat.size()
+    assert len(size) == 4, 'The input feature should be 4D tensor.'
+    b, c = size[:2]
+    feat_var = feat.view(b, c, -1).var(dim=2) + eps
+    feat_std = feat_var.sqrt().view(b, c, 1, 1)
+    feat_mean = feat.view(b, c, -1).mean(dim=2).view(b, c, 1, 1)
+    return feat_mean, feat_std
+
+
+def _colorfix_adaptive_instance_normalization(content_feat, style_feat):
+    """adaptive_instance_normalization (py/libs/colorfix.py:55-67), verbatim."""
+    size = content_feat.size()
+    style_mean, style_std = _colorfix_calc_mean_std(style_feat)
+    content_mean, content_std = _colorfix_calc_mean_std(content_feat)
+    normalized_feat = (content_feat - content_mean.expand(size)) / content_std.expand(size)
+    return normalized_feat * style_std.expand(size) + style_mean.expand(size)
+
+
+def _colorfix_wavelet_blur(image, radius):
+    """wavelet_blur (py/libs/colorfix.py:69-88), verbatim."""
+    kernel_vals = [
+        [0.0625, 0.125, 0.0625],
+        [0.125, 0.25, 0.125],
+        [0.0625, 0.125, 0.0625],
+    ]
+    kernel = torch.tensor(kernel_vals, dtype=image.dtype, device=image.device)
+    kernel = kernel[None, None]
+    kernel = kernel.repeat(3, 1, 1, 1)
+    image = torch.nn.functional.pad(image, (radius, radius, radius, radius), mode='replicate')
+    output = torch.nn.functional.conv2d(image, kernel, groups=3, dilation=radius)
+    return output
+
+
+def _colorfix_wavelet_decomposition(image, levels=5):
+    """wavelet_decomposition (py/libs/colorfix.py:90-102), verbatim."""
+    high_freq = torch.zeros_like(image)
+    for i in range(levels):
+        radius = 2 ** i
+        low_freq = _colorfix_wavelet_blur(image, radius)
+        high_freq += (image - low_freq)
+        image = low_freq
+
+    return high_freq, low_freq
+
+
+def _colorfix_wavelet_reconstruction(content_feat, style_feat):
+    """wavelet_reconstruction (py/libs/colorfix.py:104-115), verbatim."""
+    content_high_freq, content_low_freq = _colorfix_wavelet_decomposition(content_feat)
+    del content_low_freq
+    style_high_freq, style_low_freq = _colorfix_wavelet_decomposition(style_feat)
+    del style_high_freq
+    return content_high_freq + style_low_freq
+
+
+def _colorfix_adain_color_fix(target, source):
+    """adain_color_fix (py/libs/colorfix.py:8-21), verbatim apart from the torchvision conversions above."""
+    target_tensor = _colorfix_to_tensor(target).unsqueeze(0)
+    source_tensor = _colorfix_to_tensor(source).unsqueeze(0)
+    result_tensor = _colorfix_adaptive_instance_normalization(target_tensor, source_tensor)
+    return _colorfix_to_pil(result_tensor.squeeze(0).clamp_(0.0, 1.0))
+
+
+def _colorfix_wavelet_color_fix(target, source):
+    """wavelet_color_fix (py/libs/colorfix.py:23-38), verbatim apart from the torchvision conversions above."""
+    source = source.resize(target.size, resample=Image.Resampling.LANCZOS)
+    target_tensor = _colorfix_to_tensor(target).unsqueeze(0)
+    source_tensor = _colorfix_to_tensor(source).unsqueeze(0)
+    result_tensor = _colorfix_wavelet_reconstruction(target_tensor, source_tensor)
+    return _colorfix_to_pil(result_tensor.squeeze(0).clamp_(0.0, 1.0))
+
+
+def _colorfix_tensor2pil(image):
+    """tensor2pil (py/libs/image.py:17-18), verbatim."""
+    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+
+
+def _colorfix_pil2tensor(image):
+    """pil2tensor (py/libs/image.py:14-15), verbatim."""
+    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+
+
+async def _color_match(image_ref, image_target, method, image_output="Preview", save_prefix="ComfyUI", **_kwargs):
+    """easy imageColorMatch as the original (py/nodes/image.py:1098-1139): wavelet/adain through the pack's colorfix
+    functions, every other method through color-matcher (vendored in _color_matcher/, numpy only); then the original's
+    easySave outputs."""
+    image_ref = await _raw(image_ref)
+    image_target = await _raw(image_target)
+    if method in ["wavelet", "adain"]:
+        result_images = _colorfix_wavelet_color_fix(_colorfix_tensor2pil(image_target), _colorfix_tensor2pil(image_ref)) \
+            if method == 'wavelet' else _colorfix_adain_color_fix(_colorfix_tensor2pil(image_target),
+                                                                  _colorfix_tensor2pil(image_ref))
+        new_images = _colorfix_pil2tensor(result_images)
+    else:
+        from ._color_matcher import ColorMatcher
+        image_ref = image_ref.cpu()
+        image_target = image_target.cpu()
+        batch_size = image_target.size(0)
+        out = []
+        images_target = image_target.squeeze()
+        images_ref = image_ref.squeeze()
+
+        image_ref_np = images_ref.numpy()
+        images_target_np = images_target.numpy()
+        if image_ref.size(0) > 1 and image_ref.size(0) != batch_size:
+            raise ValueError("ColorMatch: Use either single reference image or a matching batch of reference images.")
+        cm = ColorMatcher()
+        for i in range(batch_size):
+            image_target_np = images_target_np if batch_size == 1 else images_target[i].numpy()
+            image_ref_np_i = image_ref_np if image_ref.size(0) == 1 else images_ref[i].numpy()
+            try:
+                image_result = cm.transfer(src=image_target_np, ref=image_ref_np_i, method=method)
+            except BaseException as e:
+                print(f"Error occurred during transfer: {e}")
+                break
+            out.append(torch.from_numpy(image_result))
+
+        new_images = torch.stack(out, dim=0).to(torch.float32)
+
+    image_out = await wrap_output(new_images, "IMAGE")
+    # easySave (py/libs/utils.py:255-266): Hide shows nothing; Preview previews; every other mode saves.
+    if image_output in ("Hide", "None"):
+        results = []
+    elif image_output in ("Preview", "Preview&Choose"):
+        results = (await _ctx().ui.preview_images(image_out)).get("images", [])
+    else:
+        results = (await _ctx().output.save_images(image_out, filename_prefix=save_prefix)).get("images", [])
+
+    if image_output in ("Hide", "Hide/Save"):
+        return {"ui": {},
+                "result": (image_out,)}
+
+    return {"ui": {"images": results},
+            "result": (image_out,)}
 
 
 async def _detail_transfer(target, source, blend_factor, mask=None, **_kwargs):
@@ -2764,21 +3037,12 @@ async def _controlnet_stack_apply(controlnet_stack, pipe, **_kwargs):
     return _one(source)
 
 
-async def _lora_prompt_apply(model, clip, positive, negative, **_kwargs):
-    found = []
-    for text in (str(positive), str(negative)):
-        found.extend(_LORA_PATTERN.findall(text))
-    seen = set()
-    for name, strength in found:
-        key = (name, strength)
-        if key in seen:
-            continue
-        seen.add(key)
-        value = float(strength or 1.0)
-        model, clip = await _apply_lora_stack(model, clip, [(name, value, value)])
-    clean_positive = _LORA_PATTERN.sub("", str(positive)).strip()
-    clean_negative = _LORA_PATTERN.sub("", str(negative)).strip()
-    return model, clip, clean_positive, clean_negative
+async def _lora_prompt_apply(model, clip, positive, negative=None, **_kwargs):
+    """easy loraPromptApply as the original (py/nodes/adapter.py:39-44)."""
+    model, clip, positive = await _prompt_apply_loras(positive, model, clip)
+    if negative is not None:
+        model, clip, negative = await _prompt_apply_loras(negative, model, clip)
+    return model, clip, positive, negative if negative is not None else ""
 
 
 async def _pipe_in(pipe=None, model=None, pos=None, neg=None, latent=None,
@@ -5563,6 +5827,7 @@ _permissions(
     "raw",
 )
 _permissions({"easy imageSave"}, "output", "ui")
+_permissions({"easy imageColorMatch"}, "output", "raw", "ui")
 _permissions({"easy imagesCountInDirectory"}, "assets")
 _permissions({"easy loadImagesForLoop"}, "assets", "raw")
 _permissions({"easy removeLocalImage"}, "assets", "assets.delete")
