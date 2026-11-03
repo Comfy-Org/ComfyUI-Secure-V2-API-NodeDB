@@ -334,6 +334,18 @@ def child_v2(out: Path):
             if diffs:
                 fails.append(f"{node_id}: manifest row differs from real encoder in {diffs}")
                 rows[node_id] = {k: {"manifest": row.get(k, "<absent>"), "encoder": r.get(k, "<absent>")} for k in diffs}
+        # Values mode (sdk_refs false) materializes inputs in the guest; live engine objects cannot cross that way.
+        engine_types = {"MODEL", "CLIP", "VAE", "CONTROL_NET", "UPSCALE_MODEL", "CLIP_VISION", "STYLE_MODEL", "GLIGEN",
+                        "GUIDER", "SAMPLER", "NOISE", "HOOKS", "LORA_MODEL", "PHOTOMAKER", "INPAINT_MODEL"}
+        for node_id, row in manifest.get("nodes", {}).items():
+            if row.get("sdk_refs") is True:
+                continue
+            bad = [i.get("attrs", {}).get("id") for i in (row.get("schema") or {}).get("inputs", [])
+                   if isinstance(i, dict) and i.get("io_type") in engine_types]
+            if bad:
+                # A WARN: refusal stubs refuse at validation, before any input is materialized, so they are fine.
+                warns.append(f"{node_id}: values-mode row (sdk_refs false) takes engine-object inputs {bad}; "
+                             "fine only if the node refuses before execution (otherwise declare SDK_REFS)")
         res["manifest_fail"] = fails
         res["manifest_warn"] = warns
         res["manifest_row_diffs"] = rows
