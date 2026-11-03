@@ -1,27 +1,92 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,86 @@
 +# Secure Nodes 2.0 conversion
 +
 +Pinned upstream commit: `a5547db9e1d07d3318bb21e9e9c474f4c1e9c8df`.
 +
-+- Backend nodes converted: 4/4.
++- Backend nodes converted: 4/4 (`UltimateSDUpscale`, `UltimateSDUpscaleNoUpscale`, `UltimateSDUpscaleCustomSample`,
++  `UltimateSDUpscaleGuider`).
 +- Rejected nodes: 0.
 +- Frontend modules requiring conversion: 0.
-+- Tile planning, chess/linear ordering, padded crops, masks, batching,
-+  compositing, and all three seam-fix strategies remain pack-side.
-+- Text-only tile groups retain batched sampling. Groups carrying area, mask,
-+  GLIGEN, ControlNet, or reference-latent metadata are sampled per tile so
-+  every spatial hint is cropped against the correct tile origin.
-+- Model- and guider-owned spatial guidance uses the reusable
-+  `spatial_crop_inputs` primitive. Tile planning remains here; the core-owned
-+  DiffSynth and Z-Image control patches crop and clone their own images,
-+  inpaint images, masks, and encoded guidance without shared-state mutation.
-+- Upscale-model inference, VAE encode/decode, and diffusion sampling use
-+  opaque Secure Nodes 2.0 references.
-+- The custom-sampler node preserves its `SAMPLER` and `SIGMAS` inputs; the
-+  guider node preserves `GUIDER`, `SAMPLER`, and `SIGMAS` without exposing
-+  any live model object to the guest.
++
++## How the conversion works (repair round r1)
++
++`_secure_nodes.py` is a port of the pack's own tile pipeline:
++- `usdu_nodes.py` with the `usdu_patch.py` sizing and batching patches;
++- `modules/processing.py`, `modules/upscaler.py` and `modules/images.py`;
++- the `usdu_utils.py` helpers;
++- the bundled `ultimate-upscale.py` script.
++
++The value-handling lines are the original's: the drawn tile masks and crop regions, the Lanczos resizes, the Gaussian
++mask blur, the gradient seam masks, alpha compositing and the 8-bit image round trips. Comments of the form `file:line`
++point at the pinned source.
++
++The functions are `async`, and the model-owned steps cross the SDK as opaque references:
++- `ImageUpscaleWithModel` becomes `UpscaleModelRef.upscale(image, tile_size=512)`. That is ComfyUI's tiled runner with
++  512-pixel tiles and 32-pixel overlap, clamped, on the node's original IMAGE, as in the original.
++- `VAEEncode`, `VAEDecode` and `VAEDecodeTiled(..., 512)` become `VaeRef.encode`, `decode` and `decode_tiled(..., 512)`.
++- `common_ksampler` and `SamplerCustom` become `ctx.sample`. The host runs `comfy.sample.sample` or
++  `comfy.sample.sample_custom` with `prepare_noise(latent, seed)`.
++- `sample_with_guider` becomes `ctx.sample(guider=...)`.
++- `crop_model_cond` becomes `ModelRef`/`GuiderRef.spatial_crop_inputs`.
++- `crop_cond`: conditioning without area, mask, GLIGEN, ControlNet or reference-latent rows passes through unchanged,
++  as in the original. Rows with that metadata go through `CondRef.spatial_crop`.
++
++The module-level `shared` state of the original is held per node call.
++
++## Upstream behaviour kept on purpose
++
++- The seam-fix passes sample with the main `denoise`. The original sets `p.denoising_strength` from
++  `seam_fix_denoise`, but its sampler reads `p.denoise`, so `seam_fix_denoise` has no effect.
++- The original's sizing is kept:
++  - the canvas is `round(size * upscale_by / 8) * 8`;
++  - tiles are `tile + padding`, rounded to 8;
++  - band-pass tiles are `seam_fix_width + 2 * seam_fix_padding` by the image height;
++  - half-tile passes use the tile size.
++
++## Parity (tier 1, CPU gate)
++
++`tests/test_comfyui_ultimatesdupscale_parity.py` runs the original modules (V1) and this port (V2) side by side.
++Both use the same deterministic stand-ins for the model-owned operations (`tests/usdu_fakeops.py`). For 22 cases it
++compares:
++- the output IMAGE, exactly;
++- the full sequence of model-owned calls, with argument and result digests;
++- stdout;
++- error type and message.
++
++The cases cover all four nodes, Linear, Chess and None redraw, every seam-fix mode, uniform and non-uniform tiles,
++odd image sizes, tiled decode, image batches, tile batches, upscale factors 0.5 to 3, the Lanczos path without a
++model, custom sampler and sigmas, the guider node, and the batch-size assertion. A one-level change to one output
++value turns the comparator red.
++
++## Known differences
++
++Plain text conditioning on an ordinary model gives the original's output exactly. The differences below need spatial
++conditioning, model patches, or unusual inputs.
++
++1. **Spatial conditioning.** Area, mask, GLIGEN, ControlNet/T2I hints and reference latents are cropped per tile by
++   the host's spatial conditioning crop, not by the pack's `crop_cond`. The pack's crop cannot run in the guest,
++   because conditioning stays engine-side. The previous V2 did the same. The host crop differs from the original:
++   - Hints are resampled bilinearly, not nearest-exact, and the crop window is rounded differently.
++   - An area row that does not intersect the tile is dropped. The original keeps that row without its area.
++   - Masks are resized at latent resolution, not with PIL at tile resolution.
++   - In a tile batch (`batch_size` > 1) every tile uses the first tile's region. The original concatenates one hint
++     per tile.
++2. **Model patches.** DiffSynth / Z-Image control patches are cropped by their own `spatial_crop_inputs`, not by the
++   pack's `crop_model_cond`, which re-encodes the cropped image at native size.
++3. **RGBA input with an upscale model** fails. The host upscale has no separate alpha path, while stock
++   `ImageUpscaleWithModel` upscales alpha bilinearly.
++4. **Empty sigmas** (a scheduler with denoise 0) are refused by the host sampler. The original returns the tile
++   unchanged.
++5. **Size limits.** A working canvas above 67,108,864 pixels (batch × width × height) is refused by name, as are tiles
++   beyond the SDK's image and crop limits. The original has no limit.
++6. **Frozen sampler and scheduler menus.** These come from the frozen schemas; the original reads ComfyUI's live
++   lists.
++7. **Progress and logs.** Progress is reported per tile through the SDK. The original's console progress bar and
++   debug log lines are not printed; its `print` lines are.
++8. **Errors.** Errors raised during execution reach the host through the sandbox transport as
++   `WireError("<Type>: <message>")`. The message text is preserved.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,80 +1,6 @@
@@ -2562,254 +2627,93 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,719 @@
+@@ -0,0 +1,1315 @@
 +"""Secure Nodes 2.0 implementation of Ultimate SD Upscale.
 +
-+The tile planner, masks, crop sizing, ordering, and compositing remain pack
-+code.  Only model-owned operations (upscale-model inference, VAE work, and
-+diffusion sampling) cross the V2 SDK as opaque references.
++This module is a port of the pack's own tile pipeline:
++- usdu_nodes.py and the usdu_patch.py sizing and batching patches;
++- modules/processing.py, modules/upscaler.py, modules/images.py and the
++  usdu_utils.py helpers;
++- the bundled ultimate-upscale.py script.
++
++Their PIL operations are unchanged: crop regions from the drawn tile masks,
++Lanczos resizes, the Gaussian mask blur, the gradient seam masks, alpha
++compositing and the 8-bit image round trips. A tile is therefore cut, blended
++and pasted exactly as the original does it.
++
++The functions are async because the model-owned steps cross the Secure Nodes
++2.0 SDK as opaque references: upscale-model inference, VAE encode/decode,
++diffusion sampling, and the spatial crops of conditioning and model patches.
++Comments of the form "file:line" point at the pinned upstream source.
 +"""
 +from __future__ import annotations
 +
++import logging
 +import math
-+from dataclasses import dataclass
-+from typing import Any
++from enum import Enum
++from typing import Any, Callable, List, Tuple
 +
++import numpy as np
 +import torch
-+import torch.nn.functional as F
++from PIL import Image, ImageDraw, ImageFilter, ImageOps
 +
 +from ._secure_runtime import SCHEMAS, bind_node, sdk
 +
 +
-+_ROUNDING = 8
++logger = logging.getLogger(__name__)
++
++# Upper bound on the working canvas (batch x width x height) in a sandboxed
++# guest. The original has no limit; an image this large exhausts memory there.
 +_MAX_PIXELS = 67_108_864
 +
 +
++# --------------------------------------------------------------------------- #
++# SDK boundary
++# --------------------------------------------------------------------------- #
 +def _ctx():
 +    return sdk.ctx()
 +
 +
-+def _one(value: Any) -> tuple[Any]:
-+    return (value,)
++async def _image_ref(pixels):
++    return await sdk.ImageRef.from_value(pixels)
 +
 +
-+def _image4(value: Any) -> torch.Tensor:
-+    image = torch.as_tensor(value)
-+    if image.ndim != 4 or image.shape[-1] < 3:
-+        raise ValueError("Ultimate SD Upscale requires a BHWC RGB image")
-+    if not 1 <= int(image.shape[0]) <= 64:
-+        raise ValueError("Ultimate SD Upscale image batch must be in [1, 64]")
-+    if image.shape[1] < 1 or image.shape[2] < 1:
-+        raise ValueError("Ultimate SD Upscale received an empty image")
-+    if int(image.shape[0] * image.shape[1] * image.shape[2]) > _MAX_PIXELS:
-+        raise ValueError("Ultimate SD Upscale input exceeds the pixel limit")
-+    return torch.nan_to_num(image[..., :3].detach().cpu().float()).clamp(0.0, 1.0)
++async def _release(refs):
++    released = set()
++    for ref in reversed(refs):
++        if ref is not None and ref.id not in released:
++            released.add(ref.id)
++            await ref.release()
 +
 +
-+def _round_length(value: float) -> int:
-+    return max(_ROUNDING, int(round(float(value) / _ROUNDING) * _ROUNDING))
++async def _upscale_with_model(upscale_model, image):
++    # modules/upscaler.py:17-21: ImageUpscaleWithModel(upscale_model, image),
++    # i.e. ComfyUI's tiled runner (512-pixel tiles, 32-pixel overlap, output
++    # clamped to [0, 1]) on the node's original IMAGE.
++    upscaled = await upscale_model.upscale(image, tile_size=512)
++    try:
++        return torch.as_tensor(await upscaled.raw())
++    finally:
++        await upscaled.release()
 +
 +
-+def _resize(image: torch.Tensor, width: int, height: int) -> torch.Tensor:
-+    width, height = int(width), int(height)
-+    if width < 1 or height < 1 or width * height * image.shape[0] > _MAX_PIXELS:
-+        raise ValueError("Ultimate SD Upscale target exceeds the pixel limit")
-+    if tuple(image.shape[1:3]) == (height, width):
-+        return image.clone()
-+    source = image.movedim(-1, 1)
-+    result = F.interpolate(
-+        source, size=(height, width), mode="bicubic",
-+        align_corners=False, antialias=True,
-+    )
-+    return result.movedim(1, -1).clamp(0.0, 1.0)
++async def _crop_cond(cond, regions, init_size, canvas_size, tile_size, created):
++    """usdu_utils.py:558-569 (crop_cond).
 +
-+
-+def _blur(mask: torch.Tensor, radius: int) -> torch.Tensor:
-+    radius = int(radius)
-+    if radius <= 0 or not bool(mask.any()):
-+        return mask.clone()
-+    sigma = max(0.5, float(radius))
-+    half = max(1, min(192, int(math.ceil(3.0 * sigma))))
-+    coordinates = torch.arange(-half, half + 1, dtype=torch.float32)
-+    kernel = torch.exp(-(coordinates.square()) / (2.0 * sigma * sigma))
-+    kernel /= kernel.sum()
-+    value = mask[None, None].float()
-+    value = F.pad(value, (half, half, 0, 0), mode="replicate")
-+    value = F.conv2d(value, kernel.view(1, 1, 1, -1))
-+    value = F.pad(value, (0, 0, half, half), mode="replicate")
-+    value = F.conv2d(value, kernel.view(1, 1, -1, 1))
-+    return value[0, 0].clamp(0.0, 1.0)
-+
-+
-+def _rectangle_mask(
-+    height: int, width: int, left: int, top: int, right: int, bottom: int,
-+) -> torch.Tensor:
-+    mask = torch.zeros((height, width), dtype=torch.float32)
-+    left, right = max(0, int(left)), min(width, int(right))
-+    top, bottom = max(0, int(top)), min(height, int(bottom))
-+    if left < right and top < bottom:
-+        mask[top:bottom, left:right] = 1.0
-+    return mask
-+
-+
-+def _paste_mask(
-+    canvas_height: int, canvas_width: int, patch: torch.Tensor,
-+    left: int, top: int,
-+) -> torch.Tensor:
-+    result = torch.zeros((canvas_height, canvas_width), dtype=torch.float32)
-+    patch_height, patch_width = map(int, patch.shape)
-+    destination_left = max(0, int(left))
-+    destination_top = max(0, int(top))
-+    destination_right = min(canvas_width, int(left) + patch_width)
-+    destination_bottom = min(canvas_height, int(top) + patch_height)
-+    if destination_left >= destination_right or destination_top >= destination_bottom:
-+        return result
-+    source_left = destination_left - int(left)
-+    source_top = destination_top - int(top)
-+    result[
-+        destination_top:destination_bottom,
-+        destination_left:destination_right,
-+    ] = patch[
-+        source_top:source_top + destination_bottom - destination_top,
-+        source_left:source_left + destination_right - destination_left,
-+    ]
-+    return result
-+
-+
-+def _tent(height: int, width: int, axis: str) -> torch.Tensor:
-+    if axis == "vertical":
-+        length = max(1, height)
-+    else:
-+        length = max(1, width)
-+    center = (length - 1) / 2.0
-+    denominator = max(1.0, center)
-+    values = 1.0 - (
-+        torch.arange(length, dtype=torch.float32) - center
-+    ).abs() / denominator
-+    values = values.clamp(0.0, 1.0)
-+    if axis == "vertical":
-+        return values[:, None].expand(height, width).clone()
-+    return values[None, :].expand(height, width).clone()
-+
-+
-+def _radial(height: int, width: int) -> torch.Tensor:
-+    ys = torch.linspace(-1.0, 1.0, max(1, height))[:, None]
-+    xs = torch.linspace(-1.0, 1.0, max(1, width))[None, :]
-+    return (1.0 - torch.sqrt(xs.square() + ys.square())).clamp(0.0, 1.0)
-+
-+
-+def _mask_bounds(
-+    mask: torch.Tensor, padding: int,
-+) -> tuple[int, int, int, int] | None:
-+    selected = torch.nonzero(mask > 0.0, as_tuple=False)
-+    if selected.numel() == 0:
++    Rows without area, mask, GLIGEN, ControlNet or reference-latent metadata
++    pass through unchanged, as in the original. Rows with such metadata are
++    cropped by the host's spatial conditioning crop for the first region.
++    """
++    if cond is None:
 +        return None
-+    height, width = map(int, mask.shape)
-+    pad = max(0, int(padding))
-+    top = max(0, int(selected[:, 0].min()) - pad)
-+    bottom = min(height, int(selected[:, 0].max()) + 1 + pad)
-+    left = max(0, int(selected[:, 1].min()) - pad)
-+    right = min(width, int(selected[:, 1].max()) + 1 + pad)
-+    return left, top, right, bottom
-+
-+
-+def _expand_crop(
-+    crop: tuple[int, int, int, int], canvas_width: int, canvas_height: int,
-+    target_width: int, target_height: int,
-+) -> tuple[int, int, int, int]:
-+    left, top, right, bottom = crop
-+    actual_width, actual_height = right - left, bottom - top
-+
-+    difference = int(target_width) - actual_width
-+    right = min(right + difference // 2, canvas_width)
-+    difference = int(target_width) - (right - left)
-+    left = max(left - difference, 0)
-+    difference = int(target_width) - (right - left)
-+    right = min(right + difference, canvas_width)
-+
-+    difference = int(target_height) - actual_height
-+    bottom = min(bottom + difference // 2, canvas_height)
-+    difference = int(target_height) - (bottom - top)
-+    top = max(top - difference, 0)
-+    difference = int(target_height) - (bottom - top)
-+    bottom = min(bottom + difference, canvas_height)
-+    if right <= left or bottom <= top:
-+        raise ValueError("Ultimate SD Upscale produced an empty crop")
-+    return left, top, right, bottom
-+
-+
-+@dataclass(frozen=True)
-+class _Job:
-+    mask: torch.Tensor
-+    process_width: int
-+    process_height: int
-+    padding: int
-+    blur: int
-+    denoise: float
-+
-+
-+@dataclass
-+class _Prepared:
-+    crop: tuple[int, int, int, int]
-+    process_width: int
-+    process_height: int
-+    pixels: torch.Tensor
-+    mask: torch.Tensor
-+
-+
-+def _prepare_job(
-+    images: torch.Tensor, job: _Job, force_uniform: bool,
-+) -> _Prepared | None:
-+    height, width = map(int, images.shape[1:3])
-+    crop = _mask_bounds(job.mask, job.padding)
-+    if crop is None:
-+        return None
-+    left, top, right, bottom = crop
-+    crop_width, crop_height = right - left, bottom - top
-+    if force_uniform:
-+        ratio = max(1, int(job.process_width)) / max(1, int(job.process_height))
-+        if crop_width / crop_height > ratio:
-+            target_width = crop_width
-+            target_height = max(1, round(crop_width / ratio))
-+        else:
-+            target_width = max(1, round(crop_height * ratio))
-+            target_height = crop_height
-+        crop = _expand_crop(
-+            crop, width, height, target_width, target_height)
-+        process_width = max(_ROUNDING, int(job.process_width))
-+        process_height = max(_ROUNDING, int(job.process_height))
-+    else:
-+        process_width = max(_ROUNDING, math.ceil(crop_width / 8) * 8)
-+        process_height = max(_ROUNDING, math.ceil(crop_height / 8) * 8)
-+        crop = _expand_crop(
-+            crop, width, height, process_width, process_height)
-+    left, top, right, bottom = crop
-+    pixels = _resize(
-+        images[:, top:bottom, left:right, :], process_width, process_height)
-+    blended_mask = _blur(job.mask, job.blur)[top:bottom, left:right]
-+    return _Prepared(
-+        crop=crop,
-+        process_width=process_width,
-+        process_height=process_height,
-+        pixels=pixels,
-+        mask=blended_mask,
-+    )
-+
-+
-+async def _crop_condition(
-+    conditioning: Any,
-+    crop: tuple[int, int, int, int],
-+    original_size: tuple[int, int],
-+    canvas_size: tuple[int, int],
-+    process_size: tuple[int, int],
-+):
-+    if conditioning is None:
-+        return None
-+    original_width, original_height = original_size
++    if not await cond.has_spatial_metadata():
++        return cond
++    region = regions if isinstance(regions, tuple) else regions[0]
++    init_width, init_height = init_size
 +    canvas_width, canvas_height = canvas_size
-+    source_width = max(1, math.ceil(original_width / 8))
-+    source_height = max(1, math.ceil(original_height / 8))
-+    left, top, right, bottom = crop
++    source_width = max(1, math.ceil(init_width / 8))
++    source_height = max(1, math.ceil(init_height / 8))
++    left, top, right, bottom = region
 +    x = max(0, min(source_width - 1, math.floor(
 +        left * source_width / canvas_width)))
 +    y = max(0, min(source_height - 1, math.floor(
@@ -2818,445 +2722,1202 @@
 +        right * source_width / canvas_width)))
 +    crop_bottom = max(y + 1, min(source_height, math.ceil(
 +        bottom * source_height / canvas_height)))
-+    return await conditioning.spatial_crop(
++    cropped = await cond.spatial_crop(
 +        x=x, y=y, width=crop_right - x, height=crop_bottom - y,
 +        source_width=source_width, source_height=source_height,
-+        target_width=max(1, math.ceil(process_size[0] / 8)),
-+        target_height=max(1, math.ceil(process_size[1] / 8)),
++        target_width=max(1, math.ceil(tile_size[0] / 8)),
++        target_height=max(1, math.ceil(tile_size[1] / 8)),
 +    )
++    created.append(cropped)
++    return cropped
 +
 +
-+async def _sample_tile(
-+    latent: Any,
-+    *,
-+    model: Any,
-+    positive: Any,
-+    negative: Any,
-+    seed: int,
-+    steps: int,
-+    cfg: float,
-+    sampler_name: str,
-+    scheduler: str,
-+    denoise: float,
-+    custom_sampler: Any = None,
-+    custom_sigmas: Any = None,
-+    guider: Any = None,
-+):
-+    if guider is not None:
-+        return await _ctx().sample(
-+            latent=latent,
-+            steps=1,
-+            guider=guider,
-+            sampler=custom_sampler,
-+            sigmas=custom_sigmas,
-+            seed=int(seed),
-+            denoise=float(denoise),
-+        )
-+    kwargs: dict[str, Any] = {}
++async def sample(model, seed, steps, cfg, sampler_name, scheduler, positive,
++                 negative, latent, denoise, custom_sampler, custom_sigmas):
++    """processing.py:156-182: choose the way to sample based on given inputs."""
++
++    # Custom sampler and sigmas: SamplerCustom(model, add_noise=True,
++    # noise_seed=seed, cfg, positive, negative, sampler, sigmas, latent).
 +    if custom_sampler is not None and custom_sigmas is not None:
-+        kwargs.update(sampler=custom_sampler, sigmas=custom_sigmas)
++        return await _ctx().sample(
++            latent=latent, steps=max(1, int(steps)), model=model,
++            positive=positive, negative=negative, cfg=float(cfg),
++            seed=int(seed), sampler_name=str(sampler_name),
++            scheduler=str(scheduler), sampler=custom_sampler,
++            sigmas=custom_sigmas,
++        )
++
++    # Default: common_ksampler(model, seed, steps, cfg, sampler_name,
++    # scheduler, positive, negative, latent, denoise=denoise).
 +    return await _ctx().sample(
-+        latent=latent,
-+        steps=max(1, int(steps)),
-+        model=model,
-+        positive=positive,
-+        negative=negative,
-+        cfg=float(cfg),
-+        seed=int(seed),
-+        sampler_name=str(sampler_name),
-+        scheduler=str(scheduler),
++        latent=latent, steps=int(steps), model=model, positive=positive,
++        negative=negative, cfg=float(cfg), seed=int(seed),
++        sampler_name=str(sampler_name), scheduler=str(scheduler),
 +        denoise=float(denoise),
-+        **kwargs,
 +    )
 +
 +
-+async def _run_group(
-+    images: torch.Tensor,
-+    jobs: list[_Job],
-+    *,
-+    force_uniform: bool,
-+    original_size: tuple[int, int],
-+    model: Any,
-+    positive: Any,
-+    negative: Any,
-+    vae: Any,
-+    seed: int,
-+    steps: int,
-+    cfg: float,
-+    sampler_name: str,
-+    scheduler: str,
-+    tiled_decode: bool,
-+    custom_sampler: Any = None,
-+    custom_sigmas: Any = None,
-+    guider: Any = None,
-+) -> torch.Tensor:
-+    prepared = [
-+        value for job in jobs
-+        if (value := _prepare_job(images, job, force_uniform)) is not None
-+    ]
-+    if not prepared:
-+        return images
-+    sizes = {(item.process_width, item.process_height) for item in prepared}
-+    requires_individual = len(sizes) != 1
-+    if len(prepared) > 1 and guider is None and not requires_individual:
-+        # Plain text conditioning broadcasts safely over a tile batch. Spatial
-+        # hints do not: each crop has a different origin. Preserve correctness
-+        # by sampling those tiles independently while keeping batching for the
-+        # common text-only path and for guider-owned conditioning.
-+        for conditioning in (positive, negative):
-+            if (
-+                conditioning is not None
-+                and await conditioning.has_spatial_metadata()
-+            ):
-+                requires_individual = True
-+                break
-+    if requires_individual:
-+        current = images
-+        for job in jobs:
-+            current = await _run_group(
-+                current, [job], force_uniform=force_uniform,
-+                original_size=original_size, model=model,
-+                positive=positive, negative=negative, vae=vae, seed=seed,
-+                steps=steps, cfg=cfg, sampler_name=sampler_name,
-+                scheduler=scheduler, tiled_decode=tiled_decode,
-+                custom_sampler=custom_sampler, custom_sigmas=custom_sigmas,
-+                guider=guider,
-+            )
-+        return current
++async def _generate(p, batched_tiles, crop_regions, canvas_size, tile_size):
++    """The model-owned middle of process_images() and process_batch_tiles().
 +
-+    batch = int(images.shape[0])
-+    tile_ref = latent = sampled = decoded = None
-+    sampling_model = sampling_guider = None
-+    positive_tile = negative_tile = None
++    processing.py:256-283 and :384-413: VAEEncode, crop_cond and
++    crop_model_cond, sample() or sample_with_guider(), then VAEDecode or
++    VAEDecodeTiled. Returns the decoded IMAGE tensor.
++    """
++    created = []
 +    try:
-+        tile_ref = await sdk.ImageRef._from_raw(torch.cat(
-+            [item.pixels for item in prepared], dim=0))
-+        latent = await vae.encode(tile_ref)
-+        if guider is None:
-+            positive_tile = await _crop_condition(
-+                positive, prepared[0].crop, original_size,
-+                (int(images.shape[2]), int(images.shape[1])),
-+                (prepared[0].process_width, prepared[0].process_height),
-+            )
-+            negative_tile = await _crop_condition(
-+                negative, prepared[0].crop, original_size,
-+                (int(images.shape[2]), int(images.shape[1])),
-+                (prepared[0].process_width, prepared[0].process_height),
-+            )
-+            sampling_model = await model.spatial_crop_inputs(
-+                regions=[item.crop for item in prepared],
-+                source_width=int(images.shape[2]),
-+                source_height=int(images.shape[1]),
-+                target_width=prepared[0].process_width,
-+                target_height=prepared[0].process_height,
++        pixels = await _image_ref(batched_tiles)
++        created.append(pixels)
++        latent = await p.vae.encode(pixels)
++        created.append(latent)
++        regions = crop_regions if isinstance(crop_regions, list) else [crop_regions]
++        crop = dict(
++            regions=[tuple(int(value) for value in region) for region in regions],
++            source_width=int(canvas_size[0]),
++            source_height=int(canvas_size[1]),
++            target_width=int(tile_size[0]),
++            target_height=int(tile_size[1]),
++        )
++        if p.guider is not None:
++            # Guider-based sampling: crop_model_cond(...) + sample_with_guider().
++            guider = await p.guider.spatial_crop_inputs(**crop)
++            created.append(guider)
++            samples = await _ctx().sample(
++                latent=latent, steps=1, guider=guider,
++                sampler=p.custom_sampler, sigmas=p.custom_sigmas,
++                seed=int(p.seed),
 +            )
 +        else:
-+            sampling_guider = await guider.spatial_crop_inputs(
-+                regions=[item.crop for item in prepared],
-+                source_width=int(images.shape[2]),
-+                source_height=int(images.shape[1]),
-+                target_width=prepared[0].process_width,
-+                target_height=prepared[0].process_height,
-+            )
-+        sampled = await _sample_tile(
-+            latent,
-+            model=sampling_model,
-+            positive=positive_tile,
-+            negative=negative_tile,
-+            seed=seed,
-+            steps=steps,
-+            cfg=cfg,
-+            sampler_name=sampler_name,
-+            scheduler=scheduler,
-+            denoise=jobs[0].denoise,
-+            custom_sampler=custom_sampler,
-+            custom_sigmas=custom_sigmas,
-+            guider=sampling_guider,
-+        )
-+        decoded = (
-+            await vae.decode_tiled(sampled, tile_size=512)
-+            if tiled_decode else await vae.decode(sampled)
-+        )
-+        decoded_pixels = _image4(await decoded.raw()).clone()
++            # Crop conditioning
++            positive_cropped = await _crop_cond(
++                p.positive, crop_regions, p.init_size, canvas_size, tile_size,
++                created)
++            negative_cropped = await _crop_cond(
++                p.negative, crop_regions, p.init_size, canvas_size, tile_size,
++                created)
++            model = await p.model.spatial_crop_inputs(**crop)
++            created.append(model)
++            # Generate samples
++            samples = await sample(
++                model, p.seed, p.steps, p.cfg, p.sampler_name, p.scheduler,
++                positive_cropped, negative_cropped, latent, p.denoise,
++                p.custom_sampler, p.custom_sigmas)
++        created.append(samples)
++
++        # Decode the sample
++        if not p.tiled_decode:
++            decoded = await p.vae.decode(samples)
++        else:
++            decoded = await p.vae.decode_tiled(samples, 512)  # Default tile size is 512
++        created.append(decoded)
++        images = torch.as_tensor(await decoded.raw())
++        if images.ndim == 5:  # nodes.VAEDecode: combine batches
++            images = images.reshape(
++                -1, images.shape[-3], images.shape[-2], images.shape[-1])
++        return images
 +    finally:
-+        released: set[str] = set()
-+        for ref in (
-+            decoded, sampled, sampling_guider, sampling_model,
-+            negative_tile, positive_tile, latent, tile_ref,
-+        ):
-+            if ref is not None and ref.id not in released:
-+                released.add(ref.id)
-+                await ref.release()
-+
-+    expected = batch * len(prepared)
-+    if int(decoded_pixels.shape[0]) != expected:
-+        raise ValueError(
-+            "Ultimate SD Upscale decoder changed the tile batch size")
-+    result = images.clone()
-+    for index, item in enumerate(prepared):
-+        left, top, right, bottom = item.crop
-+        tile = decoded_pixels[index * batch:(index + 1) * batch]
-+        tile = _resize(tile, right - left, bottom - top)
-+        blend = item.mask[None, :, :, None].to(dtype=result.dtype)
-+        destination = result[:, top:bottom, left:right, :]
-+        destination.copy_(destination * (1.0 - blend) + tile * blend)
-+    return result.clamp(0.0, 1.0)
++        await _release(created)
 +
 +
-+def _redraw_jobs(
-+    height: int, width: int, mode: str, tile_width: int, tile_height: int,
-+    padding: int, blur: int, denoise: float,
-+) -> list[_Job]:
-+    if str(mode) == "None":
-+        return []
-+    rows = math.ceil(height / tile_height)
-+    columns = math.ceil(width / tile_width)
-+    coordinates = [
-+        (column, row)
-+        for row in range(rows)
-+        for column in range(columns)
-+    ]
-+    if str(mode) == "Chess":
-+        coordinates = [
-+            *[item for item in coordinates if sum(item) % 2 == 0],
-+            *[item for item in coordinates if sum(item) % 2 == 1],
++async def _progress(p, tiles):
++    # The original updates its per-tile progress bar here.
++    p.tiles_done += tiles
++    await _ctx().progress.update(p.tiles_done, max(p.tiles_total, p.tiles_done))
++
++
++# --------------------------------------------------------------------------- #
++# usdu_utils.py
++# --------------------------------------------------------------------------- #
++def tensor_to_pil(img_tensor, batch_index=0):
++    # Takes a batch of images in the form of a tensor of shape [batch_size, height, width, channels]
++    # and returns an RGB PIL Image. Assumes channels=3
++    safe_tensor = torch.nan_to_num(img_tensor[batch_index])
++    return Image.fromarray((255 * safe_tensor.cpu().numpy()).astype(np.uint8))
++
++
++def pil_to_tensor(image):
++    # Takes a PIL image and returns a tensor of shape [1, height, width, channels]
++    image = np.array(image).astype(np.float32) / 255.0
++    image = torch.from_numpy(image).unsqueeze(0)
++    if len(image.shape) == 3:  # If the image is grayscale, add a channel dimension
++        image = image.unsqueeze(-1)
++    return image
++
++
++def get_crop_region(mask, pad=0):
++    # Takes a black and white PIL image in 'L' mode and returns the coordinates of the white rectangular mask region
++    # Should be equivalent to the get_crop_region function from https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/master/modules/masking.py
++    coordinates = mask.getbbox()
++    if coordinates is not None:
++        x1, y1, x2, y2 = coordinates
++    else:
++        x1, y1, x2, y2 = mask.width, mask.height, 0, 0
++    # Apply padding
++    x1 = max(x1 - pad, 0)
++    y1 = max(y1 - pad, 0)
++    x2 = min(x2 + pad, mask.width)
++    y2 = min(y2 + pad, mask.height)
++    return fix_crop_region((x1, y1, x2, y2), (mask.width, mask.height))
++
++
++def fix_crop_region(region, image_size):
++    # Remove the extra pixel added by the get_crop_region function
++    image_width, image_height = image_size
++    x1, y1, x2, y2 = region
++    if x2 < image_width:
++        x2 -= 1
++    if y2 < image_height:
++        y2 -= 1
++    return x1, y1, x2, y2
++
++
++def expand_crop(region, width, height, target_width, target_height):
++    '''
++    Expands a crop region to a specified target size.
++    :param region: A tuple of the form (x1, y1, x2, y2) denoting the upper left and the lower right points
++        of the rectangular region. Expected to have x2 > x1 and y2 > y1.
++    :param width: The width of the image the crop region is from.
++    :param height: The height of the image the crop region is from.
++    :param target_width: The desired width of the crop region.
++    :param target_height: The desired height of the crop region.
++    '''
++    x1, y1, x2, y2 = region
++    actual_width = x2 - x1
++    actual_height = y2 - y1
++    # target_width = math.ceil(actual_width / 8) * 8
++    # target_height = math.ceil(actual_height / 8) * 8
++
++    # Try to expand region to the right of half the difference
++    width_diff = target_width - actual_width
++    x2 = min(x2 + width_diff // 2, width)
++    # Expand region to the left of the difference including the pixels that could not be expanded to the right
++    width_diff = target_width - (x2 - x1)
++    x1 = max(x1 - width_diff, 0)
++    # Try the right again
++    width_diff = target_width - (x2 - x1)
++    x2 = min(x2 + width_diff, width)
++
++    # Try to expand region to the bottom of half the difference
++    height_diff = target_height - actual_height
++    y2 = min(y2 + height_diff // 2, height)
++    # Expand region to the top of the difference including the pixels that could not be expanded to the bottom
++    height_diff = target_height - (y2 - y1)
++    y1 = max(y1 - height_diff, 0)
++    # Try the bottom again
++    height_diff = target_height - (y2 - y1)
++    y2 = min(y2 + height_diff, height)
++
++    return (x1, y1, x2, y2), (target_width, target_height)
++
++
++# --------------------------------------------------------------------------- #
++# modules/images.py, modules/shared.py
++# --------------------------------------------------------------------------- #
++def flatten(img, bgcolor):
++    # Replace transparency with bgcolor
++    if img.mode in ("RGB"):
++        return img
++    return Image.alpha_composite(Image.new("RGBA", img.size, bgcolor), img).convert("RGB")
++
++
++class Options:
++    img2img_background_color = "#ffffff"  # Set to white for now
++
++
++class State:
++    interrupted = False
++
++    def begin(self):
++        pass
++
++    def end(self):
++        pass
++
++
++class Shared:
++    """modules/shared.py, held per node call rather than as module globals."""
++
++    def __init__(self):
++        self.opts = Options()
++        self.state = State()
++        # Will only ever hold 1 upscaler
++        self.sd_upscalers = [None]
++        # The upscaler usable by ComfyUI nodes
++        self.actual_upscaler = None
++        # Batch of images to upscale
++        self.batch = []
++        self.batch_as_tensor = None
++
++
++# --------------------------------------------------------------------------- #
++# modules/upscaler.py
++# --------------------------------------------------------------------------- #
++class Upscaler:
++
++    def __init__(self, shared):
++        self.shared = shared
++
++    async def upscale(self, img: Image, scale, selected_model: str = None):
++        shared = self.shared
++        if scale == 1.0:
++            return img
++        if (shared.actual_upscaler is None):
++            return img.resize((img.width * scale, img.height * scale), Image.Resampling.LANCZOS)
++        upscaled = await _upscale_with_model(shared.actual_upscaler, shared.batch_as_tensor)
++        shared.batch = [tensor_to_pil(upscaled, i) for i in range(len(upscaled))]
++        return shared.batch[0]
++
++
++class UpscalerData:
++    name = ""
++    data_path = ""
++
++    def __init__(self, shared):
++        self.scaler = Upscaler(shared)
++
++
++# --------------------------------------------------------------------------- #
++# modules/processing.py
++# --------------------------------------------------------------------------- #
++class USDUMode(Enum):
++    LINEAR = 0
++    CHESS = 1
++    NONE = 2
++
++
++class USDUSFMode(Enum):
++    NONE = 0
++    BAND_PASS = 1
++    HALF_TILE = 2
++    HALF_TILE_PLUS_INTERSECTIONS = 3
++
++
++class StableDiffusionProcessing:
++
++    def __init__(
++        self,
++        shared,
++        init_img,
++        model,
++        positive,
++        negative,
++        vae,
++        seed,
++        steps,
++        cfg,
++        sampler_name,
++        scheduler,
++        denoise,
++        upscale_by,
++        uniform_tile_mode,
++        tiled_decode,
++        tile_width,
++        tile_height,
++        redraw_mode,
++        seam_fix_mode,
++        custom_sampler=None,
++        custom_sigmas=None,
++        batch_size=1,
++        guider=None,
++    ):
++        self.shared = shared
++        # Variables used by the USDU script
++        self.init_images = [init_img]
++        self.image_mask = Image.new('L', init_img.size, 0)  # Placeholder mask
++        self.mask_blur = 0
++        self.inpaint_full_res_padding = 0
++        self.width = init_img.width * upscale_by
++        self.height = init_img.height * upscale_by
++        self.rows = round(self.height / tile_height)
++        self.cols = round(self.width / tile_width)
++
++        # Guider-based sampling (guider encapsulates model + conditioning + cfg)
++        self.guider = guider
++
++        # ComfyUI Sampler inputs. With a guider, its own models are cropped per
++        # tile (crop_model_cond on guider.model_patcher in the original).
++        self.model = model
++        self.positive = positive
++        self.negative = negative
++        self.vae = vae
++        self.seed = seed
++        self.steps = steps
++        self.cfg = cfg
++        self.sampler_name = sampler_name
++        self.scheduler = scheduler
++        self.denoise = denoise
++
++        # Optional custom sampler and sigmas
++        self.custom_sampler = custom_sampler
++        self.custom_sigmas = custom_sigmas
++
++        if guider is None and (custom_sampler is not None) ^ (custom_sigmas is not None):
++            logger.warning("Both custom sampler and custom sigmas must be provided, defaulting to widget sampler and sigmas")
++
++        # Variables used only by this script
++        self.init_size = init_img.width, init_img.height
++        self.upscale_by = upscale_by
++        self.uniform_tile_mode = uniform_tile_mode
++        self.tiled_decode = tiled_decode
++        self.batch_size = batch_size
++
++        # Other required A1111 variables for the USDU script that is currently unused in this script
++        self.extra_generation_params = {}
++
++        # Progress for the entire process, one step per tile
++        self.tiles_done = 0
++        self.tiles_total = 1
++
++
++class Processed:
++
++    def __init__(self, p: StableDiffusionProcessing, images: list, seed: int, info: str):
++        self.images = images
++        self.seed = seed
++        self.info = info
++
++    def infotext(self, p: StableDiffusionProcessing, index):
++        return None
++
++
++def fix_seed(p: StableDiffusionProcessing):
++    pass
++
++
++async def process_images(p: StableDiffusionProcessing) -> Processed:
++    # Where the main image generation happens in A1111
++    shared = p.shared
++
++    # Setup
++    image_mask = p.image_mask.convert('L')
++    init_image = p.init_images[0]
++
++    # Locate the white region of the mask outlining the tile and add padding
++    crop_region = get_crop_region(image_mask, p.inpaint_full_res_padding)
++
++    if p.uniform_tile_mode:
++        # Expand the crop region to match the processing size ratio and then resize it to the processing size
++        x1, y1, x2, y2 = crop_region
++        crop_width = x2 - x1
++        crop_height = y2 - y1
++        crop_ratio = crop_width / crop_height
++        p_ratio = p.width / p.height
++        if crop_ratio > p_ratio:
++            target_width = crop_width
++            target_height = round(crop_width / p_ratio)
++        else:
++            target_width = round(crop_height * p_ratio)
++            target_height = crop_height
++        crop_region, _ = expand_crop(crop_region, image_mask.width, image_mask.height, target_width, target_height)
++        tile_size = p.width, p.height
++    else:
++        # Uses the minimal size that can fit the mask, minimizes tile size but may lead to image sizes that the model is not trained on
++        x1, y1, x2, y2 = crop_region
++        crop_width = x2 - x1
++        crop_height = y2 - y1
++        target_width = math.ceil(crop_width / 8) * 8
++        target_height = math.ceil(crop_height / 8) * 8
++        crop_region, tile_size = expand_crop(crop_region, image_mask.width,
++                                             image_mask.height, target_width, target_height)
++
++    # Blur the mask
++    if p.mask_blur > 0:
++        image_mask = image_mask.filter(ImageFilter.GaussianBlur(p.mask_blur))
++
++    # Crop the images to get the tiles that will be used for generation
++    tiles = [img.crop(crop_region) for img in shared.batch]
++
++    # Assume the same size for all images in the batch
++    initial_tile_size = tiles[0].size
++
++    # Resize if necessary
++    for i, tile in enumerate(tiles):
++        if tile.size != tile_size:
++            tiles[i] = tile.resize(tile_size, Image.Resampling.LANCZOS)
++
++    # Encode the image, sample and decode
++    batched_tiles = torch.cat([pil_to_tensor(tile) for tile in tiles], dim=0)
++    decoded = await _generate(p, batched_tiles, crop_region, init_image.size, tile_size)
++
++    # Update the progress bar
++    await _progress(p, 1)
++
++    # Convert the sample to a PIL image
++    tiles_sampled = [tensor_to_pil(decoded, i) for i in range(len(decoded))]
++
++    for i, tile_sampled in enumerate(tiles_sampled):
++        init_image = shared.batch[i]
++
++        # Resize back to the original size
++        if tile_sampled.size != initial_tile_size:
++            tile_sampled = tile_sampled.resize(initial_tile_size, Image.Resampling.LANCZOS)
++
++        # Put the tile into position
++        image_tile_only = Image.new('RGBA', init_image.size)
++        image_tile_only.paste(tile_sampled, crop_region[:2])
++
++        # Add the mask as an alpha channel
++        # Must make a copy due to the possibility of an edge becoming black
++        temp = image_tile_only.copy()
++        temp.putalpha(image_mask)
++        image_tile_only.paste(temp, image_tile_only)
++
++        # Add back the tile to the initial image according to the mask in the alpha channel
++        result = init_image.convert('RGBA')
++        result.alpha_composite(image_tile_only)
++
++        # Convert back to RGB
++        result = result.convert('RGB')
++
++        shared.batch[i] = result
++
++    processed = Processed(p, [shared.batch[0]], p.seed, "")
++    return processed
++
++
++async def process_batch_tiles(
++    p: StableDiffusionProcessing,
++    tiles_coords: List[Tuple[int, int]],
++    images: List[Image.Image],
++    calc_rectangle_fn: Callable,
++) -> List[Image.Image]:
++    """Encode, sample and decode a batch of tiles and composite them back into *images*.
++
++    Unlike process_images() which operates on a single pre-built mask, this function
++    builds per-tile masks from *calc_rectangle_fn* and handles every (tile, image)
++    combination in one batched encode → sample → decode pass.
++    """
++    if not tiles_coords or not images:
++        return images
++
++    batch_tiles: List[Tuple[Image.Image, Tuple[int, int]]] = []
++    batch_masks: List[Image.Image] = []
++    batch_crop_regions: List[Tuple[int, int, int, int]] = []
++    batch_tile_sizes: List[Tuple[int, int]] = []
++
++    for image in images:
++        for tx, ty in tiles_coords:
++            tile_mask = Image.new("L", (image.width, image.height), "black")
++            tile_draw = ImageDraw.Draw(tile_mask)
++            tile_draw.rectangle(calc_rectangle_fn(tx, ty), fill="white")
++
++            crop_region = get_crop_region(tile_mask, p.inpaint_full_res_padding)
++
++            if p.uniform_tile_mode:
++                x1, y1, x2, y2 = crop_region
++                crop_w = x2 - x1
++                crop_h = y2 - y1
++                crop_ratio = crop_w / crop_h if crop_h != 0 else 1.0
++                p_ratio = p.width / p.height if p.height != 0 else 1.0
++                if crop_ratio > p_ratio:
++                    target_w = crop_w
++                    target_h = round(crop_w / p_ratio)
++                else:
++                    target_w = round(crop_h * p_ratio)
++                    target_h = crop_h
++                crop_region, _ = expand_crop(crop_region, tile_mask.width, tile_mask.height, target_w, target_h)
++                tile_size: Tuple[int, int] = (p.width, p.height)
++            else:
++                x1, y1, x2, y2 = crop_region
++                crop_w = x2 - x1
++                crop_h = y2 - y1
++                target_w = math.ceil(crop_w / 8) * 8
++                target_h = math.ceil(crop_h / 8) * 8
++                crop_region, tile_size = expand_crop(crop_region, tile_mask.width, tile_mask.height, target_w, target_h)
++
++            if p.mask_blur > 0:
++                tile_mask = tile_mask.filter(ImageFilter.GaussianBlur(p.mask_blur))
++
++            cropped_tile = image.crop(crop_region)
++            initial_tile_size = cropped_tile.size
++            if cropped_tile.size != tile_size:
++                cropped_tile = cropped_tile.resize(tile_size, Image.Resampling.LANCZOS)
++
++            batch_tiles.append((cropped_tile, initial_tile_size))
++            batch_masks.append(tile_mask)
++            batch_crop_regions.append(crop_region)
++            batch_tile_sizes.append(tile_size)
++
++    # Encode all tiles into a single latent batch, sample and decode
++    batched_tensors = torch.cat([pil_to_tensor(tile) for tile, _ in batch_tiles], dim=0)
++    first_tile_size = batch_tile_sizes[0]
++    decoded = await _generate(p, batched_tensors, batch_crop_regions, images[0].size, first_tile_size)
++
++    # Update progress bar once per batch call (one step per tile coord)
++    await _progress(p, len(tiles_coords))
++
++    # Composite each decoded tile back onto its source image
++    result_imgs = list(images)
++    for i, result_img in enumerate(result_imgs):
++        for j in range(len(tiles_coords)):
++            idx = i * len(tiles_coords) + j
++            tile_sampled = tensor_to_pil(decoded, idx)
++            initial_tile_size = batch_tiles[idx][1]
++            crop_region = batch_crop_regions[idx]
++            tile_mask = batch_masks[idx]
++
++            if tile_sampled.size != initial_tile_size:
++                tile_sampled = tile_sampled.resize(initial_tile_size, Image.Resampling.LANCZOS)
++
++            image_tile_only = Image.new('RGBA', result_img.size)
++            image_tile_only.paste(tile_sampled, crop_region[:2])
++
++            temp = image_tile_only.copy()
++            temp.putalpha(tile_mask)
++            image_tile_only.paste(temp, image_tile_only)
++
++            result = result_img.convert('RGBA')
++            result.alpha_composite(image_tile_only)
++            result_img = result.convert('RGB')
++            result_imgs[i] = result_img
++
++    return result_imgs
++
++
++# --------------------------------------------------------------------------- #
++# repositories/ultimate_sd_upscale/scripts/ultimate-upscale.py with the
++# usdu_patch.py patches applied in place
++# --------------------------------------------------------------------------- #
++def round_length(length: int, multiple: int = 8) -> int:
++    """Round length to nearest multiple (default 8)."""
++    return round(length / multiple) * multiple
++
++
++class USDUpscaler():
++
++    def __init__(self, p, image, upscaler_index:int, save_redraw, save_seams_fix, tile_width, tile_height) -> None:
++        # usdu_patch.py:52-54 (patch_usdu_upscaler_init)
++        p.width = round_length(image.width * p.upscale_by)
++        p.height = round_length(image.height * p.upscale_by)
++        if p.width * p.height * max(1, len(p.shared.batch)) > _MAX_PIXELS:
++            raise ValueError("Ultimate SD Upscale target exceeds the pixel limit")
++        self.p:StableDiffusionProcessing = p
++        self.image:Image = image
++        self.scale_factor = math.ceil(max(p.width, p.height) / max(image.width, image.height))
++        self.upscaler = p.shared.sd_upscalers[upscaler_index]
++        self.redraw = USDURedraw()
++        self.redraw.save = save_redraw
++        self.redraw.tile_width = tile_width if tile_width > 0 else tile_height
++        self.redraw.tile_height = tile_height if tile_height > 0 else tile_width
++        self.seams_fix = USDUSeamsFix()
++        self.seams_fix.save = save_seams_fix
++        self.seams_fix.tile_width = tile_width if tile_width > 0 else tile_height
++        self.seams_fix.tile_height = tile_height if tile_height > 0 else tile_width
++        self.initial_info = None
++        self.rows = math.ceil(self.p.height / self.redraw.tile_height)
++        self.cols = math.ceil(self.p.width / self.redraw.tile_width)
++
++    def get_factor(self, num):
++        # Its just return, don't need elif
++        if num == 1:
++            return 2
++        if num % 4 == 0:
++            return 4
++        if num % 3 == 0:
++            return 3
++        if num % 2 == 0:
++            return 2
++        return 0
++
++    def get_factors(self):
++        scales = []
++        current_scale = 1
++        current_scale_factor = self.get_factor(self.scale_factor)
++        while current_scale_factor == 0:
++            self.scale_factor += 1
++            current_scale_factor = self.get_factor(self.scale_factor)
++        while current_scale < self.scale_factor:
++            current_scale_factor = self.get_factor(self.scale_factor // current_scale)
++            scales.append(current_scale_factor)
++            current_scale = current_scale * current_scale_factor
++            if current_scale_factor == 0:
++                break
++        self.scales = enumerate(scales)
++
++    async def upscale(self):
++        # Log info
++        print(f"Canva size: {self.p.width}x{self.p.height}")
++        print(f"Image size: {self.image.width}x{self.image.height}")
++        print(f"Scale factor: {self.scale_factor}")
++        # Check upscaler is not empty
++        if self.upscaler.name == "None":
++            self.image = self.image.resize((self.p.width, self.p.height), resample=Image.LANCZOS)
++        else:
++            # Get list with scale factors
++            self.get_factors()
++            # Upscaling image over all factors
++            for index, value in self.scales:
++                print(f"Upscaling iteration {index+1} with scale factor {value}")
++                self.image = await self.upscaler.scaler.upscale(self.image, value, self.upscaler.data_path)
++            # Resize image to set values
++            self.image = self.image.resize((self.p.width, self.p.height), resample=Image.LANCZOS)
++        # usdu_patch.py:91-97 (patch_usdu_upscale_method): keep shared.batch
++        # consistent with the upscaling width/height for subsequent processing.
++        shared = self.p.shared
++        shared.batch = [self.image] + [
++            img.resize((self.p.width, self.p.height), resample=Image.LANCZOS)
++            for img in shared.batch[1:]
 +        ]
-+    process_width = _round_length(tile_width + padding)
-+    process_height = _round_length(tile_height + padding)
-+    return [
-+        _Job(
-+            _rectangle_mask(
-+                height, width,
-+                column * tile_width, row * tile_height,
-+                (column + 1) * tile_width, (row + 1) * tile_height,
-+            ),
-+            process_width, process_height, padding, blur, denoise,
-+        )
-+        for column, row in coordinates
-+    ]
++
++    def setup_redraw(self, redraw_mode, padding, mask_blur):
++        self.redraw.mode = USDUMode(redraw_mode)
++        self.redraw.enabled = self.redraw.mode != USDUMode.NONE
++        self.redraw.padding = padding
++        self.p.mask_blur = mask_blur
++
++    def setup_seams_fix(self, padding, denoise, mask_blur, width, mode):
++        self.seams_fix.padding = padding
++        self.seams_fix.denoise = denoise
++        self.seams_fix.mask_blur = mask_blur
++        self.seams_fix.width = width
++        self.seams_fix.mode = USDUSFMode(mode)
++        self.seams_fix.enabled = self.seams_fix.mode != USDUSFMode.NONE
++
++    def calc_jobs_count(self):
++        redraw_job_count = (self.rows * self.cols) if self.redraw.enabled else 0
++        seams_job_count = 0
++        if self.seams_fix.mode == USDUSFMode.BAND_PASS:
++            seams_job_count = self.rows + self.cols - 2
++        elif self.seams_fix.mode == USDUSFMode.HALF_TILE:
++            seams_job_count = self.rows * (self.cols - 1) + (self.rows - 1) * self.cols
++        elif self.seams_fix.mode == USDUSFMode.HALF_TILE_PLUS_INTERSECTIONS:
++            seams_job_count = self.rows * (self.cols - 1) + (self.rows - 1) * self.cols + (self.rows - 1) * (self.cols - 1)
++
++        self.p.shared.state.job_count = redraw_job_count + seams_job_count
++
++    def print_info(self):
++        print(f"Tile size: {self.redraw.tile_width}x{self.redraw.tile_height}")
++        print(f"Tiles amount: {self.rows * self.cols}")
++        print(f"Grid: {self.rows}x{self.cols}")
++        print(f"Redraw enabled: {self.redraw.enabled}")
++        print(f"Seams fix mode: {self.seams_fix.mode.name}")
++
++    def add_extra_info(self):
++        self.p.extra_generation_params["Ultimate SD upscale upscaler"] = self.upscaler.name
++        self.p.extra_generation_params["Ultimate SD upscale tile_width"] = self.redraw.tile_width
++        self.p.extra_generation_params["Ultimate SD upscale tile_height"] = self.redraw.tile_height
++        self.p.extra_generation_params["Ultimate SD upscale mask_blur"] = self.p.mask_blur
++        self.p.extra_generation_params["Ultimate SD upscale padding"] = self.redraw.padding
++
++    async def process(self):
++        state = self.p.shared.state
++        state.begin()
++        self.calc_jobs_count()
++        self.p.tiles_total = max(1, state.job_count)
++        self.result_images = []
++        if self.redraw.enabled:
++            self.image = await self.redraw.start(self.p, self.image, self.rows, self.cols)
++            self.initial_info = self.redraw.initial_info
++        self.result_images.append(self.image)
++
++        if self.seams_fix.enabled:
++            self.image = await self.seams_fix.start(self.p, self.image, self.rows, self.cols)
++            self.initial_info = self.seams_fix.initial_info
++            self.result_images.append(self.image)
++        state.end()
 +
 +
-+def _seam_jobs(
-+    height: int, width: int, mode: str, tile_width: int, tile_height: int,
-+    seam_width: int, padding: int, blur: int, denoise: float,
-+) -> list[_Job]:
-+    if str(mode) == "None":
-+        return []
-+    rows = math.ceil(height / tile_height)
-+    columns = math.ceil(width / tile_width)
-+    jobs: list[_Job] = []
-+    if str(mode) == "Band Pass":
-+        band = max(0, int(seam_width))
-+        if band == 0:
-+            return []
-+        vertical = _tent(height, band, "horizontal")
-+        horizontal = _tent(band, width, "vertical")
-+        for column in range(1, columns):
-+            jobs.append(_Job(
-+                _paste_mask(
-+                    height, width, vertical,
-+                    column * tile_width - band // 2, 0,
-+                ),
-+                _round_length(band + padding * 2),
-+                _round_length(height),
-+                padding, 0, denoise,
-+            ))
-+        for row in range(1, rows):
-+            jobs.append(_Job(
-+                _paste_mask(
-+                    height, width, horizontal,
-+                    0, row * tile_height - band // 2,
-+                ),
-+                _round_length(width),
-+                _round_length(band + padding * 2),
-+                padding, 0, denoise,
-+            ))
-+        return jobs
++class USDURedraw():
 +
-+    row_patch = _tent(tile_height, tile_width, "vertical")
-+    column_patch = _tent(tile_height, tile_width, "horizontal")
-+    for row in range(rows - 1):
-+        for column in range(columns):
-+            jobs.append(_Job(
-+                _paste_mask(
-+                    height, width, row_patch,
-+                    column * tile_width,
-+                    row * tile_height + tile_height // 2,
-+                ),
-+                tile_width, tile_height, padding, blur, denoise,
-+            ))
-+    for row in range(rows):
-+        for column in range(columns - 1):
-+            jobs.append(_Job(
-+                _paste_mask(
-+                    height, width, column_patch,
-+                    column * tile_width + tile_width // 2,
-+                    row * tile_height,
-+                ),
-+                tile_width, tile_height, padding, blur, denoise,
-+            ))
-+    if str(mode) == "Half Tile + Intersections":
-+        intersection = _radial(tile_height, tile_width)
-+        for row in range(rows - 1):
-+            for column in range(columns - 1):
-+                jobs.append(_Job(
-+                    _paste_mask(
-+                        height, width, intersection,
-+                        column * tile_width + tile_width // 2,
-+                        row * tile_height + tile_height // 2,
-+                    ),
-+                    tile_width, tile_height, 0, blur, denoise,
-+                ))
-+    return jobs
++    def init_draw(self, p, width, height):
++        p.inpaint_full_res = True
++        p.inpaint_full_res_padding = self.padding
++        p.width = math.ceil((self.tile_width+self.padding) / 64) * 64
++        p.height = math.ceil((self.tile_height+self.padding) / 64) * 64
++        mask = Image.new("L", (width, height), "black")
++        draw = ImageDraw.Draw(mask)
++        # usdu_patch.py:66-69 (patch_usdu_redraw_init)
++        p.width = round_length(self.tile_width + self.padding)
++        p.height = round_length(self.tile_height + self.padding)
++        return mask, draw
++
++    def calc_rectangle(self, xi, yi):
++        x1 = xi * self.tile_width
++        y1 = yi * self.tile_height
++        x2 = xi * self.tile_width + self.tile_width
++        y2 = yi * self.tile_height + self.tile_height
++
++        return x1, y1, x2, y2
++
++    async def linear_process(self, p, image, rows, cols):
++        state = p.shared.state
++        # usdu_patch.py:179-209 (new_linear_process)
++        batch_size = getattr(p, 'batch_size', 1)
++        if batch_size <= 1:
++            # ultimate-upscale.py:171-189 (linear_process)
++            mask, draw = self.init_draw(p, image.width, image.height)
++            for yi in range(rows):
++                for xi in range(cols):
++                    if state.interrupted:
++                        break
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="white")
++                    p.init_images = [image]
++                    p.image_mask = mask
++                    processed = await process_images(p)
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="black")
++                    if (len(processed.images) > 0):
++                        image = processed.images[0]
++
++            p.width = image.width
++            p.height = image.height
++            self.initial_info = processed.infotext(p, 0)
++
++            return image
++
++        # Batch mode
++        mask_template, draw_template = self.init_draw(p, image.width, image.height)
++        tiles_to_process: List[Tuple[int, int]] = []
++        batch_count = 0
++
++        for yi in range(rows):
++            for xi in range(cols):
++                if state.interrupted:
++                    break
++
++                tiles_to_process.append((xi, yi))
++
++                if len(tiles_to_process) >= batch_size or (yi == rows - 1 and xi == cols - 1):
++                    batch_count += 1
++                    p.shared.batch = await process_batch_tiles(p, tiles_to_process, p.shared.batch, self.calc_rectangle)
++                    tiles_to_process = []
++
++        p.width = image.width
++        p.height = image.height
++        return image
++
++    async def chess_process(self, p, image, rows, cols):
++        state = p.shared.state
++        # usdu_patch.py:211-252 (new_chess_process)
++        batch_size = getattr(p, 'batch_size', 1)
++        if batch_size <= 1:
++            # ultimate-upscale.py:191-240 (chess_process)
++            mask, draw = self.init_draw(p, image.width, image.height)
++            tiles = []
++            # calc tiles colors
++            for yi in range(rows):
++                for xi in range(cols):
++                    if state.interrupted:
++                        break
++                    if xi == 0:
++                        tiles.append([])
++                    color = xi % 2 == 0
++                    if yi > 0 and yi % 2 != 0:
++                        color = not color
++                    tiles[yi].append(color)
++
++            for yi in range(len(tiles)):
++                for xi in range(len(tiles[yi])):
++                    if state.interrupted:
++                        break
++                    if not tiles[yi][xi]:
++                        tiles[yi][xi] = not tiles[yi][xi]
++                        continue
++                    tiles[yi][xi] = not tiles[yi][xi]
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="white")
++                    p.init_images = [image]
++                    p.image_mask = mask
++                    processed = await process_images(p)
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="black")
++                    if (len(processed.images) > 0):
++                        image = processed.images[0]
++
++            for yi in range(len(tiles)):
++                for xi in range(len(tiles[yi])):
++                    if state.interrupted:
++                        break
++                    if not tiles[yi][xi]:
++                        continue
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="white")
++                    p.init_images = [image]
++                    p.image_mask = mask
++                    processed = await process_images(p)
++                    draw.rectangle(self.calc_rectangle(xi, yi), fill="black")
++                    if (len(processed.images) > 0):
++                        image = processed.images[0]
++
++            p.width = image.width
++            p.height = image.height
++            self.initial_info = processed.infotext(p, 0)
++
++            return image
++
++        mask_template, draw_template = self.init_draw(p, image.width, image.height)
++
++        # Determine tile "white/black" order
++        tile_colors = []
++        for yi in range(rows):
++            row_colors = []
++            for xi in range(cols):
++                color = xi % 2 == 0
++                if yi > 0 and yi % 2 != 0:
++                    color = not color
++                row_colors.append(color)
++            tile_colors.append(row_colors)
++
++        # Helper to iterate tiles in chess order: white first, then black
++        def chess_order_iter(white: bool):
++            for yi in range(rows):
++                for xi in range(cols):
++                    if tile_colors[yi][xi] == white:
++                        yield (xi, yi)
++
++        # Process white tiles then black tiles
++        for color in (True, False):
++            tiles_to_process: List[Tuple[int, int]] = []
++            for tx, ty in chess_order_iter(color):
++                if state.interrupted:
++                    break
++                tiles_to_process.append((tx, ty))
++                if len(tiles_to_process) >= batch_size:
++                    p.shared.batch = await process_batch_tiles(p, tiles_to_process, p.shared.batch, self.calc_rectangle)
++                    tiles_to_process = []
++            if tiles_to_process:
++                p.shared.batch = await process_batch_tiles(p, tiles_to_process, p.shared.batch, self.calc_rectangle)
++
++        p.width = image.width
++        p.height = image.height
++        return image
++
++    async def start(self, p, image, rows, cols):
++        self.initial_info = None
++        if self.mode == USDUMode.LINEAR:
++            return await self.linear_process(p, image, rows, cols)
++        if self.mode == USDUMode.CHESS:
++            return await self.chess_process(p, image, rows, cols)
 +
 +
-+async def _process_jobs(
-+    images: torch.Tensor,
-+    jobs: list[_Job],
-+    *,
-+    batch_size: int,
-+    force_uniform: bool,
-+    progress: list[int],
-+    **sampling: Any,
-+) -> torch.Tensor:
-+    current = images
-+    for start in range(0, len(jobs), max(1, int(batch_size))):
-+        group = jobs[start:start + max(1, int(batch_size))]
-+        current = await _run_group(
-+            current, group, force_uniform=force_uniform, **sampling)
-+        progress[0] += len(group)
-+        await _ctx().progress.update(progress[0], max(1, progress[1]))
-+    return current
++class USDUSeamsFix():
++
++    def init_draw(self, p):
++        self.initial_info = None
++        p.width = math.ceil((self.tile_width+self.padding) / 64) * 64
++        p.height = math.ceil((self.tile_height+self.padding) / 64) * 64
++        # usdu_patch.py:78-81 (patch_usdu_seams_fix_init)
++        p.width = round_length(self.tile_width + self.padding)
++        p.height = round_length(self.tile_height + self.padding)
++
++    async def half_tile_process(self, p, image, rows, cols):
++        state = p.shared.state
++
++        self.init_draw(p)
++        processed = None
++
++        gradient = Image.linear_gradient("L")
++        row_gradient = Image.new("L", (self.tile_width, self.tile_height), "black")
++        row_gradient.paste(gradient.resize(
++            (self.tile_width, self.tile_height//2), resample=Image.BICUBIC), (0, 0))
++        row_gradient.paste(gradient.rotate(180).resize(
++                (self.tile_width, self.tile_height//2), resample=Image.BICUBIC),
++                (0, self.tile_height//2))
++        col_gradient = Image.new("L", (self.tile_width, self.tile_height), "black")
++        col_gradient.paste(gradient.rotate(90).resize(
++            (self.tile_width//2, self.tile_height), resample=Image.BICUBIC), (0, 0))
++        col_gradient.paste(gradient.rotate(270).resize(
++            (self.tile_width//2, self.tile_height), resample=Image.BICUBIC), (self.tile_width//2, 0))
++
++        # The original sets denoising_strength, which its sampler never reads:
++        # seam passes sample with the main denoise (p.denoise). Kept for parity.
++        p.denoising_strength = self.denoise
++        p.mask_blur = self.mask_blur
++
++        for yi in range(rows-1):
++            for xi in range(cols):
++                if state.interrupted:
++                    break
++                p.width = self.tile_width
++                p.height = self.tile_height
++                p.inpaint_full_res = True
++                p.inpaint_full_res_padding = self.padding
++                mask = Image.new("L", (image.width, image.height), "black")
++                mask.paste(row_gradient, (xi*self.tile_width, yi*self.tile_height + self.tile_height//2))
++
++                p.init_images = [image]
++                p.image_mask = mask
++                processed = await process_images(p)
++                if (len(processed.images) > 0):
++                    image = processed.images[0]
++
++        for yi in range(rows):
++            for xi in range(cols-1):
++                if state.interrupted:
++                    break
++                p.width = self.tile_width
++                p.height = self.tile_height
++                p.inpaint_full_res = True
++                p.inpaint_full_res_padding = self.padding
++                mask = Image.new("L", (image.width, image.height), "black")
++                mask.paste(col_gradient, (xi*self.tile_width+self.tile_width//2, yi*self.tile_height))
++
++                p.init_images = [image]
++                p.image_mask = mask
++                processed = await process_images(p)
++                if (len(processed.images) > 0):
++                    image = processed.images[0]
++
++        p.width = image.width
++        p.height = image.height
++        if processed is not None:
++            self.initial_info = processed.infotext(p, 0)
++
++        return image
++
++    async def half_tile_process_corners(self, p, image, rows, cols):
++        state = p.shared.state
++        fixed_image = await self.half_tile_process(p, image, rows, cols)
++        processed = None
++        self.init_draw(p)
++        gradient = Image.radial_gradient("L").resize(
++            (self.tile_width, self.tile_height), resample=Image.BICUBIC)
++        gradient = ImageOps.invert(gradient)
++        p.denoising_strength = self.denoise
++        #p.mask_blur = 0
++        p.mask_blur = self.mask_blur
++
++        for yi in range(rows-1):
++            for xi in range(cols-1):
++                if state.interrupted:
++                    break
++                p.width = self.tile_width
++                p.height = self.tile_height
++                p.inpaint_full_res = True
++                p.inpaint_full_res_padding = 0
++                mask = Image.new("L", (fixed_image.width, fixed_image.height), "black")
++                mask.paste(gradient, (xi*self.tile_width + self.tile_width//2,
++                                      yi*self.tile_height + self.tile_height//2))
++
++                p.init_images = [fixed_image]
++                p.image_mask = mask
++                processed = await process_images(p)
++                if (len(processed.images) > 0):
++                    fixed_image = processed.images[0]
++
++        p.width = fixed_image.width
++        p.height = fixed_image.height
++        if processed is not None:
++            self.initial_info = processed.infotext(p, 0)
++
++        return fixed_image
++
++    async def band_pass_process(self, p, image, cols, rows):
++        state = p.shared.state
++
++        self.init_draw(p)
++        processed = None
++
++        p.denoising_strength = self.denoise
++        p.mask_blur = 0
++
++        gradient = Image.linear_gradient("L")
++        mirror_gradient = Image.new("L", (256, 256), "black")
++        mirror_gradient.paste(gradient.resize((256, 128), resample=Image.BICUBIC), (0, 0))
++        mirror_gradient.paste(gradient.rotate(180).resize((256, 128), resample=Image.BICUBIC), (0, 128))
++
++        row_gradient = mirror_gradient.resize((image.width, self.width), resample=Image.BICUBIC)
++        col_gradient = mirror_gradient.rotate(90).resize((self.width, image.height), resample=Image.BICUBIC)
++
++        for xi in range(1, rows):
++            if state.interrupted:
++                    break
++            p.width = self.width + self.padding * 2
++            p.height = image.height
++            p.inpaint_full_res = True
++            p.inpaint_full_res_padding = self.padding
++            mask = Image.new("L", (image.width, image.height), "black")
++            mask.paste(col_gradient, (xi * self.tile_width - self.width // 2, 0))
++
++            p.init_images = [image]
++            p.image_mask = mask
++            processed = await process_images(p)
++            if (len(processed.images) > 0):
++                image = processed.images[0]
++        for yi in range(1, cols):
++            if state.interrupted:
++                    break
++            p.width = image.width
++            p.height = self.width + self.padding * 2
++            p.inpaint_full_res = True
++            p.inpaint_full_res_padding = self.padding
++            mask = Image.new("L", (image.width, image.height), "black")
++            mask.paste(row_gradient, (0, yi * self.tile_height - self.width // 2))
++
++            p.init_images = [image]
++            p.image_mask = mask
++            processed = await process_images(p)
++            if (len(processed.images) > 0):
++                image = processed.images[0]
++
++        p.width = image.width
++        p.height = image.height
++        if processed is not None:
++            self.initial_info = processed.infotext(p, 0)
++
++        return image
++
++    async def start(self, p, image, rows, cols):
++        if USDUSFMode(self.mode) == USDUSFMode.BAND_PASS:
++            return await self.band_pass_process(p, image, rows, cols)
++        elif USDUSFMode(self.mode) == USDUSFMode.HALF_TILE:
++            return await self.half_tile_process(p, image, rows, cols)
++        elif USDUSFMode(self.mode) == USDUSFMode.HALF_TILE_PLUS_INTERSECTIONS:
++            return await self.half_tile_process_corners(p, image, rows, cols)
++        else:
++            return image
 +
 +
-+async def _ultimate(
-+    image: Any,
-+    *,
-+    vae: Any,
-+    upscale_by: float,
-+    seed: int,
-+    mode_type: str,
-+    tile_width: int,
-+    tile_height: int,
-+    mask_blur: int,
-+    tile_padding: int,
-+    seam_fix_mode: str,
-+    seam_fix_denoise: float,
-+    seam_fix_width: int,
-+    seam_fix_mask_blur: int,
-+    seam_fix_padding: int,
-+    force_uniform_tiles: bool,
-+    tiled_decode: bool,
-+    batch_size: int = 1,
-+    upscale_model: Any = None,
-+    model: Any = None,
-+    positive: Any = None,
-+    negative: Any = None,
-+    steps: int = 1,
-+    cfg: float = 1.0,
-+    sampler_name: str = "euler",
-+    scheduler: str = "normal",
-+    denoise: float = 1.0,
-+    custom_sampler: Any = None,
-+    custom_sigmas: Any = None,
-+    guider: Any = None,
-+) -> Any:
-+    pixels = _image4(await image.raw())
-+    original_size = (int(pixels.shape[2]), int(pixels.shape[1]))
-+    factor = float(upscale_by)
-+    if not math.isfinite(factor) or not 0.05 <= factor <= 4.0:
-+        raise ValueError("upscale_by must be finite and in [0.05, 4]")
-+    tile_width, tile_height = int(tile_width), int(tile_height)
-+    if not 8 <= tile_width <= 8192 or not 8 <= tile_height <= 8192:
-+        raise ValueError("tile dimensions must be in [8, 8192]")
-+    batch_size = int(batch_size)
-+    if not 1 <= batch_size <= 4096:
-+        raise ValueError("tile batch_size must be in [1, 4096]")
-+    if batch_size > 1 and not bool(force_uniform_tiles):
-+        raise ValueError(
-+            "batch_size greater than 1 requires force_uniform_tiles")
++async def script_run(p, _, tile_width, tile_height, mask_blur, padding, seams_fix_width, seams_fix_denoise, seams_fix_padding,
++                     upscaler_index, save_upscaled_image, redraw_mode, save_seams_fix_image, seams_fix_mask_blur,
++                     seams_fix_type, target_size_type, custom_width, custom_height, custom_scale):
++    """usdu_patch.py:112-164 (patched_script_run, which replaces Script.run)."""
++    preserved_batch_size = getattr(p, 'batch_size', 1)
 +
-+    target_width = _round_length(original_size[0] * factor)
-+    target_height = _round_length(original_size[1] * factor)
-+    if upscale_model is not None and factor != 1.0:
-+        upscaled_ref = await upscale_model.upscale(image)
-+        try:
-+            pixels = _image4(await upscaled_ref.raw())
-+        finally:
-+            await upscaled_ref.release()
-+    pixels = _resize(pixels, target_width, target_height)
-+    height, width = map(int, pixels.shape[1:3])
++    # Init (matching original code)
++    fix_seed(p)
 +
-+    redraw = _redraw_jobs(
-+        height, width, mode_type, tile_width, tile_height,
-+        int(tile_padding), int(mask_blur), float(denoise),
-+    )
-+    seams = _seam_jobs(
-+        height, width, seam_fix_mode, tile_width, tile_height,
-+        int(seam_fix_width), int(seam_fix_padding),
-+        int(seam_fix_mask_blur), float(seam_fix_denoise),
-+    )
-+    progress = [0, len(redraw) + len(seams)]
-+    sampling = dict(
-+        original_size=original_size,
-+        model=model,
-+        positive=positive,
-+        negative=negative,
-+        vae=vae,
-+        seed=int(seed),
-+        steps=max(1, int(steps)),
-+        cfg=float(cfg),
-+        sampler_name=str(sampler_name),
-+        scheduler=str(scheduler),
-+        tiled_decode=bool(tiled_decode),
-+        custom_sampler=custom_sampler,
-+        custom_sigmas=custom_sigmas,
++    # Keep original file-saving flags as in original code
++    p.do_not_save_grid = True
++    p.do_not_save_samples = True
++    p.inpaint_full_res = False
++
++    p.inpainting_fill = 1
++    p.n_iter = 1
++    p.batch_size = preserved_batch_size
++
++    seed = p.seed
++
++    # Init image
++    init_img = p.init_images[0]
++    if init_img is None:
++        return Processed(p, [], seed, "Empty image")
++    init_img = flatten(init_img, p.shared.opts.img2img_background_color)
++
++    # Override size by user choice
++    if target_size_type == 1:
++        p.width = custom_width
++        p.height = custom_height
++    elif target_size_type == 2:
++        p.width = math.ceil((init_img.width * custom_scale) / 64) * 64
++        p.height = math.ceil((init_img.height * custom_scale) / 64) * 64
++
++    # Create and run upscaler
++    upscaler = USDUpscaler(p, init_img, upscaler_index, save_upscaled_image, save_seams_fix_image, tile_width, tile_height)
++    await upscaler.upscale()
++
++    # Drawing & seams fix setup
++    upscaler.setup_redraw(redraw_mode, padding, mask_blur)
++    upscaler.setup_seams_fix(seams_fix_padding, seams_fix_denoise, seams_fix_mask_blur, seams_fix_width, seams_fix_type)
++    upscaler.print_info()
++    upscaler.add_extra_info()
++    await upscaler.process()
++    result_images = upscaler.result_images
++
++    return Processed(p, result_images, seed, upscaler.initial_info or "")
++
++
++# --------------------------------------------------------------------------- #
++# usdu_nodes.py
++# --------------------------------------------------------------------------- #
++# The modes available for Ultimate SD Upscale
++MODES = {
++    "Linear": USDUMode.LINEAR,
++    "Chess": USDUMode.CHESS,
++    "None": USDUMode.NONE,
++}
++# The seam fix modes
++SEAM_FIX_MODES = {
++    "None": USDUSFMode.NONE,
++    "Band Pass": USDUSFMode.BAND_PASS,
++    "Half Tile": USDUSFMode.HALF_TILE,
++    "Half Tile + Intersections": USDUSFMode.HALF_TILE_PLUS_INTERSECTIONS,
++}
++
++
++async def _upscale_images(image, model, positive, negative, vae, upscale_by, seed,
++                          steps, cfg, sampler_name, scheduler, denoise, upscale_model,
++                          mode_type, tile_width, tile_height, mask_blur, tile_padding,
++                          seam_fix_mode, seam_fix_denoise, seam_fix_mask_blur,
++                          seam_fix_width, seam_fix_padding, force_uniform_tiles, tiled_decode, batch_size=1,
++                          custom_sampler=None, custom_sigmas=None, guider=None):
++    """usdu_nodes.py:122-174 (UltimateSDUpscale.upscale) and :282-324 (the guider node)."""
++    redraw_mode = MODES[mode_type]
++    seam_fix_mode = SEAM_FIX_MODES[seam_fix_mode]
++
++    #
++    # Set up A1111 patches
++    #
++    shared = Shared()
++
++    # Upscaler
++    # An object that the script works with
++    shared.sd_upscalers[0] = UpscalerData(shared)
++    # Where the actual upscaler is stored, will be used when the script upscales using the Upscaler in UpscalerData
++    shared.actual_upscaler = upscale_model
++
++    # Set the batch of images
++    pixels = torch.as_tensor(await image.raw())
++    if pixels.ndim == 4 and int(pixels.shape[0] * pixels.shape[1] * pixels.shape[2]) > _MAX_PIXELS:
++        raise ValueError("Ultimate SD Upscale input exceeds the pixel limit")
++    shared.batch = [tensor_to_pil(pixels, i) for i in range(len(pixels))]
++    # The model upscale runs host-side on the node's original IMAGE.
++    shared.batch_as_tensor = image
++
++    assert batch_size == 1 or force_uniform_tiles, "batch_size greater than 1 requires force_uniform_tiles to be True; all tiles in the batch must be the same size."
++
++    # Processing
++    sdprocessing = StableDiffusionProcessing(
++        shared, shared.batch[0], model, positive, negative, vae,
++        seed, steps, cfg, sampler_name, scheduler, denoise, upscale_by, force_uniform_tiles, tiled_decode,
++        tile_width, tile_height, redraw_mode, seam_fix_mode,
++        custom_sampler, custom_sigmas, batch_size,
 +        guider=guider,
 +    )
-+    pixels = await _process_jobs(
-+        pixels, redraw, batch_size=batch_size,
-+        force_uniform=bool(force_uniform_tiles), progress=progress,
-+        **sampling,
-+    )
-+    pixels = await _process_jobs(
-+        pixels, seams, batch_size=1,
-+        force_uniform=bool(force_uniform_tiles), progress=progress,
-+        **sampling,
-+    )
-+    return await sdk.ImageRef._from_raw(pixels)
++
++    #
++    # Running the script
++    #
++    await script_run(p=sdprocessing, _=None, tile_width=tile_width, tile_height=tile_height,
++                     mask_blur=mask_blur, padding=tile_padding, seams_fix_width=seam_fix_width,
++                     seams_fix_denoise=seam_fix_denoise, seams_fix_padding=seam_fix_padding,
++                     upscaler_index=0, save_upscaled_image=False, redraw_mode=redraw_mode,
++                     save_seams_fix_image=False, seams_fix_mask_blur=seam_fix_mask_blur,
++                     seams_fix_type=seam_fix_mode, target_size_type=2,
++                     custom_width=None, custom_height=None, custom_scale=upscale_by)
++
++    # Return the resulting images
++    images = [pil_to_tensor(img) for img in shared.batch]
++    tensor = torch.cat(images, dim=0)
++    return await _image_ref(tensor)
 +
 +
 +async def _upscale(**kwargs: Any):
-+    return _one(await _ultimate(**kwargs))
++    return (await _upscale_images(**kwargs),)
 +
 +
 +async def _no_upscale(upscaled_image: Any, **kwargs: Any):
-+    return _one(await _ultimate(
-+        image=upscaled_image, upscale_by=1.0, upscale_model=None, **kwargs))
++    # usdu_nodes.py:191-204
++    upscale_by = 1.0
++    return (await _upscale_images(
++        image=upscaled_image, upscale_by=upscale_by, upscale_model=None, **kwargs),)
 +
 +
-+async def _custom(**kwargs: Any):
-+    return _one(await _ultimate(**kwargs))
++async def _custom(upscale_model: Any = None, custom_sampler: Any = None,
++                  custom_sigmas: Any = None, **kwargs: Any):
++    # usdu_nodes.py:222-234
++    return (await _upscale_images(
++        upscale_model=upscale_model, custom_sampler=custom_sampler,
++        custom_sigmas=custom_sigmas, **kwargs),)
 +
 +
-+async def _guider(
-+    image: Any, guider: Any, sampler: Any, sigmas: Any, **kwargs: Any,
-+):
-+    return _one(await _ultimate(
-+        image=image,
-+        guider=guider,
-+        custom_sampler=sampler,
-+        custom_sigmas=sigmas,
-+        model=None,
-+        positive=None,
-+        negative=None,
-+        steps=1,
-+        cfg=1.0,
-+        sampler_name="euler",
-+        scheduler="normal",
-+        denoise=1.0,
-+        **kwargs,
-+    ))
++async def _guider(image: Any, guider: Any, sampler: Any, sigmas: Any, vae: Any,
++                  upscale_by: Any, seed: Any, upscale_model: Any, **kwargs: Any):
++    # usdu_nodes.py:282-324: StableDiffusionProcessing(shared.batch[0], None,
++    # None, None, vae, seed, 0, 0, None, None, 0, upscale_by, ...,
++    # custom_sampler=sampler, custom_sigmas=sigmas, guider=guider)
++    return (await _upscale_images(
++        image=image, model=None, positive=None, negative=None, vae=vae,
++        upscale_by=upscale_by, seed=seed, steps=0, cfg=0, sampler_name=None,
++        scheduler=None, denoise=0, upscale_model=upscale_model,
++        custom_sampler=sampler, custom_sigmas=sigmas, guider=guider,
++        **kwargs),)
 +
 +
 +NODE_CLASS_MAPPINGS = {
@@ -10488,3 +11149,745 @@
 +    }
 +  }
 +}
+--- /dev/null
++++ b/v2/tests/test_comfyui_ultimatesdupscale_parity.py
+@@ -0,0 +1,433 @@
++"""Tier-1 parity: the original Ultimate SD Upscale pack (V1) vs the V2 port, side by side, CPU only.
++
++Run in the lane gate: run_in_gate.sh <pack root (pristine + v2/)> <this tests dir> <results dir>
++test_comfyui_ultimatesdupscale_parity.py
++
++Both sides get the same deterministic stand-ins for the model-owned operations (usdu_fakeops.py): VAE encode/decode,
++KSampler/SamplerCustom/guider sampling and the upscale model. Everything else is the pack's own code:
++- V1 imports the pristine modules with /core first;
++- V2 loads v2/ as a bare namespace package against the guest SDK base, like the production loader.
++Per case, the test compares:
++- the output IMAGE, exactly (float32 equality);
++- the sequence of model-owned calls with their argument and result digests;
++- stdout;
++- for error cases, the exception type and message.
++The comparator negative control must turn red. If the previous V2 (tests/old/_secure_nodes.py, lane-only) is present,
++it runs as a second control and is expected to differ, reproducing the live MISMATCH.
++"""
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import importlib
++import io
++import json
++import os
++import shutil
++import subprocess
++import sys
++import traceback
++import types
++from pathlib import Path
++
++PACK = Path("/pack")
++TESTS = Path(__file__).resolve().parent
++RESULTS = Path(os.environ.get("RESULTS", "/results"))
++BASE = "/bases/0cd9adec273a703eb3d1c715d83ff1c7d2bb00746330c866c7e3ac644c80ebbb/common-site-packages"
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Cases
++# --------------------------------------------------------------------------------------------------------------------
++def _common(**over):
++    base = dict(seed=123456789, steps=12, cfg=6.5, sampler_name="dpmpp_2m", scheduler="karras", denoise=0.35,
++                mode_type="Linear", tile_width=128, tile_height=128, mask_blur=8, tile_padding=32,
++                seam_fix_mode="None", seam_fix_denoise=1.0, seam_fix_width=64, seam_fix_mask_blur=8,
++                seam_fix_padding=16, force_uniform_tiles=True, tiled_decode=False, batch_size=1)
++    base.update(over)
++    return base
++
++
++CASES = [
++    # (case id, node id, image (batch, height, width, seed), node-specific inputs, extra inputs)
++    ("basic_model_x2", "UltimateSDUpscale", (1, 136, 200, 1), dict(upscale_by=2.0, model_up=True), _common()),
++    ("chess_bandpass_x1_5", "UltimateSDUpscale", (1, 120, 168, 2), dict(upscale_by=1.5, model_up=True),
++     _common(mode_type="Chess", seam_fix_mode="Band Pass", seam_fix_width=32, seam_fix_denoise=0.6)),
++    ("halftile", "UltimateSDUpscale", (1, 96, 160, 3), dict(upscale_by=2.0, model_up=True),
++     _common(seam_fix_mode="Half Tile", seam_fix_mask_blur=4, denoise=0.3)),
++    ("halftile_intersections", "UltimateSDUpscale", (1, 96, 128, 4), dict(upscale_by=2.0, model_up=True),
++     _common(seam_fix_mode="Half Tile + Intersections", tile_width=96, tile_height=96)),
++    ("nonuniform_odd_size", "UltimateSDUpscale", (1, 141, 203, 5), dict(upscale_by=1.25, model_up=True),
++     _common(force_uniform_tiles=False, tile_width=96, tile_height=80, tile_padding=16)),
++    ("tiled_decode", "UltimateSDUpscale", (1, 96, 96, 6), dict(upscale_by=2.0, model_up=True),
++     _common(tiled_decode=True)),
++    ("image_batch2", "UltimateSDUpscale", (2, 72, 104, 7), dict(upscale_by=2.0, model_up=True),
++     _common(mode_type="Chess", seam_fix_mode="Half Tile")),
++    ("tile_batch3_linear", "UltimateSDUpscale", (1, 112, 136, 8), dict(upscale_by=2.0, model_up=True),
++     _common(batch_size=3)),
++    ("tile_batch2_chess_images2", "UltimateSDUpscale", (2, 64, 96, 9), dict(upscale_by=2.0, model_up=True),
++     _common(mode_type="Chess", batch_size=2, seam_fix_mode="Band Pass", seam_fix_width=16)),
++    ("model_x3", "UltimateSDUpscale", (1, 48, 64, 10), dict(upscale_by=3.0, model_up=True),
++     _common(tile_width=96, tile_height=64, tile_padding=24)),
++    ("downscale_0_5", "UltimateSDUpscale", (1, 160, 224, 11), dict(upscale_by=0.5, model_up=True),
++     _common(tile_width=64, tile_height=64)),
++    ("blur0_pad0_redraw_none_halftile", "UltimateSDUpscale", (1, 96, 96, 12), dict(upscale_by=2.0, model_up=True),
++     _common(mask_blur=0, tile_padding=0, mode_type="None", seam_fix_mode="Half Tile", seam_fix_padding=0)),
++    ("seed_max", "UltimateSDUpscale", (1, 64, 64, 13), dict(upscale_by=2.0, model_up=True),
++     _common(seed=0xffffffffffffffff, denoise=1.0)),
++    ("no_upscale", "UltimateSDUpscaleNoUpscale", (1, 136, 200, 14), dict(), _common()),
++    ("no_upscale_halftile_int", "UltimateSDUpscaleNoUpscale", (1, 128, 128, 15), dict(),
++     _common(seam_fix_mode="Half Tile + Intersections", tile_width=64, tile_height=64)),
++    ("custom_lanczos_x1_5", "UltimateSDUpscaleCustomSample", (1, 80, 120, 16), dict(upscale_by=1.5), _common()),
++    ("custom_lanczos_x2_batch2", "UltimateSDUpscaleCustomSample", (2, 64, 80, 17), dict(upscale_by=2.0),
++     _common(mode_type="Chess")),
++    ("custom_sampler_sigmas_model", "UltimateSDUpscaleCustomSample", (1, 80, 120, 18),
++     dict(upscale_by=2.0, model_up=True, custom=True), _common()),
++    ("custom_sampler_only", "UltimateSDUpscaleCustomSample", (1, 64, 96, 19),
++     dict(upscale_by=2.0, custom_sampler_only=True), _common()),
++    ("guider", "UltimateSDUpscaleGuider", (1, 96, 120, 20), dict(upscale_by=2.0, model_up=True),
++     _common(seam_fix_mode="Band Pass", seam_fix_width=24)),
++    ("guider_tile_batch", "UltimateSDUpscaleGuider", (1, 80, 96, 21), dict(upscale_by=2.0, model_up=True),
++     _common(batch_size=2)),
++    ("error_batch_without_uniform", "UltimateSDUpscale", (1, 64, 64, 22), dict(upscale_by=2.0, model_up=True),
++     _common(batch_size=2, force_uniform_tiles=False)),
++]
++
++NODE_KEYS = {
++    "UltimateSDUpscale": ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise", "mode_type", "tile_width",
++                          "tile_height", "mask_blur", "tile_padding", "seam_fix_mode", "seam_fix_denoise",
++                          "seam_fix_width", "seam_fix_mask_blur", "seam_fix_padding", "force_uniform_tiles",
++                          "tiled_decode", "batch_size"],
++}
++GUIDER_DROP = {"steps", "cfg", "sampler_name", "scheduler", "denoise"}
++
++
++def make_image(batch, height, width, seed):
++    import torch
++    g = torch.Generator().manual_seed(seed)
++    yy = torch.linspace(0, 1, height)[:, None].expand(height, width)
++    xx = torch.linspace(0, 1, width)[None, :].expand(height, width)
++    base = torch.stack([yy, xx, (yy * xx) ** 0.5], dim=-1)
++    noise = torch.rand((batch, height, width, 3), generator=g)
++    return (0.55 * base[None] + 0.45 * noise).clamp(0, 1).float().contiguous()
++
++
++def cond_tensor(value):
++    import torch
++    return torch.full((1, 4, 8), float(value))
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Children
++# --------------------------------------------------------------------------------------------------------------------
++def _force_cpu():
++    try:
++        from comfy.cli_args import args
++        args.cpu = True
++    except Exception:  # noqa: BLE001
++        pass
++
++
++class _Anything:
++    def __getattr__(self, name):
++        return _Anything()
++
++    def __call__(self, *a, **k):
++        if len(a) == 1 and callable(a[0]) and not k:
++            return a[0]
++        return _Anything()
++
++
++def _copytree(src: Path, dst: Path, skip_v2: bool):
++    if dst.exists():
++        shutil.rmtree(dst)
++    ignore = shutil.ignore_patterns("__pycache__", *(["v2"] if skip_v2 else []))
++    shutil.copytree(src, dst, ignore=ignore)
++
++
++def _run_case(run, case):
++    """run(case) -> output tensor; returns a result dict with stdout, calls and the output or error."""
++    import numpy as np
++    sys.path.insert(0, str(TESTS))
++    import usdu_fakeops as fk
++    fk.reset()
++    buf = io.StringIO()
++    res = {}
++    try:
++        with contextlib.redirect_stdout(buf):
++            out = run(case)
++        res["output"] = np.ascontiguousarray(out.detach().cpu().numpy())
++    except Exception as e:  # noqa: BLE001
++        res["error"] = f"{type(e).__name__}: {e}"
++        res["traceback"] = traceback.format_exc()[-2500:]
++    res["stdout"] = buf.getvalue()
++    res["calls"] = [list(c) for c in fk.CALLS]
++    res["boundary"] = [repr(b) for b in fk.BOUNDARY]
++    res["progress"] = list(fk.PROGRESS)
++    res["released"] = len(fk.RELEASED)
++    return res
++
++
++def _save(results: dict, out: Path):
++    import numpy as np
++    arrays = {k: v.pop("output") for k, v in results.items() if "output" in v}
++    np.savez(out.with_suffix(".npz"), **arrays)
++    out.with_suffix(".json").write_text(json.dumps(results, indent=1, sort_keys=True, default=str))
++
++
++def child_v1(out: Path):
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/usdu-v1") / "pack"
++    _copytree(PACK, dst, skip_v2=True)
++    sys.path[:0] = [str(dst), "/core"]
++    os.chdir("/tmp")
++    _force_cpu()
++    try:
++        import server  # noqa: F401
++        if getattr(server.PromptServer, "instance", None) is None:
++            server.PromptServer.instance = _Anything()
++    except Exception:  # noqa: BLE001
++        m = types.ModuleType("server")
++        m.PromptServer = type("PromptServer", (), {"instance": _Anything()})
++        sys.modules["server"] = m
++    notes = []
++    # Modules the original imports but whose objects this test replaces anyway; stub only if absent in the image.
++    for name, attrs in (("comfy_extras.nodes_upscale_model", ("ImageUpscaleWithModel",)),
++                        ("torchvision.transforms", ("GaussianBlur",))):
++        try:
++            importlib.import_module(name)
++        except Exception as e:  # noqa: BLE001
++            stub = types.ModuleType(name)
++            for a in attrs:
++                setattr(stub, a, type(a, (), {}))
++            sys.modules[name] = stub
++            notes.append(f"stubbed {name}: {e!r}"[:200])
++    sys.path.insert(0, str(TESTS))
++    import usdu_fakeops as fk
++    import usdu_nodes  # noqa: E402  (the pristine node module; pulls in usdu_patch, modules.*, the USDU script)
++    import modules.processing as processing
++    import modules.upscaler as upscaler
++    processing.common_ksampler = fk.v1_common_ksampler
++    processing.SamplerCustom = fk.V1SamplerCustom
++    processing.VAEEncode = fk.V1VAEEncode
++    processing.VAEDecode = fk.V1VAEDecode
++    processing.VAEDecodeTiled = fk.V1VAEDecodeTiled
++    processing.sample_with_guider = fk.v1_sample_with_guider
++    upscaler.ImageUpscaleWithModel = fk.V1ImageUpscaleWithModel
++
++    def run(case):
++        cid, node, (b, h, w, s), special, extra = case
++        image = make_image(b, h, w, s)
++        kw = dict(extra)
++        cls = usdu_nodes.NODE_CLASS_MAPPINGS[node]
++        if node == "UltimateSDUpscaleGuider":
++            for k in GUIDER_DROP:
++                kw.pop(k)
++            kw.update(image=image, guider=fk.V1Guider(0.25), sampler=fk.V1Tagged(0.5), sigmas=fk.V1Tagged(0.125),
++                      vae=object(), upscale_by=special["upscale_by"], upscale_model=fk.V1Tagged(0.75))
++            return cls().upscale(**kw)[0]
++        kw.update(model=fk.V1Model(0.375), positive=fk.v1_cond(cond_tensor(0.5)),
++                  negative=fk.v1_cond(cond_tensor(-0.25)), vae=object())
++        if node == "UltimateSDUpscaleNoUpscale":
++            kw.update(upscaled_image=image)
++            return cls().upscale(**kw)[0]
++        kw.update(image=image, upscale_by=special["upscale_by"])
++        if node == "UltimateSDUpscale":
++            kw.update(upscale_model=fk.V1Tagged(0.75))
++            return cls().upscale(**kw)[0]
++        # CustomSample
++        if special.get("model_up"):
++            kw.update(upscale_model=fk.V1Tagged(0.75))
++        if special.get("custom"):
++            kw.update(custom_sampler=fk.V1Tagged(0.5), custom_sigmas=fk.V1Tagged(0.125))
++        if special.get("custom_sampler_only"):
++            kw.update(custom_sampler=fk.V1Tagged(0.5))
++        return cls().upscale(**kw)[0]
++
++    results = {case[0]: _run_case(run, case) for case in CASES}
++    results["_notes"] = {"notes": notes, "calls": [], "stdout": ""}
++    _save(results, out)
++
++
++def _load_v2(module_root: Path, pkg: str, extra_files: dict | None = None):
++    sys.path[:0] = [BASE, "/overlay", "/core"]
++    os.chdir("/tmp")
++    _force_cpu()
++    p = types.ModuleType(pkg)
++    p.__path__ = [str(module_root)]
++    p.__package__ = pkg
++    sys.modules[pkg] = p
++    return importlib.import_module(f"{pkg}._secure_nodes")
++
++
++def _v2_runner(port, fk, style: str):
++    def run(case):
++        cid, node, (b, h, w, s), special, extra = case
++        image = fk.Ref("IMAGE", make_image(b, h, w, s))
++        kw = dict(extra)
++        handler = {"UltimateSDUpscale": "_upscale", "UltimateSDUpscaleNoUpscale": "_no_upscale",
++                   "UltimateSDUpscaleCustomSample": "_custom", "UltimateSDUpscaleGuider": "_guider"}[node]
++        if node == "UltimateSDUpscaleGuider":
++            for k in GUIDER_DROP:
++                kw.pop(k)
++            kw.update(image=image, guider=fk.V2Guider(0.25), sampler=fk.Ref("SAMPLER", tag=0.5),
++                      sigmas=fk.Ref("SIGMAS", tag=0.125), vae=fk.V2Vae(), upscale_by=special["upscale_by"],
++                      upscale_model=fk.V2UpscaleModel(0.75))
++        else:
++            kw.update(model=fk.V2Model(0.375), positive=fk.V2Cond(cond_tensor(0.5)),
++                      negative=fk.V2Cond(cond_tensor(-0.25)), vae=fk.V2Vae())
++            if node == "UltimateSDUpscaleNoUpscale":
++                kw.update(upscaled_image=image)
++            else:
++                kw.update(image=image, upscale_by=special["upscale_by"])
++                if node == "UltimateSDUpscale" or special.get("model_up"):
++                    kw.update(upscale_model=fk.V2UpscaleModel(0.75))
++                if special.get("custom"):
++                    kw.update(custom_sampler=fk.Ref("SAMPLER", tag=0.5), custom_sigmas=fk.Ref("SIGMAS", tag=0.125))
++                if special.get("custom_sampler_only"):
++                    kw.update(custom_sampler=fk.Ref("SAMPLER", tag=0.5))
++        result = asyncio.run(getattr(port, handler)(**kw))
++        ref = result[0]
++        return ref.value
++    return run
++
++
++def child_v2(out: Path):
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/usdu-v2/v2")
++    _copytree(PACK / "v2", dst, skip_v2=False)
++    port = _load_v2(dst, "usdu_v2")
++    sys.path.insert(0, str(TESTS))
++    import usdu_fakeops as fk
++    port._image_ref = fk.image_ref
++    port._ctx = lambda: fk.CTX
++    run = _v2_runner(port, fk, "port")
++    results = {case[0]: _run_case(run, case) for case in CASES}
++    _save(results, out)
++
++
++def child_old(out: Path):
++    """The previous V2 (corpus main) under the same fakes: expected to differ from V1."""
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/usdu-old/v2")
++    _copytree(PACK / "v2", dst, skip_v2=False)
++    shutil.copyfile(TESTS / "old" / "_secure_nodes.py", dst / "_secure_nodes.py")
++    sys.path.insert(0, str(TESTS))
++    import usdu_fakeops as fk
++    port = _load_v2(dst, "usdu_v2_old")
++
++    class _OldImageRef:
++        @staticmethod
++        async def _from_raw(value):
++            return await fk.image_ref(value)
++
++    port.sdk = types.SimpleNamespace(ImageRef=_OldImageRef, ctx=lambda: fk.CTX)
++    run = _v2_runner(port, fk, "old")
++    results = {case[0]: _run_case(run, case) for case in CASES if case[0] in (
++        "basic_model_x2", "halftile", "no_upscale", "custom_lanczos_x1_5")}
++    _save(results, out)
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Parent
++# --------------------------------------------------------------------------------------------------------------------
++def _spawn(kind: str, out: Path):
++    env = dict(os.environ)
++    proc = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve()), kind, str(out)], capture_output=True,
++                          text=True, env=env, timeout=3000)
++    (RESULTS / f"{kind}.stderr.txt").write_text(proc.stderr[-200000:])
++    (RESULTS / f"{kind}.stdout.txt").write_text(proc.stdout[-200000:])
++    if proc.returncode != 0:
++        raise RuntimeError(f"{kind} child failed rc={proc.returncode}: {proc.stderr[-3000:]}")
++    import numpy as np
++    meta = json.loads(out.with_suffix(".json").read_text())
++    with np.load(out.with_suffix(".npz"), allow_pickle=False) as z:
++        for k in z.files:
++            meta[k]["output"] = z[k]
++    return meta
++
++
++def _compare(a: dict, b: dict) -> list[str]:
++    import numpy as np
++    diffs = []
++    if ("error" in a) != ("error" in b):
++        diffs.append(f"error presence: v1={a.get('error')!r} v2={b.get('error')!r}")
++    elif "error" in a:
++        if a["error"] != b["error"]:
++            diffs.append(f"error text: v1={a['error']!r} v2={b['error']!r}")
++    else:
++        x, y = a["output"], b["output"]
++        if x.shape != y.shape or x.dtype != y.dtype:
++            diffs.append(f"output shape/dtype: v1={x.shape}/{x.dtype} v2={y.shape}/{y.dtype}")
++        elif not np.array_equal(x, y):
++            d = np.abs(x.astype(np.float64) - y.astype(np.float64))
++            mse = float((d * 255) ** 2 .mean()) if False else float(((d * 255) ** 2).mean())
++            psnr = float("inf") if mse == 0 else 10 * np.log10(255.0 ** 2 / mse)
++            diffs.append(f"output values: max|d|*255={float(d.max()) * 255:.3f}, differing={int((d > 0).sum())}"
++                         f"/{d.size}, psnr={psnr:.2f} dB")
++    if a["calls"] != b["calls"]:
++        n = next((i for i, (p, q) in enumerate(zip(a["calls"], b["calls"])) if p != q),
++                 min(len(a["calls"]), len(b["calls"])))
++        diffs.append(f"model-call sequence differs at #{n} (v1 {len(a['calls'])} calls, v2 {len(b['calls'])}): "
++                     f"v1={a['calls'][n] if n < len(a['calls']) else None} "
++                     f"v2={b['calls'][n] if n < len(b['calls']) else None}")
++    if a["stdout"] != b["stdout"]:
++        diffs.append(f"stdout differs: v1={a['stdout'][-300:]!r} v2={b['stdout'][-300:]!r}")
++    return diffs
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    tmp = Path("/tmp/usdu-parity")
++    tmp.mkdir(parents=True, exist_ok=True)
++    v1 = _spawn("child_v1", tmp / "v1")
++    v2 = _spawn("child_v2", tmp / "v2")
++    report = {"cases": {}, "exact": 0, "failed": 0, "checks": 0}
++    for case in CASES:
++        cid = case[0]
++        a, b = v1[cid], v2[cid]
++        diffs = _compare(a, b)
++        verdict = "EXACT" if not diffs else "MISMATCH"
++        if not diffs and "error" in a:
++            verdict = "ERROR-PARITY"
++        report["cases"][cid] = {
++            "node": case[1], "verdict": verdict, "diffs": diffs,
++            "v1_error": a.get("error"), "v2_error": b.get("error"),
++            "v1_traceback": a.get("traceback"), "v2_traceback": b.get("traceback"),
++            "model_calls": len(a["calls"]), "output_shape": list(a["output"].shape) if "output" in a else None,
++            "v2_progress_last": b["progress"][-1] if b["progress"] else None, "v2_refs_released": b["released"],
++            "v2_boundary_sample": b["boundary"][:3],
++        }
++        report["checks"] += 4
++        report["exact" if not diffs else "failed"] += 1
++    # Negative control 1: the comparator must see a one-level change in one value.
++    import numpy as np
++    ref = v2["basic_model_x2"]
++    flipped = dict(ref, output=ref["output"].copy())
++    flipped["output"].flat[12345 % flipped["output"].size] += 1.0 / 255
++    report["negative_control_comparator"] = {"diffs": _compare(v1["basic_model_x2"], flipped)}
++    report["negative_control_comparator"]["red"] = bool(report["negative_control_comparator"]["diffs"])
++    # Negative control 2 (lane-only): the previous V2 under the same fakes.
++    if (TESTS / "old" / "_secure_nodes.py").is_file():
++        old = _spawn("child_old", tmp / "old")
++        report["previous_v2_control"] = {cid: {"diffs": _compare(v1[cid], old[cid]), "error": old[cid].get("error")}
++                                         for cid in old}
++        report["previous_v2_control_red"] = all(bool(x["diffs"]) for x in report["previous_v2_control"].values())
++    report["notes"] = v1.get("_notes", {}).get("notes")
++    report["ok"] = report["failed"] == 0 and report["negative_control_comparator"]["red"]
++    (RESULTS / "parity.json").write_text(json.dumps(report, indent=1, sort_keys=True, default=str))
++    print(json.dumps({k: report[k] for k in ("ok", "exact", "failed", "checks")}))
++    for cid, r in report["cases"].items():
++        print(f"{r['verdict']:13s} {cid:36s} {r['node']:30s} calls={r['model_calls']} {r['diffs'][:1]}")
++    print("negative control (comparator) red:", report["negative_control_comparator"]["red"])
++    if "previous_v2_control" in report:
++        for cid, r in report["previous_v2_control"].items():
++            print(f"previous V2 {cid}: {r['diffs'][:1] or 'NO DIFF'} {r['error'] or ''}")
++    sys.exit(0 if report["ok"] else 1)
++
++
++if __name__ == "__main__":
++    if len(sys.argv) >= 3 and sys.argv[1] in ("child_v1", "child_v2", "child_old"):
++        globals()[sys.argv[1]](Path(sys.argv[2]))
++    else:
++        main()
+--- /dev/null
++++ b/v2/tests/usdu_fakeops.py
+@@ -0,0 +1,303 @@
++"""Deterministic stand-ins for the model-owned operations, shared by both sides of the parity test.
++
++The original pack (V1) and the V2 port run with identical fake VAE, sampler, guider and upscale-model behaviour, so
++any output difference comes from the pack-side tile pipeline: crops, masks, blurs, resizes, compositing and ordering.
++Every model-owned call is recorded (inputs and outputs by digest) so the two call sequences can be compared too.
++"""
++from __future__ import annotations
++
++import hashlib
++
++import torch
++import torch.nn.functional as F
++
++CALLS: list = []      # model-owned calls, comparable between V1 and V2
++BOUNDARY: list = []   # V2-only boundary arguments (tile sizes, crop regions) for the report
++
++
++def digest(value) -> str:
++    t = torch.as_tensor(value).detach().cpu().contiguous()
++    return hashlib.sha256(t.numpy().tobytes()).hexdigest()[:16] + f":{tuple(t.shape)}:{str(t.dtype)}"
++
++
++def text_tag(value) -> float:
++    return (sum((i + 1) * ord(c) for i, c in enumerate(str(value))) % 997) / 997.0
++
++
++def tensor_tag(t) -> float:
++    return round(float(torch.as_tensor(t).double().sum()), 6)
++
++
++def encode(pixels):
++    """VAE encode stand-in: crop to multiples of 8 (as ComfyUI's VAE does), 8x8 average pool, 4 channels."""
++    x = torch.as_tensor(pixels)[..., :3].movedim(-1, 1).float()
++    h, w = x.shape[-2] // 8 * 8, x.shape[-1] // 8 * 8
++    x = x[..., :h, :w]
++    pooled = F.avg_pool2d(x, 8)
++    out = torch.cat([pooled * 2 - 1, pooled.mean(dim=1, keepdim=True)], dim=1).contiguous()
++    CALLS.append(("encode", digest(pixels), digest(out)))
++    return out
++
++
++def sample(kind, latent, seed, steps, cfg, sampler_name, scheduler, denoise, positive_tag, negative_tag,
++           extra_tag=0.0):
++    """Sampler stand-in: seeded noise mixed in by denoise; every parameter moves the result."""
++    latent = torch.as_tensor(latent).float()
++    g = torch.Generator().manual_seed(int(seed))
++    noise = torch.randn(tuple(latent.shape), generator=g)
++    d = float(denoise)
++    out = (latent * (1 - 0.35 * d) + noise * 0.25 * d + 0.01 * float(cfg) + 0.002 * int(steps)
++           + 0.03 * text_tag(sampler_name) - 0.04 * text_tag(scheduler)
++           + 0.05 * positive_tag - 0.05 * negative_tag + 0.01 * extra_tag).contiguous()
++    CALLS.append(("sample", kind, int(seed), int(steps), float(cfg), str(sampler_name), str(scheduler), round(d, 6),
++                  positive_tag, negative_tag, round(float(extra_tag), 6), digest(latent), digest(out)))
++    return out
++
++
++def decode(latent, tiled=False):
++    """VAE decode stand-in: bilinear x8 upsample of 3 latent channels to BHWC in [0, 1]."""
++    x = torch.as_tensor(latent)[:, :3].float()
++    up = F.interpolate(x, scale_factor=8, mode="bilinear", align_corners=False)
++    img = ((up + 1) / 2).clamp(0, 1).movedim(1, -1).contiguous()
++    if tiled:
++        img = (img * 0.999 + 0.0005).clamp(0, 1).contiguous()
++    CALLS.append(("decode", "tiled" if tiled else "plain", digest(latent), digest(img)))
++    return img
++
++
++def upscale(image):
++    """Upscale-model stand-in: x4 bicubic, clamped (ImageUpscaleWithModel clamps its output)."""
++    x = torch.as_tensor(image)[..., :3].movedim(-1, 1).float()
++    up = F.interpolate(x, scale_factor=4, mode="bicubic", align_corners=False).clamp(0, 1)
++    out = up.movedim(1, -1).contiguous()
++    CALLS.append(("upscale", digest(image), digest(out)))
++    return out
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# V1 side: replacements for the ComfyUI objects the original modules call
++# --------------------------------------------------------------------------------------------------------------------
++class V1Model:
++    def __init__(self, tag):
++        self.tag = tag
++        self.model_options = {}
++
++    def clone(self):
++        return V1Model(self.tag)
++
++
++class V1Tagged:
++    def __init__(self, tag):
++        self.tag = tag
++
++
++class V1Guider:
++    def __init__(self, tag):
++        self.tag = tag
++        self.model_patcher = V1Model(tag)
++
++
++def v1_cond(tensor):
++    return [[tensor, {}]]
++
++
++def v1_cond_tag(cond):
++    return tensor_tag(cond[0][0])
++
++
++class V1VAEEncode:
++    def encode(self, vae, pixels):
++        return ({"samples": encode(pixels)},)
++
++
++class V1VAEDecode:
++    def decode(self, vae, samples):
++        return (decode(samples["samples"]),)
++
++
++class V1VAEDecodeTiled:
++    def decode(self, vae, samples, tile_size, overlap=64, temporal_size=64, temporal_overlap=8):
++        CALLS.append(("decode_tiled_args", int(tile_size), int(overlap), int(temporal_size), int(temporal_overlap)))
++        return (decode(samples["samples"], tiled=True),)
++
++
++def v1_common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0,
++                       disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
++    assert not disable_noise and start_step is None and last_step is None and not force_full_denoise
++    out = sample("ksampler", latent["samples"], seed, steps, cfg, sampler_name, scheduler, denoise,
++                 v1_cond_tag(positive), v1_cond_tag(negative), extra_tag=model.tag)
++    return ({"samples": out},)
++
++
++class V1SamplerCustom:
++    @staticmethod
++    def execute(model, add_noise, noise_seed, cfg, positive, negative, sampler, sigmas, latent_image):
++        assert add_noise is True
++        out = sample("custom", latent_image["samples"], noise_seed, 0, cfg, "", "", 1.0,
++                     v1_cond_tag(positive), v1_cond_tag(negative), extra_tag=model.tag + sampler.tag + sigmas.tag)
++        return ({"samples": out}, None)
++
++
++def v1_sample_with_guider(guider, sampler, sigmas, seed, latent):
++    out = sample("guider", latent["samples"], seed, 0, 0.0, "", "", 1.0, 0.0, 0.0,
++                 extra_tag=guider.tag + sampler.tag + sigmas.tag)
++    return {"samples": out}
++
++
++class V1ImageUpscaleWithModel:
++    @staticmethod
++    def execute(upscale_model, image):
++        return (upscale(image),)
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# V2 side: fake SDK references with the host's argument checks
++# --------------------------------------------------------------------------------------------------------------------
++RELEASED: list = []
++PROGRESS: list = []
++
++
++class Ref:
++    _count = 0
++
++    def __init__(self, kind, value=None, tag=0.0):
++        Ref._count += 1
++        self.id = f"{kind}-{Ref._count}"
++        self.kind = kind
++        self.value = value
++        self.tag = tag
++
++    async def raw(self):
++        return self.value
++
++    async def release(self):
++        RELEASED.append(self.id)
++
++
++def _check_image(value):
++    t = torch.as_tensor(value)
++    assert t.ndim == 4 and t.shape[-1] in (1, 3, 4), f"IMAGE must be BHWC, got {tuple(t.shape)}"
++    assert bool(torch.isfinite(t).all()), "IMAGE pixels must be finite"
++    return t
++
++
++async def image_ref(value):
++    return Ref("IMAGE", _check_image(value))
++
++
++class V2Vae(Ref):
++    def __init__(self):
++        super().__init__("VAE")
++
++    async def encode(self, image):
++        assert isinstance(image, Ref) and image.kind == "IMAGE"
++        return Ref("LATENT", encode(image.value))
++
++    async def decode(self, latent, *, allow_extended_range=False):
++        assert latent.kind == "LATENT" and allow_extended_range is False
++        return Ref("IMAGE", decode(latent.value))
++
++    async def decode_tiled(self, latent, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=8, *,
++                           allow_extended_range=False):
++        assert latent.kind == "LATENT" and allow_extended_range is False
++        CALLS.append(("decode_tiled_args", int(tile_size), int(overlap), int(temporal_size), int(temporal_overlap)))
++        return Ref("IMAGE", decode(latent.value, tiled=True))
++
++
++class V2UpscaleModel(Ref):
++    def __init__(self, tag):
++        super().__init__("UPSCALE_MODEL", tag=tag)
++
++    async def upscale(self, images, per_batch=16, downscale_ratio=1.0, downscale_method="lanczos",
++                      precision="float32", tile_size=None, channels_last=False):
++        BOUNDARY.append(("upscale_args", per_batch, downscale_ratio, downscale_method, precision, tile_size,
++                         channels_last))
++        return Ref("IMAGE", upscale(images.value))
++
++
++class V2Cond(Ref):
++    def __init__(self, tensor):
++        super().__init__("CONDITIONING", tensor)
++
++    async def has_spatial_metadata(self):
++        return False
++
++    async def spatial_crop(self, **kwargs):
++        BOUNDARY.append(("cond_spatial_crop", tuple(sorted(kwargs.items()))))
++        return V2Cond(self.value)
++
++
++def _check_regions(regions, source_width, source_height, target_width, target_height):
++    assert isinstance(regions, list) and 1 <= len(regions) <= 4096
++    for region in regions:
++        assert isinstance(region, (list, tuple)) and len(region) == 4
++        assert all(type(v) is int for v in region), f"regions must be ints: {region!r}"
++        left, top, right, bottom = region
++        assert 0 <= left < right <= source_width and 0 <= top < bottom <= source_height, (region, source_width,
++                                                                                        source_height)
++    for v in (source_width, source_height, target_width, target_height):
++        assert type(v) is int and v >= 1
++
++
++class V2Model(Ref):
++    def __init__(self, tag):
++        super().__init__("MODEL", tag=tag)
++
++    async def spatial_crop_inputs(self, *, regions, source_width, source_height, target_width, target_height):
++        _check_regions(regions, source_width, source_height, target_width, target_height)
++        BOUNDARY.append(("model_crop", tuple(map(tuple, regions)), source_width, source_height, target_width,
++                         target_height))
++        return V2Model(self.tag)
++
++
++class V2Guider(Ref):
++    def __init__(self, tag):
++        super().__init__("GUIDER", tag=tag)
++
++    async def spatial_crop_inputs(self, *, regions, source_width, source_height, target_width, target_height):
++        _check_regions(regions, source_width, source_height, target_width, target_height)
++        BOUNDARY.append(("guider_crop", tuple(map(tuple, regions)), source_width, source_height, target_width,
++                         target_height))
++        return V2Guider(self.tag)
++
++
++class _Progress:
++    async def update(self, value, total, preview=None):
++        PROGRESS.append((value, total))
++
++
++class V2Ctx:
++    progress = _Progress()
++
++    async def sample(self, latent, steps, on_step=None, model=None, positive=None, negative=None, cfg=8.0, seed=0,
++                     sampler_name="euler", scheduler="normal", denoise=1.0, sampler=None, sigmas=None, guider=None,
++                     **extra):
++        # The host's checks (comfy_secure_nodes/transport/host.py _h_sample).
++        assert not extra, extra
++        assert type(steps) is int and 1 <= steps <= 10000, steps
++        assert type(seed) is int and 0 <= seed <= (1 << 64) - 1, seed
++        assert isinstance(cfg, float) and isinstance(denoise, float) and 0.0 <= denoise <= 1.0
++        assert not (guider is not None and model is not None)
++        assert guider is None or (sampler is not None and sigmas is not None)
++        assert sigmas is None or sampler is not None
++        assert isinstance(sampler_name, str) and isinstance(scheduler, str)
++        if guider is not None:
++            out = sample("guider", latent.value, seed, 0, 0.0, "", "", 1.0, 0.0, 0.0,
++                         extra_tag=guider.tag + sampler.tag + sigmas.tag)
++        elif sampler is not None:
++            out = sample("custom", latent.value, seed, 0, cfg, "", "", 1.0, tensor_tag(positive.value),
++                         tensor_tag(negative.value), extra_tag=model.tag + sampler.tag + sigmas.tag)
++        else:
++            out = sample("ksampler", latent.value, seed, steps, cfg, sampler_name, scheduler, denoise,
++                         tensor_tag(positive.value), tensor_tag(negative.value), extra_tag=model.tag)
++        return Ref("LATENT", out)
++
++
++CTX = V2Ctx()
++
++
++def reset():
++    CALLS.clear()
++    BOUNDARY.clear()
++    RELEASED.clear()
++    PROGRESS.clear()
