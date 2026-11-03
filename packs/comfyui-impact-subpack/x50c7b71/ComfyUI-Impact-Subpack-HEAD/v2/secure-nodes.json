@@ -2,25 +2,15 @@
   "format": "comfy-secure-nodes-v1",
   "nodes": {
     "UltralyticsDetectorProvider": {
-      "class": "UltralyticsDetectorProviderSecure_cee284c628",
+      "class": "UltralyticsDetectorProvider",
       "methods": {
         "check_lazy_status": false,
         "fingerprint_inputs": false,
-        "validate_inputs": false
+        "validate_inputs": true
       },
       "module": "_secure_nodes",
       "permissions": [
-        "models.download"
-      ],
-      "required_weights": [
-        {
-          "filename": "model.safetensors",
-          "folder": "detection",
-          "on_demand": true,
-          "repo_id": "iitolstykh/YOLO-Face-Person-Detector",
-          "revision": "b3d071aedccd46a3b2d4b40609da6880a815f395",
-          "sha256": "278524fbd3c5b736493294983f91ef49a3fe91b5c97188ec8cc8be58288577fd"
-        }
+        "assets"
       ],
       "schema": {
         "attrs": {
@@ -37,6 +27,7 @@
           "is_experimental": false,
           "is_input_list": false,
           "is_output_node": false,
+          "loop_boundary": null,
           "node_id": "UltralyticsDetectorProvider",
           "not_idempotent": false,
           "price_badge": null,
@@ -48,7 +39,7 @@
             "attrs": {
               "advanced": null,
               "control_after_generate": null,
-              "default": "bbox/yolov8x_person_face.safetensors",
+              "default": null,
               "display_name": null,
               "extra_dict": {},
               "force_input": null,
@@ -57,11 +48,19 @@
               "lazy": null,
               "multiselect": false,
               "optional": false,
-              "options": [
-                "bbox/yolov8x_person_face.safetensors"
-              ],
+              "options": [],
               "rawLink": null,
-              "remote": null,
+              "remote": {
+                "$type": "remote-options",
+                "attrs": {
+                  "control_after_refresh": "first",
+                  "max_retries": null,
+                  "refresh": null,
+                  "refresh_button": true,
+                  "route": "/models/ultralytics_bbox",
+                  "timeout": null
+                }
+              },
               "socketless": null,
               "tooltip": null,
               "upload": null,
@@ -94,7 +93,14 @@
           }
         ]
       },
-      "sdk_refs": true
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "model_name"
+        ],
+        "kwargs": false
+      }
     }
   },
   "runtime": {
