@@ -1,6 +1,7 @@
 """Frozen schema and wire helpers for the pinned Image Saver conversion."""
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import inspect
@@ -56,21 +57,37 @@ def _input(value: dict[str, Any]):
     return result
 
 
+def _combo_choices(io_type: str) -> list[str]:
+    """The original output's choice list, frozen as its Python ``str()``.
+
+    The selectors return Core's own lists as their output type (for example
+    ``RETURN_TYPES = (comfy.samplers.KSampler.SAMPLERS, "STRING")``); the
+    freezer recorded that list's text. ``ast.literal_eval`` reads it back as
+    data, with no evaluation of code.
+    """
+    choices = ast.literal_eval(io_type)
+    if (not isinstance(choices, list) or not choices
+            or not all(isinstance(item, str) for item in choices)):
+        raise ValueError("frozen COMBO output type is not a list of strings")
+    return choices
+
+
 def _output(value: dict[str, Any]):
     if value["kind"] != "standard":
         raise ValueError(f"unsupported frozen output kind {value['kind']!r}")
     io_type = value["io_type"]
     # V1 represents selector outputs as their literal choice list.  Preserve
     # that wire type as a COMBO instead of inventing a custom type whose name
-    # happens to be the stringified list.
-    output_type = (
-        io.Combo
-        if isinstance(io_type, str)
-        and io_type.startswith("[")
-        and io_type.endswith("]")
-        else _io_class(io_type)
-    )
-    result = object.__new__(output_type.Output)
+    # happens to be the stringified list, and declare exactly those choices:
+    # Core reports a COMBO output's declared options as its type, so a link
+    # into a list-typed input (KSampler's sampler_name/scheduler) validates
+    # as it does for the original.
+    if isinstance(io_type, str) and io_type.startswith("[") and io_type.endswith("]"):
+        result = object.__new__(io.Combo.Output)
+        result.__dict__.update(_decode(copy.deepcopy(value["attrs"])))
+        result.options = _combo_choices(io_type)
+        return result
+    result = object.__new__(_io_class(io_type).Output)
     result.__dict__.update(_decode(copy.deepcopy(value["attrs"])))
     return result
 

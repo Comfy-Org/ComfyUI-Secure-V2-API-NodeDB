@@ -78,6 +78,29 @@ the exact EXIF ASCII tags written by the output primitive. It does not patch
 ComfyUI's file handler, read a host `File`, access a parent DOM, or use network
 APIs.
 
+## Selector outputs and Core's choice lists
+
+The original's selectors return Core's own choice lists as their output
+types: Sampler Selector, the three Scheduler Selectors, Input Parameters'
+`sampler` and `scheduler`, and Read Image Saver Pipe's `sampler_name` and
+`scheduler_name`. V2 declares each of these outputs as a COMBO output whose
+options are exactly that list (`_secure_runtime.py`, `_output`). A Core that
+reports a COMBO output's declared options as its type then validates a link
+into a list-typed input, such as KSampler's `sampler_name` and `scheduler`,
+exactly as it does for the original: the lists must share a choice. A Core
+that reports every COMBO output as the plain string `COMBO` refuses those
+links (return type mismatch). The pack cannot change that.
+
+The menus and output choices are frozen copies of Core's lists in
+`_schemas.json`. `tests/refreeze_core_lists.py` refreshes them from the
+original running on the deployment Core. It only adds choices that the newer
+Core provides, and it leaves the checkpoint and UNet menus alone, because the
+host serves those from its model folders. Choices that other installed packs
+add to Core's lists at runtime, such as extra schedulers, are not mirrored.
+Where the original offers one of them, the V2 menu refuses it. A link from a
+V2 selector into a host input that offers such extras still validates,
+because the lists share their Core choices.
+
 ## Models and verification
 
 This pack declares no additional model weights and performs no runtime
@@ -90,3 +113,10 @@ trip, real guest execution of every backend mapping, pristine differential
 checks for metadata/pipes/CSV/shape/latent behavior, all three output formats,
 collision and sidecar behavior, typed Civitai calls, denied capabilities and
 path traversal, and a DOM-free worker-realm JPEG importer harness.
+
+`tests/test_combo_outputs.py` compares the original with the served V2
+nodes on CPU without weights. It covers every node's object_info outputs,
+Core's prompt validation with selector links into KSampler (including
+refused controls), and every selector choice returned by a real guest.
+`tests/encode_manifest.py` regenerates `secure-nodes.json` with the live
+encoder and loads it with the real loader.
