@@ -16,6 +16,9 @@ run_in_gate.sh <pack root with v2/> <v2/tests> <results> test_vrgamedevgirl_pari
        "<pack>/<node> is not yet converted to Secure Nodes V2"; execute raises the same message.
     M  v2/secure-nodes.json equals the real encoder's output for the v2 classes.
     N  negative control: one perturbed converted output must be caught.
+    G  guest import guard, installed before v2 loads and kept for the whole run: an import executed by v2 code
+       (module-level or function-local) must be in the standard library, the sealed guest base
+       (guest_common.lock) or the v2 package itself; anything else is blocked and fails the run.
 """
 import asyncio
 import copy
@@ -53,6 +56,50 @@ import torch  # noqa: E402
 USED = ["FastFilmGrain", "ColorMatchToReference", "FastUnsharpSharpen", "FastLaplacianSharpen", "VRGDG_LUTS",
         "VRGDG_MultiStringConcat"]
 PACK_ID = "comfyui-vrgamedevgirl"
+
+# Top-level modules of the sealed guest base: the 41 pins of guest_common.lock (sha256 333e9487246431a7...), the
+# prepared sealed bundle's requirements.lock. The gate image has more (kornia, scipy, ...); a guest does not.
+GUEST_LOCK_MODULES = {
+    "av", "blake3", "comfy_api", "comfy_secure_nodes", "comfy_secure_sdk", "filelock", "fsspec", "iniconfig", "jinja2",
+    "markupsafe", "mpmath", "networkx", "numpy", "nvidia", "packaging", "PIL", "pluggy", "psutil", "pygments", "pytest",
+    "_pytest", "py", "pytest_asyncio", "safetensors", "setuptools", "pkg_resources", "_distutils_hack", "sympy",
+    "torch", "functorch", "torchgen", "triton", "typing_extensions", "wheel",
+}
+GUARD = {"blocked": []}
+
+
+def install_guest_import_guard():
+    """Block imports executed by v2 code that a guest would not have. builtins.__import__ sees every import statement,
+    including ones already in sys.modules and function-local ones, and the caller's frame tells v2 code apart from
+    the original pack (/tmp/orig), Core and this test."""
+    import builtins
+    real_import = builtins.__import__
+
+    def guarded(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0:
+            caller = sys._getframe(1).f_code.co_filename
+            if caller.startswith(V2 + "/") and not caller.startswith(V2 + "/tests/"):
+                top = name.split(".")[0]
+                if top not in sys.stdlib_module_names and top not in GUEST_LOCK_MODULES and top != "_vrgdg_v2":
+                    GUARD["blocked"].append(f"{os.path.relpath(caller, V2)}: {name}")
+                    raise ModuleNotFoundError(f"guest import guard: {name!r} is not in the guest", name=name)
+        return real_import(name, globals, locals, fromlist, level)
+    GUARD["code"] = guarded.__code__  # _PackScopedStubs looks past this frame to the importing file
+    builtins.__import__ = guarded
+
+
+def guard_negative_control():
+    """The guard must block kornia, which the gate image has and the guest does not, when v2 code imports it."""
+    before = len(GUARD["blocked"])
+    code = compile("import kornia\n", os.path.join(V2, "_guard_probe.py"), "exec")
+    try:
+        exec(code, {"__name__": "_vrgdg_v2._guard_probe"})
+        caught = False
+    except ModuleNotFoundError:
+        caught = True
+    probe = GUARD["blocked"][before:]
+    del GUARD["blocked"][before:]
+    return caught and probe == ["_guard_probe.py: kornia"]
 
 
 def load_v2():
@@ -129,7 +176,8 @@ class _PackScopedStubs(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if top not in self.ALLOW:
             return None
         frame = sys._getframe(1)
-        while frame is not None and frame.f_code.co_filename.startswith("<frozen importlib"):
+        while frame is not None and (frame.f_code.co_filename.startswith("<frozen importlib")
+                                     or frame.f_code is GUARD.get("code")):
             frame = frame.f_back
         if frame is None or not frame.f_code.co_filename.startswith(self.root):
             return None
@@ -237,6 +285,7 @@ def cube_text(size, *, title=True, domain=None, crlf=False, comment=True, extra=
 
 
 def main(argv):
+    install_guest_import_guard()
     package = load_v2()
     text = manifest_text(package)
     if argv[:1] == ["generate-manifest"]:
@@ -412,8 +461,9 @@ def main(argv):
     if not lut_validation_ok:
         nodes["VRGDG_LUTS"]["verdict"] = "MISMATCH"
     unconverted_ids = sorted(unconverted.NODE_CLASS_MAPPINGS)
+    guard_red = guard_negative_control()
     ok = all(v["verdict"] == "EXACT" for v in nodes.values()) and not stub_bad and not roundtrip_bad and manifest_equal \
-        and registered == frozen_ids and not order_bad
+        and registered == frozen_ids and not order_bad and not GUARD["blocked"] and guard_red
     parity = {
         "pack": PACK_ID, "pin": "5f2882d835bfa616feed7b73ab102775ab8de64d",
         "status": "PASS" if ok else "FAIL",
@@ -425,6 +475,8 @@ def main(argv):
         "registered_equals_frozen": registered == frozen_ids,
         "manifest_equals_real_encoder": manifest_equal,
         "negative_control": {"perturbation": "FastUnsharpSharpen output + 1e-7 for one case", "turned_red": bool(negative_red)},
+        "guest_import_guard": {"base": "guest_common.lock (41 pins)", "blocked": GUARD["blocked"],
+                               "negative_control_kornia_blocked": guard_red},
         "environment": {"guest_sdk_base": BASE, "original_kornia": importlib.import_module("kornia").__version__, "torch": torch.__version__},
     }
     with open(os.path.join(RESULTS, "parity.json"), "w", encoding="utf-8") as handle:
@@ -434,7 +486,7 @@ def main(argv):
         json.dump({k: v["mismatches"][:20] for k, v in results.items()}, handle, indent=1, sort_keys=True)
         handle.write("\n")
     summary = {k: parity[k] for k in ("status", "nodes", "schema_roundtrip_mismatches", "manifest_equals_real_encoder",
-                                      "registered_equals_frozen", "negative_control")}
+                                      "registered_equals_frozen", "negative_control", "guest_import_guard")}
     summary["unconverted"] = {k: parity["unconverted"][k] for k in ("verdict", "count", "bad")}
     print(json.dumps(summary, indent=1))
     return 0 if ok and negative_red else 1

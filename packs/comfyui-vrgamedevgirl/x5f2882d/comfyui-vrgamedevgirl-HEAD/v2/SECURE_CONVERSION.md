@@ -41,6 +41,10 @@ FastLaplacianSharpen, VRGDG_LUTS and VRGDG_MultiStringConcat.
   - Each node's `validate_inputs` names its inputs and returns `"comfyui-vrgamedevgirl/<node> is not yet converted to
     Secure Nodes V2"`; `execute` raises the same message.
   - A V1 node's description is its `DESCRIPTION` attribute (Core's rule), not the class docstring the generator uses.
+  - V1 option keys that have no V3 parameter are kept in the input's `extra_dict`, so the frontend gets the
+    original's options. There are 12 such inputs on 6 nodes: `label` (7), `password` (1, VRGDG_VideoPromptReconstructor
+    `api_key`), `precision` (2) and `dynamic` (2). The generator had dropped them for INT, FLOAT, STRING and BOOLEAN
+    inputs.
 - `pyproject.toml`: Python `>=3.13,<3.14` and no dependencies. `secure-nodes.json` comes from the real encoder. The two
   API stubs are byte copies of the published pair. `tests/` holds the parity test.
 
@@ -63,6 +67,9 @@ FastLaplacianSharpen, VRGDG_LUTS and VRGDG_MultiStringConcat.
 - The VRGDG_LUTS cases use fixture LUTs: 3D sizes 2-17, DOMAIN, CRLF, malformed and 1D files.
 - Every schema round-trips to its frozen form, and `secure-nodes.json` equals the encoder's output.
 - The negative control turns red.
+- An import guard is installed before v2 loads and stays for the whole run. Every import that v2 code executes,
+  function-local ones included, must come from the standard library, the sealed guest base (`guest_common.lock`, 41
+  pins) or v2 itself. None is blocked. The guard's own check blocks kornia, which the gate has and a guest lacks.
 
 ## Known differences
 - **Not registered:** `VRGDG_LTXVLoopingSamplerAdvanced` (module `VRGDG_LTXLoopingSampler`). It subclasses a class
