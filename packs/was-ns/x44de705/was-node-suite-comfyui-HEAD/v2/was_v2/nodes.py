@@ -90,6 +90,10 @@ _PURE = {
     "Bus Node": ("WAS_Bus", "bus_fn"),
     "Blend Latents": ("WAS_Blend_Latents", "latent_blend"),
     "Image Film Grain": ("WAS_Film_Grain", "film_grain"),
+    # phase B batch 4 (r5)
+    "Random Number": ("WAS_Random_Number", "return_randm_number"),
+    "Image Stitch": ("WAS_Image_Stitch", "image_stitching"),
+    "Mask Gaussian Region": ("WAS_Mask_Gaussian_Region", "gaussian_region"),
 }
 # WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 # toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -97,9 +101,12 @@ _SKIP_INIT = {"Masks Combine Batch"}
 # Refused by name until the pack's guest runtime provides their dependency (SECURE_CONVERSION.md).
 _NAMED_REFUSALS = {
     "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
+    "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
 }
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
-_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input"}
+# Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
+# NaN, so it too re-runs on every prompt.
+_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input", "Random Number"}
 
 
 def _pure_execute(class_name, function, construct=True):
@@ -178,6 +185,50 @@ async def _lora_execute(cls, model, clip, lora_name, strength_model, strength_cl
     model_lora, clip_lora = await model.apply_lora(
         asset, clip, strength_model, strength_clip if clip is not None else 0.0)
     return io.NodeOutput(model_lora, clip_lora, os.path.splitext(os.path.basename(lora_name))[0])
+
+
+# ---- model loaders (phase B batch 4, r5): the same core loaders the original called, through the host's catalogue
+def _catalogue_validate(folder, input_name):
+    async def validate(cls, **kwargs):
+        # Core's menu check on the original's INPUT_TYPES list (execution.py "Value not in list"); V2's menu is the
+        # host catalogue route, so the check runs here.
+        value = kwargs.get(input_name)
+        catalogue = list(await sdk.ctx().assets.list(folder))
+        if value in catalogue:
+            return True
+        return f"Value not in list: {input_name}: '{value}' not in {catalogue}"
+    return validate
+
+
+def _combine_validators(*validators):
+    async def validate(cls, **kwargs):
+        for check in validators:
+            result = await check(cls, **kwargs)
+            if result is not True:
+                return result
+        return True
+    return validate
+
+
+def _model_label(name):
+    return os.path.splitext(os.path.basename(name))[0]
+
+
+async def _checkpoint_loader_simple(cls, ckpt_name):
+    # WAS_Node_Suite.py:13868-13871: comfy.sd.load_checkpoint_guess_config, then the file name without its extension.
+    model, clip, vae = await sdk.ctx().models.load_checkpoint(ckpt_name)
+    return io.NodeOutput(model, clip, vae, _model_label(ckpt_name))
+
+
+async def _checkpoint_loader(cls, config_name, ckpt_name):
+    # WAS_Node_Suite.py:13822-13826: comfy.sd.load_checkpoint with the chosen config.
+    model, clip, vae = await sdk.ctx().models.load_checkpoint(ckpt_name, config_name=config_name)
+    return io.NodeOutput(model, clip, vae, _model_label(ckpt_name))
+
+
+async def _upscale_model_loader(cls, model_name):
+    # WAS_Node_Suite.py:13995-13999: comfy.utils.load_torch_file and the spandrel model loader.
+    return io.NodeOutput(await sdk.ctx().models.load_upscale_model(model_name), model_name)
 
 
 # ---- Image Save (WAS_Image_Save.was_save_images)
@@ -335,6 +386,16 @@ for _node_id in ("Load Lora", "Lora Loader"):
                             "_overrides": {"lora_name": _lora_name_input}}
 _CONVERTED["Image Save"] = {"execute": classmethod(_image_save), "SDK_REFS": True,
                             "SDK_PERMISSIONS": ("assets", "output")}
+_CONVERTED["Checkpoint Loader (Simple)"] = {
+    "execute": classmethod(_checkpoint_loader_simple), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
+    "validate_inputs": classmethod(_catalogue_validate("checkpoints", "ckpt_name"))}
+_CONVERTED["Checkpoint Loader"] = {
+    "execute": classmethod(_checkpoint_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
+    "validate_inputs": classmethod(_combine_validators(_catalogue_validate("configs", "config_name"),
+                                                       _catalogue_validate("checkpoints", "ckpt_name")))}
+_CONVERTED["Upscale Model Loader"] = {
+    "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
+    "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}
 
 
 def _class_name_for(node_id):

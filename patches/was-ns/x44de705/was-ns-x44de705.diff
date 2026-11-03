@@ -1,14 +1,15 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,111 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 62 of the 220 registered node ids are converted. The other 158 are registered with their real schemas and refuse
++Status: 68 of the 220 registered node ids are converted. The other 152 are registered with their real schemas and refuse
 +with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen refuses with its own message (Known differences). The original declares one more id,
++so core never calls its validate_inputs), when it runs. Image Lucy Sharpen and Mask Fill Holes refuse with their own
++message (Known differences). The original declares one more id,
 +`CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 +(WAS_Node_Suite.py:14662-14720). It is not registered here.
 +
@@ -27,6 +28,10 @@
 +  Levels Adjustment, Image Paste Crop, Image Resize, Image Rotate, Image Select Color, Bounded
 +  Image Blend with Mask, Bounded Image Crop with Mask, Masks Subtract, Text Find and Replace Input, Bus Node, Blend
 +  Latents and Image Film Grain.
++- Round 5: Checkpoint Loader (Simple) and Checkpoint Loader (the host's `models.load_checkpoint`, with the chosen
++  config for the latter), Upscale Model Loader (`models.load_upscale_model`), Random Number, Image Stitch and Mask
++  Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
++  `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 +
 +## How the conversion is built
 +
@@ -90,10 +95,18 @@
 +- Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
 +  the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
 +  outputs are equal only when both processes start from the same RNG state.
-+- Image Lucy Sharpen is refused by name at validation. The original sharpens with scipy.signal.convolve2d, and
-+  this pack's guest runtime does not provide scipy yet. It returns once it does.
++- Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
++  (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
++  yet. They return once it does.
 +- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
 +  conditioning counts as present even if it is an empty list.
++- Upscale Model Loader loads through the host, as core's UpscaleModelLoader does. Two differences from the original
++  (WAS_Node_Suite.py:13995-13999):
++  - weights whose keys carry a "module." prefix load, where the original fails;
++  - a model that is not a single-image model (for example an inpainting model) is refused, where the original returns
++    it.
++- The checkpoint and upscale menus are checked against the host's catalogue in validate_inputs, with core's "Value
++  not in list" message.
 +- Schemas of refused nodes come from the default configuration:
 +  - the style menus (no styles.json) and the history loaders (no history database);
 +  - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on
@@ -5070,7 +5083,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28678 @@
+@@ -0,0 +1,28669 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -7439,7 +7452,10 @@
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "models"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -7575,7 +7591,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
++      "sdk_refs": true,
 +      "validation_inputs": {
 +        "args": [
 +          "cls"
@@ -7591,7 +7607,10 @@
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "models"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -7693,7 +7712,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
++      "sdk_refs": true,
 +      "validation_inputs": {
 +        "args": [
 +          "cls"
@@ -18453,7 +18472,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -18570,13 +18589,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Style Filter": {
 +      "class": "WAS_V2_Image_Style_Filter_f4af0bb4",
@@ -24397,7 +24410,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -24471,13 +24484,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Mask Invert": {
 +      "class": "WAS_V2_Mask_Invert_9ce32af0",
@@ -27697,8 +27704,8 @@
 +      "class": "WAS_V2_Random_Number_dbfaf8bb",
 +      "methods": {
 +        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "fingerprint_inputs": true,
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -27841,13 +27848,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "SAM Image Mask": {
 +      "class": "WAS_V2_SAM_Image_Mask_d4195442",
@@ -32726,7 +32727,10 @@
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "models"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -32808,7 +32812,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
++      "sdk_refs": true,
 +      "validation_inputs": {
 +        "args": [
 +          "cls"
@@ -33894,7 +33898,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,767 @@
+@@ -0,0 +1,823 @@
 +"""Tier-1 parity: WAS Node Suite fork (44de7058) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -33946,6 +33950,17 @@
 +        path = FIXTURES / 'loras' / name
 +        path.parent.mkdir(parents=True, exist_ok=True)
 +        save_file(tensors(seed), str(path), metadata=metadata)
++
++    # A checkpoint config (read only by the stubbed loader) and a synthetic x2 upscale model: a tiny spandrel Compact
++    # (RealESRGAN Compact) network with seeded random weights, which both sides load for real.
++    (FIXTURES / 'configs').mkdir(parents=True, exist_ok=True)
++    (FIXTURES / 'configs' / 'test-config.yaml').write_text('model:\n  target: fixture.only\n')
++    from spandrel.architectures.Compact import Compact
++    torch.manual_seed(5)
++    upscaler = Compact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2)
++    (FIXTURES / 'upscale_models').mkdir(parents=True, exist_ok=True)
++    save_file({key: value.contiguous() for key, value in upscaler.state_dict().items()},
++              str(FIXTURES / 'upscale_models' / 'test-upscale-x2.safetensors'))
 +
 +
 +def text(node_id, value):
@@ -34339,6 +34354,9 @@
 +                                                  kernel_size=3),
 +                                             probe(image=['11', 0])),
 +         expect='refused-named:scipy.signal.convolve2d from scipy'),
++    case('mask-fill-holes-needs-scipy', g(image(seed=17), mask_from(),
++                                          node('11', 'Mask Fill Holes', masks=['30', 1]), probe(files=['11', 0])),
++         expect='refused-named:scipy.ndimage.binary_fill_holes from scipy'),
 +    case('bounded-crop-and-blend', g(image(width=40, height=32, seed=11), mask_from(),
 +                                     node('11', 'Bounded Image Crop with Mask', image=['30', 0], mask=['30', 1],
 +                                          padding_left=2, padding_right=3, padding_top=1, padding_bottom=0),
@@ -34376,6 +34394,45 @@
 +                               node('11', 'Image Film Grain', image=['2', 0], density=0.3, intensity=0.5,
 +                                    highlights=1.1, supersample_factor=2),
 +                               probe(image=['11', 0]))),
++]
++
++# ---- phase B batch 4 (r5): model loaders and Random Number
++CASES += [
++    case('checkpoint-loader-simple', g(node('11', 'Checkpoint Loader (Simple)', ckpt_name='test-ckpt.safetensors'),
++                                       probe(model=['11', 0], clip=['11', 1], files=['11', 2], text=['11', 3]))),
++    case('checkpoint-loader-config', g(node('11', 'Checkpoint Loader', config_name='test-config.yaml',
++                                            ckpt_name='test-ckpt.safetensors'),
++                                       probe(model=['11', 0], clip=['11', 1], files=['11', 2], text=['11', 3]))),
++    case('checkpoint-loader-unknown-name', g(node('11', 'Checkpoint Loader (Simple)', ckpt_name='missing.safetensors'),
++                                             probe(text=['11', 3])), expect='validation'),
++    case('checkpoint-loader-unknown-config', g(node('11', 'Checkpoint Loader', config_name='missing.yaml',
++                                                    ckpt_name='test-ckpt.safetensors'),
++                                               probe(text=['11', 3])), expect='validation'),
++    case('upscale-model-loader', g(node('11', 'Upscale Model Loader', model_name='test-upscale-x2.safetensors'),
++                                   probe(files=['11', 0], text=['11', 1]))),
++    case('upscale-model-loader-unknown', g(node('11', 'Upscale Model Loader', model_name='missing.pth'),
++                                           probe(text=['11', 1])), expect='validation'),
++] + [
++    case(f'random-number-{kind}', g(node('11', 'Random Number', number_type=kind, minimum=low, maximum=high, seed=seed),
++                                    probe(**outs('11', **NUMBER_OUTS))), runs=2)
++    for kind, low, high, seed in (('integer', 1.4, 5.6, 7), ('float', -2.5, 3.25, 123456789), ('bool', 0.0, 1.0, 42))
++] + [
++    case(f'image-stitch-{side}', g(image(width=24, height=16, seed=14), test_image('5', width=20, height=12, seed=15),
++                                   node('11', 'Image Stitch', image_a=['2', 0], image_b=['5', 0], stitch=side,
++                                        feathering=feather),
++                                   probe(image=['11', 0])))
++    for side, feather in (('right', 6), ('left', 0), ('top', 4), ('bottom', 8))
++] + [
++    # feathering wider than the images: the original's own PIL error
++    case('image-stitch-feathering-too-wide-error', g(image(width=24, height=16, seed=14),
++                                                     test_image('5', width=20, height=12, seed=15),
++                                                     node('11', 'Image Stitch', image_a=['2', 0], image_b=['5', 0],
++                                                          stitch='bottom', feathering=50),
++                                                     probe(image=['11', 0])), expect='error'),
++] + [
++    case('mask-gaussian-region', g(image(seed=16), mask_from(),
++                                   node('11', 'Mask Gaussian Region', masks=['30', 1], radius=3.0),
++                                   probe(files=['11', 0]))),
 +]
 +
 +
@@ -34484,6 +34541,9 @@
 +            return {'case': name, 'expect': expect, 'verdict': 'MISMATCH', 'errors': [errors_o, errors_c]}
 +        if not all(any('probe' in v or 'images' in v for v in ui.values()) for ui in ui_o):
 +            return {'case': name, 'expect': expect, 'verdict': 'MISMATCH', 'notes': ['nothing reached the probe']}
++        if orig.get('loader_calls') != conv.get('loader_calls'):
++            return {'case': name, 'expect': expect, 'verdict': 'MISMATCH',
++                    'loader_calls': [orig.get('loader_calls'), conv.get('loader_calls')]}
 +        if expect == 'known:lora-metadata':
 +            for ui in ui_c:
 +                for value in ui.values():
@@ -34664,7 +34724,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/was_parity_worker.py
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,441 @@
 +"""One side of the WAS Node Suite parity run (gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -34713,7 +34773,8 @@
 +                     ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
 +    (OUT / name).mkdir(parents=True, exist_ok=True)
 +    setter(str(OUT / name))
-+for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'})):
++for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'}), ('configs', {'.yaml'}),
++                  ('upscale_models', {'.safetensors', '.pth'})):
 +    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 +OUTPUT = OUT / 'output'
 +CWD = OUT / 'cwd'
@@ -34741,6 +34802,11 @@
 +        return [_summary(item) for item in value]
 +    if isinstance(value, dict):
 +        return {str(k): _summary(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
++    if hasattr(value, 'architecture') and hasattr(value, 'scale') and hasattr(value, 'model'):
++        state = value.model.state_dict()
++        digest = hashlib.sha256(b''.join(state[key].detach().contiguous().cpu().numpy().tobytes()
++                                         for key in sorted(state))).hexdigest()[:16]
++        return [type(value).__name__, str(getattr(value.architecture, 'name', value.architecture)), value.scale, digest]
 +    if hasattr(value, 'weights'):
 +        return [type(value).__name__, _summary(list(value.weights))]
 +    if isinstance(value, (int, float, str, bool, type(None))):
@@ -34832,6 +34898,29 @@
 +
 +comfy.lora.model_lora_keys_unet = _key_map_unet
 +comfy.lora.model_lora_keys_clip = _key_map_clip
++
++# Checkpoint loading: both sides reach core's comfy.sd loaders (the original directly, V2 through the host's model
++# catalogue). The stand-ins record each call, with its path relative to the fixtures and any option it was given,
++# and return weightless MODEL/CLIP/VAE stand-ins.
++LOADER_CALLS = []
++
++
++def _guess_config(ckpt_path, output_vae=True, output_clip=True, **kwargs):
++    options = sorted(key for key, value in kwargs.items() if value and key != 'embedding_directory')
++    LOADER_CALLS.append(['load_checkpoint_guess_config', os.path.relpath(ckpt_path, FIXTURES), bool(output_vae),
++                         bool(output_clip), options])
++    return (StandinModel(), StandinCLIP(), object(), None)
++
++
++def _load_checkpoint(config_path=None, ckpt_path=None, output_vae=True, output_clip=True, **kwargs):
++    options = sorted(key for key, value in kwargs.items() if value and key != 'embedding_directory')
++    LOADER_CALLS.append(['load_checkpoint', os.path.relpath(config_path, FIXTURES), os.path.relpath(ckpt_path, FIXTURES),
++                         bool(output_vae), bool(output_clip), options])
++    return (StandinModel(), StandinCLIP(), object())
++
++
++comfy.sd.load_checkpoint_guess_config = _guess_config
++comfy.sd.load_checkpoint = _load_checkpoint
 +
 +
 +def _standin(name, run, input_types, return_types, output_node=False):
@@ -35031,6 +35120,7 @@
 +        target.parent.mkdir(parents=True, exist_ok=True)
 +        target.write_bytes(text.encode())
 +    result = {'name': case['name'], 'runs': []}
++    LOADER_CALLS.clear()
 +    for index in range(case.get('runs', 1)):
 +        prompt = json.loads(json.dumps(case['prompt']))
 +        prompt_id = f"{case['name']}-{index}"
@@ -35056,6 +35146,7 @@
 +        result['runs'].append({'success': bool(executor.success), 'errors': errors,
 +                               'ui': json.loads(json.dumps(history.get('outputs', {}), default=str))})
 +    result['files'] = collect()
++    result['loader_calls'] = [list(row) for row in LOADER_CALLS]
 +    return result
 +
 +
@@ -35081,7 +35172,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,373 @@
+@@ -0,0 +1,434 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35174,6 +35265,10 @@
 +    "Bus Node": ("WAS_Bus", "bus_fn"),
 +    "Blend Latents": ("WAS_Blend_Latents", "latent_blend"),
 +    "Image Film Grain": ("WAS_Film_Grain", "film_grain"),
++    # phase B batch 4 (r5)
++    "Random Number": ("WAS_Random_Number", "return_randm_number"),
++    "Image Stitch": ("WAS_Image_Stitch", "image_stitching"),
++    "Mask Gaussian Region": ("WAS_Mask_Gaussian_Region", "gaussian_region"),
 +}
 +# WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 +# toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -35181,9 +35276,12 @@
 +# Refused by name until the pack's guest runtime provides their dependency (SECURE_CONVERSION.md).
 +_NAMED_REFUSALS = {
 +    "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
++    "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
 +}
 +# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
-+_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input"}
++# Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
++# NaN, so it too re-runs on every prompt.
++_ALWAYS_CHANGED = {"Text Parse Tokens", "Text Find and Replace Input", "Random Number"}
 +
 +
 +def _pure_execute(class_name, function, construct=True):
@@ -35262,6 +35360,50 @@
 +    model_lora, clip_lora = await model.apply_lora(
 +        asset, clip, strength_model, strength_clip if clip is not None else 0.0)
 +    return io.NodeOutput(model_lora, clip_lora, os.path.splitext(os.path.basename(lora_name))[0])
++
++
++# ---- model loaders (phase B batch 4, r5): the same core loaders the original called, through the host's catalogue
++def _catalogue_validate(folder, input_name):
++    async def validate(cls, **kwargs):
++        # Core's menu check on the original's INPUT_TYPES list (execution.py "Value not in list"); V2's menu is the
++        # host catalogue route, so the check runs here.
++        value = kwargs.get(input_name)
++        catalogue = list(await sdk.ctx().assets.list(folder))
++        if value in catalogue:
++            return True
++        return f"Value not in list: {input_name}: '{value}' not in {catalogue}"
++    return validate
++
++
++def _combine_validators(*validators):
++    async def validate(cls, **kwargs):
++        for check in validators:
++            result = await check(cls, **kwargs)
++            if result is not True:
++                return result
++        return True
++    return validate
++
++
++def _model_label(name):
++    return os.path.splitext(os.path.basename(name))[0]
++
++
++async def _checkpoint_loader_simple(cls, ckpt_name):
++    # WAS_Node_Suite.py:13868-13871: comfy.sd.load_checkpoint_guess_config, then the file name without its extension.
++    model, clip, vae = await sdk.ctx().models.load_checkpoint(ckpt_name)
++    return io.NodeOutput(model, clip, vae, _model_label(ckpt_name))
++
++
++async def _checkpoint_loader(cls, config_name, ckpt_name):
++    # WAS_Node_Suite.py:13822-13826: comfy.sd.load_checkpoint with the chosen config.
++    model, clip, vae = await sdk.ctx().models.load_checkpoint(ckpt_name, config_name=config_name)
++    return io.NodeOutput(model, clip, vae, _model_label(ckpt_name))
++
++
++async def _upscale_model_loader(cls, model_name):
++    # WAS_Node_Suite.py:13995-13999: comfy.utils.load_torch_file and the spandrel model loader.
++    return io.NodeOutput(await sdk.ctx().models.load_upscale_model(model_name), model_name)
 +
 +
 +# ---- Image Save (WAS_Image_Save.was_save_images)
@@ -35419,6 +35561,16 @@
 +                            "_overrides": {"lora_name": _lora_name_input}}
 +_CONVERTED["Image Save"] = {"execute": classmethod(_image_save), "SDK_REFS": True,
 +                            "SDK_PERMISSIONS": ("assets", "output")}
++_CONVERTED["Checkpoint Loader (Simple)"] = {
++    "execute": classmethod(_checkpoint_loader_simple), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
++    "validate_inputs": classmethod(_catalogue_validate("checkpoints", "ckpt_name"))}
++_CONVERTED["Checkpoint Loader"] = {
++    "execute": classmethod(_checkpoint_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
++    "validate_inputs": classmethod(_combine_validators(_catalogue_validate("configs", "config_name"),
++                                                       _catalogue_validate("checkpoints", "ckpt_name")))}
++_CONVERTED["Upscale Model Loader"] = {
++    "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
++    "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}
 +
 +
 +def _class_name_for(node_id):
@@ -35457,12 +35609,12 @@
 +CONVERTED_IDS = sorted(_CONVERTED)
 --- /dev/null
 +++ b/v2/was_v2/originals.py
-@@ -0,0 +1,2711 @@
+@@ -0,0 +1,2943 @@
 +"""Functions and node classes copied verbatim from WAS_Node_Suite.py at 44de705818d4663fefefde57ffe0ea5a9ea39df4.
 +
 +The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
 +it byte for byte against the file read as text (the pinned file has CRLF line endings; this module uses LF).
-+The module-level names they use are bound here:
++WAS_Tools_Class keeps only the members the converted nodes call. The module-level names they use are bound here:
 +TEXT_TYPE and is_force_input with the original's default configuration (WAS_Node_Suite.py:309-319), TextTokens from
 +tokens.py (the original's class, for a guest).
 +"""
@@ -38169,6 +38321,238 @@
 +
 +        # Return the final image
 +        return img_highlights
++
++
++# --- WAS_Node_Suite.py:12513-12556
++class WAS_Random_Number:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "number_type": (["integer", "float", "bool"],),
++                "minimum": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615}),
++                "maximum": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615}),
++                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
++            }
++        }
++
++    RETURN_TYPES = ("NUMBER", "FLOAT", "INT")
++    FUNCTION = "return_randm_number"
++
++    CATEGORY = "WAS Suite/Number"
++
++    def return_randm_number(self, minimum, maximum, seed, number_type='integer'):
++
++        # Set Generator Seed
++        random.seed(seed)
++
++        # Return random number
++        if number_type:
++            if number_type == 'integer':
++                number = random.randint(round(minimum), round(maximum))
++            elif number_type == 'float':
++                number = random.uniform(minimum, maximum)
++            elif number_type == 'bool':
++                number = random.random()
++            else:
++                return
++
++        # Return number
++        return (number, float(number), round(number))
++
++    @classmethod
++    def IS_CHANGED(cls, seed, **kwargs):
++        m = hashlib.sha256()
++        m.update(seed)
++        return m.digest().hex()
++
++
++# --- WAS_Node_Suite.py:417-420
++def pil2mask(image):
++    image_np = np.array(image.convert("L")).astype(np.float32) / 255.0
++    mask = torch.from_numpy(image_np)
++    return 1.0 - mask
++
++
++# --- WAS_Node_Suite.py:5491-5523
++class WAS_Image_Stitch:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image_a": ("IMAGE",),
++                "image_b": ("IMAGE",),
++                "stitch": (["top", "left", "bottom", "right"],),
++                "feathering": ("INT", {"default": 50, "min": 0, "max": 2048, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    FUNCTION = "image_stitching"
++
++    CATEGORY = "WAS Suite/Image/Transform"
++
++    def image_stitching(self, image_a, image_b, stitch="right", feathering=50):
++
++        valid_stitches = ["top", "left", "bottom", "right"]
++        if stitch not in valid_stitches:
++            cstr(f"The stitch mode `{stitch}` is not valid. Valid sitch modes are {', '.join(valid_stitches)}").error.print()
++        if feathering > 2048:
++            cstr(f"The stitch feathering of `{feathering}` is too high. Please choose a value between `0` and `2048`").error.print()
++
++        WTools = WAS_Tools_Class();
++
++        stitched_image = WTools.stitch_image(tensor2pil(image_a), tensor2pil(image_b), stitch, feathering)
++
++        return (pil2tensor(stitched_image), )
++
++
++# --- WAS_Node_Suite.py:8735-8772
++class WAS_Mask_Gaussian_Region:
++
++    def __init__(self):
++        self.WT = WAS_Tools_Class()
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "masks": ("MASK",),
++                "radius": ("FLOAT", {"default": 5.0, "min": 0.0, "max": 1024, "step": 0.1}),
++            }
++        }
++
++    CATEGORY = "WAS Suite/Image/Masking"
++
++    RETURN_TYPES = ("MASK",)
++    RETURN_NAMES = ("MASKS",)
++
++    FUNCTION = "gaussian_region"
++
++    def gaussian_region(self, masks, radius=5.0):
++        if masks.ndim > 3:
++            regions = []
++            for mask in masks:
++                mask_np = np.clip(255. * mask.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
++                pil_image = Image.fromarray(mask_np, mode="L")
++                region_mask = self.WT.Masking.gaussian_region(pil_image, radius)
++                region_tensor = pil2mask(region_mask).unsqueeze(0).unsqueeze(1)
++                regions.append(region_tensor)
++            regions_tensor = torch.cat(regions, dim=0)
++            return (regions_tensor,)
++        else:
++            mask_np = np.clip(255. * masks.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
++            pil_image = Image.fromarray(mask_np, mode="L")
++            region_mask = self.WT.Masking.gaussian_region(pil_image, radius)
++            region_tensor = pil2mask(region_mask).unsqueeze(0).unsqueeze(1)
++            return (region_tensor,)
++
++
++# --- WAS_Node_Suite.py:1022-1025 (class line and docstring; selected members follow)
++class WAS_Tools_Class():
++    """
++    Contains various tools and filters for WAS Node Suite
++    """
++
++    # --- WAS_Node_Suite.py:1036-1117
++    def stitch_image(self, image_a, image_b, mode='right', fuzzy_zone=50):
++
++        def linear_gradient(start_color, end_color, size, start, end, mode='horizontal'):
++            width, height = size
++            gradient = Image.new('RGB', (width, height), end_color)
++            draw = ImageDraw.Draw(gradient)
++
++            for i in range(0, start):
++                if mode == "horizontal":
++                    draw.line((i, 0, i, height-1), start_color)
++                elif mode == "vertical":
++                    draw.line((0, i, width-1, i), start_color)
++
++            for i in range(start, end):
++                if mode == "horizontal":
++                    curr_color = (
++                        int(start_color[0] + (float(i - start) / (end - start)) * (end_color[0] - start_color[0])),
++                        int(start_color[1] + (float(i - start) / (end - start)) * (end_color[1] - start_color[1])),
++                        int(start_color[2] + (float(i - start) / (end - start)) * (end_color[2] - start_color[2]))
++                    )
++                    draw.line((i, 0, i, height-1), curr_color)
++                elif mode == "vertical":
++                    curr_color = (
++                        int(start_color[0] + (float(i - start) / (end - start)) * (end_color[0] - start_color[0])),
++                        int(start_color[1] + (float(i - start) / (end - start)) * (end_color[1] - start_color[1])),
++                        int(start_color[2] + (float(i - start) / (end - start)) * (end_color[2] - start_color[2]))
++                    )
++                    draw.line((0, i, width-1, i), curr_color)
++
++            for i in range(end, width if mode == 'horizontal' else height):
++                if mode == "horizontal":
++                    draw.line((i, 0, i, height-1), end_color)
++                elif mode == "vertical":
++                    draw.line((0, i, width-1, i), end_color)
++
++            return gradient
++
++        image_a = image_a.convert('RGB')
++        image_b = image_b.convert('RGB')
++
++        offset = int(fuzzy_zone / 2)
++        canvas_width = int(image_a.size[0] + image_b.size[0] - fuzzy_zone) if mode == 'right' or mode == 'left' else image_a.size[0]
++        canvas_height = int(image_a.size[1] + image_b.size[1] - fuzzy_zone) if mode == 'top' or mode == 'bottom' else image_a.size[1]
++        canvas = Image.new('RGB', (canvas_width, canvas_height), (0,0,0))
++
++        im_ax = 0
++        im_ay = 0
++        im_bx = 0
++        im_by = 0
++
++        image_a_mask = None
++        image_b_mask = None
++
++        if mode == 'top':
++
++            image_a_mask = linear_gradient((0,0,0), (255,255,255), image_a.size, 0, fuzzy_zone, 'vertical')
++            image_b_mask = linear_gradient((255,255,255), (0,0,0), image_b.size, int(image_b.size[1] - fuzzy_zone), image_b.size[1], 'vertical')
++            im_ay = image_b.size[1] - fuzzy_zone
++
++        elif mode == 'bottom':
++
++            image_a_mask = linear_gradient((255,255,255), (0,0,0), image_a.size, int(image_a.size[1] - fuzzy_zone), image_a.size[1], 'vertical')
++            image_b_mask = linear_gradient((0,0,0), (255,255,255), image_b.size, 0, fuzzy_zone, 'vertical').convert('L')
++            im_by = image_a.size[1] - fuzzy_zone
++
++        elif mode == 'left':
++
++            image_a_mask = linear_gradient((0,0,0), (255,255,255), image_a.size, 0, fuzzy_zone, 'horizontal')
++            image_b_mask = linear_gradient((255,255,255), (0,0,0), image_b.size, int(image_b.size[0] - fuzzy_zone), image_b.size[0], 'horizontal')
++            im_ax = image_b.size[0] - fuzzy_zone
++
++        elif mode == 'right':
++
++            image_a_mask = linear_gradient((255,255,255), (0,0,0), image_a.size, int(image_a.size[0] - fuzzy_zone), image_a.size[0], 'horizontal')
++            image_b_mask = linear_gradient((0,0,0), (255,255,255), image_b.size, 0, fuzzy_zone, 'horizontal')
++            im_bx = image_a.size[0] - fuzzy_zone
++
++        Image.Image.paste(canvas, image_a, (im_ax, im_ay), image_a_mask.convert('L'))
++        Image.Image.paste(canvas, image_b, (im_bx, im_by), image_b_mask.convert('L'))
++
++
++        return canvas
++
++    # --- WAS_Node_Suite.py:1478 (class line; selected members follow)
++    class Masking:
++
++        # --- WAS_Node_Suite.py:1692-1696
++        @staticmethod
++        def gaussian_region(image, radius=5.0):
++            image = ImageOps.invert(image.convert("L"))
++            image = image.filter(ImageFilter.GaussianBlur(radius=int(radius)))
++            return image.convert("RGB")
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
 @@ -0,0 +1,60 @@

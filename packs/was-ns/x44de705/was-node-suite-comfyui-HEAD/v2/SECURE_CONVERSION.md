@@ -3,9 +3,10 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 62 of the 220 registered node ids are converted. The other 158 are registered with their real schemas and refuse
+Status: 68 of the 220 registered node ids are converted. The other 152 are registered with their real schemas and refuse
 with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-so core never calls its validate_inputs), when it runs. Image Lucy Sharpen refuses with its own message (Known differences). The original declares one more id,
+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen and Mask Fill Holes refuse with their own
+message (Known differences). The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14662-14720). It is not registered here.
 
@@ -24,6 +25,10 @@ Converted:
   Levels Adjustment, Image Paste Crop, Image Resize, Image Rotate, Image Select Color, Bounded
   Image Blend with Mask, Bounded Image Crop with Mask, Masks Subtract, Text Find and Replace Input, Bus Node, Blend
   Latents and Image Film Grain.
+- Round 5: Checkpoint Loader (Simple) and Checkpoint Loader (the host's `models.load_checkpoint`, with the chosen
+  config for the latter), Upscale Model Loader (`models.load_upscale_model`), Random Number, Image Stitch and Mask
+  Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
+  `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 
 ## How the conversion is built
 
@@ -87,10 +92,18 @@ every registered id against the original. A tampered output must turn the compar
 - Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
   the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
   outputs are equal only when both processes start from the same RNG state.
-- Image Lucy Sharpen is refused by name at validation. The original sharpens with scipy.signal.convolve2d, and
-  this pack's guest runtime does not provide scipy yet. It returns once it does.
+- Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
+  (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
+  yet. They return once it does.
 - Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
   conditioning counts as present even if it is an empty list.
+- Upscale Model Loader loads through the host, as core's UpscaleModelLoader does. Two differences from the original
+  (WAS_Node_Suite.py:13995-13999):
+  - weights whose keys carry a "module." prefix load, where the original fails;
+  - a model that is not a single-image model (for example an inpainting model) is refused, where the original returns
+    it.
+- The checkpoint and upscale menus are checked against the host's catalogue in validate_inputs, with core's "Value
+  not in list" message.
 - Schemas of refused nodes come from the default configuration:
   - the style menus (no styles.json) and the history loaders (no history database);
   - Diffusers Model Loader (no diffusers folders) and Cache Node's suffix defaults (the original draws random digits on

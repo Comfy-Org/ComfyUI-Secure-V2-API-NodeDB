@@ -2,7 +2,7 @@
 
 The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
 it byte for byte against the file read as text (the pinned file has CRLF line endings; this module uses LF).
-The module-level names they use are bound here:
+WAS_Tools_Class keeps only the members the converted nodes call. The module-level names they use are bound here:
 TEXT_TYPE and is_force_input with the original's default configuration (WAS_Node_Suite.py:309-319), TextTokens from
 tokens.py (the original's class, for a guest).
 """
@@ -2709,3 +2709,235 @@ class WAS_Film_Grain:
 
         # Return the final image
         return img_highlights
+
+
+# --- WAS_Node_Suite.py:12513-12556
+class WAS_Random_Number:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "number_type": (["integer", "float", "bool"],),
+                "minimum": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615}),
+                "maximum": ("FLOAT", {"default": 0, "min": -18446744073709551615, "max": 18446744073709551615}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            }
+        }
+
+    RETURN_TYPES = ("NUMBER", "FLOAT", "INT")
+    FUNCTION = "return_randm_number"
+
+    CATEGORY = "WAS Suite/Number"
+
+    def return_randm_number(self, minimum, maximum, seed, number_type='integer'):
+
+        # Set Generator Seed
+        random.seed(seed)
+
+        # Return random number
+        if number_type:
+            if number_type == 'integer':
+                number = random.randint(round(minimum), round(maximum))
+            elif number_type == 'float':
+                number = random.uniform(minimum, maximum)
+            elif number_type == 'bool':
+                number = random.random()
+            else:
+                return
+
+        # Return number
+        return (number, float(number), round(number))
+
+    @classmethod
+    def IS_CHANGED(cls, seed, **kwargs):
+        m = hashlib.sha256()
+        m.update(seed)
+        return m.digest().hex()
+
+
+# --- WAS_Node_Suite.py:417-420
+def pil2mask(image):
+    image_np = np.array(image.convert("L")).astype(np.float32) / 255.0
+    mask = torch.from_numpy(image_np)
+    return 1.0 - mask
+
+
+# --- WAS_Node_Suite.py:5491-5523
+class WAS_Image_Stitch:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image_a": ("IMAGE",),
+                "image_b": ("IMAGE",),
+                "stitch": (["top", "left", "bottom", "right"],),
+                "feathering": ("INT", {"default": 50, "min": 0, "max": 2048, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_stitching"
+
+    CATEGORY = "WAS Suite/Image/Transform"
+
+    def image_stitching(self, image_a, image_b, stitch="right", feathering=50):
+
+        valid_stitches = ["top", "left", "bottom", "right"]
+        if stitch not in valid_stitches:
+            cstr(f"The stitch mode `{stitch}` is not valid. Valid sitch modes are {', '.join(valid_stitches)}").error.print()
+        if feathering > 2048:
+            cstr(f"The stitch feathering of `{feathering}` is too high. Please choose a value between `0` and `2048`").error.print()
+
+        WTools = WAS_Tools_Class();
+
+        stitched_image = WTools.stitch_image(tensor2pil(image_a), tensor2pil(image_b), stitch, feathering)
+
+        return (pil2tensor(stitched_image), )
+
+
+# --- WAS_Node_Suite.py:8735-8772
+class WAS_Mask_Gaussian_Region:
+
+    def __init__(self):
+        self.WT = WAS_Tools_Class()
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "masks": ("MASK",),
+                "radius": ("FLOAT", {"default": 5.0, "min": 0.0, "max": 1024, "step": 0.1}),
+            }
+        }
+
+    CATEGORY = "WAS Suite/Image/Masking"
+
+    RETURN_TYPES = ("MASK",)
+    RETURN_NAMES = ("MASKS",)
+
+    FUNCTION = "gaussian_region"
+
+    def gaussian_region(self, masks, radius=5.0):
+        if masks.ndim > 3:
+            regions = []
+            for mask in masks:
+                mask_np = np.clip(255. * mask.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
+                pil_image = Image.fromarray(mask_np, mode="L")
+                region_mask = self.WT.Masking.gaussian_region(pil_image, radius)
+                region_tensor = pil2mask(region_mask).unsqueeze(0).unsqueeze(1)
+                regions.append(region_tensor)
+            regions_tensor = torch.cat(regions, dim=0)
+            return (regions_tensor,)
+        else:
+            mask_np = np.clip(255. * masks.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
+            pil_image = Image.fromarray(mask_np, mode="L")
+            region_mask = self.WT.Masking.gaussian_region(pil_image, radius)
+            region_tensor = pil2mask(region_mask).unsqueeze(0).unsqueeze(1)
+            return (region_tensor,)
+
+
+# --- WAS_Node_Suite.py:1022-1025 (class line and docstring; selected members follow)
+class WAS_Tools_Class():
+    """
+    Contains various tools and filters for WAS Node Suite
+    """
+
+    # --- WAS_Node_Suite.py:1036-1117
+    def stitch_image(self, image_a, image_b, mode='right', fuzzy_zone=50):
+
+        def linear_gradient(start_color, end_color, size, start, end, mode='horizontal'):
+            width, height = size
+            gradient = Image.new('RGB', (width, height), end_color)
+            draw = ImageDraw.Draw(gradient)
+
+            for i in range(0, start):
+                if mode == "horizontal":
+                    draw.line((i, 0, i, height-1), start_color)
+                elif mode == "vertical":
+                    draw.line((0, i, width-1, i), start_color)
+
+            for i in range(start, end):
+                if mode == "horizontal":
+                    curr_color = (
+                        int(start_color[0] + (float(i - start) / (end - start)) * (end_color[0] - start_color[0])),
+                        int(start_color[1] + (float(i - start) / (end - start)) * (end_color[1] - start_color[1])),
+                        int(start_color[2] + (float(i - start) / (end - start)) * (end_color[2] - start_color[2]))
+                    )
+                    draw.line((i, 0, i, height-1), curr_color)
+                elif mode == "vertical":
+                    curr_color = (
+                        int(start_color[0] + (float(i - start) / (end - start)) * (end_color[0] - start_color[0])),
+                        int(start_color[1] + (float(i - start) / (end - start)) * (end_color[1] - start_color[1])),
+                        int(start_color[2] + (float(i - start) / (end - start)) * (end_color[2] - start_color[2]))
+                    )
+                    draw.line((0, i, width-1, i), curr_color)
+
+            for i in range(end, width if mode == 'horizontal' else height):
+                if mode == "horizontal":
+                    draw.line((i, 0, i, height-1), end_color)
+                elif mode == "vertical":
+                    draw.line((0, i, width-1, i), end_color)
+
+            return gradient
+
+        image_a = image_a.convert('RGB')
+        image_b = image_b.convert('RGB')
+
+        offset = int(fuzzy_zone / 2)
+        canvas_width = int(image_a.size[0] + image_b.size[0] - fuzzy_zone) if mode == 'right' or mode == 'left' else image_a.size[0]
+        canvas_height = int(image_a.size[1] + image_b.size[1] - fuzzy_zone) if mode == 'top' or mode == 'bottom' else image_a.size[1]
+        canvas = Image.new('RGB', (canvas_width, canvas_height), (0,0,0))
+
+        im_ax = 0
+        im_ay = 0
+        im_bx = 0
+        im_by = 0
+
+        image_a_mask = None
+        image_b_mask = None
+
+        if mode == 'top':
+
+            image_a_mask = linear_gradient((0,0,0), (255,255,255), image_a.size, 0, fuzzy_zone, 'vertical')
+            image_b_mask = linear_gradient((255,255,255), (0,0,0), image_b.size, int(image_b.size[1] - fuzzy_zone), image_b.size[1], 'vertical')
+            im_ay = image_b.size[1] - fuzzy_zone
+
+        elif mode == 'bottom':
+
+            image_a_mask = linear_gradient((255,255,255), (0,0,0), image_a.size, int(image_a.size[1] - fuzzy_zone), image_a.size[1], 'vertical')
+            image_b_mask = linear_gradient((0,0,0), (255,255,255), image_b.size, 0, fuzzy_zone, 'vertical').convert('L')
+            im_by = image_a.size[1] - fuzzy_zone
+
+        elif mode == 'left':
+
+            image_a_mask = linear_gradient((0,0,0), (255,255,255), image_a.size, 0, fuzzy_zone, 'horizontal')
+            image_b_mask = linear_gradient((255,255,255), (0,0,0), image_b.size, int(image_b.size[0] - fuzzy_zone), image_b.size[0], 'horizontal')
+            im_ax = image_b.size[0] - fuzzy_zone
+
+        elif mode == 'right':
+
+            image_a_mask = linear_gradient((255,255,255), (0,0,0), image_a.size, int(image_a.size[0] - fuzzy_zone), image_a.size[0], 'horizontal')
+            image_b_mask = linear_gradient((0,0,0), (255,255,255), image_b.size, 0, fuzzy_zone, 'horizontal')
+            im_bx = image_a.size[0] - fuzzy_zone
+
+        Image.Image.paste(canvas, image_a, (im_ax, im_ay), image_a_mask.convert('L'))
+        Image.Image.paste(canvas, image_b, (im_bx, im_by), image_b_mask.convert('L'))
+
+
+        return canvas
+
+    # --- WAS_Node_Suite.py:1478 (class line; selected members follow)
+    class Masking:
+
+        # --- WAS_Node_Suite.py:1692-1696
+        @staticmethod
+        def gaussian_region(image, radius=5.0):
+            image = ImageOps.invert(image.convert("L"))
+            image = image.filter(ImageFilter.GaussianBlur(radius=int(radius)))
+            return image.convert("RGB")

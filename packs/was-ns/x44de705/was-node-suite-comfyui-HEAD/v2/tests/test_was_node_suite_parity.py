@@ -50,6 +50,17 @@ def make_fixtures():
         path.parent.mkdir(parents=True, exist_ok=True)
         save_file(tensors(seed), str(path), metadata=metadata)
 
+    # A checkpoint config (read only by the stubbed loader) and a synthetic x2 upscale model: a tiny spandrel Compact
+    # (RealESRGAN Compact) network with seeded random weights, which both sides load for real.
+    (FIXTURES / 'configs').mkdir(parents=True, exist_ok=True)
+    (FIXTURES / 'configs' / 'test-config.yaml').write_text('model:\n  target: fixture.only\n')
+    from spandrel.architectures.Compact import Compact
+    torch.manual_seed(5)
+    upscaler = Compact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2)
+    (FIXTURES / 'upscale_models').mkdir(parents=True, exist_ok=True)
+    save_file({key: value.contiguous() for key, value in upscaler.state_dict().items()},
+              str(FIXTURES / 'upscale_models' / 'test-upscale-x2.safetensors'))
+
 
 def text(node_id, value):
     return {node_id: {'class_type': 'AMYTestString', 'inputs': {'text': value}}}
@@ -442,6 +453,9 @@ CASES += [
                                                   kernel_size=3),
                                              probe(image=['11', 0])),
          expect='refused-named:scipy.signal.convolve2d from scipy'),
+    case('mask-fill-holes-needs-scipy', g(image(seed=17), mask_from(),
+                                          node('11', 'Mask Fill Holes', masks=['30', 1]), probe(files=['11', 0])),
+         expect='refused-named:scipy.ndimage.binary_fill_holes from scipy'),
     case('bounded-crop-and-blend', g(image(width=40, height=32, seed=11), mask_from(),
                                      node('11', 'Bounded Image Crop with Mask', image=['30', 0], mask=['30', 1],
                                           padding_left=2, padding_right=3, padding_top=1, padding_bottom=0),
@@ -479,6 +493,45 @@ CASES += [
                                node('11', 'Image Film Grain', image=['2', 0], density=0.3, intensity=0.5,
                                     highlights=1.1, supersample_factor=2),
                                probe(image=['11', 0]))),
+]
+
+# ---- phase B batch 4 (r5): model loaders and Random Number
+CASES += [
+    case('checkpoint-loader-simple', g(node('11', 'Checkpoint Loader (Simple)', ckpt_name='test-ckpt.safetensors'),
+                                       probe(model=['11', 0], clip=['11', 1], files=['11', 2], text=['11', 3]))),
+    case('checkpoint-loader-config', g(node('11', 'Checkpoint Loader', config_name='test-config.yaml',
+                                            ckpt_name='test-ckpt.safetensors'),
+                                       probe(model=['11', 0], clip=['11', 1], files=['11', 2], text=['11', 3]))),
+    case('checkpoint-loader-unknown-name', g(node('11', 'Checkpoint Loader (Simple)', ckpt_name='missing.safetensors'),
+                                             probe(text=['11', 3])), expect='validation'),
+    case('checkpoint-loader-unknown-config', g(node('11', 'Checkpoint Loader', config_name='missing.yaml',
+                                                    ckpt_name='test-ckpt.safetensors'),
+                                               probe(text=['11', 3])), expect='validation'),
+    case('upscale-model-loader', g(node('11', 'Upscale Model Loader', model_name='test-upscale-x2.safetensors'),
+                                   probe(files=['11', 0], text=['11', 1]))),
+    case('upscale-model-loader-unknown', g(node('11', 'Upscale Model Loader', model_name='missing.pth'),
+                                           probe(text=['11', 1])), expect='validation'),
+] + [
+    case(f'random-number-{kind}', g(node('11', 'Random Number', number_type=kind, minimum=low, maximum=high, seed=seed),
+                                    probe(**outs('11', **NUMBER_OUTS))), runs=2)
+    for kind, low, high, seed in (('integer', 1.4, 5.6, 7), ('float', -2.5, 3.25, 123456789), ('bool', 0.0, 1.0, 42))
+] + [
+    case(f'image-stitch-{side}', g(image(width=24, height=16, seed=14), test_image('5', width=20, height=12, seed=15),
+                                   node('11', 'Image Stitch', image_a=['2', 0], image_b=['5', 0], stitch=side,
+                                        feathering=feather),
+                                   probe(image=['11', 0])))
+    for side, feather in (('right', 6), ('left', 0), ('top', 4), ('bottom', 8))
+] + [
+    # feathering wider than the images: the original's own PIL error
+    case('image-stitch-feathering-too-wide-error', g(image(width=24, height=16, seed=14),
+                                                     test_image('5', width=20, height=12, seed=15),
+                                                     node('11', 'Image Stitch', image_a=['2', 0], image_b=['5', 0],
+                                                          stitch='bottom', feathering=50),
+                                                     probe(image=['11', 0])), expect='error'),
+] + [
+    case('mask-gaussian-region', g(image(seed=16), mask_from(),
+                                   node('11', 'Mask Gaussian Region', masks=['30', 1], radius=3.0),
+                                   probe(files=['11', 0]))),
 ]
 
 
@@ -587,6 +640,9 @@ def compare_case(spec, orig, conv, output_dir):
             return {'case': name, 'expect': expect, 'verdict': 'MISMATCH', 'errors': [errors_o, errors_c]}
         if not all(any('probe' in v or 'images' in v for v in ui.values()) for ui in ui_o):
             return {'case': name, 'expect': expect, 'verdict': 'MISMATCH', 'notes': ['nothing reached the probe']}
+        if orig.get('loader_calls') != conv.get('loader_calls'):
+            return {'case': name, 'expect': expect, 'verdict': 'MISMATCH',
+                    'loader_calls': [orig.get('loader_calls'), conv.get('loader_calls')]}
         if expect == 'known:lora-metadata':
             for ui in ui_c:
                 for value in ui.values():

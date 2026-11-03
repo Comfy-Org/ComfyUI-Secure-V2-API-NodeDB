@@ -46,7 +46,8 @@ for name, setter in (('output', folder_paths.set_output_directory), ('temp', fol
                      ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
     (OUT / name).mkdir(parents=True, exist_ok=True)
     setter(str(OUT / name))
-for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'})):
+for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'}), ('configs', {'.yaml'}),
+                  ('upscale_models', {'.safetensors', '.pth'})):
     folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 OUTPUT = OUT / 'output'
 CWD = OUT / 'cwd'
@@ -74,6 +75,11 @@ def _summary(value):
         return [_summary(item) for item in value]
     if isinstance(value, dict):
         return {str(k): _summary(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if hasattr(value, 'architecture') and hasattr(value, 'scale') and hasattr(value, 'model'):
+        state = value.model.state_dict()
+        digest = hashlib.sha256(b''.join(state[key].detach().contiguous().cpu().numpy().tobytes()
+                                         for key in sorted(state))).hexdigest()[:16]
+        return [type(value).__name__, str(getattr(value.architecture, 'name', value.architecture)), value.scale, digest]
     if hasattr(value, 'weights'):
         return [type(value).__name__, _summary(list(value.weights))]
     if isinstance(value, (int, float, str, bool, type(None))):
@@ -165,6 +171,29 @@ def _key_map_clip(cond_stage_model, key_map={}):
 
 comfy.lora.model_lora_keys_unet = _key_map_unet
 comfy.lora.model_lora_keys_clip = _key_map_clip
+
+# Checkpoint loading: both sides reach core's comfy.sd loaders (the original directly, V2 through the host's model
+# catalogue). The stand-ins record each call, with its path relative to the fixtures and any option it was given,
+# and return weightless MODEL/CLIP/VAE stand-ins.
+LOADER_CALLS = []
+
+
+def _guess_config(ckpt_path, output_vae=True, output_clip=True, **kwargs):
+    options = sorted(key for key, value in kwargs.items() if value and key != 'embedding_directory')
+    LOADER_CALLS.append(['load_checkpoint_guess_config', os.path.relpath(ckpt_path, FIXTURES), bool(output_vae),
+                         bool(output_clip), options])
+    return (StandinModel(), StandinCLIP(), object(), None)
+
+
+def _load_checkpoint(config_path=None, ckpt_path=None, output_vae=True, output_clip=True, **kwargs):
+    options = sorted(key for key, value in kwargs.items() if value and key != 'embedding_directory')
+    LOADER_CALLS.append(['load_checkpoint', os.path.relpath(config_path, FIXTURES), os.path.relpath(ckpt_path, FIXTURES),
+                         bool(output_vae), bool(output_clip), options])
+    return (StandinModel(), StandinCLIP(), object())
+
+
+comfy.sd.load_checkpoint_guess_config = _guess_config
+comfy.sd.load_checkpoint = _load_checkpoint
 
 
 def _standin(name, run, input_types, return_types, output_node=False):
@@ -364,6 +393,7 @@ def run_case(case):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode())
     result = {'name': case['name'], 'runs': []}
+    LOADER_CALLS.clear()
     for index in range(case.get('runs', 1)):
         prompt = json.loads(json.dumps(case['prompt']))
         prompt_id = f"{case['name']}-{index}"
@@ -389,6 +419,7 @@ def run_case(case):
         result['runs'].append({'success': bool(executor.success), 'errors': errors,
                                'ui': json.loads(json.dumps(history.get('outputs', {}), default=str))})
     result['files'] = collect()
+    result['loader_calls'] = [list(row) for row in LOADER_CALLS]
     return result
 
 
