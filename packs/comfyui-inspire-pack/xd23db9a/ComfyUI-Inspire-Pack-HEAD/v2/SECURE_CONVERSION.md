@@ -102,3 +102,11 @@ The original reads any folder on the host. Secure Nodes V2 reads only ComfyUI's 
 - In a real guest these errors arrive as the transport's error, with the host's type name in `remote_type`. The
   builtin `except` clauses therefore fired only in-process. They now match either form.
 - The guest test checks both paths through a real guest process.
+
+## Round 4 (one-image folders in a real guest)
+- With exactly one image, the original LoadImagesFromDir returns its `[H, W]` mask: `1 - alpha`, or
+  `zeros((64, 64))` without alpha.
+- A production guest publishes a values-mode MASK output only as `[B, H, W]` or `[B, 1, H, W]`, so the node failed
+  there. The mask now crosses as a VALUE (`sdk.ValueRef.from_value`), so the host stores exactly the original's
+  tensor.
+- The guest test checks one-image folders with and without alpha against the pristine function.

@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,112 @@
 +# Secure conversion report: ComfyUI-Inspire-Pack
 +
 +- Pinned commit: `d23db9aa544de9a6d4c609cb7005fa9e0d42031d` (version 1.23)
@@ -105,6 +105,14 @@
 +- In a real guest these errors arrive as the transport's error, with the host's type name in `remote_type`. The
 +  builtin `except` clauses therefore fired only in-process. They now match either form.
 +- The guest test checks both paths through a real guest process.
++
++## Round 4 (one-image folders in a real guest)
++- With exactly one image, the original LoadImagesFromDir returns its `[H, W]` mask: `1 - alpha`, or
++  `zeros((64, 64))` without alpha.
++- A production guest publishes a values-mode MASK output only as `[B, H, W]` or `[B, 1, H, W]`, so the node failed
++  there. The mask now crosses as a VALUE (`sdk.ValueRef.from_value`), so the host stores exactly the original's
++  tensor.
++- The guest test checks one-image folders with and without alpha against the pristine function.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -3,39 +3,18 @@
@@ -342,7 +350,7 @@
 +        return io.NodeOutput()
 --- /dev/null
 +++ b/v2/_sn_image.py
-@@ -0,0 +1,341 @@
+@@ -0,0 +1,343 @@
 +"""Secure Nodes V2 versions of three Inspire image nodes (pristine inspire/image_util.py, pin d23db9aa).
 +
 +The value-handling lines are the original's, in the original order. Only these change:
@@ -365,7 +373,7 @@
 +import torch
 +from PIL import Image, ImageOps
 +
-+from comfy_api.latest import io
++from comfy_api.latest import io, sdk
 +
 +from . import _sn_comfy_utils, _sn_dir
 +
@@ -531,7 +539,9 @@
 +            image_count += 1
 +
 +        if len(images) == 1:
-+            return io.NodeOutput(images[0], masks[0], 1)
++            # V2 (round 4): masks[0] is the original's [H, W] mask. A production guest publishes a MASK output only
++            # as [B, H, W] or [B, 1, H, W], so it crosses as a VALUE: the host stores exactly this tensor.
++            return io.NodeOutput(images[0], await sdk.ValueRef.from_value(masks[0]), 1)
 +
 +        elif len(images) > 1:
 +            image1 = images[0]
@@ -6830,7 +6840,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/test_comfyui-inspire-pack_guest.py
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,209 @@
 +"""Host proxy -> real guest, end to end, for comfyui-inspire-pack round 1 (gate).
 +
 +    DEPS=<opencv-python-headless unpacked> run_in_gate.sh <snapshot dir, or the pack folder> \
@@ -6976,6 +6986,23 @@
 +        record("guest/LoadImagesFromDir: only sub-folders, 4097 files below == the same with 1 file below",
 +               outcomes["deep_only_sub"] == outcomes["small_only_sub"]
 +               and "exceeds" not in outcomes["deep_only_sub"][1], {"v2": outcomes, "original": originals})
++        # Round 4: a one-image folder. The original returns its [H, W] mask (1 - alpha, or zeros((64, 64)) without
++        # alpha); a production guest publishes a MASK output only as [B, H, W] / [B, 1, H, W], so V2 hands the
++        # original's tensor over as a VALUE. Compared exactly with the pristine function, shapes included.
++        from PIL import Image as _Image
++        import numpy as _np
++        (H.INPUT / "single_rgb").mkdir(parents=True, exist_ok=True)
++        _Image.fromarray(_np.random.default_rng(41).integers(0, 256, (18, 26, 3), dtype=_np.uint8), "RGB").save(
++            H.INPUT / "single_rgb" / "only.png")
++        for node_id, directory in (("71", "single"), ("72", "single_rgb")):
++            want = H.run_pristine(P.LoadImagesFromDirBatch, directory=str(H.INPUT / directory))
++            try:
++                got = await H.run_v2(proxies["LoadImagesFromDir //Inspire"], node_id=node_id, directory=directory)
++                ok, detail = H.same(tuple(want), tuple(got))
++            except Exception as error:  # noqa: BLE001
++                ok, detail = False, f"{getattr(error, 'remote_type', None) or type(error).__name__}: {error}"
++            record(f"guest/LoadImagesFromDir one image ({directory}) == pristine, [H, W] mask included", ok,
++                   [detail, [tuple(v.shape) if hasattr(v, "shape") else v for v in want]])
 +        for label, node_inputs, needle in (
 +                ("Datetime sort", {"directory": "mixed", "sort_method": "Datetime (DESC)"},
 +                 "sort_method 'Datetime (DESC)' is not available in Secure Nodes V2 yet"),

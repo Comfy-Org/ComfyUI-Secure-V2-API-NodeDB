@@ -20,7 +20,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 
-from comfy_api.latest import io
+from comfy_api.latest import io, sdk
 
 from . import _sn_comfy_utils, _sn_dir
 
@@ -186,7 +186,9 @@ class LoadImagesFromDirBatch(io.ComfyNode):
             image_count += 1
 
         if len(images) == 1:
-            return io.NodeOutput(images[0], masks[0], 1)
+            # V2 (round 4): masks[0] is the original's [H, W] mask. A production guest publishes a MASK output only
+            # as [B, H, W] or [B, 1, H, W], so it crosses as a VALUE: the host stores exactly this tensor.
+            return io.NodeOutput(images[0], await sdk.ValueRef.from_value(masks[0]), 1)
 
         elif len(images) > 1:
             image1 = images[0]

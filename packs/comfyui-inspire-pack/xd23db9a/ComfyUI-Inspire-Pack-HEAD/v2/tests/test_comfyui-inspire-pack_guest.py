@@ -143,6 +143,23 @@ async def run() -> dict:
         record("guest/LoadImagesFromDir: only sub-folders, 4097 files below == the same with 1 file below",
                outcomes["deep_only_sub"] == outcomes["small_only_sub"]
                and "exceeds" not in outcomes["deep_only_sub"][1], {"v2": outcomes, "original": originals})
+        # Round 4: a one-image folder. The original returns its [H, W] mask (1 - alpha, or zeros((64, 64)) without
+        # alpha); a production guest publishes a MASK output only as [B, H, W] / [B, 1, H, W], so V2 hands the
+        # original's tensor over as a VALUE. Compared exactly with the pristine function, shapes included.
+        from PIL import Image as _Image
+        import numpy as _np
+        (H.INPUT / "single_rgb").mkdir(parents=True, exist_ok=True)
+        _Image.fromarray(_np.random.default_rng(41).integers(0, 256, (18, 26, 3), dtype=_np.uint8), "RGB").save(
+            H.INPUT / "single_rgb" / "only.png")
+        for node_id, directory in (("71", "single"), ("72", "single_rgb")):
+            want = H.run_pristine(P.LoadImagesFromDirBatch, directory=str(H.INPUT / directory))
+            try:
+                got = await H.run_v2(proxies["LoadImagesFromDir //Inspire"], node_id=node_id, directory=directory)
+                ok, detail = H.same(tuple(want), tuple(got))
+            except Exception as error:  # noqa: BLE001
+                ok, detail = False, f"{getattr(error, 'remote_type', None) or type(error).__name__}: {error}"
+            record(f"guest/LoadImagesFromDir one image ({directory}) == pristine, [H, W] mask included", ok,
+                   [detail, [tuple(v.shape) if hasattr(v, "shape") else v for v in want]])
         for label, node_inputs, needle in (
                 ("Datetime sort", {"directory": "mixed", "sort_method": "Datetime (DESC)"},
                  "sort_method 'Datetime (DESC)' is not available in Secure Nodes V2 yet"),
