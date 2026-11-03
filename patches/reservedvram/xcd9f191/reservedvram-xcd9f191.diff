@@ -1,0 +1,1168 @@
+--- /dev/null
++++ b/v2/SECURE_CONVERSION.md
+@@ -0,0 +1,69 @@
++# Secure conversion report: comfyui-reservedvram
++
++- Upstream: `https://github.com/windecay/comfyui-reservedvram`
++- Pinned commit: `cd9f1911d960e3d31b3908867c638a19e5d42af3`
++- Status: **converted 1 of 1 declared nodes** (`ReservedVRAMSetter`), 0 refused
++- Frontend: none. Routes: none.
++- SDK: target base 0cd9adec (comfy_api 0.37.0). It uses `io.ComfyNode`, `io.Schema`, `io.Float`, `io.Combo`, `io.Int`,
++  `io.Boolean`, `io.AnyType`, `io.Hidden`, `io.NodeOutput`, `sdk.ctx().models.memory_cleanup`,
++  `sdk.ctx().system.stats` and `sdk.ctx().graph.block`.
++- Permissions: `models.manage` (memory cleanup), `system.stats` (GPU memory reading), `graph.block` (the blocker
++  returned when nothing is connected).
++
++## The node
++
++`ReservedVRAMSetter` ("Set Reserved VRAM(GB) ⚙️") is an output node. In the original (pristine `nodes.py`) it:
++1. optionally frees GPU memory: `gc.collect()`, `unload_all_models()`, `soft_empty_cache()`;
++2. computes a reservation: the manual value, or in `auto` mode the GPU's used memory plus the offset, capped by
++   `auto_max_reserved`;
++3. sets ComfyUI's `EXTRA_RESERVED_VRAM` to it;
++4. returns its optional input, the seed and the computed value. With nothing connected, the first output is
++   ComfyUI's `ExecutionBlocker(None)`.
++
++V2 keeps steps 1, 2 and 4 exactly, in the original's order, with the original's console messages:
++- **Cleanup.** The three operations run on the host through `models.memory_cleanup`, one call per operation, so the
++  order is collect, unload, empty cache, as in the original.
++- **GPU memory.** The original reads GPU 0 through NVML, or else `torch.cuda.mem_get_info`. V2 reads the host's
++  primary device through `system.stats` and computes `used = total - (free - torch_free)`. Core's free memory is
++  `mem_get_info` free plus torch's reserved-but-inactive bytes, so this is exactly `mem_get_info`'s `total - free`.
++  A primary device that is not CUDA gives no reading, and both versions fall back to the manual value.
++- **Outputs.** The passthrough value comes back unchanged; host handles are the same object. The blocker comes from
++  `graph.block(None)`.
++- **Fingerprint.** The original's `IS_CHANGED` becomes `fingerprint_inputs`. Seed -1 draws a new seed from the node's
++  own time-seeded random state, leaving the global random state untouched; any other seed is returned as it is.
++
++## Parity (tier 1, CPU gate)
++
++`tests/test_reservedvram_parity.py` runs the original and v2 side by side over 6,480 cases:
++- device: CPU, and two fake CUDA devices fed to both sides with the same physical numbers (the original through
++  `torch.cuda.mem_get_info` and through a fake NVML);
++- mode, reserved (-2 to 7), auto_max_reserved, clean_gpu_before, seed (0, 7, -1);
++- passthrough values: none, int, str, image, latent, opaque object.
++It compares:
++- the outputs (identity or blocker; seed; the reserved value's type and float bits);
++- the recorded host operations (the same `comfy.model_management` / `gc` functions on both sides);
++- the console output;
++- that v2's reported request equals the bytes the original assigned to `EXTRA_RESERVED_VRAM`, while v2 leaves it
++  untouched;
++- `IS_CHANGED` vs `fingerprint_inputs`, and the global random state;
++- every declared input option, the outputs, output-node flag, category and display name.
++Two negative controls (a perturbed reserved value and a perturbed fingerprint) must turn red.
++
++Result: PASS, 51,867 checks, 0 failed, both controls red.
++
++## Dependencies
++
++Guest: none. `pyproject.toml` declares `dependencies = []`; the original's `nvidia-ml-py` is not needed, because GPU
++memory comes from the host. `requirements.txt` is the pristine file, unchanged.
++
++## Known differences
++
++1. **The host's reserved VRAM is not changed.** A sandboxed pack cannot change the host's memory policy, and the SDK
++   has no verb for it. V2 computes and returns the same value and prints the original's message, plus one line
++   saying the host setting was not changed. Workflow outputs are unaffected; only the host's VRAM headroom differs.
++   API ask: a permissioned `models.set_extra_reserved_vram(gb)`.
++2. **The memory reading in auto mode** comes from the host's CUDA numbers (`mem_get_info`), the original's fallback.
++   The original prefers NVML when it is installed; its device-wide "used" can differ slightly from CUDA's. In both
++   versions the value is a live reading and changes from run to run.
++3. **One extra console line** (known difference 1).
++4. **Hidden inputs:** V3 adds the PROMPT hidden input to every output node.
+--- a/__init__.py
++++ b/v2/__init__.py
+@@ -1,3 +1,9 @@
++"""Secure Nodes V2 entrypoint for comfyui-reservedvram (pin cd9f1911).
++
++The node lives in nodes.py. The original imports comfy.model_management and tries pynvml at import time (pristine
++nodes.py:1-22); neither is available to a sandboxed pack, so v2 uses the public SDK instead. See SECURE_CONVERSION.md.
++"""
++
+ from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+ 
+-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+\ No newline at end of file
++__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+--- a/nodes.py
++++ b/v2/nodes.py
+@@ -1,204 +1,160 @@
+-from typing import Any as any_type
+-from comfy import model_management
+-import random
+-import time
+-import gc
+-# 尝试导入 pynvml；在部分 AMD/Intel 环境里，导入阶段本身就可能因为缺少 NVML DLL 直接抛异常。
+-try:
+-    import pynvml
+-except Exception as e:
+-    pynvml_installed = False
+-    pynvml = None
+-    print("[ReservedVRAM]警告：pynvml不可用，auto选项将不可用。")
+-    print(f"[ReservedVRAM]pynvml导入失败: {e}")
+-else:
+-    try:
+-        pynvml.nvmlInit()
+-        pynvml_installed = True
+-    except Exception as e:
+-        pynvml_installed = False
+-        pynvml = None
+-        print("[ReservedVRAM]警告：pynvml可导入但NVML初始化失败，auto选项将不可用。")
+-        print(f"[ReservedVRAM]NVML初始化失败: {e}")
+-
+-# 初始化随机状态
+-initial_random_state = random.getstate()
+-random.seed(time.time())
+-reserved_vram_random_state = random.getstate()
+-random.setstate(initial_random_state)
+-
+-def get_gpu_memory_info():
+-    """获取GPU显存信息"""
+-    if pynvml_installed and pynvml is not None:
+-        try:
+-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+-            memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+-            total = memory_info.total / (1024 * 1024 * 1024)
+-            used = memory_info.used / (1024 * 1024 * 1024)
+-            return total, used
+-        except Exception as e:
+-            print(f"[ReservedVRAM]获取GPU信息出错(NVML): {e}")
+-
+-    try:
+-        import torch
+-
+-        if (
+-            hasattr(torch, "cuda")
+-            and torch.cuda.is_available()
+-            and hasattr(torch.cuda, "mem_get_info")
+-        ):
+-            free, total = torch.cuda.mem_get_info()
+-            total_gb = total / (1024 * 1024 * 1024)
+-            used_gb = (total - free) / (1024 * 1024 * 1024)
+-            return total_gb, used_gb
+-    except Exception as e:
+-        print(f"[ReservedVRAM]获取GPU信息出错(torch): {e}")
+-
+-    return None, None
+-
+-def set_reserved_vram(reserved_gb):
+-    reserved_gb = max(0.0, float(reserved_gb))
+-    reserved_vram = int(reserved_gb * 1024 * 1024 * 1024)
+-    if hasattr(model_management, "set_extra_reserved_vram"):
+-        model_management.set_extra_reserved_vram(reserved_gb)
+-        reserved_vram = model_management.EXTRA_RESERVED_VRAM
+-    else:
+-        model_management.EXTRA_RESERVED_VRAM = reserved_vram
+-    sync_dynamic_vram_headroom(reserved_vram)
+-
+-def sync_dynamic_vram_headroom(reserved_vram):
+-    try:
+-        import comfy.memory_management as memory_management
+-
+-        if not getattr(memory_management, "aimdo_enabled", False):
+-            return
+-
+-        import comfy_aimdo.control as aimdo_control
+-
+-        if getattr(aimdo_control, "lib", None) is None:
+-            return
+-
+-        # Re-running init() can reset unrelated settings such as NVML pressure.
+-        setter = getattr(aimdo_control.lib, "set_simple_vram_headroom", None)
+-        if setter is not None:
+-            setter(int(reserved_vram))
+-    except Exception as e:
+-        print(f"[ReservedVRAM]同步DynamicVRAM预留显存失败: {e}")
+-
+-def new_random_seed():
+-    """生成一个新的随机种子"""
+-    global reserved_vram_random_state
+-    prev_random_state = random.getstate()
+-    random.setstate(reserved_vram_random_state)
+-    seed = random.randint(1, 1125899906842624)
+-    reserved_vram_random_state = random.getstate()
+-    random.setstate(prev_random_state)
+-    return seed
+-
+-class AlwaysEqualProxy(str):
+-    def __eq__(self, _):
+-        return True
+-
+-    def __ne__(self, _):
+-        return False
+-any_type = AlwaysEqualProxy("*")
+-
+-class ReservedVRAMSetter:
+-    @classmethod
+-    def INPUT_TYPES(s):
+-        return {
+-            "required": {
+-                "reserved": ("FLOAT", {
+-                    "default": 0.6,
+-                    "min": -2.0,
+-                    "step": 0.1,
+-                    "display": "reserved (GB)"
+-                }),
+-                "mode": (["manual", "auto"], {
+-                    "default": "auto",
+-                    "display": "Mode"
+-                }),
+-                "seed": ("INT", {
+-                    "default": 0,
+-                    "min": -1,
+-                    "max": 1125899906842624
+-                }),
+-                "auto_max_reserved": ("FLOAT", {
+-                    "default": 0.0,
+-                    "min": 0.0,
+-                    "step": 0.1,
+-                    "display": "Auto Max Reserved (GB, 0=no limit)"
+-                }),
+-                "clean_gpu_before": ("BOOLEAN", {"default": True}),
+-            },
+-            "optional": {
+-                "anything": (any_type, {})
+-            },
+-            "hidden": {"unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO"}
+-        }
+-
+-
+-    RETURN_TYPES = (any_type, "INT", "FLOAT")
+-    RETURN_NAMES = ("output", "SEED", "Reserved(GB)")
+-    OUTPUT_NODE = True
+-    FUNCTION = "set_vram"
+-    CATEGORY = "VRAM"
+-
+-    @classmethod
+-    def IS_CHANGED(cls, seed=0, **kwargs):
+-        """当使用特殊种子值时强制更新"""
+-        if seed == -1:
+-            return new_random_seed()
+-        return seed
+-    def cleanGPUUsedForce(self):
+-        """强制清理GPU显存"""
+-        gc.collect()
+-        model_management.unload_all_models()
+-        model_management.soft_empty_cache()
+-
+-    def set_vram(self, reserved, mode="auto", seed=0, auto_max_reserved=0.0, clean_gpu_before=True, anything=None, unique_id=None, extra_pnginfo=None):
+-        # 如果启用了前置清理显存，则执行清理操作
+-        if clean_gpu_before:
+-            print("[ReservedVRAM]执行前置GPU显存清理...")
+-            self.cleanGPUUsedForce()
+-            print("[ReservedVRAM]GPU显存清理完成")
+-
+-        final_reserved_vram = 0.0
+-
+-        if mode == "auto":
+-            total, used = get_gpu_memory_info()
+-            if total is not None and used is not None:
+-                # 自动计算预留显存
+-                auto_reserved = used + reserved
+-                auto_reserved = max(0, auto_reserved)
+-                # 如果设置了最大预留值且大于0，则应用限制
+-                if auto_max_reserved > 0:
+-                    auto_reserved = min(auto_reserved, auto_max_reserved)
+-                    print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={auto_reserved:.2f}GB (自动模式: 总显存={total:.2f}GB, 已用={used:.2f}GB, 最大限制值{auto_max_reserved:.2f}GB)')
+-                else:
+-                    print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={auto_reserved:.2f}GB (自动模式: 总显存={total:.2f}GB, 已用={used:.2f}GB)')
+-                set_reserved_vram(auto_reserved)
+-                final_reserved_vram = round(auto_reserved, 2)
+-            else:
+-                manual_reserved = max(0, reserved)
+-                set_reserved_vram(manual_reserved)
+-                print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={manual_reserved}GB (自动模式不可用，使用手动值)')
+-                final_reserved_vram = round(manual_reserved, 2)
+-        else:
+-            # 手动模式
+-            reserved = max(0, reserved)
+-            set_reserved_vram(reserved)
+-            print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={reserved}GB (手动模式)，忽略最大限制值')
+-            final_reserved_vram = round(reserved, 2)
+-
+-        from comfy_execution.graph import ExecutionBlocker
+-        output_value = anything if anything is not None else ExecutionBlocker(None)
+-
+-        return (output_value, seed, final_reserved_vram)
+-
++"""Secure Nodes V2 conversion of comfyui-reservedvram (windecay, pin cd9f1911).
++
++One output node, ReservedVRAMSetter ("Set Reserved VRAM(GB) ⚙️"). The original (pristine nodes.py) optionally frees GPU
++memory, then sets ComfyUI's extra reserved VRAM to a manual value or, in auto mode, to the GPU's used memory plus an
++offset. It returns its optional input, the seed and the value it set.
++
++V2, in the same order as the original's set_vram:
++  * clean_gpu_before: the original's gc.collect(), unload_all_models() and soft_empty_cache() (pristine :155-159) run on
++    the host through the public SDK verb models.memory_cleanup, one call per operation so the order is kept
++    (permission models.manage).
++  * auto mode: the original reads GPU 0's total and used memory through NVML, else through torch.cuda.mem_get_info
++    (pristine :31-57). V2 reads the host's primary device through system.stats (permission system.stats). It computes
++    used = total - (free - torch_free), which is exactly mem_get_info's (total - free): Core reports
++    free = mem_get_info free + torch's reserved-but-inactive bytes. A primary device that is not CUDA gives
++    (None, None), as in the original without a GPU.
++  * The reservation itself (pristine :59-67, model_management.set_extra_reserved_vram / EXTRA_RESERVED_VRAM): a
++    sandboxed pack cannot change the host's memory policy, and the SDK has no verb for it. V2 computes and returns the
++    same value and prints the original's message, then says the host setting was not changed (SECURE_CONVERSION.md,
++    known difference 1; API ask).
++  * output: the optional input comes back unchanged (host handles as the same object). With nothing connected, the
++    original returns ComfyUI's ExecutionBlocker(None) (pristine :198-199), which V2 gets from graph.block (permission
++    graph.block).
++  * IS_CHANGED becomes fingerprint_inputs. Seed -1 draws a new seed from the pack's own time-seeded random state,
++    leaving the global random state untouched, as the original does (pristine :24-28, :88-96, :143-148). Any other
++    seed is returned as it is.
++"""
++
++import random
++import time
++
++from comfy_api.latest import io, sdk
++
++_GIB = 1024 * 1024 * 1024
++
++# pristine :24-28: a private random state seeded from the clock, without disturbing the global one
++_initial_random_state = random.getstate()
++random.seed(time.time())
++_reserved_vram_random_state = random.getstate()
++random.setstate(_initial_random_state)
++
++
++def new_random_seed():
++    """pristine :88-96"""
++    global _reserved_vram_random_state
++    prev_random_state = random.getstate()
++    random.setstate(_reserved_vram_random_state)
++    seed = random.randint(1, 1125899906842624)
++    _reserved_vram_random_state = random.getstate()
++    random.setstate(prev_random_state)
++    return seed
++
++
++async def get_gpu_memory_info():
++    """The host's primary device as (total GB, used GB), or (None, None) when it is not a CUDA device."""
++    try:
++        stats = await sdk.ctx().system.stats()
++        devices = stats.get("devices") or []
++        if devices and devices[0].get("type") == "cuda":
++            device = devices[0]
++            total = int(device["vram_total"])
++            free = int(device["vram_free"]) - int(device["torch_vram_free"])
++            return total / _GIB, (total - free) / _GIB
++    except Exception as e:  # the original prints and falls back (pristine :55-56)
++        print(f"[ReservedVRAM]获取GPU信息出错(torch): {e}")
++    return None, None
++
++
++def _host_setting_unchanged(reserved_gb):
++    print(f"[ReservedVRAM]Secure Nodes V2: the host's reserved VRAM is not changed by this node "
++          f"(requested {max(0.0, float(reserved_gb))}GB); see SECURE_CONVERSION.md")
++
++
++class ReservedVRAMSetter(io.ComfyNode):
++    # The passthrough value travels as a host handle, so it comes back as the same object.
++    SDK_REFS = True
++    SDK_PERMISSIONS = ("models.manage", "system.stats", "graph.block")
++
++    @classmethod
++    def define_schema(cls):
++        # pristine :105-134; the original's "display" option strings are kept verbatim for the frontend
++        return io.Schema(
++            node_id="ReservedVRAMSetter",
++            display_name="Set Reserved VRAM(GB) ⚙️",
++            category="VRAM",
++            inputs=[
++                io.Float.Input("reserved", default=0.6, min=-2.0, step=0.1,
++                               extra_dict={"display": "reserved (GB)"}),
++                io.Combo.Input("mode", options=["manual", "auto"], default="auto",
++                               extra_dict={"display": "Mode"}),
++                io.Int.Input("seed", default=0, min=-1, max=1125899906842624),
++                io.Float.Input("auto_max_reserved", default=0.0, min=0.0, step=0.1,
++                               extra_dict={"display": "Auto Max Reserved (GB, 0=no limit)"}),
++                io.Boolean.Input("clean_gpu_before", default=True),
++                io.AnyType.Input("anything", optional=True),
++            ],
++            outputs=[
++                io.AnyType.Output("output", display_name="output"),
++                io.Int.Output("SEED", display_name="SEED"),
++                io.Float.Output("Reserved_GB", display_name="Reserved(GB)"),
++            ],
++            hidden=[io.Hidden.unique_id, io.Hidden.extra_pnginfo],
++            is_output_node=True,
++        )
++
++    @classmethod
++    def fingerprint_inputs(cls, seed=0, **kwargs):
++        # pristine :143-148
++        if seed == -1:
++            return new_random_seed()
++        return seed
++
++    @classmethod
++    async def execute(cls, reserved, mode="auto", seed=0, auto_max_reserved=0.0, clean_gpu_before=True,
++                      anything=None):
++        # pristine :160-201, line for line; only the host operations go through the SDK
++        if clean_gpu_before:
++            print("[ReservedVRAM]执行前置GPU显存清理...")
++            models = sdk.ctx().models
++            # cleanGPUUsedForce (pristine :155-159): gc.collect(), unload_all_models(), soft_empty_cache()
++            await models.memory_cleanup(empty_cache=False, collect_cycles=True, unload_all_models=False)
++            await models.memory_cleanup(empty_cache=False, collect_cycles=False, unload_all_models=True)
++            await models.memory_cleanup(empty_cache=True, collect_cycles=False, unload_all_models=False)
++            print("[ReservedVRAM]GPU显存清理完成")
++
++        final_reserved_vram = 0.0
++
++        if mode == "auto":
++            total, used = await get_gpu_memory_info()
++            if total is not None and used is not None:
++                auto_reserved = used + reserved
++                auto_reserved = max(0, auto_reserved)
++                if auto_max_reserved > 0:
++                    auto_reserved = min(auto_reserved, auto_max_reserved)
++                    print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={auto_reserved:.2f}GB (自动模式: 总显存={total:.2f}GB, 已用={used:.2f}GB, 最大限制值{auto_max_reserved:.2f}GB)')
++                else:
++                    print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={auto_reserved:.2f}GB (自动模式: 总显存={total:.2f}GB, 已用={used:.2f}GB)')
++                _host_setting_unchanged(auto_reserved)
++                final_reserved_vram = round(auto_reserved, 2)
++            else:
++                manual_reserved = max(0, reserved)
++                _host_setting_unchanged(manual_reserved)
++                print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={manual_reserved}GB (自动模式不可用，使用手动值)')
++                final_reserved_vram = round(manual_reserved, 2)
++        else:
++            reserved = max(0, reserved)
++            _host_setting_unchanged(reserved)
++            print(f'[ReservedVRAM]set EXTRA_RESERVED_VRAM={reserved}GB (手动模式)，忽略最大限制值')
++            final_reserved_vram = round(reserved, 2)
++
++        output_value = anything if anything is not None else await sdk.ctx().graph.block(None)
++
++        return io.NodeOutput(output_value, seed, final_reserved_vram)
++
++
+ NODE_CLASS_MAPPINGS = {
+-    "ReservedVRAMSetter": ReservedVRAMSetter
+-}
++    "ReservedVRAMSetter": ReservedVRAMSetter,
++}
+ NODE_DISPLAY_NAME_MAPPINGS = {
+-    "ReservedVRAMSetter": "Set Reserved VRAM(GB) ⚙️"
+-}
++    "ReservedVRAMSetter": "Set Reserved VRAM(GB) ⚙️",
++}
+--- a/pyproject.toml
++++ b/v2/pyproject.toml
+@@ -2,25 +2,11 @@
+ name = "reservedvram"
+ description = "A simple node that can dynamically adjust the reserved memory of a workflow in real-time."
+ version = "1.0.0"
+-license = {file = "LICENSE"} 
+-# classifiers = [
+-#     # For OS-independent nodes (works on all operating systems)
+-#     "Operating System :: OS Independent",
+-#
+-#     # OR for OS-specific nodes, specify the supported systems:
+-#     "Operating System :: Microsoft :: Windows",  # Windows specific
+-#     "Operating System :: POSIX :: Linux",  # Linux specific
+-#     "Operating System :: MacOS",  # macOS specific
+-#
+-#     # GPU Accelerator support. Pick the ones that are supported by your extension.
+-#     "Environment :: GPU :: NVIDIA CUDA",    # NVIDIA CUDA support
+-#     "Environment :: GPU :: AMD ROCm",       # AMD ROCm support
+-#     "Environment :: GPU :: Intel Arc",      # Intel Arc support
+-#     "Environment :: NPU :: Huawei Ascend",  # Huawei Ascend support
+-#     "Environment :: GPU :: Apple Metal",    # Apple Metal support
+-# ]
+-
+-dependencies = ["nvidia-ml-py"]
++license = {file = "LICENSE"}
++requires-python = ">=3.13,<3.14"
++# The guest needs no third-party package: GPU memory is read from the host through the SDK (system.stats), so the
++# original's nvidia-ml-py is not used. See SECURE_CONVERSION.md.
++dependencies = []
+ 
+ [project.urls]
+ Repository = "https://github.com/Windecay/ComfyUI-ReservedVRAM"
+@@ -32,6 +18,4 @@
+ PublisherId = "windecay"
+ DisplayName = "ComfyUI-ReservedVRAM"
+ Icon = ""
+-includes = [] 
+-# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
+-
++includes = []
+--- /dev/null
++++ b/v2/secure-nodes.json
+@@ -0,0 +1,225 @@
++{
++  "format": "comfy-secure-nodes-v1",
++  "nodes": {
++    "ReservedVRAMSetter": {
++      "class": "ReservedVRAMSetter",
++      "methods": {
++        "check_lazy_status": false,
++        "fingerprint_inputs": true,
++        "validate_inputs": false
++      },
++      "module": "nodes",
++      "permissions": [
++        "models.manage",
++        "system.stats",
++        "graph.block"
++      ],
++      "schema": {
++        "attrs": {
++          "accept_all_inputs": false,
++          "category": "VRAM",
++          "description": "",
++          "display_name": "Set Reserved VRAM(GB) \u2699\ufe0f",
++          "enable_expand": false,
++          "essentials_category": null,
++          "has_intermediate_output": false,
++          "is_api_node": false,
++          "is_deprecated": false,
++          "is_dev_only": false,
++          "is_experimental": false,
++          "is_input_list": false,
++          "is_output_node": true,
++          "loop_boundary": null,
++          "node_id": "ReservedVRAMSetter",
++          "not_idempotent": false,
++          "price_badge": null,
++          "search_aliases": []
++        },
++        "hidden": [
++          "unique_id",
++          "extra_pnginfo",
++          "prompt"
++        ],
++        "inputs": [
++          {
++            "attrs": {
++              "advanced": null,
++              "default": 0.6,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {
++                "display": "reserved (GB)"
++              },
++              "force_input": null,
++              "gradient_stops": null,
++              "id": "reserved",
++              "lazy": null,
++              "max": null,
++              "min": -2.0,
++              "optional": false,
++              "rawLink": null,
++              "round": null,
++              "socketless": null,
++              "step": 0.1,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "FLOAT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": "auto",
++              "display_name": null,
++              "extra_dict": {
++                "display": "Mode"
++              },
++              "force_input": null,
++              "id": "mode",
++              "image_folder": null,
++              "lazy": null,
++              "multiselect": false,
++              "optional": false,
++              "options": [
++                "manual",
++                "auto"
++              ],
++              "rawLink": null,
++              "remote": null,
++              "socketless": null,
++              "tooltip": null,
++              "upload": null,
++              "widget_type": null
++            },
++            "io_type": "COMBO",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "control_after_generate": null,
++              "default": 0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "seed",
++              "lazy": null,
++              "max": 1125899906842624,
++              "min": -1,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "step": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": 0.0,
++              "display_mode": null,
++              "display_name": null,
++              "extra_dict": {
++                "display": "Auto Max Reserved (GB, 0=no limit)"
++              },
++              "force_input": null,
++              "gradient_stops": null,
++              "id": "auto_max_reserved",
++              "lazy": null,
++              "max": null,
++              "min": 0.0,
++              "optional": false,
++              "rawLink": null,
++              "round": null,
++              "socketless": null,
++              "step": 0.1,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "FLOAT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "default": true,
++              "display_name": null,
++              "extra_dict": {},
++              "force_input": null,
++              "id": "clean_gpu_before",
++              "label_off": null,
++              "label_on": null,
++              "lazy": null,
++              "optional": false,
++              "rawLink": null,
++              "socketless": null,
++              "tooltip": null,
++              "widget_type": null
++            },
++            "io_type": "BOOLEAN",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "advanced": null,
++              "display_name": null,
++              "extra_dict": {},
++              "id": "anything",
++              "lazy": null,
++              "optional": true,
++              "rawLink": null,
++              "tooltip": null
++            },
++            "io_type": "*",
++            "kind": "standard"
++          }
++        ],
++        "outputs": [
++          {
++            "attrs": {
++              "display_name": "output",
++              "id": "output",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "*",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "SEED",
++              "id": "SEED",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "INT",
++            "kind": "standard"
++          },
++          {
++            "attrs": {
++              "display_name": "Reserved(GB)",
++              "id": "Reserved_GB",
++              "is_output_list": false,
++              "tooltip": null
++            },
++            "io_type": "FLOAT",
++            "kind": "standard"
++          }
++        ]
++      },
++      "sdk_refs": true
++    }
++  },
++  "runtime": {
++    "python": {
++      "requires": ">=3.13,<3.14",
++      "resolved": "3.13"
++    }
++  }
++}
+--- /dev/null
++++ b/v2/tests/encode_manifest.py
+@@ -0,0 +1,88 @@
++"""Regenerate v2/secure-nodes.json with the real encoder, inside the gate.
++
++    run_in_gate.sh <snapshot dir holding comfyui-reservedvram-HEAD> \
++        <.../v2/tests> <results dir> encode_manifest.py
++
++Writes /results/secure-nodes.json. Rows come only from
++comfy_secure_nodes.packmanifest (encode_schema, encode_validation_inputs,
++encode_required_weights) and packruntime.manifest_declaration.
++Serialization: json.dumps(indent=2, sort_keys=True) + "\\n".
++"""
++
++import copy
++import importlib.util
++import json
++import sys
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay"]
++
++from comfy_api.latest import io  # noqa: E402
++from comfy_secure_nodes.packmanifest import (  # noqa: E402
++    FORMAT,
++    encode_required_weights,
++    encode_schema,
++    encode_validation_inputs,
++)
++from comfy_secure_nodes.packruntime import manifest_declaration  # noqa: E402
++
++METHODS = ("check_lazy_status", "fingerprint_inputs", "validate_inputs")
++
++
++def pack_head(root: Path = Path("/pack")) -> Path:
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir())
++             if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++def load_package(name: str, folder: Path):
++    spec = importlib.util.spec_from_file_location(
++        name, folder / "__init__.py", submodule_search_locations=[str(folder)])
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def overrides(cls, name: str) -> bool:
++    return getattr(cls, name).__func__ is not getattr(io.ComfyNode, name).__func__
++
++
++def build_manifest(v2: Path, package_name: str = "reservedvram_v2_manifest") -> dict:
++    package = load_package(package_name, v2)
++    nodes = {}
++    for node_id, cls in package.NODE_CLASS_MAPPINGS.items():
++        prefix = package.__name__ + "."
++        if not cls.__module__.startswith(prefix):
++            raise SystemExit(f"{node_id}: class defined outside v2: {cls.__module__}")
++        methods = {name: overrides(cls, name) for name in METHODS}
++        row = {
++            "class": cls.__name__,
++            "methods": methods,
++            "module": cls.__module__[len(prefix):],
++            "permissions": list(cls.SDK_PERMISSIONS),
++            "schema": encode_schema(copy.deepcopy(cls.GET_SCHEMA())),
++            "sdk_refs": cls.SDK_REFS is True,
++        }
++        if methods["validate_inputs"]:
++            row["validation_inputs"] = encode_validation_inputs(cls)
++        weights = encode_required_weights(cls)
++        if weights:
++            row["required_weights"] = weights
++        nodes[node_id] = row
++    return {"format": FORMAT, "nodes": nodes, "runtime": manifest_declaration(v2)}
++
++
++def serialize(manifest: dict) -> str:
++    return json.dumps(manifest, indent=2, sort_keys=True) + "\n"
++
++
++if __name__ == "__main__":
++    v2 = pack_head() / "v2"
++    text = serialize(build_manifest(v2))
++    Path("/results/secure-nodes.json").write_text(text)
++    print(f"wrote /results/secure-nodes.json ({len(text)} bytes)")
+--- /dev/null
++++ b/v2/tests/test_reservedvram_parity.py
+@@ -0,0 +1,354 @@
++"""Tier-1 parity for reservedvram: the original and v2 side by side in the gate container.
++
++    run_in_gate.sh <pack root (pristine + v2/) or a snapshot dir holding it> <.../v2/tests> <results dir> \
++        test_reservedvram_parity.py
++
++Writes /results/parity.json and exits 1 on any failed check. ReservedVRAMSetter is a passthrough output node that
++frees GPU memory and sets the host's reserved VRAM, so parity covers:
++  * the outputs: the passthrough object (the very same object in-process; ExecutionBlocker(None) when nothing is
++    connected), the seed, and the reserved value (type and float bits);
++  * the host memory operations, recorded on the same comfy.model_management / gc functions on both sides. The
++    original's EXTRA_RESERVED_VRAM assignment is recorded too: v2 cannot make it (known difference 1), but the value v2
++    reports as requested must equal what the original set;
++  * GPU memory readings: a CPU device (no GPU: both fall back to the manual value) and a fake CUDA device that feeds
++    the same physical numbers to both sides. For the original this goes through torch.cuda.mem_get_info, and also
++    through a fake NVML that reports used = total - free. For v2 it goes through Core's get_total_memory /
++    get_free_memory behind the SDK's system.stats;
++  * the console output, apart from v2's one extra line saying the host setting was not changed;
++  * IS_CHANGED vs fingerprint_inputs, and that neither touches the global random state;
++  * the node interface: INPUT_TYPES, RETURN_TYPES/NAMES, OUTPUT_NODE, CATEGORY and display name.
++Two negative controls (a perturbed reserved value and a perturbed fingerprint) must turn red.
++"""
++import asyncio
++import contextlib
++import gc
++import importlib.util
++import io as _stdio
++import json
++import random
++import sys
++import types
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay"]
++from comfy.cli_args import args as _cli_args  # noqa: E402
++
++_cli_args.cpu = True
++
++import torch  # noqa: E402
++import comfy.model_management as mm  # noqa: E402
++from comfy_execution.graph_utils import ExecutionBlocker  # noqa: E402
++from comfy_api.latest import sdk, _sdk  # noqa: E402  (tests only)
++
++
++def pack_root(root=Path("/pack")):
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++PACK = pack_root()
++V2 = PACK / "v2"
++RESULTS = Path("/results")
++
++
++def load(name, folder):
++    spec = importlib.util.spec_from_file_location(name, folder / "__init__.py",
++                                                  submodule_search_locations=[str(folder)])
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++ORIGINAL = load("rv_original", PACK)
++ORIGINAL_NODES = sys.modules["rv_original.nodes"]
++CONVERTED = load("rv_v2", V2)
++NODE = "ReservedVRAMSetter"
++V2_NOTE = "[ReservedVRAM]Secure Nodes V2: the host's reserved VRAM is not changed"
++
++LOG = []
++GIB = 1024 * 1024 * 1024
++
++
++@contextlib.contextmanager
++def recording():
++    saved = (mm.unload_all_models, mm.soft_empty_cache, gc.collect, mm.EXTRA_RESERVED_VRAM)
++    mm.unload_all_models = lambda *a, **k: LOG.append("unload_all_models")
++    mm.soft_empty_cache = lambda *a, **k: LOG.append("soft_empty_cache")
++
++    def _collect(*a, **k):
++        LOG.append("gc.collect")
++        return 0
++    gc.collect = _collect
++    mm.EXTRA_RESERVED_VRAM = -12345  # sentinel: shows whether a run assigned it
++    LOG.clear()
++    try:
++        yield LOG
++    finally:
++        mm.unload_all_models, mm.soft_empty_cache, gc.collect, mm.EXTRA_RESERVED_VRAM = saved
++
++
++# A device as both sides see it: total, the CUDA driver's free bytes, and torch's reserved-but-inactive bytes.
++DEVICES = {
++    "cpu": None,
++    "cuda-24g": {"total": 24 * GIB, "free_cuda": 24 * GIB - 3_435_973_837, "torch_free": 512 * 1024 * 1024},
++    "cuda-8g-busy": {"total": 8 * GIB, "free_cuda": 1_288_490_189, "torch_free": 0},
++}
++
++
++@contextlib.contextmanager
++def original_device(device, nvml):
++    """The original's view: pynvml (fake) or torch.cuda.mem_get_info (fake) on a CUDA device; nothing on CPU."""
++    saved = (ORIGINAL_NODES.pynvml_installed, ORIGINAL_NODES.pynvml, torch.cuda.is_available,
++             getattr(torch.cuda, "mem_get_info", None))
++    try:
++        if device is None:
++            ORIGINAL_NODES.pynvml_installed, ORIGINAL_NODES.pynvml = False, None
++            torch.cuda.is_available = lambda: False
++        else:
++            torch.cuda.is_available = lambda: True
++            torch.cuda.mem_get_info = lambda *a: (device["free_cuda"], device["total"])
++            if nvml:
++                info = types.SimpleNamespace(total=device["total"], used=device["total"] - device["free_cuda"])
++                ORIGINAL_NODES.pynvml_installed = True
++                ORIGINAL_NODES.pynvml = types.SimpleNamespace(nvmlDeviceGetHandleByIndex=lambda index: "gpu0",
++                                                              nvmlDeviceGetMemoryInfo=lambda handle: info)
++            else:
++                ORIGINAL_NODES.pynvml_installed, ORIGINAL_NODES.pynvml = False, None
++        yield
++    finally:
++        (ORIGINAL_NODES.pynvml_installed, ORIGINAL_NODES.pynvml, torch.cuda.is_available) = saved[:3]
++        if saved[3] is not None:
++            torch.cuda.mem_get_info = saved[3]
++
++
++@contextlib.contextmanager
++def host_device(device):
++    """The host's view behind system.stats: Core's memory functions on a fake CUDA primary device."""
++    if device is None:
++        yield
++        return
++    names = ("get_torch_device", "get_all_torch_devices", "get_total_memory", "get_free_memory",
++             "get_torch_device_name")
++    saved = {name: getattr(mm, name) for name in names}
++    cuda0, cpu = torch.device("cuda", 0), torch.device("cpu")
++
++    def total_memory(dev=None, torch_total_too=False):
++        if dev is not None and dev.type == "cpu":
++            return 64 * GIB if not torch_total_too else (64 * GIB, 64 * GIB)
++        return (device["total"], 2 * GIB) if torch_total_too else device["total"]
++
++    def free_memory(dev=None, torch_free_too=False):
++        if dev is not None and dev.type == "cpu":
++            return 32 * GIB if not torch_free_too else (32 * GIB, 32 * GIB)
++        free = device["free_cuda"] + device["torch_free"]
++        return (free, device["torch_free"]) if torch_free_too else free
++
++    try:
++        mm.get_torch_device = lambda: cuda0
++        mm.get_all_torch_devices = lambda *a, **k: [cuda0]
++        mm.get_total_memory = total_memory
++        mm.get_free_memory = free_memory
++        mm.get_torch_device_name = lambda dev: "Fake CUDA device"
++        yield
++    finally:
++        for name, value in saved.items():
++            setattr(mm, name, value)
++
++
++@contextlib.contextmanager
++def runtime(permissions):
++    refs = _sdk.InProcessRefResolver()
++    plan = sdk.ExecutionPlan(prompt_id="reservedvram-parity", node_id="1", node_type=NODE,
++                             permissions=tuple(permissions))
++    context = _sdk.InProcessCtxProvider().build(plan)
++    with _sdk.bind_runtime(refs, context, _sdk.InProcessOps()):
++        try:
++            yield context
++        finally:
++            refs.clear()
++
++
++def run_original(kwargs, device, nvml):
++    cls = ORIGINAL.NODE_CLASS_MAPPINGS[NODE]
++    out = _stdio.StringIO()
++    with recording() as log, original_device(device, nvml), contextlib.redirect_stdout(out):
++        result = getattr(cls(), cls.FUNCTION)(**kwargs)
++        reserved_set = mm.EXTRA_RESERVED_VRAM
++        ops = list(log)
++    return result, ops, out.getvalue(), reserved_set
++
++
++def run_converted(kwargs, device, perturb=0.0):
++    cls = CONVERTED.NODE_CLASS_MAPPINGS[NODE]
++    out = _stdio.StringIO()
++    with recording() as log, host_device(device), contextlib.redirect_stdout(out), runtime(cls.SDK_PERMISSIONS):
++        result = asyncio.run(cls.execute(**kwargs))
++        reserved_set = mm.EXTRA_RESERVED_VRAM
++        ops = list(log)
++    args = tuple(result.args)
++    if perturb:
++        args = (args[0], args[1], args[2] + perturb)
++    return args, ops, out.getvalue(), reserved_set
++
++
++def same_number(a, b):
++    if type(a) is not type(b):
++        return False
++    return a.hex() == b.hex() if isinstance(a, float) else a == b
++
++
++def values():
++    return [("none", None), ("int", 0), ("str", "text"), ("image", torch.zeros((1, 8, 8, 3))),
++            ("latent", {"samples": torch.zeros((1, 4, 8, 8))}), ("opaque", object())]
++
++
++CHECKS = []
++
++
++def check(case, what, ok, detail=None):
++    CHECKS.append({"case": case, "check": what, "ok": bool(ok), "detail": None if ok else detail})
++    return bool(ok)
++
++
++def requested_from_note(stdout):
++    for line in stdout.splitlines():
++        if line.startswith(V2_NOTE):
++            return float(line.split("(requested ", 1)[1].split("GB", 1)[0])
++    return None
++
++
++def node_cases():
++    count = 0
++    for device_name, device in DEVICES.items():
++        for nvml in ((False, True) if device is not None else (False,)):
++            for mode in ("manual", "auto"):
++                for reserved in (-2.0, -0.5, 0.0, 0.6, 1.25, 7.0):
++                    for auto_max in (0.0, 0.5, 3.0):
++                        for clean in (True, False):
++                            for seed in (0, 7, -1):
++                                for name, value in values():
++                                    kwargs = dict(reserved=reserved, mode=mode, seed=seed, auto_max_reserved=auto_max,
++                                                  clean_gpu_before=clean)
++                                    if name != "none":
++                                        kwargs["anything"] = value
++                                    case = (f"{device_name},nvml={nvml},{mode},r={reserved},max={auto_max},"
++                                            f"clean={clean},seed={seed},{name}")
++                                    r1, ops1, out1, set1 = run_original(dict(kwargs), device, nvml)
++                                    r2, ops2, out2, set2 = run_converted(dict(kwargs), device)
++                                    count += 1
++                                    compare(case, kwargs, r1, ops1, out1, set1, r2, ops2, out2, set2)
++    return count
++
++
++def compare(case, kwargs, r1, ops1, out1, set1, r2, ops2, out2, set2):
++    expected = kwargs.get("anything")
++    if expected is None:
++        ok = (isinstance(r1[0], ExecutionBlocker) and isinstance(r2[0], ExecutionBlocker)
++              and r1[0].message is None and r2[0].message is None)
++    else:
++        ok = r1[0] is expected and r2[0] is expected
++    check(case, "output", ok, [type(r1[0]).__name__, type(r2[0]).__name__])
++    check(case, "seed", same_number(r1[1], r2[1]), [r1[1], r2[1]])
++    check(case, "reserved_value", same_number(r1[2], r2[2]), [repr(r1[2]), repr(r2[2])])
++    check(case, "host_ops", ops1 == ops2, {"original": ops1, "v2": ops2})
++    # Known difference 1: the original assigns EXTRA_RESERVED_VRAM; v2 leaves it alone but reports the same request.
++    requested = requested_from_note(out2)
++    original_bytes = set1
++    check(case, "original_assigned_reservation", original_bytes != -12345, original_bytes)
++    check(case, "v2_left_reservation_alone", set2 == -12345, set2)
++    check(case, "v2_requested_equals_original_set",
++          requested is not None and int(requested * GIB) == original_bytes, [requested, original_bytes])
++    stripped = "".join(line + "\n" for line in out2.splitlines() if not line.startswith(V2_NOTE))
++    check(case, "stdout", out1 == stripped, {"original": out1, "v2": stripped})
++
++
++def fingerprint_cases():
++    a, b = ORIGINAL.NODE_CLASS_MAPPINGS[NODE], CONVERTED.NODE_CLASS_MAPPINGS[NODE]
++    kwargs = dict(reserved=0.6, mode="auto", auto_max_reserved=0.0, clean_gpu_before=True)
++    for seed in (0, 1, 7, 1125899906842624):
++        check(f"seed={seed}", "fingerprint", a.IS_CHANGED(seed=seed, **kwargs) == b.fingerprint_inputs(seed=seed, **kwargs))
++    before = random.getstate()
++    drawn_a = [a.IS_CHANGED(seed=-1, **kwargs) for _ in range(5)]
++    drawn_b = [b.fingerprint_inputs(seed=-1, **kwargs) for _ in range(5)]
++    check("seed=-1", "global_random_untouched", random.getstate() == before)
++    check("seed=-1", "fingerprint_range",
++          all(isinstance(x, int) and 1 <= x <= 1125899906842624 for x in drawn_a + drawn_b), [drawn_a, drawn_b])
++    check("seed=-1", "fingerprint_changes_every_call", len(set(drawn_a)) == 5 and len(set(drawn_b)) == 5)
++
++
++def interface_cases():
++    a, b = ORIGINAL.NODE_CLASS_MAPPINGS[NODE], CONVERTED.NODE_CLASS_MAPPINGS[NODE]
++    ia, ib = a.INPUT_TYPES(), b.INPUT_TYPES()
++    for section in ("required", "optional"):
++        sa, sb = ia.get(section, {}), ib.get(section, {})
++        check("interface", f"inputs.{section}.names", list(sa) == list(sb), [list(sa), list(sb)])
++        for name in sa:
++            ta, oa = sa[name][0], (sa[name][1] if len(sa[name]) > 1 else {})
++            tb, ob = sb[name][0], (sb[name][1] if len(sb[name]) > 1 else {})
++            ta = list(ta) if isinstance(ta, list) else str(ta)
++            tb = list(tb) if isinstance(tb, list) else str(tb)
++            if ta == ["manual", "auto"] and tb == "COMBO":  # V3 projects a combo as ("COMBO", {"options": [...]})
++                tb = list(ob.get("options", []))
++            check("interface", f"inputs.{section}.{name}.type", ta == tb, [ta, tb])
++            missing = {k: (oa[k], ob.get(k, "<absent>")) for k in oa if ob.get(k, "<absent>") != oa[k]}
++            check("interface", f"inputs.{section}.{name}.options", not missing, missing)
++    ha = {k: str(v) for k, v in ia.get("hidden", {}).items()}
++    hb = {k: (str(v[0]) if isinstance(v, (list, tuple)) and len(v) == 1 else str(v))
++          for k, v in ib.get("hidden", {}).items()}
++    # V3 adds the PROMPT hidden input to every output node (documented).
++    check("interface", "hidden", all(hb.get(k) == v for k, v in ha.items()) and set(hb) - set(ha) <= {"prompt"},
++          [ha, hb])
++    check("interface", "RETURN_TYPES", [str(x) for x in a.RETURN_TYPES] == [str(x) for x in b.RETURN_TYPES],
++          [list(map(str, a.RETURN_TYPES)), list(map(str, b.RETURN_TYPES))])
++    check("interface", "RETURN_NAMES", list(a.RETURN_NAMES) == list(b.RETURN_NAMES),
++          [list(a.RETURN_NAMES), list(b.RETURN_NAMES)])
++    check("interface", "OUTPUT_NODE", bool(a.OUTPUT_NODE) == bool(b.OUTPUT_NODE))
++    check("interface", "CATEGORY", a.CATEGORY == b.CATEGORY, [a.CATEGORY, b.CATEGORY])
++    check("interface", "display_name",
++          ORIGINAL.NODE_DISPLAY_NAME_MAPPINGS[NODE] == CONVERTED.NODE_DISPLAY_NAME_MAPPINGS[NODE])
++
++
++def negative_controls():
++    kwargs = dict(reserved=0.6, mode="manual", seed=0, auto_max_reserved=0.0, clean_gpu_before=False)
++    r1, *_ = run_original(dict(kwargs), None, False)
++    r2, *_ = run_converted(dict(kwargs), None, perturb=1e-9)
++    value_red = not same_number(r1[2], r2[2])
++    a, b = ORIGINAL.NODE_CLASS_MAPPINGS[NODE], CONVERTED.NODE_CLASS_MAPPINGS[NODE]
++    fingerprint_red = a.IS_CHANGED(seed=5) != b.fingerprint_inputs(seed=5) + 1
++    return {"perturbed_reserved_value": value_red, "perturbed_fingerprint": fingerprint_red}
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    cases = node_cases()
++    fingerprint_cases()
++    interface_cases()
++    controls = negative_controls()
++    failed = [c for c in CHECKS if not c["ok"]]
++    verdict = "PASS" if not failed and all(controls.values()) else "FAIL"
++    report = {
++        "pack": "reservedvram",
++        "node": NODE,
++        "verdict": verdict,
++        "node_cases": cases,
++        "checks": len(CHECKS),
++        "failed_checks": len(failed),
++        "failed_examples": failed[:20],
++        "negative_controls": controls,
++        "nodes": {NODE: {"verdict": "EXACT" if not failed else "MISMATCH", "cases": cases}},
++        "known_differences": ["the host's EXTRA_RESERVED_VRAM is not changed (no SDK verb); v2 reports the same value",
++                              "one extra console line saying so"],
++    }
++    (RESULTS / "parity.json").write_text(json.dumps(report, indent=1, default=str))
++    print(json.dumps({k: report[k] for k in ("verdict", "node_cases", "checks", "failed_checks",
++                                             "negative_controls")}, indent=1))
++    return 0 if verdict == "PASS" else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
