@@ -7,94 +7,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from colorsys import rgb_to_hsv
-
-
-def _composite(backdrop, source, opacity, function):
-    background = np.asarray(backdrop, dtype=np.float64)
-    foreground = np.asarray(source, dtype=np.float64)
-    background_rgb = background[..., :3] / 255.0
-    foreground_rgb = foreground[..., :3] / 255.0
-    alpha = np.clip(foreground[..., 3:4] / 255.0 * float(opacity), 0.0, 1.0)
-    blended = np.clip(function(background_rgb, foreground_rgb), 0.0, 1.0)
-    rgb = (1.0 - alpha) * background_rgb + alpha * blended
-    output_alpha = np.maximum(background[..., 3:4], foreground[..., 3:4])
-    return np.concatenate((rgb * 255.0, output_alpha), axis=-1)
-
-
-def normal(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda _back, front: front)
-
-
-def difference(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: np.abs(back - front))
-
-
-def screen(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: 1.0 - (1.0 - back) * (1.0 - front))
-
-
-def soft_light(backdrop, source, opacity):
-    def blend(back, front):
-        return np.where(
-            front <= 0.5,
-            back - (1.0 - 2.0 * front) * back * (1.0 - back),
-            back + (2.0 * front - 1.0) * (np.sqrt(back) - back),
-        )
-    return _composite(backdrop, source, opacity, blend)
-
-
-def lighten_only(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, np.maximum)
-
-
-def darken_only(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, np.minimum)
-
-
-def dodge(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: np.divide(back, 1.0 - front, out=np.ones_like(back), where=front < 1.0))
-
-
-def addition(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: back + front)
-
-
-def multiply(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: back * front)
-
-
-def hard_light(backdrop, source, opacity):
-    return _composite(
-        backdrop, source, opacity,
-        lambda back, front: np.where(
-            front <= 0.5,
-            2.0 * back * front,
-            1.0 - 2.0 * (1.0 - back) * (1.0 - front),
-        ),
-    )
-
-
-def grain_extract(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: back - front + 0.5)
-
-
-def grain_merge(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: back + front - 0.5)
-
-
-def divide(backdrop, source, opacity):
-    return _composite(backdrop, source, opacity, lambda back, front: np.divide(back, front, out=np.ones_like(back), where=front > 0.0))
-
-
-def overlay(backdrop, source, opacity):
-    return _composite(
-        backdrop, source, opacity,
-        lambda back, front: np.where(
-            back <= 0.5,
-            2.0 * back * front,
-            1.0 - 2.0 * (1.0 - back) * (1.0 - front),
-        ),
-    )
+from blend_modes import difference, normal, screen, soft_light, lighten_only, dodge, \
+                        addition, darken_only, multiply, hard_light, \
+                        grain_extract, grain_merge, divide, overlay
 
 def dissolve(backdrop, source, opacity):
     # Normalize the RGB and alpha values to 0-1

@@ -5,7 +5,8 @@ import os
 import tempfile
 import numpy as np
 
-from . import graingamma, graingen
+import filmgrainer.graingamma as graingamma
+import filmgrainer.graingen as graingen
 
 
 def _grainTypes(typ):

@@ -1,4 +1,5 @@
 # layerstyle advance
+import folder_paths
 from .imagefunc import *
 
 any = AnyType("*")

@@ -46,6 +46,7 @@ class LS_FluxKontextImageScale:
         height = image.shape[1]
         aspect_ratio = width / height
         _, target_width, target_height = min((abs(aspect_ratio - w / h), w, h) for w, h in PREFERED_KONTEXT_RESOLUTIONS)
+        # image = comfy.utils.common_upscale(image.movedim(-1, 1), width, height, "lanczos", "center").movedim(1, -1)
 
         resize_sampler = Image.LANCZOS
         if method == "bicubic":

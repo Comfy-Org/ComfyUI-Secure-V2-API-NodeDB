@@ -1,4 +1,6 @@
 
+from .imagefunc import tensor2pil
+
 class XYtoPercent:
 
     def __init__(self):
@@ -24,14 +26,11 @@ class XYtoPercent:
     CATEGORY = '😺dzNodes/LayerUtility/Data'
 
     def xy_to_percent(self, background_image, layer_image, x, y,):
-        if background_image.dim() not in (3, 4) or layer_image.dim() not in (3, 4):
-            raise ValueError("XY to Percent requires IMAGE tensors")
-        canvas_height, canvas_width = background_image.shape[-3:-1]
-        layer_height, layer_width = layer_image.shape[-3:-1]
-        if canvas_width <= 0 or canvas_height <= 0:
-            raise ValueError("XY to Percent requires a non-empty canvas")
-        x_percent = (x + layer_width / 2) / canvas_width * 100.0
-        y_percent = (y + layer_height / 2) / canvas_height * 100.0
+
+        _canvas = tensor2pil(background_image).convert('RGB')
+        _layer = tensor2pil(layer_image).convert('RGB')
+        x_percent = (x + _layer.width / 2) / _canvas.width * 100.0
+        y_percent = (y + _layer.height / 2) / _canvas.height * 100.0
 
         return (x_percent, y_percent,)
 

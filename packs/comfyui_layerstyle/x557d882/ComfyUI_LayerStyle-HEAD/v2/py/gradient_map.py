@@ -45,7 +45,7 @@ class GradientMap:
         gradient_image = Image.fromarray(np.uint8(gradient_array.reshape(1, -1, 3).repeat(50, axis=0)))
         gradient_tensor = pil2tensor(gradient_image)
         ret_images = []
-        for index, img in enumerate(image):
+        for img in image:
             pil_image = tensor2pil(img)
             
             # Convert to grayscale to get luminance
@@ -67,12 +67,7 @@ class GradientMap:
             
             # Apply mask if provided
             if layer_mask is not None:
-                if layer_mask.dim() == 2:
-                    layer_mask = layer_mask.unsqueeze(0)
-                mask_index = min(index, len(layer_mask) - 1)
-                mask = tensor2pil(
-                    layer_mask[mask_index:mask_index + 1]
-                ).convert('L')
+                mask = tensor2pil(layer_mask).convert('L')
                 pil_image.paste(gradient_mapped_image, (0, 0), mask)
             else:
                 pil_image = gradient_mapped_image

@@ -457,9 +457,8 @@ class QueueStopNode():
         if mode == "stop":
             if stop:
                 log(f"Queue stopped, it was terminated by node.", "error")
-                raise RuntimeError(
-                    "QueueStop must run through the Secure Nodes graph broker"
-                )
+                from comfy.model_management import InterruptProcessingException
+                raise InterruptProcessingException()
 
         return (any,)
 
@@ -545,9 +544,12 @@ class LS_MultiImageListToBatch:
                 # 转成 [B, C, H, W]
                 batch = batch.permute(0, 3, 1, 2)
 
-                batch = torch.nn.functional.interpolate(
-                    batch, size=(base_h, base_w), mode="bicubic",
-                    align_corners=False,
+                batch = comfy.utils.common_upscale(
+                    batch,
+                    base_w,
+                    base_h,
+                    upscale_method="bicubic",
+                    crop="center"
                 )
 
                 # 转回 [B, H, W, C]

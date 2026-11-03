@@ -34,6 +34,16 @@ export interface BackendHandle {
    */
   assetUrl(route: string): string
   /**
+   * Builds the private URL for a route declared by this Secure Nodes pack.
+   * The route is pack-relative and must start with `/`.
+   */
+  ownUrl(route: string): string
+  /**
+   * Calls a route declared by this Secure Nodes pack with host credentials.
+   * The route is pack-relative and must start with `/`.
+   */
+  ownFetch(route: string, init?: RequestInit): Promise<Response>
+  /**
    * Identifies this frontend connection to a pack's own backend route.
    * Undefined until the backend establishes the connection; do not persist it.
    */
@@ -128,6 +138,26 @@ export interface PickedFileData {
   readonly bytes: Uint8Array
 }
 
+export interface FileUploadOptions {
+  /** Optional managed input subfolder; path traversal is rejected. */
+  readonly subfolder?: string
+  readonly signal?: AbortSignal
+  readonly onProgress?: (progress: {
+    readonly loaded: number
+    readonly total: number
+  }) => void
+}
+
+export interface ManagedUpload {
+  readonly name: string
+  readonly subfolder: string
+  /** Managed path relative to the input directory. */
+  readonly path: string
+  readonly type: 'input'
+  readonly mime_type: string
+  readonly size: number
+}
+
 export interface FileDownloadOptions {
   /** Safe basename only. */
   readonly name: string
@@ -143,6 +173,81 @@ export interface FilesHandle {
   pickMany(options: FilePickManyOptions): Promise<PickedFileData[]>
   /** Asks the host to download one bounded in-memory file. */
   download(options: FileDownloadOptions): Promise<void>
+  /**
+   * Uploads a browser-selected file into managed input storage. The host
+   * chunks, retries/cancels, reports progress, and publishes only the complete
+   * file; the pack never receives a filesystem path.
+   */
+  upload(file: File, options?: FileUploadOptions): Promise<ManagedUpload>
+}
+
+export interface VideoFrameSample {
+  readonly time: number
+  readonly type: 'image/jpeg'
+  readonly width: number
+  readonly height: number
+  readonly bytes: Uint8Array
+}
+
+export interface SampleVideoFramesOptions {
+  /** Managed input path returned by `files.upload`. */
+  readonly path: string
+  /** 1–120 timestamps, in seconds. */
+  readonly times: readonly number[]
+  readonly maxWidth?: number
+  readonly maxHeight?: number
+  readonly quality?: number
+}
+
+export interface SampledVideo {
+  readonly path: string
+  readonly duration: number
+  readonly width: number
+  readonly height: number
+  readonly frames: readonly VideoFrameSample[]
+}
+
+export interface PreparedAudio {
+  /** Opaque, pack-scoped host handle. */
+  readonly id: string
+  readonly duration: number
+  readonly sampleRate: number
+  readonly channels: number
+  readonly peaks: readonly number[]
+}
+
+export interface MediaHandle {
+  readonly video: {
+    sampleFrames(options: SampleVideoFramesOptions): Promise<SampledVideo>
+  }
+  readonly audio: {
+    prepare(options: { readonly path: string; readonly peaks?: number }): Promise<PreparedAudio>
+    play(options: {
+      readonly id: string
+      readonly delay?: number
+      readonly offset?: number
+      readonly duration?: number
+    }): Promise<{ readonly id: string }>
+    stop(options?: { readonly id?: string }): Promise<void>
+    release(options: { readonly id: string }): Promise<void>
+  }
+}
+
+export interface ClipboardImage {
+  readonly name: string
+  readonly type: 'image/png' | 'image/jpeg' | 'image/webp'
+  readonly bytes: Uint8Array
+}
+
+export interface ClipboardHandle {
+  /** Reads require the `clipboard.read` permission and a recent pack gesture. */
+  readText(): Promise<string>
+  readImage(): Promise<ClipboardImage | undefined>
+  /** Writes require the `clipboard.write` permission and a recent pack gesture. */
+  writeText(value: string): Promise<void>
+  writeImage(value: Omit<ClipboardImage, 'name'>): Promise<void>
+  /** Copies a managed input image without exposing or retransmitting its bytes. */
+  writeManagedImage(path: string): Promise<void>
 }
 
 // ─── cryptoHandle.ts ─────────────────────────────────────────────
@@ -300,6 +405,8 @@ export interface Comfy {
    * between machines.
    */
   readonly storage: StorageHandle
+  /** Registered model names and bounded adjacent text metadata. */
+  readonly models: ModelsHandle
   /** Bounded, host-sampled hardware metrics. */
   readonly system: SystemHandle
   /** The sanctioned slice of app chrome — sidebar tabs. */
@@ -314,8 +421,12 @@ export interface Comfy {
   readonly backend: BackendHandle
   /** Loading a parsed workflow into a new active document. */
   readonly workflow: WorkflowHandle
-  /** Explicit, bounded host file selection and download. */
+  /** Explicit, bounded host file selection, upload, and download. */
   readonly files: FilesHandle
+  /** Host-owned bounded media decode, sampling, and playback. */
+  readonly media: MediaHandle
+  /** User-gesture-scoped clipboard access. */
+  readonly clipboard: ClipboardHandle
   /** Fixed host cryptographic primitives available to opaque-origin workers. */
   readonly crypto: CryptoHandle
   /** Bounded vendor-specific facilities. */
@@ -375,6 +486,15 @@ export interface Comfy {
   onNodeChanged(
     listener: (event: NodeChangeEvent) => void,
     options?: NodeChangeOptions
+  ): Unsubscribe
+  /**
+   * The selected graph nodes changed.
+   *
+   * The list is the complete current node selection in the visible graph.
+   * Groups and reroutes are renderer details and are intentionally omitted.
+   */
+  onSelectionChanged(
+    listener: (nodes: readonly NodeHandle[]) => void
   ): Unsubscribe
   /**
    * The application has finished starting: canvas, settings and graph all
@@ -1267,6 +1387,8 @@ export interface GraphHandle {
    * Selection is a property of the document, so it is asked of the graph.
    */
   selection(): readonly NodeHandle[]
+  /** The groups selected in the current visible graph. */
+  groupSelection(): readonly GroupHandle[]
   /**
    * Replaces the selection with these nodes. An empty list clears it.
    *
@@ -1284,6 +1406,14 @@ export interface GraphHandle {
    * renderer's transform and the device pixel ratio. Does not change zoom.
    */
   centerOn(node: NodeHandle): void
+  /**
+   * Pans the view by a renderer-neutral viewport distance.
+   *
+   * Positive x/y move graph content right/down. Distances are CSS viewport
+   * pixels, so the same command feels the same at every zoom level. Does
+   * nothing when there is no active canvas and never changes zoom.
+   */
+  panBy(delta: Point): void
   /**
    * The groups on the canvas, in draw order.
    *
@@ -1471,6 +1601,8 @@ export interface GroupHandle {
   nodes(): readonly NodeHandle[]
   /** The group's rectangle in graph space, title bar included. */
   getBounds(): Bounds
+  /** Moves and resizes the group as one undoable graph mutation. */
+  setBounds(bounds: Bounds): void
   /** Pans the view so this group is in the middle of it. Zoom is unchanged. */
   centerOn(): void
 }
@@ -1497,6 +1629,36 @@ export type NodeMoveSource = (
 export type NodeDragEndSource = (
   onDragEnd: (nodeIds: readonly string[]) => void
 ) => Unsubscribe
+
+// ─── modelsHandle.ts ───────────────────────────────────────────
+
+export type ModelFolder =
+  | 'checkpoints'
+  | 'clip'
+  | 'clip_vision'
+  | 'controlnet'
+  | 'diffusion_models'
+  | 'embeddings'
+  | 'loras'
+  | 'text_encoders'
+  | 'unet'
+  | 'upscale_models'
+  | 'vae'
+  | 'ipadapter'
+  | 'vae_approx'
+
+export type ModelSidecarSuffix = '.md' | '.txt'
+
+export interface ModelsHandle {
+  /** Lists registered logical names without exposing model paths. */
+  list(folder: ModelFolder): Promise<string[]>
+  /** Reads a bounded UTF-8 sidecar next to a registered model. */
+  readSidecar(
+    folder: ModelFolder,
+    modelName: string,
+    suffix: ModelSidecarSuffix
+  ): Promise<string | undefined>
+}
 
 // ─── nodeChanges.ts ──────────────────────────────────────────────
 
@@ -1656,7 +1818,12 @@ export interface NodeHandle extends HandleCommon {
   getPosition(): Point
   setPosition(pos: Point): void
   getSize(): Size
-  /** Changes size through the host's resize protocol, including `onResized`. */
+  /** The renderer's current intrinsic and declared minimum size. */
+  getMinimumSize(): Size
+  /**
+   * Changes size through the host's resize protocol, including `onResized`.
+   * Requested dimensions are clamped to {@link getMinimumSize}.
+   */
   setSize(size: Size): void
   /**
    * The node's rectangle in graph space, title bar included.
@@ -2767,6 +2934,21 @@ export interface UiHandle {
     button: ButtonContribution
   ): ChromeItemHandle<ButtonContribution>
   /**
+   * Mounts a sandbox-rendered interactive panel over the graph viewport.
+   * The host owns placement, focus, stacking and teardown; `render` receives
+   * the same isolated mounted surface as an in-node mounted widget.
+   */
+  mountViewportPanel(def: ViewportPanelDef): { remove(): void }
+  /**
+   * Mounts a host-owned canvas over the graph viewport.
+   *
+   * Drawing and pointer callbacks run in the pack sandbox. Coordinates are
+   * supplied in both viewport and graph space, so annotations remain attached
+   * to the workflow while the user pans and zooms. The surface passes all
+   * input through until the pack explicitly enables interaction.
+   */
+  mountGraphOverlay(def: GraphOverlayDef): GraphOverlayHandle
+  /**
    * Opens a modal dialog. Returns a handle that closes it again.
    *
    * Replaces `app.ui.dialog` and the `new app.ui.dialog.constructor()` idiom.
@@ -2798,6 +2980,120 @@ export interface UiHandle {
    * host does use, so a pack keeps the capability and loses only the placement.
    */
   prompt(def: PromptDef): Promise<string | undefined>
+}
+
+export interface ViewportPanelDef {
+  readonly id: string
+  readonly anchor?:
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right'
+  readonly offsetX?: number
+  readonly offsetY?: number
+  readonly width?: number
+  readonly maxHeight?: number
+  readonly ariaLabel?: string
+  render(container: HTMLElement): void
+  destroy?(): void
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface GraphOverlayViewport {
+  readonly width: number
+  readonly height: number
+  readonly scale: number
+  readonly offset: Point
+  graphToViewport(point: Point): Point
+  viewportToGraph(point: Point): Point
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface GraphOverlayPointerEvent {
+  readonly type: string
+  readonly viewport: Point
+  readonly graph: Point
+  readonly button: number
+  readonly buttons: number
+  readonly pointerId: number
+  readonly pointerType: string
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  preventDefault(): void
+  stopPropagation(): void
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export interface GraphOverlayKeyEvent {
+  readonly key: string
+  readonly code: string
+  readonly repeat: boolean
+  readonly altKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly shiftKey: boolean
+  preventDefault(): void
+  stopPropagation(): void
+}
+
+export interface GraphOverlayDef {
+  readonly id: string
+  readonly ariaLabel?: string
+  readonly visible?: boolean
+  readonly interactive?: boolean
+  draw(
+    context: CanvasRenderingContext2D,
+    size: readonly [number, number],
+    viewport: GraphOverlayViewport
+  ): void
+  onPointerDown?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerMove?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerUp?(event: GraphOverlayPointerEvent): void | Promise<void>
+  onPointerCancel?(event: GraphOverlayPointerEvent): void | Promise<void>
+  /**
+   * Receives keys while an interactive overlay owns focus. The host prevents
+   * those keys from also reaching global canvas shortcuts.
+   */
+  onKeyDown?(event: GraphOverlayKeyEvent): void | Promise<void>
+}
+
+/** A bounded viewport-space circle that may begin an owned pointer stream. */
+export interface GraphOverlayCircleHitRegion {
+  readonly kind: 'circle'
+  readonly x: number
+  readonly y: number
+  readonly radius: number
+}
+
+/** A bounded viewport-space rectangle that may begin an owned pointer stream. */
+export interface GraphOverlayRectHitRegion {
+  readonly kind: 'rect'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** @knipIgnoreUnusedButUsedByCustomNodes */
+export type GraphOverlayHitRegion =
+  | GraphOverlayCircleHitRegion
+  | GraphOverlayRectHitRegion
+
+export interface GraphOverlayHandle {
+  redraw(): void
+  setInteractive(interactive: boolean): void
+  setVisible(visible: boolean): void
+  /**
+   * Limits pointer ownership to bounded viewport-space regions. Pointer misses
+   * continue to the normal graph canvas. An empty list makes the overlay fully
+   * pass-through. An owned pointer stays owned through move, up, or cancel.
+   */
+  setHitRegions(regions: readonly GraphOverlayHitRegion[]): void
+  remove(): void
 }
 
 /** @knipIgnoreUnusedButUsedByCustomNodes */
@@ -3507,13 +3803,24 @@ export interface WorkflowImporter {
     | Promise<WorkflowImportResult | null | undefined>
 }
 
+export interface WorkflowOpenOptions {
+  /** Replace the active document, or open a separate workflow tab. */
+  readonly mode?: 'replace' | 'new'
+  /** Display name for a new workflow. It is not a filesystem path. */
+  readonly name?: string
+}
+
 export interface WorkflowHandle {
-  /** Replaces the active document with parsed ComfyUI workflow JSON. */
-  open(data: WorkflowData): Promise<void>
+  /** Opens parsed ComfyUI workflow JSON, replacing the active document by default. */
+  open(data: WorkflowData, options?: WorkflowOpenOptions): Promise<void>
   /** Returns the current saved-format workflow, bounded to 8 MiB. */
   snapshot(): Promise<WorkflowData>
   /** Registers a bounded worker-side parser for host-opened or dropped files. */
   registerImporter(importer: WorkflowImporter): Unsubscribe
+  /** Returns pack-owned data stored in the active workflow's `extra` object. */
+  getExtra<T = unknown>(key: string): Promise<T | undefined>
+  /** Writes pack-owned workflow data. Passing `undefined` removes the key. */
+  setExtra(key: string, value: unknown): Promise<void>
   /** Expands the active document's `%date:...%` and `%Node.widget%` tokens. */
   applyTextReplacements(value: string): string
   /**
