@@ -46,6 +46,33 @@ Permissions are therefore limited per node to combinations of `assets`,
 `raw`, `output`, and `models`. The five pure conversion/orchestration nodes need
 no authority.
 
+## Generator and LoRA selector outputs
+
+Parameter Generator returns Core's sampler and scheduler lists as the types
+of its `SAMPLER_NAME` and `SCHEDULER` outputs. V2 declares each as a COMBO
+output whose options are exactly that list (`_secure_runtime.py`,
+`_output`). A Core that reports a COMBO output's declared options as its type
+then validates a link into a list-typed input, such as KSampler's
+`sampler_name` and `scheduler`, as it does for the original: the lists must
+share a choice. A Core that reports every COMBO output as the plain string
+`COMBO` refuses those links (return type mismatch). The pack cannot change
+that.
+
+These two lists, like the sampler and scheduler menus, are frozen copies of
+Core's lists in `_schemas.json`. `tests/refreeze_core_lists.py` refreshes
+them from the original running on the deployment Core. It only adds choices
+that the newer Core provides. Choices that other installed packs add to
+Core's lists at runtime, such as extra schedulers, are not mirrored.
+
+In the original, `MODEL_NAME` and `VAE_NAME` (Parameter Generator) and
+`LORA_NAME` (LoRA Selector) take the host's model-folder lists as their
+types. Those lists belong to the host, so V2 declares these outputs with no
+options, and Core serves them as a generic `COMBO`. They still link into
+this pack's own inputs, such as the Prompt Saver's `model_name` and the Type
+Converter's inputs. A link from one of them into a Core input that lists
+model files, such as a checkpoint loader's `ckpt_name`, is refused, while
+the original accepts it.
+
 ## Removed distribution baggage
 
 The V2 tree excludes the upstream desktop Tk application, update checker,
@@ -54,3 +81,17 @@ node module, and dependency manifests. These are not reachable from the ten
 Comfy nodes. The retained parser modules are reachable from the secure entry
 and use only Python, Pillow, NumPy, and Torch already present in the managed
 runtime.
+
+## Verification
+
+`tests/test_combo_outputs.py` compares the original with the served V2 nodes
+on CPU without weights. It covers:
+
+- loading the manifest with the real loader;
+- every node's object_info outputs;
+- Core's prompt validation with generator links into KSampler and into this
+  pack's nodes, including refused controls;
+- values returned by a real guest.
+
+`tests/encode_manifest.py` regenerates `secure-nodes.json` with the live
+encoder and loads it with the real loader.

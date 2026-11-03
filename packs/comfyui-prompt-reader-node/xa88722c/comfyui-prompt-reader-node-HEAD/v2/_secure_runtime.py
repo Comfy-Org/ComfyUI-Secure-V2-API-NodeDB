@@ -1,6 +1,7 @@
 """Frozen schema and wire helpers for the pinned Prompt Reader conversion."""
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import inspect
@@ -56,21 +57,57 @@ def _input(value: dict[str, Any]):
     return result
 
 
-def _output(value: dict[str, Any]):
+def _catalogue_for_output(node_id: str, index: int) -> str | None:
+    """Outputs whose original type is a host model-folder list.
+
+    The original sets these output types to ``folder_paths.get_filename_list``
+    of the host it runs on (nodes.py:808-810, 1323). That list belongs to the
+    host, so V2 never freezes it.
+    """
+    if node_id == "SDParameterGenerator" and index == 0:
+        return "checkpoints"
+    if node_id == "SDParameterGenerator" and index == 1:
+        return "vae"
+    if node_id == "SDLoraSelector" and index == 0:
+        return "loras"
+    return None
+
+
+def _combo_choices(io_type: str) -> list[str]:
+    """The original output's choice list, frozen as its Python ``str()``.
+
+    SDParameterGenerator returns Core's own sampler and scheduler lists as its
+    SAMPLER_NAME and SCHEDULER output types (nodes.py:818-819); the freezer
+    recorded each list's text. ``ast.literal_eval`` reads it back as data,
+    with no evaluation of code.
+    """
+    choices = ast.literal_eval(io_type)
+    if (not isinstance(choices, list) or not choices
+            or not all(isinstance(item, str) for item in choices)):
+        raise ValueError("frozen COMBO output type is not a list of strings")
+    return choices
+
+
+def _output(node_id: str, index: int, value: dict[str, Any]):
     if value["kind"] != "standard":
         raise ValueError(f"unsupported frozen output kind {value['kind']!r}")
     io_type = value["io_type"]
     # V1 represents selector outputs as their literal choice list.  Preserve
     # that wire type as a COMBO instead of inventing a custom type whose name
-    # happens to be the stringified list.
-    output_type = (
-        io.Combo
-        if isinstance(io_type, str)
-        and io_type.startswith("[")
-        and io_type.endswith("]")
-        else _io_class(io_type)
-    )
-    result = object.__new__(output_type.Output)
+    # happens to be the stringified list.  Every COMBO output declares its
+    # options: Core reports a COMBO output's declared options as its type, so
+    # a sampler or scheduler link into a list-typed input (KSampler's
+    # sampler_name/scheduler) validates as it does for the original.  A host
+    # model-folder output declares no options and stays a generic COMBO.
+    if isinstance(io_type, str) and io_type.startswith("[") and io_type.endswith("]"):
+        result = object.__new__(io.Combo.Output)
+        result.__dict__.update(_decode(copy.deepcopy(value["attrs"])))
+        if _catalogue_for_output(node_id, index) is not None:
+            result.options = []
+        else:
+            result.options = _combo_choices(io_type)
+        return result
+    result = object.__new__(_io_class(io_type).Output)
     result.__dict__.update(_decode(copy.deepcopy(value["attrs"])))
     return result
 
@@ -102,7 +139,9 @@ def schema_for(node_id: str) -> io.Schema:
     value = SCHEMAS[node_id]["schema"]
     attrs = _decode(copy.deepcopy(value["attrs"]))
     attrs["inputs"] = [_input(item) for item in value["inputs"]]
-    attrs["outputs"] = [_output(item) for item in value["outputs"]]
+    attrs["outputs"] = [
+        _output(node_id, index, item) for index, item in enumerate(value["outputs"])
+    ]
     # Prompt/workflow metadata stays in the trusted context. Saver nodes ask
     # the output broker to embed it; WorkflowInputValue uses the graph broker.
     # None of the legacy hidden prompt dictionaries cross into the guest.
