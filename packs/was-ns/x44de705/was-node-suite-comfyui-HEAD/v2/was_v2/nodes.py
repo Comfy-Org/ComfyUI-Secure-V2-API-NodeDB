@@ -22,8 +22,8 @@ from comfy_api.latest import io, sdk
 from . import originals
 from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
                        IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
-                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_SCIPY, NO_NETWORK, SecureConversionRefusal,
-                       not_converted)
+                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_PILGRAM, NEEDS_SCIPY, NO_NETWORK,
+                       SecureConversionRefusal, not_converted)
 from .schema_v3 import ROWS, build_schema
 from .tokens import TextTokens
 
@@ -104,6 +104,8 @@ _PURE = {
     "Image Transpose": ("WAS_Image_Transpose", "image_transpose"),
     "Mask Invert": ("WAS_Mask_Invert", "add_masks"),
     "Image Flip": ("WAS_Image_Flip", "image_flip"),
+    # phase B batch 8
+    "Image Monitor Effects Filter": ("WAS_Image_Monitor_Distortion_Filter", "image_monitor_filters"),
 }
 # WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:1022-2456, the pack's large filter
 # toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -113,6 +115,13 @@ _NAMED_REFUSALS = {
     "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
     "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
     "Text Random Prompt": NO_NETWORK.format(node="Text Random Prompt"),
+    # WAS_Tools_Class.shadows_and_highlights / dragan_filter and WAS_Image_Style_Filter (WAS_Node_Suite.py:1700-1793,
+    # 3063-3067) import pilgram when they run
+    "Image Shadows and Highlights": NEEDS_PILGRAM.format(node="Image Shadows and Highlights",
+                                                         use="pilgram.css.blending.color"),
+    "Image Dragan Photography Filter": NEEDS_PILGRAM.format(node="Image Dragan Photography Filter",
+                                                            use="pilgram.css.blending.overlay and color"),
+    "Image Style Filter": NEEDS_PILGRAM.format(node="Image Style Filter", use="its photo filters"),
 }
 # The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:11030-11032: always changed)
 # Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12552-12556); core turns that into
@@ -410,6 +419,32 @@ async def _load_image_batch_validate(cls, path=None, pattern=None):
 
 
 # ---- Image Save (WAS_Image_Save.was_save_images)
+_WEBP_EMBED_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries this metadata to the writer
+
+
+def _webp_embed_metadata(prompt, extra_pnginfo):
+    """WAS_Node_Suite.py:7452-7464 (webp with embed_workflow): EXIF 0x010F holds "Prompt:" + json.dumps(prompt) and
+    0x010E holds "Workflow:" + the json.dumps of every extra_pnginfo value, joined. Given save_metadata=False and
+    extra_metadata, the managed writer stores "<key>:" + json.dumps(value) in 0x010F, 0x010E, ... in key order
+    (ImageSaveHelper._create_webp_metadata), so the two agree when the prompt has exactly one extra_pnginfo entry."""
+    if prompt is None:
+        why = "there is no prompt, so the original writes the Workflow tag alone"
+    elif not isinstance(extra_pnginfo, dict) or len(extra_pnginfo) != 1:
+        count = len(extra_pnginfo) if isinstance(extra_pnginfo, dict) else 0
+        why = f"the prompt has {count} workflow entries"
+    else:
+        metadata = {"Prompt": prompt, "Workflow": next(iter(extra_pnginfo.values()))}
+        try:
+            size = len(json.dumps(metadata, allow_nan=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            why = "the prompt or workflow holds values that are not plain JSON, such as NaN or Infinity"
+        else:
+            if size <= _WEBP_EMBED_LIMIT:
+                return metadata
+            why = f"the prompt and workflow take {size} bytes"
+    raise SecureConversionRefusal(IMAGE_SAVE_WEBP_EMBED.format(why=why))
+
+
 async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
                       extension='png', dpi=96, quality=100, optimize_image="true", lossless_webp="false",
                       overwrite_mode='false', filename_number_padding=4, filename_number_start='false',
@@ -423,8 +458,9 @@ async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", fi
     optimize_image = (optimize_image == "true")
     if extension in ("jpg", "jpeg"):
         raise SecureConversionRefusal(IMAGE_SAVE_JPEG.format(ext=extension))
+    webp_metadata = None
     if extension == "webp" and embed_workflow == "true":
-        raise SecureConversionRefusal(IMAGE_SAVE_WEBP_EMBED)
+        webp_metadata = _webp_embed_metadata(prompt, extra_pnginfo)
     if show_history == "true" and show_previews == "true":
         raise SecureConversionRefusal(IMAGE_SAVE_HISTORY)
 
@@ -456,8 +492,8 @@ async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", fi
         pattern = f"{re.escape(filename_prefix)}{re.escape(delimiter)}(\\d+)"
     try:
         listed = await sdk.ctx().assets.list("output", prefix=folder, recursive=False)
-    except ValueError as error:
-        raise SecureConversionRefusal(IMAGE_SAVE_LISTING.format(path=folder or "output")) from error
+    except Exception as error:  # the host's listing limit; in a guest it arrives as a transport error
+        raise SecureConversionRefusal(IMAGE_SAVE_LISTING.format(path=folder or "output", reason=error)) from error
     existing_counters = [
         int(re.search(pattern, filename).group(1))
         for filename in (posixpath.basename(name) for name in listed)
@@ -508,6 +544,8 @@ async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", fi
                            "compress_level": 9 if optimize_image else 6}
             elif extension == 'webp':
                 options = {"quality": quality, "lossless": lossless_webp, "save_metadata": False}
+                if webp_metadata is not None:
+                    options["extra_metadata"] = webp_metadata
             elif extension in ('tiff', 'gif'):
                 options = {"optimize": optimize_image, "save_metadata": False}
             else:

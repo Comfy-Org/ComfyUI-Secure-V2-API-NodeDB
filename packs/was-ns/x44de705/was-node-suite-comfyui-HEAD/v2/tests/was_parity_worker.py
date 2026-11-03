@@ -38,6 +38,7 @@ time.localtime = lambda *args: FIXED_LOCAL
 
 import comfy.options  # noqa: E402
 comfy.options.enable_args_parsing()
+import numpy  # noqa: E402
 import torch  # noqa: E402
 torch.set_num_threads(1)
 import folder_paths  # noqa: E402
@@ -250,6 +251,49 @@ STANDINS = {
 }
 core_nodes.NODE_CLASS_MAPPINGS.update(STANDINS)
 
+# ---- the guest's import base (LANE-SPEC 3c), V2 side only: installed before the pack loads and kept for the whole
+# run. An import statement executed by v2 code (module level or inside a function; v2/tests excepted) must name the
+# standard library or a top-level module of the sealed guest base: the 41 pins of guest_common.lock (sha256
+# 333e9487246431a7...). Anything else raises ModuleNotFoundError, as it would in a guest, and is recorded. The gate
+# image has more (scipy, cv2, kornia, ...), which is why a parity run alone cannot show what a guest imports.
+GUEST_LOCK_MODULES = {
+    'av', 'blake3', 'comfy_api', 'comfy_secure_nodes', 'comfy_secure_sdk', 'filelock', 'fsspec', 'iniconfig', 'jinja2',
+    'markupsafe', 'mpmath', 'networkx', 'numpy', 'nvidia', 'packaging', 'PIL', 'pluggy', 'psutil', 'pygments', 'pytest',
+    '_pytest', 'py', 'pytest_asyncio', 'safetensors', 'setuptools', 'pkg_resources', '_distutils_hack', 'sympy',
+    'torch', 'functorch', 'torchgen', 'triton', 'typing_extensions', 'wheel',
+}
+V2_ROOT = '/pack/v2/'
+GUARD = {'blocked': []}
+if SIDE == 'v2':
+    import builtins
+    _real_import = builtins.__import__
+
+    def _guest_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0:
+            caller = sys._getframe(1).f_code.co_filename
+            if caller.startswith(V2_ROOT) and not caller.startswith(V2_ROOT + 'tests/'):
+                top = name.split('.')[0]
+                if top not in sys.stdlib_module_names and top not in GUEST_LOCK_MODULES:
+                    GUARD['blocked'].append(f'{caller[len(V2_ROOT):]}: {name}')
+                    raise ModuleNotFoundError(f'guest import guard: {name!r} is not in the guest', name=name)
+        return _real_import(name, globals, locals, fromlist, level)
+    builtins.__import__ = _guest_import
+
+
+def guard_negative_control():
+    """The guard must stop an import of kornia, which the gate image has and the guest base does not, made by code
+    under /pack/v2."""
+    before = len(GUARD['blocked'])
+    try:
+        exec(compile('import kornia\n', V2_ROOT + '_guard_probe.py', 'exec'), {'__name__': 'guard_probe'})
+        caught = False
+    except ModuleNotFoundError:
+        caught = True
+    probe = GUARD['blocked'][before:]
+    del GUARD['blocked'][before:]
+    return caught and probe == ['_guard_probe.py: kornia']
+
+
 # ---- load the pack under test
 if SIDE == 'original':
     pack_dir = OUT / 'nodes-root' / 'custom_nodes' / 'was-node-suite-comfyui'
@@ -452,6 +496,7 @@ def run_case(case):
             continue
         torch.manual_seed(20261102)
         random.seed(20261102)
+        numpy.random.seed(20261102)
         executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
                                             cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
         extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
@@ -483,6 +528,10 @@ def main():
             import traceback
             report['cases'].append({'name': case['name'], 'harness_error': f'{type(error).__name__}: {error}',
                                     'traceback': traceback.format_exc()[-3000:]})
+    if SIDE == 'v2':
+        report['guest_import_guard'] = {'base': 'guest_common.lock (41 pins, sha256 333e9487246431a7...)',
+                                        'blocked': list(GUARD['blocked']),
+                                        'negative_control_caught': guard_negative_control()}
     (OUT / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
 
 

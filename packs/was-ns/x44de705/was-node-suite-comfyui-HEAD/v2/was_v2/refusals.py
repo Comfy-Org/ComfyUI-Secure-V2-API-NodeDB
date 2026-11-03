@@ -23,9 +23,10 @@ IMAGE_SAVE_JPEG = (
 )
 
 IMAGE_SAVE_WEBP_EMBED = (
-    f"{PACK}/Image Save: extension 'webp' with embed_workflow 'true' is not supported on Secure Nodes V2. The "
-    "original writes the prompt and workflow into EXIF tags 0x010F and 0x010E; the managed image writer cannot write "
-    "those tags. Set embed_workflow to 'false', or use png."
+    f"{PACK}/Image Save: extension 'webp' with embed_workflow 'true' cannot be written exactly for this prompt "
+    "({why}). The original writes 'Prompt:' and 'Workflow:' text into EXIF tags 0x010F and 0x010E; the managed image "
+    "writer writes the same tags only for a prompt with exactly one workflow entry, as JSON without NaN or Infinity, "
+    "below 960 KiB in all. Set embed_workflow to 'false', or use png."
 )
 
 IMAGE_SAVE_HISTORY = (
@@ -50,13 +51,18 @@ IMAGE_SAVE_OVERWRITE = (
 )
 
 IMAGE_SAVE_LISTING = (
-    f"{PACK}/Image Save: output folder {{path!r}} holds more names than the asset catalogue lists at once (4096), so "
-    "the next file number cannot be computed the way the original computed it."
+    f"{PACK}/Image Save: the host could not list output folder {{path!r}} ({{reason}}), so the next file number "
+    "cannot be computed the way the original computed it. A Secure Nodes V2 node lists at most 4096 names at once."
 )
 
 NEEDS_SCIPY = (
     f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
     "which the guest runtime for this pack does not provide yet."
+)
+
+NEEDS_PILGRAM = (
+    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with the pilgram package "
+    "({use}), which the guest runtime for this pack does not provide yet."
 )
 
 NO_NETWORK = (
