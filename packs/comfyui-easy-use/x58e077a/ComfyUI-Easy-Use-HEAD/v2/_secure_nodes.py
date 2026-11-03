@@ -915,15 +915,38 @@ async def _length(any, **_kwargs):
 
 
 async def _index(any, index, **_kwargs):
-    value = await _raw(any)
-    if isinstance(value, (list, tuple)) and len(value) == 1:
-        value = value[0]
-    if value is None or len(value) == 0:
-        return _one(None)
-    position = max(-len(value), min(int(_first(index)), len(value) - 1))
-    if isinstance(value, torch.Tensor):
-        return _one(value[position:position + 1].clone())
-    return _one(value[position])
+    """easy indexAnything as the original (py/nodes/logic.py:1193-1221): several inputs pick one; a tensor batch
+    picks one image; anything else with a length is indexed; the index is clamped exactly like normalize_index."""
+    items = list(any) if isinstance(any, (list, tuple)) else [any]
+    position = int(_first(index))
+
+    def normalize(value, length):
+        if value < 0:
+            value = length + value
+        return min(max(0, value), length - 1)
+
+    if len(items) > 1:
+        return _one(items[normalize(position, len(items))])
+    first = items[0]
+    if isinstance(first, sdk.ImageRef):
+        # The original returns any[0][idx:idx+1].clone(); select_batch returns the same rows behind an IMAGE ref,
+        # which is what crosses the guest wire (a raw tensor cannot).
+        try:
+            count = await first.batch_size()
+            return _one(await first.select_batch([normalize(position, count)]))
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(
+                "easy indexAnything is not available in this secure build for this input: only an IMAGE batch "
+                "(B,H,W,C) can be indexed; a MASK or other tensor batch cannot be returned as a ref") from error
+    if isinstance(first, sdk.ValueRef) and not isinstance(first, sdk.CondRef):
+        first = await _raw(first)  # a LATENT/AUDIO dict: the original indexes the dict itself
+    elif isinstance(first, sdk.Ref):
+        raise RuntimeError(
+            f"easy indexAnything is not available in this secure build for a {first.kind} input: an item of it "
+            "cannot be returned across the guest wire")
+    if hasattr(first, "__len__") and len(first) > 0:
+        return _one(first[normalize(position, len(first))])
+    return _one(first)
 
 
 async def _batch(any_1, any_2, **_kwargs):
@@ -965,18 +988,35 @@ async def _convert(**kwargs):
 
 
 async def _show(anything=None, **_kwargs):
-    value = await _raw(anything)
-    if isinstance(value, list):
-        display = [str(item) for item in value]
-    elif isinstance(value, sdk.Ref):
-        display = [f"<{value.kind} ref>"]
-    else:
-        try:
-            display = [json.dumps(value, ensure_ascii=False)]
-        except (TypeError, ValueError):
-            display = [str(value)]
-    result = display[0] if len(display) == 1 else display
-    return {"ui": {"text": display}, "result": (result,)}
+    """easy showAnything as the original (py/nodes/logic.py:1329-1358), value by value: nothing connected (or only
+    None) shows and returns [] ; strings as they are; numbers and booleans as str(); a list of up to 30 items
+    replaces the shown values; anything else as json.dumps(indent=4, ensure_ascii=False), else str()."""
+    values = []
+    if anything is not None:
+        for value in anything if isinstance(anything, list) else [anything]:
+            if isinstance(value, str):
+                values.append(value)
+            elif isinstance(value, (int, float, bool)):
+                values.append(str(value))
+            elif isinstance(value, list) and len(value) <= 30:
+                values = value
+            elif value is not None:
+                if isinstance(value, (sdk.TensorRef, sdk.LatentRef)):
+                    value = await _raw(value)  # the original formats the tensor / latent dict itself
+                elif isinstance(value, sdk.Ref):
+                    # Engine objects (MODEL, CLIP, CONDITIONING, ...) have no portable text: the original shows their
+                    # Python repr, which holds a memory address (SECURE_CONVERSION.md, repair round r1).
+                    values.append(f"<{value.kind} ref>")
+                    continue
+                try:
+                    values.append(json.dumps(value, indent=4, ensure_ascii=False))
+                except Exception:
+                    try:
+                        values.append(str(value))
+                    except Exception:
+                        raise Exception("source exists, but could not be serialized.")
+    result = values[0] if isinstance(values, list) and len(values) == 1 else values
+    return {"ui": {"text": values}, "result": (result,)}
 
 
 async def _show_shape(tensor, **_kwargs):

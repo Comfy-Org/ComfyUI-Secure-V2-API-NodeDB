@@ -19,3 +19,30 @@ first verified download; a node does not download a weight on every execution.
 operational classification and representative real-guest behavior are enforced
 by `backend/tests/test_popular_pack_conversions.py`, including an explicit
 `207 supported / 0 rejected` assertion.
+
+## Repair round r1: `easy showAnything`, `easy indexAnything`
+
+`easy showAnything` (and `easy showAnythingLazy`, which shares the handler) formats each input value the way the
+original does (`py/nodes/logic.py:1329-1358`):
+- Nothing connected, or only `None` values, shows `[]` and returns `[]`.
+- Strings are shown as they are. Numbers and booleans go through `str()`.
+- A list of up to 30 items replaces the shown values.
+- Anything else is shown as `json.dumps(indent=4, ensure_ascii=False)`, or as `str()` when that fails. Tensors and
+  LATENT dicts are read through `raw` so they print exactly like the original.
+
+`easy indexAnything` picks items the way the original does (`py/nodes/logic.py:1193-1221`), with the same index
+clamping. For an IMAGE batch it returns the selected image as an IMAGE ref, through `ImageRef.batch_size` and
+`ImageRef.select_batch`, because a raw tensor cannot cross the guest wire.
+
+Known differences:
+- `showAnything` shows engine objects (MODEL, CLIP, VAE, CONDITIONING, ...) as `<KIND ref>`. The original shows their
+  Python repr, which contains a memory address.
+- The original also writes the shown values into the workflow's `widgets_values` inside `extra_pnginfo`. A later
+  image save in the same run then embeds them. A guest receives `extra_pnginfo` as a copy, so V2 does not change the
+  embedded workflow.
+- `indexAnything` refuses by name, instead of returning an item, when the single input is:
+  - a MASK or other non-IMAGE tensor batch, or
+  - a CONDITIONING or another engine object.
+  Those items cannot be returned across the guest wire.
+- `indexAnything` cannot see whether the upstream output is a list output. The original returns a one-item list
+  output whole. V2 indexes into that single item, the same way the original treats a single value.

@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,48 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `58e077a7435631301cf7443412515cf958e7f3d1`.
@@ -22,6 +22,33 @@
 +operational classification and representative real-guest behavior are enforced
 +by `backend/tests/test_popular_pack_conversions.py`, including an explicit
 +`207 supported / 0 rejected` assertion.
++
++## Repair round r1: `easy showAnything`, `easy indexAnything`
++
++`easy showAnything` (and `easy showAnythingLazy`, which shares the handler) formats each input value the way the
++original does (`py/nodes/logic.py:1329-1358`):
++- Nothing connected, or only `None` values, shows `[]` and returns `[]`.
++- Strings are shown as they are. Numbers and booleans go through `str()`.
++- A list of up to 30 items replaces the shown values.
++- Anything else is shown as `json.dumps(indent=4, ensure_ascii=False)`, or as `str()` when that fails. Tensors and
++  LATENT dicts are read through `raw` so they print exactly like the original.
++
++`easy indexAnything` picks items the way the original does (`py/nodes/logic.py:1193-1221`), with the same index
++clamping. For an IMAGE batch it returns the selected image as an IMAGE ref, through `ImageRef.batch_size` and
++`ImageRef.select_batch`, because a raw tensor cannot cross the guest wire.
++
++Known differences:
++- `showAnything` shows engine objects (MODEL, CLIP, VAE, CONDITIONING, ...) as `<KIND ref>`. The original shows their
++  Python repr, which contains a memory address.
++- The original also writes the shown values into the workflow's `widgets_values` inside `extra_pnginfo`. A later
++  image save in the same run then embeds them. A guest receives `extra_pnginfo` as a copy, so V2 does not change the
++  embedded workflow.
++- `indexAnything` refuses by name, instead of returning an item, when the single input is:
++  - a MASK or other non-IMAGE tensor batch, or
++  - a CONDITIONING or another engine object.
++  Those items cannot be returned across the guest wire.
++- `indexAnything` cannot see whether the upstream output is a list output. The original returns a one-item list
++  output whole. V2 indexes into that single item, the same way the original treats a single value.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,95 +1,12 @@
@@ -52636,7 +52663,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,5519 @@
+@@ -0,0 +1,5559 @@
 +"""Secure Nodes 2.0 implementations for the pinned Easy Use snapshot.
 +
 +The original pack mixes useful tensor/value helpers with model loading,
@@ -53554,15 +53581,38 @@
 +
 +
 +async def _index(any, index, **_kwargs):
-+    value = await _raw(any)
-+    if isinstance(value, (list, tuple)) and len(value) == 1:
-+        value = value[0]
-+    if value is None or len(value) == 0:
-+        return _one(None)
-+    position = max(-len(value), min(int(_first(index)), len(value) - 1))
-+    if isinstance(value, torch.Tensor):
-+        return _one(value[position:position + 1].clone())
-+    return _one(value[position])
++    """easy indexAnything as the original (py/nodes/logic.py:1193-1221): several inputs pick one; a tensor batch
++    picks one image; anything else with a length is indexed; the index is clamped exactly like normalize_index."""
++    items = list(any) if isinstance(any, (list, tuple)) else [any]
++    position = int(_first(index))
++
++    def normalize(value, length):
++        if value < 0:
++            value = length + value
++        return min(max(0, value), length - 1)
++
++    if len(items) > 1:
++        return _one(items[normalize(position, len(items))])
++    first = items[0]
++    if isinstance(first, sdk.ImageRef):
++        # The original returns any[0][idx:idx+1].clone(); select_batch returns the same rows behind an IMAGE ref,
++        # which is what crosses the guest wire (a raw tensor cannot).
++        try:
++            count = await first.batch_size()
++            return _one(await first.select_batch([normalize(position, count)]))
++        except (TypeError, ValueError) as error:
++            raise RuntimeError(
++                "easy indexAnything is not available in this secure build for this input: only an IMAGE batch "
++                "(B,H,W,C) can be indexed; a MASK or other tensor batch cannot be returned as a ref") from error
++    if isinstance(first, sdk.ValueRef) and not isinstance(first, sdk.CondRef):
++        first = await _raw(first)  # a LATENT/AUDIO dict: the original indexes the dict itself
++    elif isinstance(first, sdk.Ref):
++        raise RuntimeError(
++            f"easy indexAnything is not available in this secure build for a {first.kind} input: an item of it "
++            "cannot be returned across the guest wire")
++    if hasattr(first, "__len__") and len(first) > 0:
++        return _one(first[normalize(position, len(first))])
++    return _one(first)
 +
 +
 +async def _batch(any_1, any_2, **_kwargs):
@@ -53604,18 +53654,35 @@
 +
 +
 +async def _show(anything=None, **_kwargs):
-+    value = await _raw(anything)
-+    if isinstance(value, list):
-+        display = [str(item) for item in value]
-+    elif isinstance(value, sdk.Ref):
-+        display = [f"<{value.kind} ref>"]
-+    else:
-+        try:
-+            display = [json.dumps(value, ensure_ascii=False)]
-+        except (TypeError, ValueError):
-+            display = [str(value)]
-+    result = display[0] if len(display) == 1 else display
-+    return {"ui": {"text": display}, "result": (result,)}
++    """easy showAnything as the original (py/nodes/logic.py:1329-1358), value by value: nothing connected (or only
++    None) shows and returns [] ; strings as they are; numbers and booleans as str(); a list of up to 30 items
++    replaces the shown values; anything else as json.dumps(indent=4, ensure_ascii=False), else str()."""
++    values = []
++    if anything is not None:
++        for value in anything if isinstance(anything, list) else [anything]:
++            if isinstance(value, str):
++                values.append(value)
++            elif isinstance(value, (int, float, bool)):
++                values.append(str(value))
++            elif isinstance(value, list) and len(value) <= 30:
++                values = value
++            elif value is not None:
++                if isinstance(value, (sdk.TensorRef, sdk.LatentRef)):
++                    value = await _raw(value)  # the original formats the tensor / latent dict itself
++                elif isinstance(value, sdk.Ref):
++                    # Engine objects (MODEL, CLIP, CONDITIONING, ...) have no portable text: the original shows their
++                    # Python repr, which holds a memory address (SECURE_CONVERSION.md, repair round r1).
++                    values.append(f"<{value.kind} ref>")
++                    continue
++                try:
++                    values.append(json.dumps(value, indent=4, ensure_ascii=False))
++                except Exception:
++                    try:
++                        values.append(str(value))
++                    except Exception:
++                        raise Exception("source exists, but could not be serialized.")
++    result = values[0] if isinstance(values, list) and len(values) == 1 else values
++    return {"ui": {"text": values}, "result": (result,)}
 +
 +
 +async def _show_shape(tensor, **_kwargs):
@@ -117467,6 +117534,564 @@
 +  },
 +  "web_directory": "web_version/v1"
 +}
+--- /dev/null
++++ b/v2/tests/easyuse_parity_worker.py
+@@ -0,0 +1,293 @@
++"""One side of the comfyui-easy-use repair-round parity run (to-50% gate container only).
++
++argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
++
++Every case's prompt runs through ComfyUI's real PromptExecutor (core 6257422b at /core, the engine_commit of the
++live V2 deployment) with the pack loaded as a custom node: the pristine pack copied to
++<OUT>/nodes-root/custom_nodes/ComfyUI-Easy-Use (with /deps, pinned wheels, on sys.path), or /pack/v2 read-only.
++
++Harness facts, both sides:
++  * server.PromptServer.instance is a stand-in: the original registers HTTP routes and an on-prompt handler at
++    import (py/routes.py, py/server.py:170). Routes and handlers are recorded, never served; send_sync is recorded.
++  * Test-only nodes (AMY*) produce inputs and probe outputs; core's PreviewAny, ImageBatch, SaveImage and
++    EmptyLatentImage are the real ones.
++V2 side only:
++  * The live runtime runs V2 nodes out of process: each result and UI crosses the guest wire, whose encoder refuses
++    anything but refs, JSON scalars and containers (overlay comfy_secure_nodes/transport/wire.py encode()). The
++    in-process SDK of core never encodes, so the harness runs that same encode() (loaded read-only from the overlay
++    mount) on every V2 node's results and UI before core resolves them (_sdk.unwrap_outputs). A value the live
++    wire refuses fails here with the live error.
++"""
++import asyncio
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import shutil
++import sys
++import types
++
++SIDE, CASES, OUT, FIXTURES = sys.argv[1:5]
++OUT = Path(OUT)
++sys.path[:0] = ['/core']
++if SIDE == 'original' and os.path.isdir('/deps'):
++    sys.path.append('/deps')
++sys.argv = ['main.py', '--cpu']
++
++import comfy.options  # noqa: E402
++comfy.options.enable_args_parsing()
++import torch  # noqa: E402
++torch.set_num_threads(1)
++import folder_paths  # noqa: E402
++
++for name, setter in (('output', folder_paths.set_output_directory), ('temp', folder_paths.set_temp_directory),
++                     ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
++    (OUT / name).mkdir(parents=True, exist_ok=True)
++    setter(str(OUT / name))
++for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'})):
++    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
++CWD = OUT / 'cwd'
++CWD.mkdir(parents=True, exist_ok=True)
++os.chdir(CWD)
++
++# ---- PromptServer stand-in (the original registers routes and an on-prompt handler at import)
++from aiohttp import web  # noqa: E402
++import server  # noqa: E402
++
++SENT = []
++
++
++class StubPromptServer:
++    def __init__(self):
++        self.routes = web.RouteTableDef()
++        self.client_id = None
++        self.last_node_id = None
++        self.on_prompt_handlers = []
++        self.supports = []
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++    def add_on_prompt_handler(self, handler):
++        self.on_prompt_handlers.append(handler)
++
++    def __getattr__(self, name):  # anything else the pack touches at import
++        raise AttributeError(f'harness PromptServer stand-in has no {name}')
++
++
++server.PromptServer.instance = StubPromptServer()
++
++import nodes as core_nodes  # noqa: E402
++import execution  # noqa: E402
++from comfy_extras.nodes_preview_any import PreviewAny  # noqa: E402
++
++core_nodes.NODE_CLASS_MAPPINGS['PreviewAny'] = PreviewAny
++
++
++# ---- test-only nodes
++def _summary(value, depth=0):
++    """Deterministic, comparable description of any value a node returns."""
++    if isinstance(value, torch.Tensor):
++        data = value.detach().contiguous().cpu()
++        return {'tensor': list(data.shape), 'dtype': str(data.dtype),
++                'sha256': hashlib.sha256(data.numpy().tobytes()).hexdigest()}
++    if isinstance(value, dict):
++        return {'dict': {str(k): _summary(v, depth + 1) for k, v in value.items()}}
++    if isinstance(value, (list, tuple)):
++        return {type(value).__name__: [_summary(v, depth + 1) for v in value]}
++    if isinstance(value, (str, int, float, bool)) or value is None:
++        return {type(value).__name__: value}
++    return {'object': type(value).__name__}
++
++
++def _standin(name, run, input_types, return_types, output_node=False, output_is_list=None, input_is_list=False):
++    attrs = {'INPUT_TYPES': classmethod(lambda cls: input_types()), 'RETURN_TYPES': return_types,
++             'FUNCTION': 'run', 'CATEGORY': 'amy-test', 'run': run, 'OUTPUT_NODE': output_node,
++             'INPUT_IS_LIST': input_is_list}
++    if output_is_list is not None:
++        attrs['OUTPUT_IS_LIST'] = output_is_list
++    return type(f'AMYStandin_{name}', (), attrs)
++
++
++def _image(width, height, batch, seed, channels=3):
++    generator = torch.Generator().manual_seed(seed)
++    return torch.rand((batch, height, width, channels), generator=generator, dtype=torch.float32)
++
++
++def _probe(self, label, value=None, after=None):
++    items = value if isinstance(value, list) else [value]
++    return {'ui': {'probe': [json.dumps({'label': label[0] if isinstance(label, list) else label,
++                                         'items': [_summary(item) for item in items]}, sort_keys=True)]}}
++
++
++class StandinModel:
++    """Weightless MODEL: the SDK recognises a ModelPatcher by model_options + load_device."""
++    def __init__(self):
++        self.model_options = {}
++        self.load_device = 'cpu'
++
++
++class StandinCLIP:
++    """Weightless CLIP: the SDK recognises a CLIP by tokenize/encode_from_tokens."""
++    def tokenize(self, text):
++        return {}
++
++
++class StandinVAE:
++    """Weightless VAE: the SDK recognises a VAE by encode + decode."""
++    def encode(self, pixels):
++        return pixels
++
++    def decode(self, samples):
++        return samples
++
++
++def _cond(seed):
++    generator = torch.Generator().manual_seed(seed)
++    return [[torch.rand((1, 4, 8), generator=generator), {'pooled_output': torch.rand((1, 8), generator=generator)}]]
++
++
++ANY = '*'
++STANDINS = {
++    'AMYTestModel': _standin('AMYTestModel', lambda self: (StandinModel(),), lambda: {'required': {}}, ('MODEL',)),
++    'AMYTestClip': _standin('AMYTestClip', lambda self: (StandinCLIP(),), lambda: {'required': {}}, ('CLIP',)),
++    'AMYTestVAE': _standin('AMYTestVAE', lambda self: (StandinVAE(),), lambda: {'required': {}}, ('VAE',)),
++    'AMYTestCond': _standin('AMYTestCond', lambda self, seed: (_cond(seed),),
++                            lambda: {'required': {'seed': ('INT', {'default': 0})}}, ('CONDITIONING',)),
++    'AMYTestString': _standin('AMYTestString', lambda self, text: (text,),
++                              lambda: {'required': {'text': ('STRING', {'default': '', 'multiline': True})}},
++                              ('STRING',)),
++    'AMYTestJSON': _standin('AMYTestJSON', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': 'null', 'multiline': True})}},
++                            (ANY,)),
++    'AMYTestList': _standin('AMYTestList', lambda self, text: (json.loads(text),),
++                            lambda: {'required': {'text': ('STRING', {'default': '[]', 'multiline': True})}},
++                            (ANY,), output_is_list=(True,)),
++    'AMYTestImage': _standin('AMYTestImage', lambda self, width, height, batch, seed, after=None:
++                             (_image(width, height, batch, seed),),
++                             lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                   'batch': ('INT', {'default': 1}), 'seed': ('INT', {'default': 0})},
++                                      'optional': {'after': (ANY,)}},
++                             ('IMAGE',)),
++    'AMYTestImageList': _standin('AMYTestImageList', lambda self, count, seed:
++                                 ([_image(8 + i, 6, 1, seed + i) for i in range(count)],),
++                                 lambda: {'required': {'count': ('INT', {'default': 3}), 'seed': ('INT', {'default': 0})}},
++                                 ('IMAGE',), output_is_list=(True,)),
++    'AMYTestMask': _standin('AMYTestMask', lambda self, width, height, batch, seed:
++                            (_image(width, height, batch, seed)[..., 0],),
++                            lambda: {'required': {'width': ('INT', {'default': 16}), 'height': ('INT', {'default': 12}),
++                                                  'batch': ('INT', {'default': 2}), 'seed': ('INT', {'default': 0})}},
++                            ('MASK',)),
++    'AMYProbe': _standin('AMYProbe', _probe,
++                         lambda: {'required': {'label': ('STRING', {'default': ''})},
++                                  'optional': {'value': (ANY,), 'after': (ANY,)}},
++                         (), output_node=True, input_is_list=True),
++}
++core_nodes.NODE_CLASS_MAPPINGS.update(STANDINS)
++
++# ---- the live guest wire, V2 side
++WIRE = None
++if SIDE == 'v2':
++    from comfy_api.latest import _sdk as comfy_sdk
++    spec = importlib.util.spec_from_file_location('amy_overlay_wire',
++                                                  '/overlay/comfy_secure_nodes/transport/wire.py')
++    WIRE = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(WIRE)
++    _unwrap_outputs = comfy_sdk.unwrap_outputs
++
++    async def unwrap_outputs_across_wire(resolver, node_output):
++        if getattr(node_output, 'result', None):
++            WIRE.encode(list(node_output.result), preserve_tuples=True)
++        if getattr(node_output, 'ui', None) is not None:
++            WIRE.encode(node_output.ui, preserve_tuples=True)
++        return await _unwrap_outputs(resolver, node_output)
++
++    comfy_sdk.unwrap_outputs = unwrap_outputs_across_wire
++
++# ---- load the pack under test
++if SIDE == 'original':
++    pack_dir = OUT / 'nodes-root' / 'custom_nodes' / 'ComfyUI-Easy-Use'
++    shutil.copytree('/pack', pack_dir, ignore=shutil.ignore_patterns('v2'))
++    pack_path = str(pack_dir)
++else:
++    pack_path = '/pack/v2'
++LOAD_ERROR = None
++try:
++    loaded = asyncio.run(core_nodes.load_custom_node(pack_path, ignore=set(), module_parent='custom_nodes'))
++except Exception as error:  # recorded, never hidden
++    loaded, LOAD_ERROR = False, f'{type(error).__name__}: {error}'
++
++
++class Server:
++    def __init__(self):
++        self.client_id = None
++        self.last_node_id = None
++
++    def send_sync(self, event, data, sid=None):
++        SENT.append([event, json.loads(json.dumps(data, default=str))])
++
++
++def describe_file(path):
++    data = path.read_bytes()
++    row = {'path': str(path.relative_to(OUT / 'output')), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
++    if path.suffix.lower() == '.png':
++        from PIL import Image
++        import numpy as np
++        with Image.open(path) as im:
++            row.update({'size': list(im.size), 'mode': im.mode, 'text': dict(getattr(im, 'text', {}) or {}),
++                        'pixels_sha256': hashlib.sha256(np.asarray(im.convert('RGBA')).tobytes()).hexdigest()})
++    return row
++
++
++def run_case(case):
++    result = {'name': case['name'], 'runs': []}
++    for index in range(case.get('runs', 1)):
++        torch.manual_seed(20261102)
++        prompt = json.loads(json.dumps(case['prompt']))
++        prompt_id = f"{case['name']}-{index}"
++        before = {p for p in (OUT / 'output').rglob('*') if p.is_file()}
++        SENT.clear()
++        valid = asyncio.run(execution.validate_prompt(prompt_id, prompt, None))
++        if not valid[0]:
++            result['runs'].append({'validation_error': json.loads(json.dumps(valid[1], default=str)),
++                                   'node_errors': json.loads(json.dumps(valid[3], default=str))})
++            continue
++        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
++                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
++        extra = {'extra_pnginfo': case['extra_pnginfo']} if case.get('extra_pnginfo') else {}
++        executor.execute(prompt, prompt_id, json.loads(json.dumps(extra)), valid[2])
++        errors = []
++        for event, data in executor.status_messages:
++            if event == 'execution_error':
++                errors.append({'node_id': data.get('node_id'), 'node_type': data.get('node_type'),
++                               'exception_type': data.get('exception_type'),
++                               'exception_message': data.get('exception_message'),
++                               'traceback_tail': ''.join(data.get('traceback') or [])[-1500:]})
++        history = getattr(executor, 'history_result', None) or {}
++        files = sorted((p for p in (OUT / 'output').rglob('*') if p.is_file() and p not in before), key=str)
++        result['runs'].append({'success': bool(executor.success), 'errors': errors,
++                               'ui': json.loads(json.dumps(history.get('outputs', {}), default=str)),
++                               'files': [describe_file(p) for p in files],
++                               'sent': [row for row in SENT if row[0] not in ('progress', 'executing')]})
++    return result
++
++
++def main():
++    cases = json.loads(Path(CASES).read_text())
++    report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
++              'output_dir': str(OUT / 'output'),
++              'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
++              'routes': len(server.PromptServer.instance.routes), 'cases': []}
++    if loaded:
++        for case in cases:
++            try:
++                report['cases'].append(run_case(case))
++            except Exception as error:  # a harness failure is recorded, never hidden
++                import traceback
++                report['cases'].append({'name': case['name'], 'harness_error': f'{type(error).__name__}: {error}',
++                                        'traceback': traceback.format_exc()[-3000:]})
++    (OUT / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
++
++
++main()
+--- /dev/null
++++ b/v2/tests/test_easyuse_repair_parity.py
+@@ -0,0 +1,259 @@
++"""Tier-1 parity for comfyui-easy-use repair rounds: the pristine pack (58e077a7) vs the repaired V2 conversion.
++
++Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, original side only):
++  run_in_gate.sh <pack root> <v2/tests> <results> test_easyuse_repair_parity.py [ROUND] [CASE-FILTER]
++
++Two workers execute the same prompts through ComfyUI's real executor (easyuse_parity_worker.py); the V2 worker runs
++the live guest-wire encoder on every V2 node's results and UI. Each case declares its expected outcome:
++  EXACT                identical UI records (PreviewAny, AMYProbe, node UI) and identical output files
++  ERROR-PARITY         both fail with the same exception type and message
++  REFUSED-AS-DESIGNED  the original succeeds; V2 raises its named "not available in this secure build" RuntimeError
++  KNOWN-DIFFERENCE     both sides behave as SECURE_CONVERSION.md documents
++  PLATFORM-DEFECT      a case that needs a platform fix (not this pack); reported, not counted as a pass or fail
++Cases use synthetic inputs only (seeded tensors, literal text); no upstream media, workflows or model files.
++"""
++import copy
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++TESTS = Path(__file__).resolve().parent
++RESULTS = Path('/results')
++WORK = Path('/tmp/amy-easyuse-parity')
++ROUND = sys.argv[1] if len(sys.argv) > 1 else 'r1'
++FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
++
++
++def n(node_id, class_type, **inputs):
++    return {node_id: {'class_type': class_type, 'inputs': inputs}}
++
++
++def g(*parts):
++    out = {}
++    for part in parts:
++        out.update(part)
++    return out
++
++
++def case(name, prompt, expect='outputs', extra_pnginfo=None, note=''):
++    return {'name': name, 'prompt': prompt, 'expect': expect, 'extra_pnginfo': extra_pnginfo, 'note': note}
++
++
++def js(node_id, text):
++    return n(node_id, 'AMYTestJSON', text=text)
++
++
++def show(source=None, node_id='1'):
++    return n(node_id, 'easy showAnything', **({'anything': source} if source else {}))
++
++
++def preview(source, node_id='2'):
++    return n(node_id, 'PreviewAny', source=source)
++
++
++def probe(value, node_id='99', label='probe'):
++    return n(node_id, 'AMYProbe', label=label, value=value)
++
++
++def img(node_id, seed, batch=1, width=96, height=64):
++    return n(node_id, 'AMYTestImage', width=width, height=height, batch=batch, seed=seed)
++
++
++def index(source, idx, node_id='20'):
++    return n(node_id, 'easy indexAnything', any=source, index=idx)
++
++
++def save(images, prefix, node_id):
++    return n(node_id, 'SaveImage', images=images, filename_prefix=prefix)
++
++
++SHOW_CASES = [
++    case('show-unconnected', g(show(), preview(['1', 0])), note='live A/B defect: unconnected input showed "null" instead of []'),
++    case('show-string', g(n('10', 'AMYTestString', text='hello wörld 中'), show(['10', 0]), preview(['1', 0]),
++                          probe(['1', 0]))),
++    case('show-int', g(js('10', '7'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-float', g(js('10', '0.1'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-float-exp', g(js('10', '1e-07'), show(['10', 0]), preview(['1', 0]))),
++    case('show-bool', g(js('10', 'true'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-dict', g(js('10', '{"b": 1, "a": [1, 2, {"c": "\\u00e9\\u4e2d"}], "n": null}'), show(['10', 0]),
++                        preview(['1', 0]), probe(['1', 0]))),
++    case('show-list-value', g(js('10', '[1, "x", 2.5]'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-list-31', g(js('10', json.dumps(list(range(31)))), show(['10', 0]), preview(['1', 0]))),
++    case('show-list-single', g(js('10', '[42]'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-list-output', g(n('10', 'AMYTestList', text='["a", "b", "c"]'), show(['10', 0]), preview(['1', 0]),
++                               probe(['1', 0]))),
++    case('show-none-value', g(js('10', 'null'), show(['10', 0]), preview(['1', 0]), probe(['1', 0]))),
++    case('show-image', g(img('10', 3, width=2, height=2), show(['10', 0]), preview(['1', 0]))),
++    case('show-latent', g(n('10', 'EmptyLatentImage', width=64, height=64, batch_size=1), show(['10', 0]),
++                          preview(['1', 0]))),
++    case('show-widgets-in-saved-workflow',
++         g(n('10', 'AMYTestString', text='hello'), show(['10', 0]),
++           n('30', 'AMYTestImage', width=8, height=8, batch=1, seed=1, after=['1', 0]),
++           save(['30', 0], 'show-wf', '31')),
++         expect='known:show-workflow-widgets',
++         extra_pnginfo={'workflow': {'nodes': [{'id': 1, 'type': 'easy showAnything', 'widgets_values': []},
++                                               {'id': 31, 'type': 'SaveImage', 'widgets_values': ['show-wf']}],
++                                     'links': [], 'version': 0.4}}),
++]
++INDEX_CASES = [
++    case('index-image-batch-999', g(img('1', 11), img('2', 12), n('batch', 'ImageBatch', image1=['1', 0], image2=['2', 0]),
++                                    index(['batch', 0], 999), save(['20', 0], 'idx-sel', 'selected'),
++                                    save(['1', 0], 'idx-unsel', 'unselected')),
++         note='live A/B defect: IMAGE batch, index past the end (raw tensor on the guest wire)'),
++    case('index-image-batch-minus999', g(img('1', 11), img('2', 12),
++                                         n('batch', 'ImageBatch', image1=['1', 0], image2=['2', 0]),
++                                         index(['batch', 0], -999), save(['20', 0], 'idx-sel', 'selected'),
++                                         save(['2', 0], 'idx-unsel', 'unselected')),
++         note='live A/B defect: IMAGE batch, index before the start (raw tensor on the guest wire)'),
++    case('index-image-batch-minus1', g(img('1', 21, batch=3), index(['1', 0], -1), save(['20', 0], 'idx-m1', 's'))),
++    case('index-image-batch-1', g(img('1', 21, batch=3), index(['1', 0], 1), save(['20', 0], 'idx-1', 's'))),
++    case('index-image-list-output', g(n('1', 'AMYTestImageList', count=3, seed=5), index(['1', 0], 2),
++                                      save(['20', 0], 'idx-list', 's'))),
++    case('index-list-output', g(n('1', 'AMYTestList', text='["a", "b", "c"]'), index(['1', 0], 1), preview(['20', 0]),
++                                probe(['20', 0]))),
++    case('index-list-output-neg', g(n('1', 'AMYTestList', text='["a", "b", "c"]'), index(['1', 0], -1),
++                                    preview(['20', 0]))),
++    case('index-list-output-clamp', g(n('1', 'AMYTestList', text='["a", "b", "c"]'), index(['1', 0], -9),
++                                      preview(['20', 0]))),
++    case('index-string', g(n('1', 'AMYTestString', text='hello'), index(['1', 0], 1), preview(['20', 0]))),
++    case('index-empty-string', g(n('1', 'AMYTestString', text=''), index(['1', 0], 0), probe(['20', 0]))),
++    case('index-json-list', g(js('1', '[10, 20, 30]'), index(['1', 0], -1), probe(['20', 0]))),
++    case('index-int', g(js('1', '5'), index(['1', 0], 0), probe(['20', 0]))),
++    case('index-latent', g(n('1', 'EmptyLatentImage', width=64, height=64, batch_size=1), index(['1', 0], 0),
++                           probe(['20', 0])), expect='error'),
++    case('index-mask', g(n('1', 'AMYTestMask', width=16, height=12, batch=2, seed=4), index(['1', 0], 1),
++                         probe(['20', 0])), expect='refusal'),
++]
++PIPE_CASES = [
++    case('pipe-in-out-chain',
++         g(n('m', 'AMYTestModel'), n('c', 'AMYTestClip'), n('v', 'AMYTestVAE'), n('p', 'AMYTestCond', seed=1),
++           n('q', 'AMYTestCond', seed=2), n('l', 'EmptyLatentImage', width=64, height=64, batch_size=1), img('i', 7),
++           n('22', 'easy pipeIn', model=['m', 0], pos=['p', 0], neg=['q', 0], latent=['l', 0], vae=['v', 0],
++             clip=['c', 0], image=['i', 0]),
++           n('23', 'easy pipeOut', pipe=['22', 0]),
++           *[probe(['23', slot], node_id=f'out{slot}', label=name)
++             for slot, name in enumerate(['pipe', 'model', 'pos', 'neg', 'latent', 'vae', 'clip', 'image', 'seed'])
++             if name != 'pipe']),
++         expect='platform:sdk-pipe-classification',
++         note='live A/B defect: PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification); weightless stand-ins'),
++]
++CASES = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES}[ROUND]
++if FILTER:
++    CASES = [c for c in CASES if FILTER in c['name']]
++
++
++def run_side(side):
++    out = WORK / side
++    out.mkdir(parents=True, exist_ok=True)
++    cmd = [sys.executable, '-I', '-B', str(TESTS / 'easyuse_parity_worker.py'), side, str(WORK / 'cases.json'),
++           str(out), str(WORK / 'fixtures')]
++    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3000)
++    (RESULTS / f'worker-{side}.log').write_text(proc.stdout[-20000:] + '\n--- stderr ---\n' + proc.stderr[-40000:])
++    if proc.returncode != 0 or not (out / 'report.json').exists():
++        raise RuntimeError(f'{side} worker failed rc={proc.returncode}: {proc.stderr[-3000:]}')
++    (RESULTS / f'worker-{side}.json').write_bytes((out / 'report.json').read_bytes())
++    report = json.loads((out / 'report.json').read_text())
++    if not report['loaded']:
++        raise RuntimeError(f'{side}: pack did not load: {report["load_error"]}')
++    return report
++
++
++def errors_of(run):
++    return [(e['exception_type'].rsplit('.', 1)[-1], e['exception_message']) for e in run.get('errors', [])]
++
++
++def comparable(run):
++    """UI per node and output files, as both sides record them."""
++    ui = {}
++    for node_id, node_ui in sorted(run.get('ui', {}).items()):
++        value = copy.deepcopy(node_ui)
++        if 'probe' in value:
++            value['probe'] = [json.loads(item) for item in value['probe']]
++        ui[node_id] = value
++    files = [{k: f.get(k) for k in ('path', 'sha256', 'pixels_sha256', 'size', 'mode', 'text')} for f in run['files']]
++    return {'ui': ui, 'files': files}
++
++
++def compare(spec, orig, conv):
++    name, expect = spec['name'], spec['expect']
++    row = {'case': name, 'expect': expect}
++    if spec.get('note'):
++        row['note'] = spec['note']
++    if 'harness_error' in orig or 'harness_error' in conv:
++        return {**row, 'verdict': 'HARNESS-ERROR', 'original': orig.get('harness_error'), 'v2': conv.get('harness_error')}
++    run_o, run_c = orig['runs'][-1], conv['runs'][-1]
++    if 'validation_error' in run_o or 'validation_error' in run_c:
++        return {**row, 'verdict': 'MISMATCH', 'validation': [run_o.get('node_errors'), run_c.get('node_errors')]}
++    err_o, err_c = errors_of(run_o), errors_of(run_c)
++    if expect == 'error':
++        ok = bool(err_o) and err_o == err_c
++        return {**row, 'verdict': 'ERROR-PARITY' if ok else 'MISMATCH', 'errors': [err_o, err_c]}
++    if expect == 'refusal':
++        ok = not err_o and len(err_c) == 1 and err_c[0][0] == 'RuntimeError' \
++            and 'is not available in this secure build' in err_c[0][1]
++        return {**row, 'verdict': 'REFUSED-AS-DESIGNED' if ok else 'MISMATCH', 'errors': [err_o, err_c],
++                'original_ui': comparable(run_o)['ui']}
++    if expect.startswith('platform:'):
++        if not err_o and not err_c and comparable(run_o) == comparable(run_c):
++            return {**row, 'verdict': 'EXACT', 'note': row.get('note', '') + ' (passes on this core)'}
++        return {**row, 'verdict': 'PLATFORM-DEFECT', 'errors': [err_o, err_c]}
++    if err_o or err_c:
++        return {**row, 'verdict': 'MISMATCH', 'errors': [err_o, err_c]}
++    co, cc = comparable(run_o), comparable(run_c)
++    if not co['ui'] and not co['files']:
++        return {**row, 'verdict': 'MISMATCH', 'notes': 'nothing observable on the original side'}
++    if expect == 'known:show-workflow-widgets':
++        def workflow_of(c):
++            return json.loads(c['files'][0]['text']['workflow']) if c['files'] else None
++        wo, wc = workflow_of(co), workflow_of(cc)
++        widgets_o = [nd['widgets_values'] for nd in wo['nodes'] if nd['id'] == 1]
++        widgets_c = [nd['widgets_values'] for nd in wc['nodes'] if nd['id'] == 1]
++        pixels_same = co['files'][0]['pixels_sha256'] == cc['files'][0]['pixels_sha256']
++        ok = pixels_same and widgets_o == [[['hello']]] and widgets_c == [[]] and co['ui'] == cc['ui']
++        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
++                'widgets_values': {'original': widgets_o, 'v2': widgets_c}, 'pixels_same': pixels_same}
++    if co != cc:
++        return {**row, 'verdict': 'MISMATCH', 'original': co, 'v2': cc}
++    return {**row, 'verdict': 'EXACT', 'observed': co}
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (WORK / 'fixtures').mkdir(parents=True, exist_ok=True)
++    (WORK / 'cases.json').write_text(json.dumps(CASES, indent=1))
++    original = run_side('original')
++    converted = run_side('v2')
++    by_o = {c['name']: c for c in original['cases']}
++    by_c = {c['name']: c for c in converted['cases']}
++    rows = [compare(spec, by_o[spec['name']], by_c[spec['name']]) for spec in CASES]
++    counts = {}
++    for row in rows:
++        counts[row['verdict']] = counts.get(row['verdict'], 0) + 1
++    control = {'verdict': 'NOT-RUN'}
++    target = next((r for r in rows if r['verdict'] == 'EXACT' and r['case'] == 'show-dict'), None)
++    if target:
++        spec = next(s for s in CASES if s['name'] == 'show-dict')
++        tampered = copy.deepcopy(by_c['show-dict'])
++        tampered['runs'][-1]['ui']['2']['text'][0] += ' '
++        control = compare(spec, by_o['show-dict'], tampered)
++    report = {'pack': 'comfyui-easy-use', 'round': ROUND, 'pin': '58e077a7435631301cf7443412515cf958e7f3d1',
++              'harness': 'ComfyUI core at /core (PromptExecutor, classic cache) on both sides; V2 results and UI '
++                         'encoded with the live overlay transport/wire.py; torch seeded before every prompt',
++              'core_sdk_classification': 'patched' if 'hasattr(v.get("samples"), "shape")' in
++              Path('/core/comfy_api/latest/_sdk.py').read_text() else 'stock',
++              'counts': counts, 'cases': rows,
++              'negative_control': {'case': 'show-dict', 'verdict_after_tamper': control['verdict'],
++                                   'turned_red': control['verdict'] == 'MISMATCH'}}
++    (RESULTS / 'parity.json').write_text(json.dumps(report, indent=2) + '\n')
++    print(json.dumps({'counts': counts, 'negative_control': report['negative_control'],
++                      'core_sdk_classification': report['core_sdk_classification'],
++                      'not_green': [{k: r.get(k) for k in ('case', 'verdict', 'errors')} for r in rows
++                                    if r['verdict'] not in ('EXACT', 'ERROR-PARITY', 'REFUSED-AS-DESIGNED',
++                                                            'KNOWN-DIFFERENCE')]}, indent=1)[:12000])
++    green = {'EXACT', 'ERROR-PARITY', 'REFUSED-AS-DESIGNED', 'KNOWN-DIFFERENCE', 'PLATFORM-DEFECT'}
++    sys.exit(0 if set(counts) <= green and control['verdict'] in ('MISMATCH', 'NOT-RUN') else 1)
++
++
++main()
 --- a/web_version/v1/js/bookmark.js
 +++ b/v2/web_version/v1/js/bookmark.js
 @@ -1,101 +1,92 @@
