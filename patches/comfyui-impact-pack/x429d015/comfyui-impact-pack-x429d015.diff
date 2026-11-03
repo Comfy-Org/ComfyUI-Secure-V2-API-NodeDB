@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,190 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `429d0159ad429e64d2b3916e6e7be9c22d025c3c`.
@@ -175,6 +175,22 @@
 +- `tests/test_detailer_repair_r6.py` is the lane-gate parity test. No model can run in the gate, so both sides use
 +  the same deterministic stand-ins for the VAE encode, the sampler and the VAE decode. Everything else is compared
 +  exactly: DetailerForEach's six outputs, and SEGSDetailer followed by SEGSPaste.
++
++## Fidelity repair NED r1 (iterative upscaling, SEGSPreview)
++- **PixelKSampleUpscalerProvider's sampling** (IterativeLatentUpscale / IterativeImageUpscale).
++  - Upstream's PixelKSampleUpscaler samples through `impact_sampling.impact_sample`: `floor(steps / denoise)` total
++    steps, sampled from `total - steps` to the end (KSamplerAdvanced's slice, no leftover noise).
++  - It returns the sampler's final denoised prediction, not the last latent.
++  - The engine's sample is now called exactly that way (start/last step, `return_denoised`). The pixel-hook steps
++    (post-encode, steps/cfg/denoise schedules) are unchanged.
++  - Known difference: for the SDE samplers (dpmpp_sde, dpmpp_2m_sde, dpmpp_3m_sde and their _gpu forms) upstream
++    seeds its Brownian noise sampler from the full schedule's sigma range, while the engine uses the sliced range.
++- **SEGSPreview** runs upstream's `doit` (verbatim in `_segs_preview_upstream.py`).
++  - SEGS are scale-matched to the fallback image.
++  - Crops and masks are upstream's: combined and binary masks, min_alpha.
++  - With neither cropped images nor a fallback image it returns no output, as upstream does.
++  - The previews are upstream's RGBA images, shown through the SDK's temp preview as PNG. Upstream wrote lossy WebP
++    into the temp folder. This needs the "ui" permission.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,456 +1,13 @@
@@ -37097,7 +37113,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,6743 @@
+@@ -0,0 +1,6820 @@
 +"""Secure Nodes 2.0 conversion for the pinned Impact Pack snapshot.
 +
 +The upstream pack combines ordinary value, mask, image, SEGS and pipe
@@ -39510,10 +39526,31 @@
 +    return _one(result)
 +
 +
-+async def _segs_preview(segs, alpha_mode=True, fallback_image_opt=None, **_kwargs):
-+    return await _segs_to_images(
-+        segs, fallback_image_opt=fallback_image_opt, masked=bool(alpha_mode)
-+    )
++async def _segs_preview(segs, alpha_mode=True, min_alpha=0.0, fallback_image_opt=None, **_kwargs):
++    # Impact Pack segs_nodes.py SEGSPreview.doit, upstream (repair NED r1; verbatim in _segs_preview_upstream.py).
++    # Each preview is upstream's PIL image, shown through the SDK's temp preview (a PNG, where upstream wrote a
++    # lossy WebP into the temp folder). Its bytes cross exactly: (v + 0.5) / 255 is turned back into v by the
++    # preview writer's 8-bit conversion.
++    from comfy_api.latest import io as v3_io
++
++    from . import _segs_preview_upstream as upstream
++
++    async def save_preview(pil_image):
++        array = np.asarray(pil_image)
++        if array.ndim == 2:
++            array = array[..., None]
++        pixels = torch.from_numpy((array.astype(np.float32) + 0.5) / 255.0).unsqueeze(0)
++        shown = await _ctx().ui.preview_images(await sdk.ImageRef.from_value(pixels))
++        return list((shown or {}).get("images", []))
++
++    fallback = None if fallback_image_opt is None else _image4(await _raw(fallback_image_opt))
++    result = await upstream.segs_preview_doit(
++        upstream.to_upstream_segs(_segs(await _raw(segs))), alpha_mode, min_alpha, fallback,
++        save_preview=save_preview)
++    if "result" not in result:
++        # Upstream returns no output at all here (no cropped images and no fallback image).
++        return v3_io.NodeOutput(ui=result["ui"])
++    return result
 +
 +
 +async def _segs_preview_cnet(segs, **_kwargs):
@@ -42522,6 +42559,62 @@
 +    ))
 +
 +
++async def _impact_sample_latent(
++    latent: Any,
++    *,
++    model: Any,
++    positive: Any,
++    negative: Any,
++    seed: int,
++    steps: int,
++    cfg: float,
++    sampler_name: str,
++    scheduler: str,
++    denoise: float,
++    hook: Any,
++    step_info: tuple[int, int],
++    sigma_schedule: Any = None,
++):
++    """PixelKSampleUpscaler.sample -> impact_sampling.impact_sample, as upstream runs it (repair NED r1).
++
++    The pixel-hook steps are _pixel_sample_values' (post-encode transforms, then the steps/cfg/denoise
++    schedule). Upstream then samples ``floor(steps / denoise)`` total steps from ``total - steps`` to the end
++    through separated_sample (KSamplerAdvanced's slice, no leftover noise) and returns the sampler's final
++    denoised prediction (sample_with_custom_noise's second output), not the last latent. The engine's sample
++    with start/last steps and ``return_denoised`` is that call.
++    """
++    current = await _pixel_hook_post_encode(latent, hook, step_info)
++    steps, cfg, denoise = _pixel_hook_sample_values(
++        hook, step_info, steps=steps, cfg=cfg, denoise=denoise)
++    schedule = _sigma_schedule_recipe(sigma_schedule)
++    if schedule is None and str(scheduler) not in _HOST_SCHEDULERS:
++        raise RuntimeError(
++            f"Impact scheduler {scheduler!r} needs a typed host "
++            "sigma-schedule primitive")
++    advanced_steps = math.floor(steps / denoise)
++    start_at_step = advanced_steps - steps
++    end_at_step = start_at_step + steps
++    _output, denoised = await _ctx().sample(
++        latent=current,
++        steps=int(advanced_steps),
++        model=model,
++        positive=positive,
++        negative=negative,
++        cfg=float(cfg),
++        seed=int(seed),
++        sampler_name=str(sampler_name),
++        scheduler=str(scheduler),
++        denoise=1.0,
++        disable_noise=False,
++        start_step=int(start_at_step),
++        last_step=int(end_at_step),
++        force_full_denoise=True,
++        sigma_schedule=schedule,
++        return_denoised=True,
++    )
++    return _as_latent_ref(denoised)
++
++
 +def _as_cond_ref(value: Any):
 +    if isinstance(value, sdk.CondRef):
 +        return value
@@ -43202,7 +43295,7 @@
 +            sampled = await _pixel_tiled_sample(
 +                encoded, spec, step_info, positive, negative)
 +        else:
-+            sampled = await _pixel_sample_values(
++            sampled = await _impact_sample_latent(
 +                encoded,
 +                model=spec["model"],
 +                positive=positive,
@@ -43639,7 +43732,7 @@
 +_set({"RemoveImageFromSEGS"}, _remove_seg_images, "raw")
 +_set({"SetDefaultImageForSEGS"}, _default_seg_images, "raw")
 +_set({"SEGSToImageList"}, _segs_to_images, "raw")
-+_set({"SEGSPreview"}, _segs_preview, "raw")
++_set({"SEGSPreview"}, _segs_preview, "raw", "ui")
 +_set({"SEGSPreviewCNet"}, _segs_preview_cnet)
 +_set({"SEGSPaste"}, _paste_segs, "raw")
 +_set({"ImpactControlNetClearSEGS"}, _clear_control)
@@ -44548,6 +44641,332 @@
 +    upstream = (tuple(shape), [SEG(*item) for item in items])
 +    (result,) = SEGSPaste.doit(image, upstream, feather, alpha, ref_image_opt)
 +    return result
+--- /dev/null
++++ b/v2/_segs_preview_upstream.py
+@@ -0,0 +1,323 @@
++"""SEGSPreview for Impact Pack under Secure Nodes V2 (fidelity repair NED r1).
++
++SEGSPreview.doit and the helpers it calls are upstream code, copied verbatim below as AST source segments of the
++pristine files (tools: extract_segs_preview.py). The only changes are at the boundary, in `doit`:
++- it is a coroutine taking a `save_preview` coroutine;
++- upstream's `folder_paths.get_save_image_path(...)` line is dropped;
++- upstream's `cropped_pil.save(<temp folder>/<name>.webp)` plus its `results.append({...})` become
++  `results.extend(await save_preview(cropped_pil))`, so the preview goes through the SDK.
++Everything else is upstream's, line for line: scale match, crop, combined/binary masks, min_alpha, alpha preview,
++masked outputs, and the early return with no result.
++Copied:
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L14-22 TensorBatchBuilder
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L119-124 general_tensor_resize
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L128-128 LANCZOS
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L129-143 tensor_resize
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L153-155 tensor2pil
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L158-159 pil2tensor
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L162-163 numpy2pil
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L166-173 to_pil
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L201-206 _tensor_check_image
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L355-361 to_binary_mask
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L552-560 crop_ndarray4
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L563-563 crop_tensor4
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L588-589 crop_image
++#   ComfyUI-Impact-Pack/modules/impact/utils.py L623-630 make_3d_mask
++#   ComfyUI-Impact-Pack/modules/impact/core.py L46-48 SEG
++#   ComfyUI-Impact-Pack/modules/impact/core.py L1000-1042 segs_scale_match
++#   ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L293-427 SEGSPreview
++"""
++import types
++from collections import namedtuple
++
++import numpy as np
++import torch
++from PIL import Image
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L14-22 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++class TensorBatchBuilder:
++    def __init__(self):
++        self.tensor = None
++
++    def concat(self, new_tensor):
++        if self.tensor is None:
++            self.tensor = new_tensor
++        else:
++            self.tensor = torch.concat((self.tensor, new_tensor), dim=0)
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L119-124 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def general_tensor_resize(image, w: int, h: int):
++    _tensor_check_image(image)
++    image = image.permute(0, 3, 1, 2)
++    image = torch.nn.functional.interpolate(image, size=(h, w), mode="bilinear")
++    image = image.permute(0, 2, 3, 1)
++    return image
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L128-128 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L129-143 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor_resize(image, w: int, h: int):
++    _tensor_check_image(image)
++    if image.shape[3] >= 3:
++        scaled_images = TensorBatchBuilder()
++        for single_image in image:
++            single_image = single_image.unsqueeze(0)
++            single_pil = tensor2pil(single_image)
++            scaled_pil = single_pil.resize((w, h), resample=LANCZOS)
++
++            single_image = pil2tensor(scaled_pil)
++            scaled_images.concat(single_image)
++
++        return scaled_images.tensor
++    else:
++        return general_tensor_resize(image, w, h)
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L153-155 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def tensor2pil(image):
++    _tensor_check_image(image)
++    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(0), 0, 255).astype(np.uint8))
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L158-159 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def pil2tensor(image):
++    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L162-163 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def numpy2pil(image):
++    return Image.fromarray(np.clip(255. * image.squeeze(0), 0, 255).astype(np.uint8))
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L166-173 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def to_pil(image):
++    if isinstance(image, Image.Image):
++        return image
++    if isinstance(image, torch.Tensor):
++        return tensor2pil(image)
++    if isinstance(image, np.ndarray):
++        return numpy2pil(image)
++    raise ValueError(f"Cannot convert {type(image)} to PIL.Image")
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L201-206 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def _tensor_check_image(image):
++    if image.ndim != 4:
++        raise ValueError(f"Expected NHWC tensor, but found {image.ndim} dimensions")
++    if image.shape[-1] not in (1, 3, 4):
++        raise ValueError(f"Expected 1, 3 or 4 channels for image, but found {image.shape[-1]} channels")
++    return
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L355-361 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def to_binary_mask(mask, threshold=0):
++    mask = make_3d_mask(mask)
++
++    mask = mask.clone().cpu()
++    mask[mask > threshold] = 1.
++    mask[mask <= threshold] = 0.
++    return mask
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L552-560 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def crop_ndarray4(npimg, crop_region):
++    x1 = crop_region[0]
++    y1 = crop_region[1]
++    x2 = crop_region[2]
++    y2 = crop_region[3]
++
++    cropped = npimg[:, y1:y2, x1:x2, :]
++
++    return cropped
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L563-563 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++crop_tensor4 = crop_ndarray4
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L588-589 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def crop_image(image, crop_region):
++    return crop_tensor4(image, crop_region)
++
++
++# ComfyUI-Impact-Pack/modules/impact/utils.py L623-630 (pristine sha256 dac304171388f0209191c00a90086c16836956a323eba609ab876fd571659873)
++def make_3d_mask(mask):
++    if len(mask.shape) == 4:
++        return mask.squeeze(0)
++
++    elif len(mask.shape) == 2:
++        return mask.unsqueeze(0)
++
++    return mask
++
++
++# ComfyUI-Impact-Pack/modules/impact/core.py L46-48 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++SEG = namedtuple("SEG",
++                 ['cropped_image', 'cropped_mask', 'confidence', 'crop_region', 'bbox', 'label', 'control_net_wrapper'],
++                 defaults=[None])
++
++
++# ComfyUI-Impact-Pack/modules/impact/core.py L1000-1042 (pristine sha256 7989de178999904cacf440bd6c9fd6d250ff5f8df8a4a2dad7abe33d2dfacdd5)
++def segs_scale_match(segs, target_shape):
++    h = segs[0][0]
++    w = segs[0][1]
++
++    th = target_shape[1]
++    tw = target_shape[2]
++
++    if (h == th and w == tw) or h == 0 or w == 0:
++        return segs
++
++    rh = th / h
++    rw = tw / w
++
++    new_segs = []
++    for seg in segs[1]:
++        cropped_image = seg.cropped_image
++        cropped_mask = seg.cropped_mask
++        x1, y1, x2, y2 = seg.crop_region
++        bx1, by1, bx2, by2 = seg.bbox
++
++        crop_region = int(x1*rw), int(y1*rw), int(x2*rh), int(y2*rh)
++        bbox = int(bx1*rw), int(by1*rw), int(bx2*rh), int(by2*rh)
++        new_w = crop_region[2] - crop_region[0]
++        new_h = crop_region[3] - crop_region[1]
++
++        if isinstance(cropped_mask, np.ndarray):
++            cropped_mask = torch.from_numpy(cropped_mask)
++
++        if isinstance(cropped_mask, torch.Tensor) and len(cropped_mask.shape) == 3:
++            cropped_mask = torch.nn.functional.interpolate(cropped_mask.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)
++            cropped_mask = cropped_mask.squeeze(0)
++        else:
++            cropped_mask = torch.nn.functional.interpolate(cropped_mask.unsqueeze(0).unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)
++            cropped_mask = cropped_mask.squeeze(0).squeeze(0).numpy()
++
++        if cropped_image is not None:
++            cropped_image = utils.tensor_resize(cropped_image if isinstance(cropped_image, torch.Tensor) else torch.from_numpy(cropped_image), new_w, new_h)
++            cropped_image = cropped_image.numpy()
++
++        new_seg = SEG(cropped_image, cropped_mask, seg.confidence, crop_region, bbox, seg.label, seg.control_net_wrapper)
++        new_segs.append(new_seg)
++
++    return (th, tw), new_segs
++
++
++# ComfyUI-Impact-Pack/modules/impact/segs_nodes.py L293-427 (SEGSPreview.doit, boundary-adapted as described above) (pristine sha256 51e4b938627fb4f7958c220940747476cafc7f424f87035a886e8a0686e1ac8a)
++async def segs_preview_doit(segs, alpha_mode=True, min_alpha=0.0, fallback_image_opt=None, *, save_preview):
++
++    results = list()
++    result_image_list = []
++
++    if fallback_image_opt is not None:
++        segs = core.segs_scale_match(segs, fallback_image_opt.shape)
++
++    if min_alpha != 0:
++        min_alpha = int(255 * min_alpha)
++
++    if len(segs[1]) > 0:
++        if segs[1][0].cropped_image is not None:
++            batch_count = len(segs[1][0].cropped_image)
++        elif fallback_image_opt is not None:
++            batch_count = len(fallback_image_opt)
++        else:
++            return {"ui": {"images": results}}
++
++        for seg in segs[1]:
++            result_image_batch = None
++            cached_mask = None
++
++            def get_combined_mask():
++                nonlocal cached_mask
++
++                if cached_mask is not None:
++                    return cached_mask
++                else:
++                    if isinstance(seg.cropped_mask, np.ndarray):
++                        masks = torch.tensor(seg.cropped_mask)
++                    else:
++                        masks = seg.cropped_mask
++
++                    cached_mask = (masks[0] * 255).to(torch.uint8)
++                    for x in masks[1:]:
++                        cached_mask |= (x * 255).to(torch.uint8)
++                    cached_mask = (cached_mask/255.0).to(torch.float32)
++                    cached_mask = utils.to_binary_mask(cached_mask, 0.1)
++                    cached_mask = cached_mask.numpy()
++
++                    return cached_mask
++
++            def stack_image(image, mask=None):
++                nonlocal result_image_batch
++
++                if isinstance(image, np.ndarray):
++                    image = torch.from_numpy(image)
++
++                if mask is not None:
++                    image *= torch.tensor(mask)[None, ..., None]
++
++                if result_image_batch is None:
++                    result_image_batch = image
++                else:
++                    result_image_batch = torch.concat((result_image_batch, image), dim=0)
++
++            for i in range(batch_count):
++                cropped_image = None
++
++                if seg.cropped_image is not None:
++                    cropped_image = seg.cropped_image[i, None]
++                elif fallback_image_opt is not None:
++                    # take from original image
++                    ref_image = fallback_image_opt[i].unsqueeze(0)
++                    cropped_image = utils.crop_image(ref_image, seg.crop_region)
++
++                if cropped_image is not None:
++                    if isinstance(cropped_image, np.ndarray):
++                        cropped_image = torch.from_numpy(cropped_image)
++
++                    cropped_image = cropped_image.clone()
++                    cropped_pil = utils.to_pil(cropped_image)
++
++                    if alpha_mode:
++                        if isinstance(seg.cropped_mask, np.ndarray):
++                            cropped_mask = seg.cropped_mask
++                        else:
++                            if seg.cropped_image is not None and len(seg.cropped_image) != len(seg.cropped_mask):
++                                cropped_mask = get_combined_mask()
++                            else:
++                                cropped_mask = seg.cropped_mask[i].numpy()
++
++                        mask_array = (cropped_mask * 255).astype(np.uint8)
++
++                        if min_alpha != 0:
++                            mask_array[mask_array < min_alpha] = min_alpha
++
++                        mask_pil = Image.fromarray(mask_array, mode='L').resize(cropped_pil.size)
++                        cropped_pil.putalpha(mask_pil)
++                        stack_image(cropped_image, cropped_mask)
++                    else:
++                        stack_image(cropped_image)
++
++                    results.extend(await save_preview(cropped_pil))
++
++            if result_image_batch is not None:
++                result_image_list.append(result_image_batch)
++
++    return {"ui": {"images": results}, "result": (result_image_list,) }
++
++
++# ---------------------------------------------------------------- the V2 part (not upstream code)
++utils = types.SimpleNamespace(tensor_resize=tensor_resize, crop_image=crop_image, to_pil=to_pil,
++                              to_binary_mask=to_binary_mask)
++core = types.SimpleNamespace(segs_scale_match=segs_scale_match)
++
++
++def to_upstream_segs(segs):
++    """Impact v2's SEGS value as upstream SEG values (the same fields, in the same order)."""
++    shape, items = segs
++    return tuple(shape), [SEG(*item) for item in items]
 --- /dev/null
 +++ b/v2/_segs_upstream.py
 @@ -0,0 +1,285 @@
@@ -55600,7 +56019,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,36246 @@
+@@ -0,0 +1,36247 @@
 +{
 + "format": "comfy-secure-nodes-v1",
 + "runtime": {
@@ -86386,7 +86805,8 @@
 +   "class": "SEGSPreviewSecure_d7cb55cfca",
 +   "sdk_refs": true,
 +   "permissions": [
-+    "raw"
++    "raw",
++    "ui"
 +   ],
 +   "methods": {
 +    "validate_inputs": false,
@@ -91848,6 +92268,83 @@
 + }
 +}
 --- /dev/null
++++ b/v2/tests/_tiny_sd.py
+@@ -0,0 +1,74 @@
++"""A tiny, seeded SD1.x-architecture model, VAE and conditioning for gate tests (no checkpoint needed).
++
++Core's own classes are used throughout, so encode, sample and decode run Core's real code paths: an SD15
++model config (EPS, scaled-linear schedule, SD1 latent format) with a two-level UNet, an AutoencoderKL with
++Core's 8x layout, and SD1-shaped conditioning. Weights are drawn from a fixed seed, so two processes build
++byte-identical models (state_dict_digest() proves it). The numbers mean nothing; the code paths are real.
++"""
++
++import hashlib
++
++import torch
++
++UNET_CONFIG = {
++    "use_checkpoint": False, "image_size": 32, "in_channels": 4, "out_channels": 4, "model_channels": 32,
++    "num_res_blocks": [1, 1], "channel_mult": [1, 2], "transformer_depth": [1, 1], "transformer_depth_middle": 1,
++    "transformer_depth_output": [1, 1, 1, 1], "use_spatial_transformer": True, "use_linear_in_transformer": False,
++    "context_dim": 32, "num_heads": 2, "legacy": False, "adm_in_channels": None, "use_temporal_resblock": False,
++    "use_temporal_attention": False,
++}
++VAE_DDCONFIG = {"double_z": True, "z_channels": 4, "resolution": 256, "in_channels": 3, "out_ch": 3, "ch": 32,
++                "ch_mult": [1, 1, 1, 1], "num_res_blocks": 1, "attn_resolutions": [], "dropout": 0.0}
++
++
++def _seed_parameters(module: torch.nn.Module, seed: int, scale: float) -> None:
++    generator = torch.Generator(device="cpu").manual_seed(seed)
++    with torch.no_grad():
++        for name, tensor in sorted(module.state_dict(keep_vars=True).items()):
++            if not tensor.is_floating_point():
++                continue
++            if name.endswith("weight") and tensor.ndim == 1:  # norms
++                values = 1.0 + 0.05 * torch.randn(tensor.shape, generator=generator)
++            elif name.endswith("bias"):
++                values = 0.01 * torch.randn(tensor.shape, generator=generator)
++            else:
++                fan_in = max(1, tensor[0].numel()) if tensor.ndim > 1 else max(1, tensor.numel())
++                values = torch.randn(tensor.shape, generator=generator) * (scale / fan_in ** 0.5)
++            tensor.data.copy_(values.to(tensor.dtype))
++
++
++def build_model(seed: int = 1):
++    import comfy.model_patcher
++    import comfy.supported_models
++
++    config = comfy.supported_models.SD15(dict(UNET_CONFIG))
++    model = config.get_model({}, "", device=torch.device("cpu"))
++    model.diffusion_model.to(torch.float32)
++    _seed_parameters(model.diffusion_model, seed, 1.0)
++    model.eval()
++    return comfy.model_patcher.ModelPatcher(model, load_device=torch.device("cpu"), offload_device=torch.device("cpu"))
++
++
++def build_vae(seed: int = 2):
++    import comfy.sd
++    from comfy.ldm.models.autoencoder import AutoencoderKL
++
++    template = AutoencoderKL(ddconfig=dict(VAE_DDCONFIG), embed_dim=4)
++    _seed_parameters(template, seed, 1.0)
++    state = {k: v.detach().clone().to(torch.float32) for k, v in template.state_dict().items()}
++    return comfy.sd.VAE(sd=state, config={"params": {"ddconfig": dict(VAE_DDCONFIG), "embed_dim": 4}})
++
++
++def build_conditioning(seed: int, tokens: int = 4):
++    generator = torch.Generator(device="cpu").manual_seed(seed)
++    return [[torch.randn((1, tokens, UNET_CONFIG["context_dim"]), generator=generator), {"pooled_output": None}]]
++
++
++def state_dict_digest(module_or_patcher) -> str:
++    module = getattr(module_or_patcher, "model", module_or_patcher)
++    module = getattr(module, "first_stage_model", module)
++    digest = hashlib.sha256()
++    for name, tensor in sorted(module.state_dict().items()):
++        digest.update(name.encode())
++        digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
++    return digest.hexdigest()
+--- /dev/null
 +++ b/v2/tests/test_detailer_repair_r6.py
 @@ -0,0 +1,542 @@
 +"""Impact Pack fidelity repair r6 (detailers): parity in the lane gate.
@@ -92901,6 +93398,609 @@
 +
 +if __name__ == "__main__":
 +    sys.exit(main(sys.argv[1:]))
+--- /dev/null
++++ b/v2/tests/test_iterative_upscale_segs_preview.py
+@@ -0,0 +1,600 @@
++"""Impact Pack repair (NED r1): iterative upscaling with a denoise-schedule hook, and SEGSPreview (gate).
++
++    DEPS=<Impact dependency-profile wheels unpacked, test-only dill/piexif under _orig_only/> \
++    run_in_gate.sh <root holding ComfyUI-Impact-Pack-HEAD/, or that folder> <Impact v2/tests> <results> \
++        test_iterative_upscale_segs_preview.py
++
++Both sides run the same prompts through Core's PromptExecutor:
++  original  the pristine Impact Pack's node classes (a subprocess; the pack imported from a copy of the pristine
++            tree, its server routes given a stand-in route table);
++  v2        the manifest proxies, executed in a real guest (core's own nodes stay in the host, as in the cloud
++            backend).
++Shared test nodes supply the inputs: a tiny seeded SD1.x-architecture model, VAE and conditioning built from
++Core's own classes (tests/_tiny_sd.py: Core's real encode, sample and decode run, on CPU, in both processes,
++with byte-identical weights), 8-bit images and masks. Captured outputs are compared exactly.
++Cases:
++  iterative  DenoiseScheduleHookProvider -> PixelKSampleUpscalerProvider -> IterativeLatentUpscale and
++             IterativeImageUpscale (the reported case's parameters, plus geometric/3-step/1.5x/scale-method and
++             sampler variants, and a provider without the hook);
++  segs       MaskToSEGS -> SEGSPreview over masks (one rectangle, two soft blobs, a half-size mask), alpha_mode,
++             min_alpha and with/without fallback image; the output images and the preview files' RGBA pixels.
++Writes /results/impact_ned_r1.json; exits 1 on any failed check.
++"""
++
++import asyncio
++import glob
++import json
++import os
++import shutil
++import subprocess
++import sys
++import traceback
++import types
++from pathlib import Path
++
++sys.dont_write_bytecode = True
++ROOT = Path("/pack")
++RESULTS = Path("/results")
++DEPS = Path("/deps")
++for _index, _path in enumerate(("/core", "/overlay", "/tests")):
++    sys.path.insert(_index, _path)
++os.environ.setdefault("HOME", "/tmp")
++
++PACK_FOLDER = "ComfyUI-Impact-Pack-HEAD"
++NODE_IDS = ("DenoiseScheduleHookProvider", "PixelKSampleUpscalerProvider", "IterativeLatentUpscale",
++            "IterativeImageUpscale", "MaskToSEGS", "SEGSPreview")
++LATENT_TOLERANCE = 1.0 / 255
++
++
++def pack_head() -> Path:
++    if (ROOT / "v2").is_dir():
++        return ROOT
++    return [d for d in sorted(ROOT.iterdir()) if d.is_dir() and not d.name.startswith(".")][0]
++
++
++# ---------------------------------------------------------------- prompts (the same on both sides)
++def iterative_prompt(variant):
++    hook = variant.get("hook", True)
++    prompt = {
++        "m": {"class_type": "NedTinyModel", "inputs": {}},
++        "c": {"class_type": "NedTinyConditioning", "inputs": {}},
++        "photo": {"class_type": "NedImage", "inputs": {"width": 96, "height": 64, "seed": 5}},
++        "encoded": {"class_type": "VAEEncode", "inputs": {"pixels": ["photo", 0], "vae": ["m", 1]}},
++        "21": {"class_type": "PixelKSampleUpscalerProvider", "inputs": {
++            "scale_method": variant.get("scale_method", "bilinear"), "model": ["m", 0], "vae": ["m", 1],
++            "seed": 20261102, "steps": variant.get("sample_steps", 2), "cfg": 2.0,
++            "sampler_name": variant.get("sampler", "euler"), "scheduler": variant.get("scheduler", "normal"),
++            "positive": ["c", 0], "negative": ["c", 1], "denoise": 0.35, "use_tiled_vae": False, "tile_size": 512}},
++        "22": {"class_type": "IterativeLatentUpscale", "inputs": {
++            "samples": ["encoded", 0], "upscale_factor": variant.get("factor", 2.0), "steps": variant.get("steps", 2),
++            "temp_prefix": "", "upscaler": ["21", 0], "step_mode": variant.get("step_mode", "simple"),
++            "vae_compression": 8}},
++        "23": {"class_type": "IterativeImageUpscale", "inputs": {
++            "pixels": ["photo", 0], "upscale_factor": variant.get("factor", 2.0), "steps": variant.get("steps", 2),
++            "temp_prefix": "", "upscaler": ["21", 0], "vae": ["m", 1], "step_mode": variant.get("step_mode", "simple"),
++            "vae_compression": 8}},
++        "cap_latent": {"class_type": "NedCapture", "inputs": {"value": ["22", 0], "key": "latent"}},
++        "cap_image": {"class_type": "NedCapture", "inputs": {"value": ["23", 0], "key": "image"}},
++    }
++    if hook:
++        prompt["20"] = {"class_type": "DenoiseScheduleHookProvider",
++                        "inputs": {"schedule_for_iteration": "simple", "target_denoise": 0.6}}
++        prompt["21"]["inputs"]["pk_hook_opt"] = ["20", 0]
++    return prompt
++
++
++ITERATIVE = {
++    "case (hook, simple, 2 steps, x2, bilinear)": {},
++    "no hook": {"hook": False},
++    "geometric, 3 steps, x2": {"step_mode": "geometric", "steps": 3},
++    "simple, 3 steps, x1.5, nearest-exact": {"steps": 3, "factor": 1.5, "scale_method": "nearest-exact"},
++    "simple, 1 step, x2, lanczos": {"steps": 1, "scale_method": "lanczos"},
++    "simple, 2 steps, x2, area": {"scale_method": "area"},
++    "uni_pc sampler, 4 sampling steps": {"sampler": "uni_pc", "sample_steps": 4},
++    "dpmpp_2m sampler, karras, 3 sampling steps": {"sampler": "dpmpp_2m", "scheduler": "karras", "sample_steps": 3},
++}
++
++
++def segs_prompt(variant):
++    prompt = {
++        "photo": {"class_type": "NedImage", "inputs": {"width": 192, "height": 128, "seed": 11}},
++        "mask": {"class_type": "NedMask", "inputs": {"kind": variant["mask"]}},
++        "segs": {"class_type": "MaskToSEGS", "inputs": {
++            "mask": ["mask", 0], "combined": variant.get("combined", True), "crop_factor": variant.get("crop", 1.0),
++            "bbox_fill": False, "drop_size": 1, "contour_fill": False}},
++        "20": {"class_type": "SEGSPreview", "inputs": {
++            "segs": ["segs", 0], "alpha_mode": variant.get("alpha", True), "min_alpha": variant.get("min_alpha", 0.1)}},
++        "cap": {"class_type": "NedCapture", "inputs": {"value": ["20", 0], "key": "images"}},
++    }
++    if variant.get("fallback", True):
++        prompt["20"]["inputs"]["fallback_image_opt"] = ["photo", 0]
++    return prompt
++
++
++SEGS = {
++    "case (rectangle, combined, crop 1.0, alpha, min 0.1)": {"mask": "rect"},
++    "rectangle, alpha off": {"mask": "rect", "alpha": False},
++    "two soft blobs, separate, crop 1.5, min 0.5": {"mask": "soft2", "combined": False, "crop": 1.5,
++                                                    "min_alpha": 0.5},
++    "two soft blobs, separate, min 0": {"mask": "soft2", "combined": False, "min_alpha": 0.0},
++    "half-size mask (scale match), crop 1.2": {"mask": "half", "combined": False, "crop": 1.2},
++    "no fallback image": {"mask": "rect", "fallback": False},
++}
++
++
++# ---------------------------------------------------------------- shared test nodes
++def register_test_nodes(core_nodes, captured):
++    import torch
++    import _tiny_sd
++
++    cache = {}
++
++    class NedTinyModel:
++        RETURN_TYPES = ("MODEL", "VAE")
++        FUNCTION = "load"
++        CATEGORY = "ned/test"
++
++        @classmethod
++        def INPUT_TYPES(cls):
++            return {"required": {}}
++
++        def load(self):
++            if "model" not in cache:
++                cache["model"], cache["vae"] = _tiny_sd.build_model(), _tiny_sd.build_vae()
++            return cache["model"], cache["vae"]
++
++    class NedTinyConditioning:
++        RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
++        FUNCTION = "load"
++        CATEGORY = "ned/test"
++
++        @classmethod
++        def INPUT_TYPES(cls):
++            return {"required": {}}
++
++        def load(self):
++            return _tiny_sd.build_conditioning(3), _tiny_sd.build_conditioning(4)
++
++    class NedImage:
++        RETURN_TYPES = ("IMAGE",)
++        FUNCTION = "make"
++        CATEGORY = "ned/test"
++
++        @classmethod
++        def INPUT_TYPES(cls):
++            return {"required": {"width": ("INT", {"default": 64, "min": 8, "max": 4096}),
++                                 "height": ("INT", {"default": 64, "min": 8, "max": 4096}),
++                                 "seed": ("INT", {"default": 0, "min": 0, "max": 2 ** 31})}}
++
++        def make(self, width, height, seed):
++            generator = torch.Generator().manual_seed(int(seed))
++            image = torch.rand((1, int(height), int(width), 3), generator=generator)
++            return (torch.floor(image * 255.0) / 255.0,)  # 8-bit values, as LoadImage gives
++
++    class NedMask:
++        RETURN_TYPES = ("MASK",)
++        FUNCTION = "make"
++        CATEGORY = "ned/test"
++
++        @classmethod
++        def INPUT_TYPES(cls):
++            return {"required": {"kind": ("STRING", {"default": "rect"})}}
++
++        def make(self, kind):
++            if kind == "half":
++                mask = torch.zeros((1, 64, 96))
++                mask[:, 10:30, 12:40] = 1.0
++                mask[:, 36:58, 50:88] = 0.6
++                return (mask,)
++            mask = torch.zeros((1, 128, 192))
++            if kind == "rect":  # the reported case: a 64x48 solid mask added at (32, 24)
++                mask[:, 24:72, 32:96] = 1.0
++            elif kind == "soft2":
++                mask[:, 10:50, 12:70] = 0.75
++                mask[:, 60:110, 100:170] = 1.0
++                mask[:, 70:90, 120:140] = 0.3
++            return (mask,)
++
++    class NedCapture:
++        RETURN_TYPES = ()
++        FUNCTION = "capture"
++        OUTPUT_NODE = True
++        INPUT_IS_LIST = True
++        CATEGORY = "ned/test"
++
++        @classmethod
++        def INPUT_TYPES(cls):
++            return {"required": {"value": ("*",), "key": ("STRING", {"default": "value"})}}
++
++        @classmethod
++        def VALIDATE_INPUTS(cls, input_types=None, **_kwargs):
++            return True
++
++        def capture(self, value, key):
++            captured[key[0]] = value
++            return {}
++
++    for cls in (NedTinyModel, NedTinyConditioning, NedImage, NedMask, NedCapture):
++        core_nodes.NODE_CLASS_MAPPINGS[cls.__name__] = cls
++
++
++class FakeServer:
++    def __init__(self):
++        self.client_id = None
++        self.last_node_id = None
++
++    def send_sync(self, *_args, **_kwargs):
++        pass
++
++    def queue_updated(self):
++        pass
++
++
++async def run_prompt(execution, prompt, prompt_id):
++    executor = execution.PromptExecutor(FakeServer(), cache_type=False,
++                                        cache_args={"lru": 0, "ram": 0, "ram_inactive": 0})
++    targets = [k for k, v in prompt.items() if v["class_type"] == "NedCapture"]
++    await executor.execute_async(json.loads(json.dumps(prompt)), prompt_id, {}, targets)
++    errors = [m[1] for m in executor.status_messages if m[0] == "execution_error"]
++    return executor.success and not errors, errors, executor.history_result.get("outputs") or {}
++
++
++def to_plain(value):
++    """Captured outputs as nested lists of tensors / plain values, for both sides alike."""
++    import torch
++
++    if isinstance(value, torch.Tensor):
++        return value.detach().cpu().contiguous()
++    if isinstance(value, dict) and "samples" in value:
++        return {"samples": value["samples"].detach().cpu().contiguous()}
++    if isinstance(value, (list, tuple)):
++        return [to_plain(item) for item in value]
++    return value
++
++
++def preview_pixels(ui, folders):
++    """The pixels of every preview file a node reported, as stored (v2's previews are lossless PNG)."""
++    import numpy as np
++    from PIL import Image
++
++    out = []
++    for entry in (ui or {}).get("images", []):
++        base = folders[entry.get("type", "output")]
++        with Image.open(Path(base) / entry.get("subfolder", "") / entry["filename"]) as image:
++            out.append({"mode": image.mode, "size": list(image.size), "type": entry.get("type"),
++                        "pixels": np.asarray(image).copy()})
++    return out
++
++
++# The original side records each preview image as handed to PIL's WebP encoder (lossy), so v2's lossless previews
++# are compared with exactly what the original encodes.
++ORIGINAL_PREVIEWS = []
++
++
++def record_original_previews():
++    import numpy as np
++    from PIL import Image
++
++    original_save = Image.Image.save
++
++    def recording_save(self, fp, *args, **kwargs):
++        if str(fp).endswith(".webp"):
++            ORIGINAL_PREVIEWS.append({"mode": self.mode, "size": list(self.size), "type": "temp",
++                                      "pixels": np.asarray(self).copy()})
++        return original_save(self, fp, *args, **kwargs)
++
++    Image.Image.save = recording_save
++
++
++async def run_side(label, mappings, execution, core_nodes, folder_paths):
++    """Run every prompt with the given Impact classes; returns {case: outcome}."""
++    captured = {}
++    register_test_nodes(core_nodes, captured)
++    saved = {k: core_nodes.NODE_CLASS_MAPPINGS.get(k) for k in mappings}
++    core_nodes.NODE_CLASS_MAPPINGS.update(mappings)
++    results = {}
++    folders = {"temp": folder_paths.get_temp_directory(), "output": folder_paths.get_output_directory()}
++    try:
++        for group, cases, builder in (("iterative", ITERATIVE, iterative_prompt), ("segs", SEGS, segs_prompt)):
++            for index, (name, variant) in enumerate(cases.items()):
++                captured.clear()
++                ORIGINAL_PREVIEWS.clear()
++                try:
++                    ok, errors, outputs = await run_prompt(execution, builder(variant), f"{label}-{group}-{index}")
++                    previews = []
++                    if group == "segs":
++                        previews = (list(ORIGINAL_PREVIEWS) if label == "orig"
++                                    else preview_pixels(outputs.get("20"), folders))
++                    results[f"{group}: {name}"] = {
++                        "ok": ok, "errors": [str(e.get("exception_message"))[:500] for e in errors],
++                        "captured": {k: to_plain(v) for k, v in captured.items()},
++                        "previews": previews,
++                        "preview_ui": len(((outputs.get("20") or {}).get("images")) or []),
++                    }
++                except Exception:  # noqa: BLE001
++                    results[f"{group}: {name}"] = {"ok": False, "errors": [traceback.format_exc()[-1500:]],
++                                                   "captured": {}, "previews": []}
++    finally:
++        for key, value in saved.items():
++            if value is None:
++                core_nodes.NODE_CLASS_MAPPINGS.pop(key, None)
++            else:
++                core_nodes.NODE_CLASS_MAPPINGS[key] = value
++    return results
++
++
++# Results cross from the original-side subprocess as JSON plus one safetensors file: no pickle anywhere.
++def pack_results(value, tensors):
++    import numpy as np
++    import torch
++
++    if isinstance(value, np.ndarray):
++        value = torch.from_numpy(np.ascontiguousarray(value))
++    if isinstance(value, torch.Tensor):
++        key = f"t{len(tensors)}"
++        tensors[key] = value.contiguous()
++        return {"__tensor__": key}
++    if isinstance(value, dict):
++        return {str(k): pack_results(v, tensors) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [pack_results(v, tensors) for v in value]
++    return value
++
++
++def unpack_results(value, tensors):
++    if isinstance(value, dict):
++        if set(value) == {"__tensor__"}:
++            return tensors[value["__tensor__"]]
++        return {k: unpack_results(v, tensors) for k, v in value.items()}
++    if isinstance(value, list):
++        return [unpack_results(v, tensors) for v in value]
++    return value
++
++
++def prepare_core(tag):
++    from comfy.cli_args import args
++
++    args.cpu = True
++    import comfy.samplers  # noqa: F401
++    import execution
++    import folder_paths
++    import nodes as core_nodes
++
++    for name, setter in (("temp", folder_paths.set_temp_directory), ("output", folder_paths.set_output_directory)):
++        path = Path(f"/tmp/ned-{tag}-{name}")
++        if path.exists():
++            shutil.rmtree(path)
++        path.mkdir(parents=True)
++        setter(str(path))
++    return execution, core_nodes, folder_paths
++
++
++# ---------------------------------------------------------------- the original side (a subprocess)
++def original_main(out_path):
++    sys.path.insert(0, str(DEPS / "_orig_only"))
++    sys.path.insert(0, str(DEPS))
++    execution, core_nodes, folder_paths = prepare_core("orig")
++    import server
++
++    class Routes:
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: (lambda function: function)
++
++    class Instance:
++        routes = Routes()
++        prompt_queue = types.SimpleNamespace(currently_running={})
++
++        def __getattr__(self, _name):
++            return lambda *_args, **_kwargs: None
++
++    server.PromptServer.instance = Instance()
++    record_original_previews()
++    root = Path("/tmp/orig-impact")
++    if root.exists():
++        shutil.rmtree(root)
++    shutil.copytree(pack_head(), root, ignore=shutil.ignore_patterns("v2", "__pycache__", ".git"))
++    sys.path.insert(0, str(root / "modules"))
++    import impact.config  # noqa: F401  (upstream __init__ order)
++    import impact.impact_server  # noqa: F401
++    import impact.impact_pack as impact_pack
++    import impact.segs_nodes as segs_nodes
++
++    mappings = {
++        "DenoiseScheduleHookProvider": impact_pack.DenoiseScheduleHookProvider,
++        "PixelKSampleUpscalerProvider": impact_pack.PixelKSampleUpscalerProvider,
++        "IterativeLatentUpscale": impact_pack.IterativeLatentUpscale,
++        "IterativeImageUpscale": impact_pack.IterativeImageUpscale,
++        "MaskToSEGS": segs_nodes.MaskToSEGS if hasattr(segs_nodes, "MaskToSEGS") else impact_pack.MaskToSEGS,
++        "SEGSPreview": segs_nodes.SEGSPreview,
++    }
++    import _tiny_sd
++    from safetensors.torch import save_file
++
++    digests = {"model": _tiny_sd.state_dict_digest(_tiny_sd.build_model()),
++               "vae": _tiny_sd.state_dict_digest(_tiny_sd.build_vae())}
++    results = asyncio.run(run_side("orig", mappings, execution, core_nodes, folder_paths))
++    tensors = {}
++    payload = pack_results({"results": results, "digests": digests}, tensors)
++    save_file(tensors or {"none": __import__("torch").zeros(1)}, out_path + ".safetensors")
++    Path(out_path + ".json").write_text(json.dumps(payload))
++
++
++# ---------------------------------------------------------------- the v2 side (this process)
++async def v2_side():
++    execution, core_nodes, folder_paths = prepare_core("v2")
++    from comfy_api.latest import _sdk
++    from comfy_secure_nodes import packdb
++    from comfy_secure_nodes.transport.host import GuestSession
++    import _tiny_sd
++
++    head = pack_head()
++    snap = Path("/tmp/impact-snapshot")
++    if not (snap / PACK_FOLDER).is_dir():
++        shutil.copytree(head, snap / PACK_FOLDER, ignore=shutil.ignore_patterns("__pycache__"))
++    # A git snapshot drops empty folders; the manifest's declared asset folders must exist to load.
++    manifest = json.loads((snap / PACK_FOLDER / "v2" / "secure-nodes.json").read_text())
++    for relative in (manifest.get("asset_directories") or {}).values():
++        (snap / PACK_FOLDER / "v2" / relative).mkdir(parents=True, exist_ok=True)
++    loaded = packdb.load_pack(snap, mount_name="custom_nodes.impact_ned_r1", pack_id="comfyui-impact-pack/x429d015")
++    for folder, directory in loaded.asset_directories.items():
++        folder_paths.add_model_folder_path(folder, str(directory))
++    mappings = {node_id: loaded.node_mappings[node_id] for node_id in NODE_IDS}
++    # The manifest rows' permissions are the guest classes' own SDK_PERMISSIONS.
++    import importlib.util
++
++    spec = importlib.util.spec_from_file_location(
++        "impact_v2_rows", head / "v2" / "__init__.py", submodule_search_locations=[str(head / "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["impact_v2_rows"] = package
++    spec.loader.exec_module(package)
++    permissions = {node_id: [list(package.NODE_CLASS_MAPPINGS[node_id].SDK_PERMISSIONS),
++                             manifest["nodes"][node_id]["permissions"]] for node_id in NODE_IDS}
++
++    class ProfileGuestSession(GuestSession):
++        """The guest sees the pack's dependency profile (DEPS top level, never _orig_only), as a guest with
++        the profile installed does."""
++
++        def _adjust_guest_env(self, env):
++            super()._adjust_guest_env(env)
++            if DEPS.is_dir():
++                env["PYTHONPATH"] = os.pathsep.join(p for p in (str(DEPS), env.get("PYTHONPATH", "")) if p)
++
++        def _extra_ro_paths(self):
++            return list(super()._extra_ro_paths()) + ([str(DEPS)] if DEPS.is_dir() else [])
++
++    session = await ProfileGuestSession("impact-ned").start()
++
++    class Backend:
++        async def dispatch(self, plan, local_call, runtime=None):
++            if not str(getattr(plan, "node_module", "") or "").startswith("custom_nodes."):
++                return await local_call()
++            caps = set(plan.permissions or ())
++            if getattr(plan, "input_mode", "refs") == "values":
++                caps.add("raw")
++                plan.inputs = await _sdk.wrap_inputs(runtime.refs, plan.inputs)
++            return await session.execute(plan, runtime, capabilities=frozenset(caps), tenant="impact-ned")
++
++    previous = _sdk.providers.execution_backend
++    _sdk.providers.register_execution_backend(Backend())
++    try:
++        loop_results = await run_side("v2", mappings, execution, core_nodes, folder_paths)
++    finally:
++        _sdk.providers.register_execution_backend(previous)
++        pid = session.last_guest_pid
++        await session.kill()
++    digests = {"model": _tiny_sd.state_dict_digest(_tiny_sd.build_model()),
++               "vae": _tiny_sd.state_dict_digest(_tiny_sd.build_vae())}
++    return loop_results, digests, pid, permissions
++
++
++# ---------------------------------------------------------------- comparison
++checks = []
++
++
++def record(name, ok, detail=None):
++    checks.append({"check": name, "ok": bool(ok), "detail": None if ok else str(detail)[:1500]})
++    print(("PASS " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:400]}"), flush=True)
++
++
++def compare_values(a, b, path="value"):
++    """(verdict, detail): EXACT, WITHIN_TOLERANCE (max abs <= 1/255) or MISMATCH."""
++    import torch
++
++    if isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor):
++        if not (isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor)):
++            return "MISMATCH", f"{path}: {type(a).__name__} vs {type(b).__name__}"
++        if a.shape != b.shape or a.dtype != b.dtype:
++            return "MISMATCH", f"{path}: {a.dtype}{tuple(a.shape)} vs {b.dtype}{tuple(b.shape)}"
++        if torch.equal(a, b):
++            return "EXACT", None
++        worst = float((a.double() - b.double()).abs().max())
++        return ("WITHIN_TOLERANCE" if worst <= LATENT_TOLERANCE else "MISMATCH"), f"{path}: max abs {worst:.6g}"
++    if isinstance(a, dict) and isinstance(b, dict):
++        if set(a) != set(b):
++            return "MISMATCH", f"{path}: keys {sorted(a)} vs {sorted(b)}"
++        worst = ("EXACT", None)
++        for key in a:
++            verdict = compare_values(a[key], b[key], f"{path}.{key}")
++            if verdict[0] != "EXACT":
++                worst = verdict if verdict[0] == "MISMATCH" or worst[0] == "EXACT" else worst
++        return worst
++    if isinstance(a, list) and isinstance(b, list):
++        if len(a) != len(b):
++            return "MISMATCH", f"{path}: {len(a)} vs {len(b)} items"
++        worst = ("EXACT", None)
++        for index, (x, y) in enumerate(zip(a, b)):
++            verdict = compare_values(x, y, f"{path}[{index}]")
++            if verdict[0] != "EXACT":
++                worst = verdict if verdict[0] == "MISMATCH" or worst[0] == "EXACT" else worst
++        return worst
++    return ("EXACT" if a == b else "MISMATCH"), f"{path}: {a!r} vs {b!r}"
++
++
++def compare_previews(a, b):
++    """The original's pre-encode preview images vs v2's stored previews: same count, mode, size, folder type
++    and exactly the same bytes."""
++    import numpy as np
++
++    if len(a) != len(b):
++        return False, f"{len(a)} vs {len(b)} previews"
++    for index, (x, y) in enumerate(zip(a, b)):
++        if x["mode"] != y["mode"] or list(x["size"]) != list(y["size"]) or x["type"] != y["type"]:
++            return False, (f"preview {index}: {x['type']} {x['mode']} {x['size']} vs "
++                           f"{y['type']} {y['mode']} {y['size']}")
++        if not np.array_equal(np.asarray(x["pixels"]), np.asarray(y["pixels"])):
++            diff = np.abs(np.asarray(x["pixels"]).astype(int) - np.asarray(y["pixels"]).astype(int)).max()
++            return False, f"preview {index}: max abs {diff} (0-255)"
++    return True, None
++
++
++def main() -> int:
++    if len(sys.argv) > 2 and sys.argv[1] == "--original":
++        original_main(sys.argv[2])
++        return 0
++    facts = {}
++    try:
++        from safetensors.torch import load_file
++
++        out = "/tmp/impact-ned-original"
++        completed = subprocess.run([sys.executable, __file__, "--original", out], capture_output=True, text=True,
++                                   timeout=1800)
++        (RESULTS / "side-original.log").write_text(completed.stdout[-200000:] + "\n" + completed.stderr[-200000:])
++        if completed.returncode != 0 or not Path(out + ".json").is_file():
++            raise RuntimeError(f"original side failed: {completed.stderr[-3000:]}")
++        original = unpack_results(json.loads(Path(out + ".json").read_text()), load_file(out + ".safetensors"))
++        v2_results, v2_digests, pid, permissions = asyncio.run(v2_side())
++        facts["guest_pid"] = pid
++        record("guest: out-of-process", pid not in (None, os.getpid()), pid)
++        record("manifest: each node's permissions == its class's SDK_PERMISSIONS",
++               all(a == b for a, b in permissions.values()), permissions)
++        record("tiny model and VAE are byte-identical on both sides", original["digests"] == v2_digests,
++               (original["digests"], v2_digests))
++        for case, want in original["results"].items():
++            got = v2_results.get(case, {"ok": False, "errors": ["missing"], "captured": {}, "previews": []})
++            if not want["ok"]:
++                # The original fails this prompt itself; v2 must fail it the same way.
++                same = (not got["ok"]) and bool(want["errors"]) and bool(got["errors"]) and all(
++                    a.strip().splitlines()[-1] in b for a, b in zip(want["errors"], got["errors"]))
++                record(f"{case}: fails like the original", same, {"original": want["errors"], "v2": got["errors"]})
++                continue
++            record(f"{case}: v2 runs", got["ok"], got["errors"])
++            if not got["ok"]:
++                continue
++            verdict, detail = compare_values(want["captured"], got["captured"], "outputs")
++            facts[case] = verdict if verdict == "EXACT" else f"{verdict}: {detail}"
++            record(f"{case}: outputs == the original's ({verdict})", verdict in ("EXACT", "WITHIN_TOLERANCE"), detail)
++            if case.startswith("segs"):
++                ok, detail = compare_previews(want["previews"], got["previews"])
++                record(f"{case}: preview files == the original's (RGBA pixels)", ok, detail)
++    except Exception:  # noqa: BLE001
++        record("session", False, traceback.format_exc()[-3000:])
++    failed = [c["check"] for c in checks if not c["ok"]]
++    result = {"pack": "comfyui-impact-pack", "repair": "NED r1 (iterative upscale + denoise hook, SEGSPreview)",
++              "checks": checks, "failed": failed, "facts": facts, "verdict": "PASS" if not failed else "FAIL"}
++    (RESULTS / "impact_ned_r1.json").write_text(json.dumps(result, indent=2, sort_keys=True, default=str) + "\n")
++    print(json.dumps({"verdict": result["verdict"], "failed": failed[:40]}))
++    return 1 if failed else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
 --- /dev/null
 +++ b/v2/tests/test_paste_repair_r4.py
 @@ -0,0 +1,243 @@

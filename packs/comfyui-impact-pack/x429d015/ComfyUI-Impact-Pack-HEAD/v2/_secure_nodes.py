@@ -2410,10 +2410,31 @@ async def _segs_to_images(segs, fallback_image_opt=None, masked=False, **_kwargs
     return _one(result)
 
 
-async def _segs_preview(segs, alpha_mode=True, fallback_image_opt=None, **_kwargs):
-    return await _segs_to_images(
-        segs, fallback_image_opt=fallback_image_opt, masked=bool(alpha_mode)
-    )
+async def _segs_preview(segs, alpha_mode=True, min_alpha=0.0, fallback_image_opt=None, **_kwargs):
+    # Impact Pack segs_nodes.py SEGSPreview.doit, upstream (repair NED r1; verbatim in _segs_preview_upstream.py).
+    # Each preview is upstream's PIL image, shown through the SDK's temp preview (a PNG, where upstream wrote a
+    # lossy WebP into the temp folder). Its bytes cross exactly: (v + 0.5) / 255 is turned back into v by the
+    # preview writer's 8-bit conversion.
+    from comfy_api.latest import io as v3_io
+
+    from . import _segs_preview_upstream as upstream
+
+    async def save_preview(pil_image):
+        array = np.asarray(pil_image)
+        if array.ndim == 2:
+            array = array[..., None]
+        pixels = torch.from_numpy((array.astype(np.float32) + 0.5) / 255.0).unsqueeze(0)
+        shown = await _ctx().ui.preview_images(await sdk.ImageRef.from_value(pixels))
+        return list((shown or {}).get("images", []))
+
+    fallback = None if fallback_image_opt is None else _image4(await _raw(fallback_image_opt))
+    result = await upstream.segs_preview_doit(
+        upstream.to_upstream_segs(_segs(await _raw(segs))), alpha_mode, min_alpha, fallback,
+        save_preview=save_preview)
+    if "result" not in result:
+        # Upstream returns no output at all here (no cropped images and no fallback image).
+        return v3_io.NodeOutput(ui=result["ui"])
+    return result
 
 
 async def _segs_preview_cnet(segs, **_kwargs):
@@ -5422,6 +5443,62 @@ async def _pixel_sample_values(
     ))
 
 
+async def _impact_sample_latent(
+    latent: Any,
+    *,
+    model: Any,
+    positive: Any,
+    negative: Any,
+    seed: int,
+    steps: int,
+    cfg: float,
+    sampler_name: str,
+    scheduler: str,
+    denoise: float,
+    hook: Any,
+    step_info: tuple[int, int],
+    sigma_schedule: Any = None,
+):
+    """PixelKSampleUpscaler.sample -> impact_sampling.impact_sample, as upstream runs it (repair NED r1).
+
+    The pixel-hook steps are _pixel_sample_values' (post-encode transforms, then the steps/cfg/denoise
+    schedule). Upstream then samples ``floor(steps / denoise)`` total steps from ``total - steps`` to the end
+    through separated_sample (KSamplerAdvanced's slice, no leftover noise) and returns the sampler's final
+    denoised prediction (sample_with_custom_noise's second output), not the last latent. The engine's sample
+    with start/last steps and ``return_denoised`` is that call.
+    """
+    current = await _pixel_hook_post_encode(latent, hook, step_info)
+    steps, cfg, denoise = _pixel_hook_sample_values(
+        hook, step_info, steps=steps, cfg=cfg, denoise=denoise)
+    schedule = _sigma_schedule_recipe(sigma_schedule)
+    if schedule is None and str(scheduler) not in _HOST_SCHEDULERS:
+        raise RuntimeError(
+            f"Impact scheduler {scheduler!r} needs a typed host "
+            "sigma-schedule primitive")
+    advanced_steps = math.floor(steps / denoise)
+    start_at_step = advanced_steps - steps
+    end_at_step = start_at_step + steps
+    _output, denoised = await _ctx().sample(
+        latent=current,
+        steps=int(advanced_steps),
+        model=model,
+        positive=positive,
+        negative=negative,
+        cfg=float(cfg),
+        seed=int(seed),
+        sampler_name=str(sampler_name),
+        scheduler=str(scheduler),
+        denoise=1.0,
+        disable_noise=False,
+        start_step=int(start_at_step),
+        last_step=int(end_at_step),
+        force_full_denoise=True,
+        sigma_schedule=schedule,
+        return_denoised=True,
+    )
+    return _as_latent_ref(denoised)
+
+
 def _as_cond_ref(value: Any):
     if isinstance(value, sdk.CondRef):
         return value
@@ -6102,7 +6179,7 @@ async def _pixel_upscale_step(
             sampled = await _pixel_tiled_sample(
                 encoded, spec, step_info, positive, negative)
         else:
-            sampled = await _pixel_sample_values(
+            sampled = await _impact_sample_latent(
                 encoded,
                 model=spec["model"],
                 positive=positive,
@@ -6539,7 +6616,7 @@ _set({"ImpactSEGSPicker"}, _picker, "raw")
 _set({"RemoveImageFromSEGS"}, _remove_seg_images, "raw")
 _set({"SetDefaultImageForSEGS"}, _default_seg_images, "raw")
 _set({"SEGSToImageList"}, _segs_to_images, "raw")
-_set({"SEGSPreview"}, _segs_preview, "raw")
+_set({"SEGSPreview"}, _segs_preview, "raw", "ui")
 _set({"SEGSPreviewCNet"}, _segs_preview_cnet)
 _set({"SEGSPaste"}, _paste_segs, "raw")
 _set({"ImpactControlNetClearSEGS"}, _clear_control)

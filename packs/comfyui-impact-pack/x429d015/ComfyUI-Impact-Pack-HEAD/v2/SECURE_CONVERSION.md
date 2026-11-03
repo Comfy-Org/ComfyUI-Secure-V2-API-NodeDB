@@ -172,3 +172,19 @@ Manifest uses the original indent-1 format with only the five intended field cha
 - `tests/test_detailer_repair_r6.py` is the lane-gate parity test. No model can run in the gate, so both sides use
   the same deterministic stand-ins for the VAE encode, the sampler and the VAE decode. Everything else is compared
   exactly: DetailerForEach's six outputs, and SEGSDetailer followed by SEGSPaste.
+
+## Fidelity repair NED r1 (iterative upscaling, SEGSPreview)
+- **PixelKSampleUpscalerProvider's sampling** (IterativeLatentUpscale / IterativeImageUpscale).
+  - Upstream's PixelKSampleUpscaler samples through `impact_sampling.impact_sample`: `floor(steps / denoise)` total
+    steps, sampled from `total - steps` to the end (KSamplerAdvanced's slice, no leftover noise).
+  - It returns the sampler's final denoised prediction, not the last latent.
+  - The engine's sample is now called exactly that way (start/last step, `return_denoised`). The pixel-hook steps
+    (post-encode, steps/cfg/denoise schedules) are unchanged.
+  - Known difference: for the SDE samplers (dpmpp_sde, dpmpp_2m_sde, dpmpp_3m_sde and their _gpu forms) upstream
+    seeds its Brownian noise sampler from the full schedule's sigma range, while the engine uses the sliced range.
+- **SEGSPreview** runs upstream's `doit` (verbatim in `_segs_preview_upstream.py`).
+  - SEGS are scale-matched to the fallback image.
+  - Crops and masks are upstream's: combined and binary masks, min_alpha.
+  - With neither cropped images nor a fallback image it returns no output, as upstream does.
+  - The previews are upstream's RGBA images, shown through the SDK's temp preview as PNG. Upstream wrote lossy WebP
+    into the temp folder. This needs the "ui" permission.
