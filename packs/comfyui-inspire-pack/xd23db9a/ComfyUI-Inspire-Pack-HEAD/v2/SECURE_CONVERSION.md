@@ -93,3 +93,12 @@ The original reads any folder on the host. Secure Nodes V2 reads only ComfyUI's 
    the value of the last one in workflow order.
 6. **The host's own control.** A seed widget's `control_after_generate` still runs as the host applies it.
    If the host is set to apply widget controls before queueing, that control may run after this one.
+
+## Round 3 (host errors in a real guest)
+- `_sn_dir.open_directory` reproduces two of the original's outcomes by catching host-side SDK errors:
+  - a directory input that names a file (the host's NotADirectoryError) becomes the original's FileNotFoundError;
+  - a folder whose only entries are sub-folders, with more files below than the SDK lists (the host's ValueError),
+    counts as "there are files below", as the original's `os.listdir` sees the sub-folder.
+- In a real guest these errors arrive as the transport's error, with the host's type name in `remote_type`. The
+  builtin `except` clauses therefore fired only in-process. They now match either form.
+- The guest test checks both paths through a real guest process.

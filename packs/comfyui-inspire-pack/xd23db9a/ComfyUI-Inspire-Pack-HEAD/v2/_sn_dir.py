@@ -53,6 +53,12 @@ def locate(node, directory):
     return "input", "/".join(parts)
 
 
+def _host_error_is(error, kind):
+    """A host-side SDK error is the builtin type in-process. In a real guest it arrives as the transport's error,
+    with the host's type name in remote_type (round 3)."""
+    return isinstance(error, kind) or getattr(error, "remote_type", None) == kind.__name__
+
+
 class Directory:
     """One listed directory: `names` are its files, in name order."""
 
@@ -74,14 +80,18 @@ async def open_directory(node, directory, not_found_message):
     ctx = sdk.ctx()
     try:
         names = await ctx.assets.list(folder, prefix=prefix, recursive=False)
-    except NotADirectoryError:
+    except Exception as error:
+        if not _host_error_is(error, NotADirectoryError):
+            raise
         raise FileNotFoundError(not_found_message) from None
     base = f"{prefix}/" if prefix else ""
     files = [name[len(base):] for name in names]
     if not files:
         try:
             below = await ctx.assets.list(folder, prefix=prefix, recursive=True)
-        except ValueError:
+        except Exception as error:
+            if not _host_error_is(error, ValueError):
+                raise
             below = ["(more files than the SDK lists)"]
         if not below:
             raise FileNotFoundError(not_found_message)

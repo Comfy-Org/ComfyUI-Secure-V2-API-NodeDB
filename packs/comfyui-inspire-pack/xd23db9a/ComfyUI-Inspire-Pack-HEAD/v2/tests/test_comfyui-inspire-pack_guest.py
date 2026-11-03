@@ -102,6 +102,47 @@ async def run() -> dict:
             record("guest/missing folder error", False, "no error")
         except Exception as error:  # noqa: BLE001
             record("guest/missing folder error", "Directory 'nope cannot be found.'" in str(error), repr(error))
+        # Round 3: host-side SDK errors reach a real guest as the transport's error, with the host's type name in
+        # remote_type. (a) The directory names a file: the host's listing raises NotADirectoryError, and the node
+        # must fail as the original does, with FileNotFoundError and the original's message.
+        for node_id, (node, cls, want) in {
+                # The two originals word it differently (the batch loader's closing quote is misplaced).
+                "67": ("LoadImagesFromDir //Inspire", P.LoadImagesFromDirBatch, "Directory '{} cannot be found.'"),
+                "68": ("LoadImageListFromDir //Inspire", P.LoadImagesFromDirList,
+                       "Directory '{}' cannot be found.")}.items():
+            try:
+                H.run_pristine(cls, directory=str(H.INPUT / "mixed/img1.png"))
+                original = "no error"
+            except FileNotFoundError as error:
+                original = str(error)
+            try:
+                await H.run_v2(proxies[node], node_id=node_id, directory="mixed/img1.png")
+                got = ("no error", "")
+            except Exception as error:  # noqa: BLE001
+                got = (getattr(error, "remote_type", None) or type(error).__name__, str(error))
+            record(f"guest/{node}: a file as the directory fails like the original (FileNotFoundError)",
+                   original == want.format(H.INPUT / "mixed/img1.png") and got[0] == "FileNotFoundError"
+                   and want.format("mixed/img1.png") in got[1], [original, got])
+        # (b) A folder whose only entries are sub-folders: the original lists the sub-folder, so it is not "not
+        # found". With more files below than the SDK lists (4096) the host's recursive listing raises ValueError;
+        # the outcome must be the one for the same folder with a single file below.
+        for name, count in (("deep_only_sub", 4097), ("small_only_sub", 1)):
+            inner = H.INPUT / name / "inner"
+            inner.mkdir(parents=True, exist_ok=True)
+            for index in range(count):
+                (inner / f"{index:05d}.txt").write_bytes(b"")
+        outcomes = {}
+        for node_id, name in (("69", "deep_only_sub"), ("70", "small_only_sub")):
+            try:
+                outcomes[name] = ["ok", repr(await H.run_v2(proxies["LoadImagesFromDir //Inspire"], node_id=node_id,
+                                                         directory=name))]
+            except Exception as error:  # noqa: BLE001
+                outcomes[name] = [getattr(error, "remote_type", None) or type(error).__name__, str(error)[:300]]
+        originals = {name: repr(H.run_pristine(P.LoadImagesFromDirBatch, directory=str(H.INPUT / name)))
+                     for name in ("deep_only_sub", "small_only_sub")}
+        record("guest/LoadImagesFromDir: only sub-folders, 4097 files below == the same with 1 file below",
+               outcomes["deep_only_sub"] == outcomes["small_only_sub"]
+               and "exceeds" not in outcomes["deep_only_sub"][1], {"v2": outcomes, "original": originals})
         for label, node_inputs, needle in (
                 ("Datetime sort", {"directory": "mixed", "sort_method": "Datetime (DESC)"},
                  "sort_method 'Datetime (DESC)' is not available in Secure Nodes V2 yet"),

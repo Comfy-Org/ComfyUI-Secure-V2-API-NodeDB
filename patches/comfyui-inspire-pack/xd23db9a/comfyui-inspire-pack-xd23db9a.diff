@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,104 @@
 +# Secure conversion report: ComfyUI-Inspire-Pack
 +
 +- Pinned commit: `d23db9aa544de9a6d4c609cb7005fa9e0d42031d` (version 1.23)
@@ -96,6 +96,15 @@
 +   the value of the last one in workflow order.
 +6. **The host's own control.** A seed widget's `control_after_generate` still runs as the host applies it.
 +   If the host is set to apply widget controls before queueing, that control may run after this one.
++
++## Round 3 (host errors in a real guest)
++- `_sn_dir.open_directory` reproduces two of the original's outcomes by catching host-side SDK errors:
++  - a directory input that names a file (the host's NotADirectoryError) becomes the original's FileNotFoundError;
++  - a folder whose only entries are sub-folders, with more files below than the SDK lists (the host's ValueError),
++    counts as "there are files below", as the original's `os.listdir` sees the sub-folder.
++- In a real guest these errors arrive as the transport's error, with the host's type name in `remote_type`. The
++  builtin `except` clauses therefore fired only in-process. They now match either form.
++- The guest test checks both paths through a real guest process.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -3,39 +3,18 @@
@@ -190,7 +199,7 @@
 +    return out.movedim(2, 1).reshape(orig_shape[:-2] + (height, width))
 --- /dev/null
 +++ b/v2/_sn_dir.py
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,98 @@
 +"""Directories for the converted Inspire directory loaders, through the SDK (Secure Nodes V2).
 +
 +The original lists any host directory with os.listdir / os.path and opens files with PIL
@@ -246,6 +255,12 @@
 +    return "input", "/".join(parts)
 +
 +
++def _host_error_is(error, kind):
++    """A host-side SDK error is the builtin type in-process. In a real guest it arrives as the transport's error,
++    with the host's type name in remote_type (round 3)."""
++    return isinstance(error, kind) or getattr(error, "remote_type", None) == kind.__name__
++
++
 +class Directory:
 +    """One listed directory: `names` are its files, in name order."""
 +
@@ -267,14 +282,18 @@
 +    ctx = sdk.ctx()
 +    try:
 +        names = await ctx.assets.list(folder, prefix=prefix, recursive=False)
-+    except NotADirectoryError:
++    except Exception as error:
++        if not _host_error_is(error, NotADirectoryError):
++            raise
 +        raise FileNotFoundError(not_found_message) from None
 +    base = f"{prefix}/" if prefix else ""
 +    files = [name[len(base):] for name in names]
 +    if not files:
 +        try:
 +            below = await ctx.assets.list(folder, prefix=prefix, recursive=True)
-+        except ValueError:
++        except Exception as error:
++            if not _host_error_is(error, ValueError):
++                raise
 +            below = ["(more files than the SDK lists)"]
 +        if not below:
 +            raise FileNotFoundError(not_found_message)
@@ -6811,7 +6830,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/test_comfyui-inspire-pack_guest.py
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,192 @@
 +"""Host proxy -> real guest, end to end, for comfyui-inspire-pack round 1 (gate).
 +
 +    DEPS=<opencv-python-headless unpacked> run_in_gate.sh <snapshot dir, or the pack folder> \
@@ -6916,6 +6935,47 @@
 +            record("guest/missing folder error", False, "no error")
 +        except Exception as error:  # noqa: BLE001
 +            record("guest/missing folder error", "Directory 'nope cannot be found.'" in str(error), repr(error))
++        # Round 3: host-side SDK errors reach a real guest as the transport's error, with the host's type name in
++        # remote_type. (a) The directory names a file: the host's listing raises NotADirectoryError, and the node
++        # must fail as the original does, with FileNotFoundError and the original's message.
++        for node_id, (node, cls, want) in {
++                # The two originals word it differently (the batch loader's closing quote is misplaced).
++                "67": ("LoadImagesFromDir //Inspire", P.LoadImagesFromDirBatch, "Directory '{} cannot be found.'"),
++                "68": ("LoadImageListFromDir //Inspire", P.LoadImagesFromDirList,
++                       "Directory '{}' cannot be found.")}.items():
++            try:
++                H.run_pristine(cls, directory=str(H.INPUT / "mixed/img1.png"))
++                original = "no error"
++            except FileNotFoundError as error:
++                original = str(error)
++            try:
++                await H.run_v2(proxies[node], node_id=node_id, directory="mixed/img1.png")
++                got = ("no error", "")
++            except Exception as error:  # noqa: BLE001
++                got = (getattr(error, "remote_type", None) or type(error).__name__, str(error))
++            record(f"guest/{node}: a file as the directory fails like the original (FileNotFoundError)",
++                   original == want.format(H.INPUT / "mixed/img1.png") and got[0] == "FileNotFoundError"
++                   and want.format("mixed/img1.png") in got[1], [original, got])
++        # (b) A folder whose only entries are sub-folders: the original lists the sub-folder, so it is not "not
++        # found". With more files below than the SDK lists (4096) the host's recursive listing raises ValueError;
++        # the outcome must be the one for the same folder with a single file below.
++        for name, count in (("deep_only_sub", 4097), ("small_only_sub", 1)):
++            inner = H.INPUT / name / "inner"
++            inner.mkdir(parents=True, exist_ok=True)
++            for index in range(count):
++                (inner / f"{index:05d}.txt").write_bytes(b"")
++        outcomes = {}
++        for node_id, name in (("69", "deep_only_sub"), ("70", "small_only_sub")):
++            try:
++                outcomes[name] = ["ok", repr(await H.run_v2(proxies["LoadImagesFromDir //Inspire"], node_id=node_id,
++                                                         directory=name))]
++            except Exception as error:  # noqa: BLE001
++                outcomes[name] = [getattr(error, "remote_type", None) or type(error).__name__, str(error)[:300]]
++        originals = {name: repr(H.run_pristine(P.LoadImagesFromDirBatch, directory=str(H.INPUT / name)))
++                     for name in ("deep_only_sub", "small_only_sub")}
++        record("guest/LoadImagesFromDir: only sub-folders, 4097 files below == the same with 1 file below",
++               outcomes["deep_only_sub"] == outcomes["small_only_sub"]
++               and "exceeds" not in outcomes["deep_only_sub"][1], {"v2": outcomes, "original": originals})
 +        for label, node_inputs, needle in (
 +                ("Datetime sort", {"directory": "mixed", "sort_method": "Datetime (DESC)"},
 +                 "sort_method 'Datetime (DESC)' is not available in Secure Nodes V2 yet"),
