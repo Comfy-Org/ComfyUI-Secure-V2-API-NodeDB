@@ -27,6 +27,48 @@ class TextBox1V2(io.ComfyNode):
         return io.NodeOutput(text1)
 
 
+class TextBox2V2(io.ComfyNode):
+    """nodes_misc.py:77-98 (TextBox2.main returns its two texts unchanged)."""
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("TextBox2")
+
+    @classmethod
+    async def execute(cls, text1: str = "", text2: str = "") -> io.NodeOutput:
+        return io.NodeOutput(text1, text2)
+
+
+class TextConcatenateV2(io.ComfyNode):
+    """nodes_misc.py:316-337 (TextConcatenate.main: ``text_1 + separator + text_2``; unlinked texts are "")."""
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("TextConcatenate")
+
+    @classmethod
+    async def execute(cls, text_1: str = "", text_2: str = "", separator: str = "") -> io.NodeOutput:
+        return io.NodeOutput(text_1 + separator + text_2)
+
+
+class SetImageSizeV2(io.ComfyNode):
+    """nodes_misc.py:8-28 (SetImageSize.main returns its width and height unchanged)."""
+    SDK_REFS = False
+    SDK_PERMISSIONS = ()
+
+    @classmethod
+    def define_schema(cls):
+        return schema_for("SetImageSize")
+
+    @classmethod
+    async def execute(cls, width: int = 1024, height: int = 1024) -> io.NodeOutput:
+        return io.NodeOutput(width, height)
+
+
 class SetImageSizeWithScaleV2(io.ComfyNode):
     """nodes_misc.py:31-52 (SetImageSizeWithScale.main)."""
     SDK_REFS = False
@@ -59,4 +101,5 @@ class SigmasPowerV2(io.ComfyNode):
         return io.NodeOutput(await sdk.SigmasRef._from_raw(result))
 
 
-__all__ = ["SetImageSizeWithScaleV2", "SigmasPowerV2", "TextBox1V2"]
+__all__ = ["SetImageSizeV2", "SetImageSizeWithScaleV2", "SigmasPowerV2", "TextBox1V2", "TextBox2V2",
+           "TextConcatenateV2"]

@@ -21,7 +21,7 @@ without it.
                           profile; a provider fails exactly when its function needs a profile module.
 Writes /results/profile-load.json; exits 1 when the observed outcome differs from the expectation.
 Run: [DEPS=<unpacked profile wheels>] run_in_gate.sh <Pack-HEAD with v2> <v2/tests> <out> test_profile_load.py
-     --expect profile|no-profile
+     [--expect profile|no-profile]   (default: profile when /deps is mounted, else no-profile)
 """
 import argparse
 import ast
@@ -337,7 +337,9 @@ def import_failure(result, profile):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expect", choices=("profile", "no-profile"), required=True)
+    # Default: expect what the mount says (DEPS mounted at /deps = the profile is deployed), so a bare run works.
+    parser.add_argument("--expect", choices=("profile", "no-profile"),
+                        default="profile" if Path("/deps").is_dir() else "no-profile")
     expect = parser.parse_args().expect
     profile = profile_modules()
     deps_mounted = Path("/deps").is_dir()

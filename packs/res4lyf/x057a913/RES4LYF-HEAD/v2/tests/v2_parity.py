@@ -2,15 +2,20 @@
 
 This process never imports the original pack. Core is clean apart from the two scheduler names that the V2
 manifest registers.
-* The reference comes from ref_original.py, run in a separate process and mounted read-only at /deps.
+* The reference comes from ref_original.py, run in a separate process (see below).
 * The V2 node runs through core's dispatch shape (ExecutionPlan + wrap_inputs + InProcessCtxProvider) in a
-  comfy_secure_nodes GuestSession, with exactly its declared SDK permissions.
+  comfy_secure_nodes GuestSession, with exactly its declared SDK permissions. The guest starts through
+  _res4_sealed_guest_entry.py with its guest import audit on (pack code may import only the stdlib, the sealed guest
+  lock or the declared profile); the summary lists any import it refused.
 * Comparisons are bitwise and dtype-strict: output samples and noise_mask, denoised samples and noise_mask, and
   the OPTIONS dict.
 * Every ctx.sample call is recorded: the model evaluations it made and the wall time it took.
 * A negative control flips one value and must turn the comparator red.
 Writes /results/v2-parity.json and exits 1 on any MISMATCH or harness failure.
-Run: DEPS=<ref results dir> run_in_gate.sh <RES4LYF-HEAD with v2> <parity dir> <out> v2_parity.py
+The reference is a mounted ref_original.py result (DEPS = that result folder), or, when /deps holds none, it is
+computed first by ref_original.py in a child process of the same container (see reference_dir).
+Run: run_in_gate.sh <RES4LYF-HEAD with v2> <v2/tests> <out> v2_parity.py
+     (optional: DEPS=<a ref_original.py result> to reuse a reference, or DEPS=<the original's test deps>)
 """
 import asyncio
 import copy
@@ -51,8 +56,22 @@ import cases  # noqa: E402
 
 PACK = Path("/pack")
 V2 = PACK / "v2"
-REF = Path("/deps")
+REF = Path("/deps")  # replaced in main() by reference_dir()
 OUT = Path("/results")
+
+
+def reference_dir():
+    """The original's reference: a mounted one (DEPS = an earlier ref_original.py result), else computed now by
+    ref_original.py in a child process of this container. The original never loads into this process, because it
+    patches core globally."""
+    if (Path("/deps") / "ref.json").is_file():
+        return Path("/deps"), "mounted at /deps"
+    import subprocess
+    out = Path(tempfile.mkdtemp(prefix="res4-ref-run-"))
+    t0 = time.perf_counter()
+    subprocess.run([sys.executable, "-I", "-B", str(Path(__file__).resolve().parent / "ref_original.py")],
+                   env=dict(os.environ, RES4_REF_OUT=str(out)), check=True, timeout=3600)
+    return out, f"computed by ref_original.py in a child process ({time.perf_counter() - t0:.1f} s)"
 NODE = "ClownsharKSampler_Beta"
 PREFIX = "RES4LYF/ClownsharKSampler_Beta:"
 
@@ -186,11 +205,25 @@ def model_for(kind):
 GUEST = {"session": None, "pids": set()}
 
 
+GUARD_LOG = Path(tempfile.mkdtemp(prefix="res4-parity-guard-")) / "import-guard.jsonl"
+
+
+def guard_summary():
+    events = [json.loads(line) for line in GUARD_LOG.read_text().splitlines()] if GUARD_LOG.exists() else []
+    return {"on": True, "refused_imports": sorted({e["module"] for e in events}), "refused_import_events": len(events)}
+
+
 class SealedEntryGuestSession(GuestSession):
-    """Start the guest the way production pack guests start: fixr1_compat applied before the guest main."""
+    """Start the guest the way production pack guests start: fixr1_compat applied before the guest main. The entry's
+    guest import audit is on: pack code may import only the stdlib, the sealed guest lock or the declared profile."""
 
     def _guest_command(self, python):
         return [python, "/tests/_res4_sealed_guest_entry.py"]
+
+    def _adjust_guest_env(self, env):
+        super()._adjust_guest_env(env)
+        env["RES4_GUARD_ROOT"] = str(self.guest_runtime_root)
+        env["RES4_GUARD_LOG"] = str(GUARD_LOG)
 
 
 async def session():
@@ -279,6 +312,10 @@ async def option_rows(by_name):
     rows = []
     for case in cases.option_cases():
         ref_row = by_name[case["name"]]
+        if ref_row.get("needs_deps"):  # the original reached an import stub (no DEPS): no reference to compare
+            rows.append({"name": case["name"], "verdict": "NOT_RUNNABLE_WITHOUT_DEPS", "original_error": ref_row["error"]})
+            print("OPTION NOT_RUNNABLE_WITHOUT_DEPS", case["name"], flush=True)
+            continue
         model = model_for(case["model"])
         pos, neg, latent = cases.inputs()
         PASSES.clear()
@@ -418,12 +455,18 @@ async def queue_rows(ref_queue):
 
 
 async def main():
+    global REF
+    REF, ref_source = reference_dir()
     ref = json.loads((REF / "ref.json").read_text())
     by_name = {row["name"]: row for row in ref["cases"]}
+    needs_deps = sorted(name for name, row in by_name.items() if row.get("needs_deps"))
     loaded, manifest_sha, manifest_matches = register_providers()
     rows = []
     for case in cases.case_table():
         ref_row = by_name[case["name"]]
+        if ref_row.get("needs_deps"):
+            rows.append({"name": case["name"], "verdict": "NOT_RUNNABLE_WITHOUT_DEPS", "original_error": ref_row["error"]})
+            continue
         model = model_for(case["model"])
         pos, neg, latent = cases.inputs(mask=case["mask"], batch=case["batch"], zero_latent=case["zero_latent"])
         PASSES.clear()
@@ -458,6 +501,9 @@ async def main():
         print(row["verdict"], case["name"], row.get("max_abs_diff"), row.get("v2_error", "")[:160], flush=True)
     for chain in cases.CHAIN:
         ref_row = by_name[chain["name"]]
+        if ref_row.get("needs_deps"):
+            rows.append({"name": chain["name"], "verdict": "NOT_RUNNABLE_WITHOUT_DEPS", "original_error": ref_row["error"]})
+            continue
         model = model_for(chain["model"])
         pos, neg, latent = cases.inputs()
         PASSES.clear()
@@ -517,7 +563,8 @@ async def main():
     summary = {
         "cases": len(rows),
         "verdicts": {v: sum(1 for r in rows if r["verdict"] == v)
-                     for v in ("EXACT", "REFUSED_AS_DESIGNED", "REFUSED_NAMED", "MISMATCH")},
+                     for v in ("EXACT", "REFUSED_AS_DESIGNED", "REFUSED_NAMED", "NOT_RUNNABLE_WITHOUT_DEPS",
+                               "MISMATCH")},
         "refused_named": [r["name"] for r in rows if r["verdict"] == "REFUSED_NAMED"],
         "provider_calls": len(PROVIDER_CALLS),
         "negative_control_red": neg_ok,
@@ -534,11 +581,18 @@ async def main():
                               for v in ("EXACT", "BOTH_FAIL", "MISMATCH")},
         "cancellation": {k: cancel[k] for k in ("verdict", "v2_raised", "v2_evaluations", "rerun_exact")},
         "option_verdicts": {v: sum(1 for r in options if r["verdict"] == v)
-                            for v in ("EXACT", "REFUSED_AS_DESIGNED", "REFUSED_NAMED", "BOTH_FAIL", "MISMATCH")},
+                            for v in ("EXACT", "REFUSED_AS_DESIGNED", "REFUSED_NAMED", "BOTH_FAIL", "NOT_RUNNABLE_WITHOUT_DEPS",
+                                      "MISMATCH")},
         "option_refused": {r["name"]: r.get("v2_error", "")[:160] for r in options
                            if r["verdict"] in ("REFUSED_NAMED", "REFUSED_AS_DESIGNED", "BOTH_FAIL")},
         "provider_calls_by_the_node": clown_provider_calls,
         "provider_calls_by_core_calculate_sigmas": len(PROVIDER_CALLS) - clown_provider_calls,
+        "reference_source": ref_source,
+        "stubbed_imports_reference": ref.get("stubbed_imports", []),
+        "not_runnable_without_deps": sorted(r["name"] for r in rows + options
+                                            if r["verdict"] == "NOT_RUNNABLE_WITHOUT_DEPS"),
+        "reference_cases_needing_deps": needs_deps,
+        "guest_import_audit": guard_summary(),
     }
     doc = {"summary": summary, "cases": rows, "options": options, "queue": queue, "providers": providers,
            "cancellation": cancel}

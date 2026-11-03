@@ -1,8 +1,12 @@
 """Tier-1 reference run: ORIGINAL RES4LYF ClownsharKSampler_Beta, in-process, on core 6257422b (gate only).
 
-Writes /results/ref/<n>.safetensors (tensors) and /results/ref.json (metadata), read by the V2 run. That run uses
-a separate clean core process, because importing RES4LYF patches core globally.
-Run: DEPS=<deps-orig> run_in_gate.sh <RES4LYF-HEAD> <parity dir> <out> ref_original.py
+Writes <out>/ref/<n>.safetensors (tensors) and <out>/ref.json (metadata), read by the V2 run. <out> is /results,
+or RES4_REF_OUT when v2_parity.py runs this as its own child process. The V2 run uses a separate clean core
+process, because importing RES4LYF patches core globally.
+The original imports matplotlib, cv2 and pywt (and opensimplex if enabled) at module level. With DEPS = the
+original's test dependencies, they are real. Without DEPS, labelled import stubs stand in (import_stubs.py): the
+compared paths don't use them, and any use raises. A case that reaches a stub is marked needs_deps, never compared.
+Run: [DEPS=<deps-orig>] run_in_gate.sh <RES4LYF-HEAD> <v2/tests> <out> ref_original.py
 """
 import json
 import os
@@ -41,7 +45,10 @@ import comfy.samplers  # noqa: E402
 import comfy.supported_models as sm  # noqa: E402
 
 import cases  # noqa: E402
+import import_stubs  # noqa: E402
 
+STUBBED = import_stubs.install(["matplotlib", "cv2", "pywt", "opensimplex"],  # only those genuinely absent
+                               noop_calls=["matplotlib.use"])  # the original calls it at import (see import_stubs)
 TMP = Path(tempfile.mkdtemp(prefix="res4-ref-"))
 shutil.copytree("/pack", TMP / "RES4LYF", ignore=shutil.ignore_patterns("v2"))
 sys.path.insert(0, str(TMP))
@@ -49,7 +56,8 @@ import importlib  # noqa: E402
 
 RES = importlib.import_module("RES4LYF")
 SAMPLERS_MOD = importlib.import_module("RES4LYF.beta.samplers")
-OUT = Path("/results")
+OUT = Path(os.environ.get("RES4_REF_OUT", "/results"))
+STUB_MARK = "stubbed dependency used"
 REF = OUT / "ref"
 REF.mkdir(parents=True, exist_ok=True)
 COUNT = {"n": 0}
@@ -250,9 +258,12 @@ def main():
             rows.append({"index": index, "name": case["name"], "ok": False,
                          "error": f"{type(error).__name__}: {str(error)[:300]}", "calls": COUNT["n"]})
         index += 1
+    for row in rows:  # a case that reached a stub has no reference without DEPS
+        if not row["ok"] and STUB_MARK in row.get("error", ""):
+            row["needs_deps"] = True
     queue = queue_verdicts()
     doc = {"torch": torch.__version__, "cases": rows, "queue": queue, "provider_schedules": provider_schedules(),
-           "cancellation": cancellation()}
+           "cancellation": cancellation(), "stubbed_imports": STUBBED}
     (OUT / "ref.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     print(json.dumps({"cases": len(rows), "ok": sum(1 for r in rows if r["ok"]),
                       "errors": [(r["name"], r["error"]) for r in rows if not r["ok"]],

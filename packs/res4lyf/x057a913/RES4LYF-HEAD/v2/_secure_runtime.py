@@ -206,6 +206,13 @@ def _validation_argument(node_id: str) -> str | None:
 
 
 REFUSAL_REASON = "not in the converted V2 set"
+# Used ids that stay refused for a reason of their own
+REFUSAL_REASONS = {
+    "Image Sharpen FS": (
+        "it blurs with OpenCV (cv2.medianBlur / cv2.GaussianBlur, images.py:816 and :844), which the guest does not "
+        "have, and it moves its frequency-separation blend to CUDA unconditionally (images.py:472-475 and :701-704), "
+        "so the original fails on any host without CUDA"),
+}
 
 
 def refusal_class_name(node_id: str) -> str:
@@ -247,7 +254,7 @@ def refusing_node(node_id: str, reason: str = REFUSAL_REASON) -> type[io.ComfyNo
 # Every refusal class exists as soon as THIS module is imported. The production guest imports only the module a
 # manifest row names, inside a bare namespace package (the pack's __init__.py does not run;
 # guest/__init__.py:1315-1360), then looks the class up by name (:1484-1490).
-REFUSED = {node_id: refusing_node(node_id) for node_id in sorted(FROZEN)}
+REFUSED = {node_id: refusing_node(node_id, REFUSAL_REASONS.get(node_id, REFUSAL_REASON)) for node_id in sorted(FROZEN)}
 globals().update({cls.__name__: cls for cls in REFUSED.values()})
 
 __all__ = ["FROZEN", "REFUSED", "decode", "refusal_class_name", "refusing_node", "schema_for", "v1_schema",

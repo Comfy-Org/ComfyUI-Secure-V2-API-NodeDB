@@ -15,7 +15,9 @@ __name__ (_execute_node). Each row is checked three ways, each with a fresh pack
      committed manifest; for each proxy, the plan is built the way core builds it (execution.py: node_type =
      proxy.__name__, node_module = proxy.__module__), with no inputs. A fresh guest serves each module's rows, so
      each module's import is the first in its guest. Refused rows must raise their own refusal message (the one the
-     class raises in process); converted rows must reach their execute (a result or a named refusal).
+     class raises in process); converted rows must reach their execute (a result or a named refusal). The guests
+     start through _res4_sealed_guest_entry.py with its guest import audit on (pack code may import only the stdlib,
+     the sealed guest lock or the declared profile); the result lists any import it refused.
 Also checked: the frozen input names the refusal classes read without building a schema equal the schema's input
 ids, for every frozen node.
 Writes /results/production-load.json; exits 1 on any failure.
@@ -27,6 +29,7 @@ import importlib
 import json
 import os
 import sys
+import tempfile
 import time
 import traceback
 import types
@@ -51,6 +54,7 @@ PACK = Path(os.environ.get("PRODLOAD_PACK", "/pack"))
 V2 = PACK / "v2"
 RESULTS = Path(os.environ.get("PRODLOAD_RESULTS", "/results"))
 GUEST_ENTRY = "/tests/_res4_sealed_guest_entry.py"
+GUARD_LOG = Path(tempfile.mkdtemp(prefix="res4-prodload-")) / "import-guard.jsonl"
 MANIFEST = json.loads((V2 / "secure-nodes.json").read_text())
 ROWS = MANIFEST["nodes"]
 CALL_TIMEOUT_S = 60
@@ -163,10 +167,17 @@ def layer_b():
 # C. served: real loader proxies -> core-shaped plan -> a real guest process
 # --------------------------------------------------------------------------------------------------------------- #
 class SealedEntryGuestSession(GuestSession):
-    """Start the guest the way production pack guests start: fixr1_compat applied before the guest main."""
+    """Start the guest the way production pack guests start: fixr1_compat applied before the guest main. The entry's
+    guest import audit is on: pack code may import only the stdlib, the sealed guest lock or the declared profile."""
 
     def _guest_command(self, python):
         return [python, GUEST_ENTRY]
+
+    def _adjust_guest_env(self, env):
+        super()._adjust_guest_env(env)
+        env["RES4_GUARD_ROOT"] = str(self.guest_runtime_root)
+        env["RES4_GUARD_PROFILE"] = str(V2 / "pyproject.toml")
+        env["RES4_GUARD_LOG"] = str(GUARD_LOG)
 
 
 async def serve(guest, proxy, prompt_id):
@@ -230,9 +241,12 @@ async def layer_c(refusals):
                                    "module_file_shipped": shipped[module_name],
                                    "seconds": round(time.perf_counter() - t0, 2)}
             await guest.kill()
+    guard = [json.loads(line) for line in GUARD_LOG.read_text().splitlines()] if GUARD_LOG.exists() else []
     return {
         "rows": rows,
         "rows_ok": sum(1 for value in rows.values() if value["ok"]),
+        "guest_import_audit": {"on": True, "refused_imports": sorted({g["module"] for g in guard}),
+                               "refused_import_events": len(guard)},
         "refused_rows_raising_their_refusal": sum(1 for key, value in rows.items() if key in refusals and value["ok"]),
         "converted_rows_reaching_execute": sum(1 for key, value in rows.items()
                                                if key not in refusals and value["ok"]),
@@ -271,6 +285,7 @@ def main():
         "B_ok": b["rows_ok"], "B_found_by_getattr": b["found_by_getattr"], "B_package_init_ran": b["package_init_ran"],
         "C_ok": c["rows_ok"], "C_refused_raising_refusal": c["refused_rows_raising_their_refusal"],
         "C_converted_reaching_execute": c["converted_rows_reaching_execute"], "C_guests": c["guests"],
+        "C_guest_import_audit": c["guest_import_audit"],
         "passed": doc["passed"],
     }
     print(json.dumps(summary, indent=1, sort_keys=True))
