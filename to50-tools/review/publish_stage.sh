@@ -58,11 +58,13 @@ EOF
   cp '$PUBPAIR/$slug-$key.json' '$PUBPAIR/$slug-$key.diff' '$CL/patches/$slug/$key/'
   if [ -f '$WORK/OMITTED.md' ]; then cp '$WORK/OMITTED.md' '$CL/packs/$slug/$key/OMITTED.md'; fi
 "
-git add -A "packs/$slug" "patches/$slug" packs/packs.json
+# -f: the reviewed tree is committed as-is, even where a nested upstream .gitignore (e.g. `tests/`, `test_*.py`)
+# would hide our added v2 files. The post-commit tree comparison below proves nothing extra or missing went in.
+git add -A -f "packs/$slug" "patches/$slug" packs/packs.json
 git -c core.autocrlf=false commit -q -F "$MSG"
 echo "committed $(git rev-parse --short HEAD): $(git show --stat --format= HEAD | tail -1)"
 TAR="$(cygpath -w "/tmp/publish-$slug-$$.tar")"
-git archive -o "$TAR" HEAD "packs/$slug/$key" "patches/$slug/$key"
+git -c core.autocrlf=false -c core.eol=lf archive -o "$TAR" HEAD "packs/$slug/$key" "patches/$slug/$key"
 TARL=$(wsl.exe -e wslpath -a "$TAR" | tr -d '\r')
 wsl.exe -e bash -c "set -euo pipefail
   V=\$(mktemp -d ~/publish-verify.XXXX); tar -x -C \$V -f '$TARL'

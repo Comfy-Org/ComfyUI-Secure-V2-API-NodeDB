@@ -13,7 +13,7 @@ P="$WORK/replay/$slug/$key/$pack"
 LIST="$ARCH/$slug-$key-$(date -u +%Y%m%dT%H%M%SZ).json"
 python3 -I "$RV/omit_media.py" plan "$P" "$LIST"
 python3 -I "$RV/omit_media.py" apply "$P" "$LIST"
-python3 -I "$RV/omit_media.py" note "$LIST" "$WORK/OMITTED.md"
+if python3 -I -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))[\"entries\"] else 1)" "$LIST"; then python3 -I "$RV/omit_media.py" note "$LIST" "$WORK/OMITTED.md"; else rm -f "$WORK/OMITTED.md"; echo "nothing to omit: no OMITTED.md"; fi
 rm -rf "$WORK/publish-pair"; mkdir -p "$WORK/publish-pair"
 python3 -I "$T/packpair.py" generate "$WORK/replay/$slug/$key" "$WORK/publish-pair" > /dev/null
 # replay proof on the reduced trees
@@ -22,4 +22,4 @@ python3 -I "$T/packpair.py" apply "$R/$slug/$key" "$WORK/publish-pair/$slug-$key
 python3 -I "$T/packpair.py" cmptree "$R/$slug/$key/$pack/v2" "$P/v2" > "$WORK/omit-replay.json" \
   || { echo "omission replay FAILED"; cat "$WORK/omit-replay.json"; exit 1; }
 echo "omission applied: list $LIST (outside git); pair regenerated; replay exact ($(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["files_compared"])' "$WORK/omit-replay.json") v2 files)"
-cat "$WORK/OMITTED.md"
+[ -f "$WORK/OMITTED.md" ] && cat "$WORK/OMITTED.md" || true

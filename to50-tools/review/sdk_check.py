@@ -28,6 +28,13 @@ MODULE_NAMES = {"io", "ui", "sdk", "_io", "_ui", "_sdk", "_io_public", "_ui_publ
                 "util", "torch_helpers", "latest", "v0_0_1", "v0_0_2", "v0_0_3", "internal", "_input", "_input_impl", "_util",
                 "resources", "types"}
 PRIVATE_ATTRS = {"_from_raw", "_wrap", "_raw", "_resolve_host"}
+# Ben 2026-11-03: no pack-specific code in the engine. These SDK verbs exist for one pack family each; new conversions
+# must build such architectures in the guest instead (WARN, so existing conversions are listed, not blocked).
+PACK_SPECIFIC_VERBS = {"load_sam", "load_object_detector", "load_ipadapter", "load_brushnet", "load_powerpaint",
+                       "load_clipseg", "load_inpaint_model", "load_background_removal_model", "load_advanced_controlnet",
+                       "load_controlnet_plusplus", "load_language_model", "generate_text"}
+# Ben 2026-11-03 00:31Z: GGUF loading (load_gguf_model / load_gguf_text_encoders) is a sanctioned generic facility (a file
+# format, like safetensors). Text generation (generate_text / load_language_model) is undecided, so it stays listed.
 NET_MODULES = {"requests", "urllib", "urllib3", "http", "httpx", "aiohttp", "socket", "websocket", "websockets", "ftplib",
                "smtplib", "huggingface_hub", "gdown", "wget"}
 PROC_MODULES = {"subprocess", "multiprocessing", "ctypes", "importlib", "pty"}
@@ -382,6 +389,9 @@ def main(argv: list[str]) -> int:
                 if isinstance(n, ast.keyword) and n.arg == "allow_pickle" and isinstance(n.value, ast.Constant) \
                         and n.value.value is True:
                     fails.append({"rule": "allow_pickle=True", "where": f"{rel}:{n.value.lineno}", "detail": "pickle execution"})
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in PACK_SPECIFIC_VERBS:
+                    warns.append({"rule": "pack-specific-engine-verb", "where": where,
+                                  "detail": f".{n.func.attr}(): pack-specific engine helper; build it in the guest"})
                 if isinstance(n, ast.Call):
                     fn = n.func
                     dotted = None

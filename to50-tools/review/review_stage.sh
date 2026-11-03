@@ -81,7 +81,7 @@ UPSTREAM=$($PY -c 'import json,sys; e=json.load(open(sys.argv[1])); s=sys.argv[2
 # ---- 3. fresh pristine (ext4) -------------------------------------------------------------------------------------------
 mkdir -p "$W/pristine/$slug/$key"
 if [ "${REPAIR:-0}" = 1 ]; then
-  (cd "$C" && git -c core.autocrlf=false archive HEAD "packs/$slug/$key") | tar -x -C "$W" || fail "corpus archive failed"
+  (cd "$C" && git -c core.autocrlf=false -c core.eol=lf archive HEAD "packs/$slug/$key") | tar -x -C "$W" || fail "corpus archive failed"
   mkdir -p "$W/main/$slug/$key"; cp -a "$W/packs/$slug/$key/$pack" "$W/main/$slug/$key/"
   cp -a "$W/packs/$slug/$key/$pack" "$W/pristine/$slug/$key/"; rm -rf "$W/pristine/$slug/$key/$pack/v2"
   log "pristine from corpus main $(git -C "$C" rev-parse --short HEAD)"
