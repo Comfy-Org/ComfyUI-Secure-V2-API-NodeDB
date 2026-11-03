@@ -1500,29 +1500,10 @@ async def _refine_segs_with_detector(
 
 
 async def _sam_loader(model_name, device_mode="AUTO", **_kwargs):
+    # Imported here rather than at module import: only the SAM path needs the dependency profile.
+    from . import _sam_runtime
+
     model_name = _asset_name(model_name)
-    lowered = model_name.lower()
-    if not lowered.endswith((".safetensors", ".sft")):
-        raise RuntimeError(
-            "SAMLoader accepts SafeTensors weights only; legacy .pt/.pth "
-            "checkpoints require unsafe pickle deserialization")
-    stem = re.sub(r"\.(?:safetensors|sft)$", "", lowered)
-    sam2_architectures = {
-        "sam2_hiera_tiny", "sam2_hiera_small", "sam2_hiera_base_plus",
-        "sam2_hiera_large", "sam2.1_hiera_tiny", "sam2.1_hiera_small",
-        "sam2.1_hiera_base_plus", "sam2.1_hiera_large",
-    }
-    if stem in sam2_architectures:
-        architecture = stem
-    elif "sam2" in lowered:
-        raise ValueError(
-            "SAM2 filename must identify a supported Hiera architecture")
-    elif "vit_h" in lowered:
-        architecture = "vit_h"
-    elif "vit_l" in lowered:
-        architecture = "vit_l"
-    else:
-        architecture = "vit_b"
     mode = {
         "auto": "AUTO",
         "prefer gpu": "Prefer GPU",
@@ -1530,8 +1511,9 @@ async def _sam_loader(model_name, device_mode="AUTO", **_kwargs):
     }.get(str(device_mode).strip().lower())
     if mode is None:
         raise ValueError("unknown SAM device mode")
-    return _one(await _ctx().models.load_sam(
-        model_name, architecture=architecture, device_mode=mode))
+    # Loading here, as upstream's SAMLoader does, puts a missing or unusable checkpoint's error on this node.
+    await _sam_runtime.load_sam(_ctx(), model_name, mode)
+    return _one({"secure_kind": _sam_runtime.SAM_KIND, "name": model_name, "device_mode": mode})
 
 
 async def _sam2_video_detector_segs(
@@ -1539,7 +1521,9 @@ async def _sam2_video_detector_segs(
     sam2_threshold, crop_factor, drop_size, **_kwargs,
 ):
     if not isinstance(sam2_model, sdk.SamModelRef):
-        raise TypeError("SAM_MODEL must come from the secure SAMLoader")
+        raise TypeError(
+            "[Impact Pack] ImpactSAM2VideoDetectorSEGS needs a SAM2 model; SAMLoader refuses SAM2 models in "
+            "Secure Nodes V2 because this pack's guest has no sam2 package")
     frames = _image4(await _raw(image_frames)).cpu()
     if frames.shape[0] < 1:
         raise ValueError("SAM2 Video Detector needs at least one frame")
@@ -1600,173 +1584,34 @@ async def _sam2_video_detector_segs(
     return _one(((height, width), items))
 
 
-def _sam_points_from_mask(
-    item: SEG, threshold: float, include_negative: bool,
-) -> tuple[list[list[float]], list[int]]:
-    left, top, _right, _bottom = map(int, item.crop_region)
-    mask = _seg_mask(item).amax(dim=0)
-    y_step = max(3, int(mask.shape[0] / 20))
-    x_step = max(3, int(mask.shape[1] / 20))
-    points = []
-    labels = []
-    for y in range(0, mask.shape[0], y_step):
-        for x in range(0, mask.shape[1], x_step):
-            value = float(mask[y, x])
-            if value > threshold:
-                points.append([left + x, top + y])
-                labels.append(1)
-            elif include_negative and value == 0.0:
-                points.append([left + x, top + y])
-                labels.append(0)
-    return points, labels
-
-
-def _sam_outer_negative_points(
-    width: int, height: int, crop_region: Any,
-) -> tuple[list[list[float]], list[int]]:
-    left, top, right, bottom = map(int, crop_region)
-    x_step = max(3, int(width / 20))
-    y_step = max(3, int(height / 20))
-    points = []
-    for y in range(10, max(10, height - 10), y_step):
-        for x in range(10, max(10, width - 10), x_step):
-            if not (
-                left - 10 <= x <= right + 10
-                and top - 10 <= y <= bottom + 10
-            ):
-                points.append([x, y])
-    return points, [0] * len(points)
-
-
-def _sam_query_hints(
-    item: SEG, detection_hint: str, bbox_expansion: int,
-    mask_hint_threshold: float, mask_hint_use_negative: str,
-    width: int, height: int,
-) -> tuple[list[float], list[list[float]], list[int]]:
-    left, top, right, bottom = map(float, item.bbox)
-    center = [(left + right) / 2.0, (top + bottom) / 2.0]
-    x1 = max(0.0, left - bbox_expansion)
-    y1 = max(0.0, top - bbox_expansion)
-    x2 = min(float(width), right + bbox_expansion)
-    y2 = min(float(height), bottom + bbox_expansion)
-    box = [x1, y1, x2, y2]
-    points: list[list[float]] = []
-    labels: list[int] = []
-    if detection_hint == "center-1":
-        points, labels = [center], [1]
-    elif detection_hint == "horizontal-2":
-        gap = (x2 - x1) / 3.0
-        points, labels = [
-            [x1 + gap, center[1]], [x1 + gap * 2, center[1]],
-        ], [1, 1]
-    elif detection_hint == "vertical-2":
-        gap = (y2 - y1) / 3.0
-        points, labels = [
-            [center[0], y1 + gap], [center[0], y1 + gap * 2],
-        ], [1, 1]
-    elif detection_hint == "rect-4":
-        x_gap, y_gap = (x2 - x1) / 3.0, (y2 - y1) / 3.0
-        points, labels = [
-            [x1 + x_gap, center[1]], [x1 + x_gap * 2, center[1]],
-            [center[0], y1 + y_gap], [center[0], y1 + y_gap * 2],
-        ], [1, 1, 1, 1]
-    elif detection_hint == "diamond-4":
-        x_gap, y_gap = (x2 - x1) / 3.0, (y2 - y1) / 3.0
-        points, labels = [
-            [x1 + x_gap, y1 + y_gap],
-            [x1 + x_gap * 2, y1 + y_gap],
-            [x1 + x_gap, y1 + y_gap * 2],
-            [x1 + x_gap * 2, y1 + y_gap * 2],
-        ], [1, 1, 1, 1]
-    elif detection_hint == "mask-point-bbox":
-        points, labels = [center], [1]
-    elif detection_hint == "mask-area":
-        points, labels = _sam_points_from_mask(
-            item, mask_hint_threshold,
-            mask_hint_use_negative == "Small")
-    elif detection_hint not in {"none", "mask-points"}:
-        raise ValueError(f"unknown SAM detection hint {detection_hint!r}")
-    if mask_hint_use_negative in {"Outter", "Outer"}:
-        negative_points, negative_labels = _sam_outer_negative_points(
-            width, height, item.crop_region)
-        points += negative_points
-        labels += negative_labels
-    return box, points, labels
-
-
 async def _sam_masks(
     sam_model, segs, image, detection_hint, dilation, threshold,
-    bbox_expansion, mask_hint_threshold, mask_hint_use_negative,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    if not isinstance(sam_model, sdk.SamModelRef):
+    bbox_expansion, mask_hint_threshold, mask_hint_use_negative, segmented=False,
+) -> tuple[torch.Tensor, Any]:
+    from . import _sam_runtime
+
+    if not _sam_runtime.is_descriptor(sam_model):
         raise TypeError("SAM_MODEL must come from the secure SAMLoader")
+    sam = await _sam_runtime.load_sam(
+        _ctx(), sam_model["name"], sam_model["device_mode"])
     image_value = _image4(await _raw(image))
     if image_value.shape[0] != 1:
         raise ValueError("SAM detectors accept one image at a time")
-    height, width = int(image_value.shape[1]), int(image_value.shape[2])
-    _header, items = _segs(await _raw(segs))
-    if not items:
-        empty = torch.zeros((1, height, width), dtype=torch.float32)
-        return empty, empty
-    threshold = float(threshold)
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError("SAM threshold must be in [0, 1]")
-    mask_hint_threshold = float(mask_hint_threshold)
-    if not 0.0 <= mask_hint_threshold <= 1.0:
-        raise ValueError("SAM mask hint threshold must be in [0, 1]")
-    image_ref = (
-        image if isinstance(image, sdk.ImageRef)
-        else await sdk.ImageRef._from_raw(image_value)
-    )
-    if detection_hint == "mask-points":
-        points = []
-        labels = []
-        for item in items:
-            left, top, right, bottom = map(float, item.bbox)
-            points.append([(left + right) / 2.0, (top + bottom) / 2.0])
-            labels.append(
-                0 if mask_hint_use_negative == "Small" and right - left < 10
-                else 1)
-        boxes = [None]
-        point_coords = [points]
-        point_labels = [labels]
-    else:
-        hints = [
-            _sam_query_hints(
-                item, str(detection_hint), int(bbox_expansion),
-                mask_hint_threshold, str(mask_hint_use_negative), width, height)
-            for item in items
-        ]
-        boxes = [hint[0] for hint in hints]
-        point_coords = [hint[1] for hint in hints]
-        point_labels = [hint[2] for hint in hints]
-    masks_ref, scores = await sam_model.segment(
-        image_ref,
-        boxes,
-        point_coords=point_coords,
-        point_labels=point_labels,
-        multimask_output=True,
-    )
-    masks = torch.as_tensor(await _raw(masks_ref)).float()
-    if masks.ndim != 4 or masks.shape[:2] != (len(scores), 3):
-        raise RuntimeError("SAM returned an invalid multimask tensor")
-    selected = []
-    for query_masks, query_scores in zip(masks, scores):
-        if len(query_scores) != query_masks.shape[0]:
-            raise RuntimeError("SAM returned mismatched masks and scores")
-        indices = [
-            index for index, score in enumerate(query_scores)
-            if float(score) >= threshold
-        ]
-        if not indices:
-            indices = [max(
-                range(len(query_scores)), key=lambda index: query_scores[index]
-            )]
-        selected.append(query_masks[indices].amax(dim=0))
-    batch = torch.stack(selected, dim=0)
-    batch = _dilate(batch, int(dilation))
-    combined = batch.amax(dim=0, keepdim=True)
-    return combined, batch
+    upstream_segs = _sam_runtime.to_upstream_segs(_segs(await _raw(segs)))
+    if segmented:
+        # Impact Pack detectors.py SAMDetectorSegmented.doit
+        combined, batch = _sam_runtime.make_sam_mask_segmented(
+            sam, upstream_segs, image_value, detection_hint, dilation,
+            threshold, bbox_expansion, mask_hint_threshold,
+            mask_hint_use_negative)
+        return (_sam_runtime.mask3(combined),
+                None if batch is None else _sam_runtime.mask3(batch))
+    # Impact Pack detectors.py SAMDetectorCombined.doit (and the detailers' SAM step)
+    combined = _sam_runtime.make_sam_mask(
+        sam, upstream_segs, image_value, detection_hint, dilation,
+        threshold, bbox_expansion, mask_hint_threshold,
+        mask_hint_use_negative)
+    return _sam_runtime.mask3(combined), None
 
 
 async def _sam_detector_combined(**kwargs):
@@ -1775,7 +1620,7 @@ async def _sam_detector_combined(**kwargs):
 
 
 async def _sam_detector_segmented(**kwargs):
-    return await _sam_masks(**kwargs)
+    return await _sam_masks(**kwargs, segmented=True)
 
 
 async def _simple_detector_segs(
@@ -2084,6 +1929,13 @@ async def _segs_to_mask_batch(segs, **_kwargs):
 
 
 async def _segs_apply_mask(segs, mask=None, masks=None, subtract=False, **_kwargs):
+    if mask is not None and masks is None and not subtract:
+        from . import _sam_runtime
+
+        result = _sam_runtime.segs_bitwise_and_mask(
+            _sam_runtime.to_upstream_segs(_segs(await _raw(segs))),
+            torch.as_tensor(await _raw(mask)))
+        return _one(_sam_runtime.to_v2_segs(result, SEG))
     raw_segs = _segs(await _raw(segs))
     full = _mask3(await _raw(mask if mask is not None else masks))
     height, width = raw_segs[0]
@@ -6569,9 +6421,9 @@ _set(
     _simple_detector_animatediff,
     "raw", "assets",
 )
-_set({"SAMLoader"}, _sam_loader, "models")
-_set({"SAMDetectorCombined"}, _sam_detector_combined, "raw")
-_set({"SAMDetectorSegmented"}, _sam_detector_segmented, "raw")
+_set({"SAMLoader"}, _sam_loader, "assets")
+_set({"SAMDetectorCombined"}, _sam_detector_combined, "raw", "assets")
+_set({"SAMDetectorSegmented"}, _sam_detector_segmented, "raw", "assets")
 _set({"ImpactSAM2VideoDetectorSEGS"}, _sam2_video_detector_segs, "raw")
 
 

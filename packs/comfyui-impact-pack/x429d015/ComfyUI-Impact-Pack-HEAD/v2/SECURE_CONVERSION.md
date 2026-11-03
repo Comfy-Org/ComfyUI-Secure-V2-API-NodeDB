@@ -68,3 +68,34 @@ Manifest uses the original indent-1 format with only the five intended field cha
   dependency profile.
 - `tests/test_detector_repair_r1.py` is the lane-gate parity test: synthetic models and images, original
   Impact Subpack code against these handlers.
+
+## Fidelity repair r2 - SAM in the guest
+
+- **SAMLoader** loads the model in this guest, as upstream's SAMLoader does:
+  - The engine reads the checkpoint (`assets.resolve` + `load_state_dict` on the `sams` catalogue). A
+    pickle-format name loads only through the engine's translation to its converted safetensors.
+  - segment_anything builds vit_b, vit_l or vit_h by upstream's name rule and loads the state dict strictly.
+  - The node returns a descriptor (name, device mode) that the SAM nodes resolve to the same guest model. No
+    engine `models.load_sam` path is used.
+- **SAM nodes.** SAMDetectorCombined, SAMDetectorSegmented, and the SAM step of the detailers and Simple Detector
+  run upstream `make_sam_mask` / `make_sam_mask_segmented`: a SamPredictor per SEG, detection hints, mask
+  selection, combining and cv2 dilation. SEGS AND MASK runs upstream `segs_bitwise_and_mask`. All of this code
+  is copied verbatim in `_sam_runtime.py`.
+- **SEG value types.** SEGS enter that code in upstream's types: 2-D float32 masks, and float32 boxes where
+  Impact v2 carries float boxes, as Ultralytics detections do. They leave in Impact v2's layout.
+- **Device.** The SAM model runs on this guest's torch device, and upstream's AUTO / Prefer GPU / CPU modes apply
+  to that device.
+- **Replaced:**
+  - the engine SAM call, with its batched hint, selection and dilation reimplementation;
+  - the SEGS-and-mask path that dropped SEGs whose mask became empty. Upstream keeps them, so the detailers'
+    later SEGs keep their seeds.
+- **Refused by name at SAMLoader:**
+  - ESAM, which needs ComfyUI-YoloWorld-EfficientSAM;
+  - SAM2 models, because the guest has no sam2 package;
+  - names upstream's menu never lists (HQ-SAM, other extensions).
+  ImpactSAM2VideoDetectorSEGS therefore refuses, since SAMLoader no longer yields a SAM2 model.
+- **SAMDetectorSegmented outputs** are upstream's values in Impact v2's MASK layout:
+  - the combined mask is (1, H, W) float32 (upstream: a 2-D float mask);
+  - the per-SEG batch is (N, H, W) float32 (upstream: an (N, 1, H, W) bool batch).
+- `tests/test_sam_repair_r2.py` is the lane-gate parity test. It runs a synthetic SAM model, synthetic SEGS and
+  synthetic images through the original Impact code and through these handlers.
