@@ -137,3 +137,13 @@ schedules at four per invocation, and previews must immediately follow an
 unpreviewed denoise. Tensors preserve host-selected shape, dtype, and device
 bounds. Capabilities and transferred buffers expire when the invocation
 returns. None of PPM's integration algorithms moves into core.
+
+## Repair r1 (AttentionCouplePPM masks)
+
+Core wraps an SDK_REFS node's inputs by value, so a MASK coming from a core node (SolidMask,
+MaskComposite, ...) reached `AttentionCouplePPM` as an IMAGE ref, and a host that checks the
+`regional_attention` capture kinds refused it ("masks[0] must be a MASK ref, got ImageRef").
+`AttentionCouplePPM` now re-declares each mask as a MASK ref holding the same tensor before it is
+captured (`nodes.py` `_as_mask_ref`). That reads the mask tensor, so the node declares `raw` next to
+`closures`. Nothing else changes. `tests/test_attention_couple_mask_refs.py` checks the captured kinds
+and tensors through core's own refs-mode input wrapping, in-process and through a real guest.

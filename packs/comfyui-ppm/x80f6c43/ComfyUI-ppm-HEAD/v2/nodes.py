@@ -847,6 +847,19 @@ def _format_count(count_map: dict[str, list[int]]) -> str:
     return json.dumps(count_map, indent=2)
 
 
+async def _as_mask_ref(value):
+    """The same mask as a MASK ref (repair r1).
+
+    Core wraps an SDK_REFS node's inputs by value, so a MASK tensor from a core node arrives as an
+    IMAGE ref. The tensor is unchanged; only its declared kind is corrected.
+    """
+    if isinstance(value, sdk.MaskRef):
+        return value
+    if isinstance(value, sdk.TensorRef):
+        return await sdk.MaskRef._from_raw(await value.raw())
+    return value
+
+
 async def attention_couple_ppm(model, base_cond, base_mask, **kwargs):
     """Attach PPM's retained regional-attention program.
 
@@ -879,6 +892,9 @@ async def attention_couple_ppm(model, base_cond, base_mask, **kwargs):
         masks.append(dynamic[mask_name])
     if len(masks) > 32:
         raise ValueError("AttentionCouplePPM accepts at most 32 regions")
+    # Repair r1: a MASK input arrives as whatever ref its value looks like, and core makes any
+    # tensor an IMAGE ref. regional_attention declares MASK captures, so re-declare each mask.
+    masks = [await _as_mask_ref(mask) for mask in masks]
 
     program = ppm_attention_programs.make_regional_attention_program()
     closure = await sdk.ctx().closures.retain(
@@ -963,6 +979,9 @@ _CLOSURE_NODES = {
 def _permissions_for(node_id: str) -> tuple[str, ...]:
     if node_id in _RAW_NODES:
         return ("raw",)
+    if node_id == "AttentionCouplePPM":
+        # Repair r1: re-declaring a mask as a MASK ref reads the mask tensor.
+        return ("closures", "raw")
     if node_id in _CLOSURE_NODES:
         return ("closures",)
     return ()
