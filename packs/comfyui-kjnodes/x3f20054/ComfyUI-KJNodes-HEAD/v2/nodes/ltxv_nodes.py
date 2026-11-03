@@ -78,6 +78,14 @@ async def _remaining_m_structured(value):
         return await value.value()
     return value
 
+async def _remaining_m_pixels(value):
+    """fix-r1/L6 (P06a): an IMAGE nested in a DynamicCombo dict still arrives
+    as an ImageRef under SDK_REFS; resolve it to its tensor before any tensor
+    attribute (.shape, .movedim, slicing) is used. Tensors pass through."""
+    if isinstance(value, _remaining_m_sdk.TensorRef):
+        return await value.raw()
+    return value
+
 async def _remaining_m_scale_factors(vae):
     factors = await vae.downscale_index_formula()
     if factors is None:
@@ -128,7 +136,7 @@ class LTXVAddGuideMultiSecure(_remaining_m_io.ComfyNode):
         image_keys = sorted((key for key in guides if key.startswith('image_')))
         for image_key in image_keys:
             index = image_key.split('_')[1]
-            image = guides[image_key]
+            image = await _remaining_m_pixels(guides[image_key])
             frame_index = guides[f'frame_idx_{index}']
             strength = guides[f'strength_{index}']
             encoded_pixels, guiding_latent = await _remaining_m_encode(vae, latent_width, latent_height, image, scale_factors)
@@ -204,6 +212,7 @@ class LTXVImgToVideoInplaceKJSecure(_remaining_m_io.ComfyNode):
             frame_index = images.get(f'index_{index}')
             if image is None or frame_index is None:
                 continue
+            image = await _remaining_m_pixels(image)
             strength = images[f'strength_{index}']
             if image.shape[1] != height or image.shape[2] != width:
                 pixels = _remaining_m_common_upscale(image.movedim(-1, 1), width, height, 'bilinear', 'center').movedim(1, -1)

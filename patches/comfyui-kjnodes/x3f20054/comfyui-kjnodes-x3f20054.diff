@@ -5773,6 +5773,45 @@
 +        raise
 +    return mod
 --- /dev/null
++++ b/v2/nodes/_ref_meta.py
+@@ -0,0 +1,36 @@
++"""Shape metadata of a ref, answered by the host: no buffer enters the guest.
++
++Upstream's *SizeAndCount nodes read nothing but ``.shape`` and return their
++input object unchanged. A converted node therefore needs neither ``raw()`` nor
++``_from_raw()``: it asks the host for the shape through the public
++``Ref.describe()`` (engine-scoped ``inspect`` capability, present on guest
++bases 0b86765f and 0cd9adec) and returns the input ref itself.
++
++``describe()`` is used rather than ``ImageRef.spatial_shape()`` /
++``batch_size()`` because it reports the full shape of any tensor, exactly as
++upstream's ``.shape`` does: the typed IMAGE ops refuse batches over 4096, a
++channel count outside 1/3/4 and HWC tensors, all of which upstream accepts, and
++MASK and LATENT have no typed shape op at all.
++"""
++from __future__ import annotations
++
++
++class ShapeOnly:
++    """Stand-in for a tensor whose upstream consumer reads only ``.shape``."""
++
++    __slots__ = ("shape",)
++
++    def __init__(self, shape) -> None:
++        self.shape = tuple(shape)
++
++
++async def described_shape(ref) -> tuple[int, ...]:
++    """``ref``'s tensor shape (a LATENT's ``samples`` shape), read on the host."""
++    info = await ref.describe()
++    shape = info.get("shape") if isinstance(info, dict) else None
++    if not isinstance(shape, (list, tuple)) or any(
++            isinstance(dim, bool) or not isinstance(dim, int) for dim in shape):
++        raise TypeError(
++            f"{type(ref).__name__} does not hold a tensor whose shape the host "
++            f"can describe (got {info!r:.200})")
++    return tuple(shape)
+--- /dev/null
 +++ b/v2/nodes/_tensor_utils.py
 @@ -0,0 +1,275 @@
 +from __future__ import annotations
@@ -6409,7 +6448,7 @@
 +}
 --- a/nodes/batchcrop_nodes.py
 +++ b/v2/nodes/batchcrop_nodes.py
-@@ -1,775 +1,164 @@
+@@ -1,775 +1,167 @@
 -from ..utility.utility import tensor2pil, pil2tensor, normalize_bboxes, BBOX_TYPES
 -from PIL import Image, ImageDraw, ImageFilter
 -import numpy as np
@@ -7011,7 +7050,9 @@
 +    async def execute(cls, original_images, masks, crop_size_mult, bbox_smooth_alpha) -> _batchcrop_more_io.NodeOutput:
 +        images = await original_images.raw()
 +        out = _batchcrop_more_mod().BatchCropFromMask().crop(await masks.raw(), images, crop_size_mult, bbox_smooth_alpha)
-+        return _batchcrop_more_io.NodeOutput(await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), out[2], out[3], out[4])
++        # rca-r2 P05 sweep: output 0 is upstream's `original_images`, returned
++        # unchanged; pass the input ref through instead of re-uploading it.
++        return _batchcrop_more_io.NodeOutput(original_images if out[0] is images else await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), out[2], out[3], out[4])
  
 -    RETURN_TYPES = ("IMAGE",)
 -    FUNCTION = "uncrop"
@@ -7143,7 +7184,8 @@
 +    async def execute(cls, original_images, masks, crop_size_mult, bbox_smooth_alpha) -> _batchcrop_more_io.NodeOutput:
 +        images = await original_images.raw()
 +        out = _batchcrop_more_mod().BatchCropFromMaskAdvanced().crop(await masks.raw(), images, crop_size_mult, bbox_smooth_alpha)
-+        return _batchcrop_more_io.NodeOutput(await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), await _batchcrop_more_sdk.MaskRef._from_raw(out[2]), await _batchcrop_more_sdk.ImageRef._from_raw(out[3]), await _batchcrop_more_sdk.MaskRef._from_raw(out[4]), out[5], out[6], out[7], out[8])
++        # rca-r2 P05 sweep: output 0 is upstream's unchanged `original_images`.
++        return _batchcrop_more_io.NodeOutput(original_images if out[0] is images else await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), await _batchcrop_more_sdk.MaskRef._from_raw(out[2]), await _batchcrop_more_sdk.ImageRef._from_raw(out[3]), await _batchcrop_more_sdk.MaskRef._from_raw(out[4]), out[5], out[6], out[7], out[8])
  
 -    RETURN_TYPES = ("INT","INT","INT","INT","INT","INT",)
 -    RETURN_NAMES = ("x_min","y_min","width","height", "center_x","center_y",)
@@ -10126,7 +10168,7 @@
 +}
 --- a/nodes/image_nodes.py
 +++ b/v2/nodes/image_nodes.py
-@@ -1,3322 +1,1029 @@
+@@ -1,3322 +1,1089 @@
 -import numpy as np
 -import time
 -import torch
@@ -10844,6 +10886,7 @@
 +import random as _remaining_d_random
 +from comfy_api.latest import io as _remaining_d_io, sdk as _remaining_d_sdk
 +from . import _packload as _remaining_d_packload
++from ._ref_meta import described_shape as _remaining_d_described_shape
 +from ._allocator import _allocating_like as _remaining_d_allocating_like, _allocating_on as _remaining_d_allocating_on, _allocator as _remaining_d_allocator
 +from ._tensor_utils import common_upscale as _remaining_d_common_upscale, composite as _remaining_d_composite, image_alpha_fix as _remaining_d_image_alpha_fix, repeat_to_batch_size as _remaining_d_repeat_to_batch_size
 +_remaining_d_PACK_ROOT = _remaining_d_pathlib.Path(_remaining_d_packload.ROOT)
@@ -11066,7 +11109,9 @@
 +
 +class PreviewImageOrMaskSecure(_remaining_d_io.ComfyNode):
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('raw', 'ui')
++    # rca-r2 round-trip sweep: `inspect` reads the rank on the host; `raw` is
++    # kept only for the fallback (a non-mask-rank ref that is not an ImageRef).
++    SDK_PERMISSIONS = ('raw', 'ui', 'inspect')
 +
 +    @classmethod
 +    def define_schema(cls) -> _remaining_d_io.Schema:
@@ -11074,8 +11119,20 @@
 +
 +    @classmethod
 +    async def execute(cls, input) -> _remaining_d_io.NodeOutput:
-+        value = await input.raw()
 +        ui_domain = _remaining_d_sdk.current_context().ui
++        # Upstream previews `input.ndim == 3` as a mask, anything else as an
++        # image, and only the rank decides. Preview the input ref itself: no
++        # materialize, no re-upload of an unchanged tensor. The engine's
++        # wrap_inputs hands EVERY tensor over as an ImageRef (kind IMAGE), masks
++        # included, so the mask branch accepts any tensor ref: the host's
++        # ui.preview_mask resolves the ref by its own kind and renders it with
++        # core PreviewMask, exactly what V1 does with the tensor (rca-r2-r2, M1).
++        rank = len(await _remaining_d_described_shape(input))
++        if rank == 3 and isinstance(input, _remaining_d_sdk.TensorRef):
++            return _remaining_d_io.NodeOutput(ui=await ui_domain.preview_mask(input))
++        if rank != 3 and isinstance(input, _remaining_d_sdk.ImageRef):
++            return _remaining_d_io.NodeOutput(ui=await ui_domain.preview_images(input))
++        value = await input.raw()
 +        if value.ndim == 3:
 +            ref = await _remaining_d_sdk.MaskRef._from_raw(value)
 +            ui_value = await ui_domain.preview_mask(ref)
@@ -11112,7 +11169,10 @@
 +        if pass_through:
 +            return _remaining_d_io.NodeOutput(ref)
 +        ui_value = await _remaining_d_sdk.current_context().ui.preview_images(ref)
-+        return _remaining_d_io.NodeOutput(ui=ui_value)
++        # Repair r1: V1 returns SaveImage.save_images(...), and core's SaveImage
++        # returns {"ui": ..., "result": (images,)}, so V1's output 0 is the
++        # composite in this mode too; a node linked to it gets the same image.
++        return _remaining_d_io.NodeOutput(ref, ui=ui_value)
 +from comfy_api.latest import io as _remaining_h_io, sdk as _remaining_h_sdk
 +
 +class SaveImageWithAlphaSecure(_remaining_h_io.ComfyNode):
@@ -11169,6 +11229,18 @@
 +    async def execute(cls, upscale_model, images, per_batch, downscale_ratio=1.0, downscale_method='lanczos', precision='float32'):
 +        return _remaining_p_io.NodeOutput(await upscale_model.upscale(images, per_batch=per_batch, downscale_ratio=downscale_ratio, downscale_method=downscale_method, precision=precision))
 +from comfy_api.latest import io as _remaining_r_io, sdk as _remaining_r_sdk
++
++def _remaining_r_annotated(name: str) -> tuple[str, str]:
++    """core folder_paths.annotated_filepath, for the asset broker (rca-r2-r2 B6).
++
++    `'<file> [output]'`, `'<file> [input]'` and `'<file> [temp]'` name a file in
++    that folder (the suffix and the space before it are dropped, in core's
++    order); anything else is in `input`. Returns (folder, name).
++    """
++    for folder, cut in (('output', 9), ('input', 8), ('temp', 7)):
++        if name.endswith(f'[{folder}]'):
++            return folder, name[:-cut]
++    return 'input', name
 +
 +def _remaining_r_string_to_color(color_string: str):
 +    import logging
@@ -11464,8 +11536,36 @@
 +    SDK_PERMISSIONS = ('assets', 'raw')
 +
 +    @classmethod
++    async def validate_inputs(cls, image):
++        """V1 `VALIDATE_INPUTS(s, image)` (nodes/image_nodes.py:3341-3345), restored
++        (rca-r2-r2 B6). Declaring it makes Core hand `image` to this check
++        instead of testing it against the combo's options, as V1 does; the file
++        is looked up through the asset broker the way the body loads it.
++        A path-escaping name counts as missing, as in core
++        exists_annotated_filepath.
++
++        Repair r1: a name the broker refuses lexically (absolute, a NUL, a '..'
++        part) is answered here without a call. A name that resolves outside the
++        folder (a symlink) is refused by the broker with ValueError; called from
++        a sandbox, that refusal arrives as the transport's remote error, which
++        names the original type in `remote_type`. Both count as missing."""
++        folder, name = _remaining_r_annotated(image)
++        logical = str(name).replace('\\', '/')
++        if '\x00' in logical or logical.startswith('/') or '..' in logical.split('/'):
++            return 'Invalid image file: {}'.format(image)
++        try:
++            found = await _remaining_r_sdk.ctx().assets.exists(folder, name)
++        except Exception as error:
++            if not (isinstance(error, ValueError) or getattr(error, 'remote_type', None) == 'ValueError'):
++                raise
++            found = False
++        if not found:
++            return 'Invalid image file: {}'.format(image)
++        return True
++
++    @classmethod
 +    def define_schema(cls) -> _remaining_r_io.Schema:
-+        return _remaining_r_io.Schema(node_id='LoadAndResizeImageSecure', display_name='🔒 Load & Resize Image (secure)', category='KJNodes/image', inputs=[_remaining_r_io.Combo.Input('image', options=[], upload=_remaining_r_io.UploadType.image, image_folder=_remaining_r_io.FolderType.input), _remaining_r_io.Boolean.Input('resize', default=False), _remaining_r_io.Int.Input('width', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('height', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('repeat', default=1, min=1, max=4096, step=1), _remaining_r_io.Boolean.Input('keep_proportion', default=False), _remaining_r_io.Int.Input('divisible_by', default=2, min=0, max=512, step=1), _remaining_r_io.Combo.Input('mask_channel', options=['alpha', 'red', 'green', 'blue'], default='alpha'), _remaining_r_io.String.Input('background_color', default='', tooltip='Fills transparent pixels with this color.')], outputs=[_remaining_r_io.Image.Output('image'), _remaining_r_io.Mask.Output('mask'), _remaining_r_io.Int.Output('width'), _remaining_r_io.Int.Output('height'), _remaining_r_io.String.Output('image_name')])
++        return _remaining_r_io.Schema(node_id='LoadAndResizeImageSecure', display_name='🔒 Load & Resize Image (secure)', category='KJNodes/image', inputs=[_remaining_r_io.Combo.Input('image', options=[], upload=_remaining_r_io.UploadType.image, image_folder=_remaining_r_io.FolderType.input, remote=_remaining_r_io.RemoteOptions(route='/secure-nodes/assets/input?kind=image', refresh_button=True)), _remaining_r_io.Boolean.Input('resize', default=False), _remaining_r_io.Int.Input('width', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('height', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('repeat', default=1, min=1, max=4096, step=1), _remaining_r_io.Boolean.Input('keep_proportion', default=False), _remaining_r_io.Int.Input('divisible_by', default=2, min=0, max=512, step=1), _remaining_r_io.Combo.Input('mask_channel', options=['alpha', 'red', 'green', 'blue'], default='alpha'), _remaining_r_io.String.Input('background_color', default='', tooltip='Fills transparent pixels with this color.')], outputs=[_remaining_r_io.Image.Output('image'), _remaining_r_io.Mask.Output('mask'), _remaining_r_io.Int.Output('width'), _remaining_r_io.Int.Output('height'), _remaining_r_io.String.Output('image_name')])
 +
 +    @classmethod
 +    async def execute(cls, image, resize, width, height, repeat, keep_proportion, divisible_by, mask_channel, background_color) -> _remaining_r_io.NodeOutput:
@@ -11474,7 +11574,9 @@
 +        import torch
 +        from PIL import Image, ImageOps, ImageSequence
 +        assets = _remaining_r_sdk.ctx().assets
-+        asset = await assets.resolve('input', image)
++        # V1 loads folder_paths.get_annotated_filepath(image): honour the same
++        # '[output]' / '[input]' / '[temp]' annotations (rca-r2-r2 B6).
++        asset = await assets.resolve(*_remaining_r_annotated(image))
 +        content = await assets.read_bytes(asset)
 +        with Image.open(BytesIO(content)) as source:
 +            source_format = source.format
@@ -14468,7 +14570,7 @@
              output_image = torch.cat(output_images, dim=0)
              output_mask = torch.cat(output_masks, dim=0)
          else:
-@@ -3325,1603 +1032,189 @@
+@@ -3325,1603 +1092,189 @@
              if repeat > 1:
                  output_image = output_image.repeat(repeat, 1, 1, 1)
                  output_mask = output_mask.repeat(repeat, 1, 1)
@@ -16238,7 +16340,7 @@
              if len(container.streams.audio):
                  audio_stream = container.streams.audio[-1]
                  if start_time > 0:
-@@ -4929,236 +1222,1408 @@
+@@ -4929,236 +1282,1432 @@
                      container.seek(audio_start_pts, stream=audio_stream)
                  audio_frames = []
                  resample = av.audio.resampler.AudioResampler(format='fltp').resample
@@ -16395,6 +16497,7 @@
 +from contextlib import contextmanager as _w3_a_contextmanager
 +from comfy_api.latest import io as _w3_a_io, sdk as _w3_a_sdk
 +from . import _packload as _w3_a_packload
++from ._ref_meta import ShapeOnly as _w3_a_ShapeOnly, described_shape as _w3_a_described_shape
 +_w3_a_SOURCE = 'nodes/image_nodes.py'
 +_w3_a_MODULE_HELPERS = ('crossfade', 'ease_in', 'ease_out', 'ease_in_out', 'bounce', 'elastic', 'glitchy', 'exponential_ease_out', 'easing_functions')
 +_w3_a_PARSED = None
@@ -16616,13 +16719,18 @@
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_a_io.Schema:
-+        return _w3_a_io.Schema(node_id='CrossFadeImagesMultiSecure', display_name='🔒 Cross Fade Images Multi (secure)', category='KJNodes/image', description='Joins image batches end to end, cross fading over transitioning_frames between each pair along the chosen easing curve.', inputs=[_w3_a_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_a_io.Image.Input('image_1'), _w3_a_io.Combo.Input('interpolation', options=_w3_a_INTERPOLATIONS), _w3_a_io.Int.Input('transitioning_frames', default=1, min=0, max=4096, step=1), _w3_a_io.Image.Input('image_2', optional=True)], outputs=[_w3_a_io.Image.Output(display_name='IMAGE')])
++        return _w3_a_io.Schema(accept_all_inputs=True, node_id='CrossFadeImagesMultiSecure', display_name='🔒 Cross Fade Images Multi (secure)', category='KJNodes/image', description='Joins image batches end to end, cross fading over transitioning_frames between each pair along the chosen easing curve.', inputs=[_w3_a_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_a_io.Image.Input('image_1'), _w3_a_io.Combo.Input('interpolation', options=_w3_a_INTERPOLATIONS), _w3_a_io.Int.Input('transitioning_frames', default=1, min=0, max=4096, step=1), _w3_a_io.Image.Input('image_2', optional=True)], outputs=[_w3_a_io.Image.Output(display_name='IMAGE')])
 +
 +    @classmethod
-+    async def execute(cls, inputcount, image_1, interpolation, transitioning_frames, image_2=None) -> _w3_a_io.NodeOutput:
++    async def execute(cls, inputcount, image_1, interpolation, transitioning_frames, image_2=None, **kwargs) -> _w3_a_io.NodeOutput:
 +        images = {'image_1': await image_1.raw()}
 +        if image_2 is not None:
 +            images['image_2'] = await image_2.raw()
++        for index in range(3, int(inputcount) + 1):
++            key = f'image_{index}'
++            value = kwargs.get(key)
++            if value is not None:
++                images[key] = await value.raw()
 +        crossfadeimages = _w3_a_upstream('CrossFadeImagesMulti', 'crossfadeimages')
 +        out = crossfadeimages(None, inputcount, transitioning_frames, interpolation, **images)
 +        return _w3_a_io.NodeOutput(await _w3_a_sdk.ImageRef._from_raw(out[0]))
@@ -16643,7 +16751,9 @@
 +
 +class GetImageSizeAndCountSecure(_w3_a_io.ComfyNode):
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('raw',)
++    # rca-r2 P05: metadata only. `inspect` answers the shape on the host; the
++    # pixels never enter the guest (no `raw`), so a 5 GB video costs nothing.
++    SDK_PERMISSIONS = ('inspect',)
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_a_io.Schema:
@@ -16651,10 +16761,13 @@
 +
 +    @classmethod
 +    async def execute(cls, image) -> _w3_a_io.NodeOutput:
++        # Upstream reads only `.shape` and returns its input object. Run it on a
++        # shape-only stand-in and return the input ref itself: same values,
++        # same ui text, and the very tensor V1 would have passed on.
 +        getsize = _w3_a_upstream('GetImageSizeAndCount', 'getsize')
-+        returned = getsize(None, await image.raw())
-+        passed_through, width, height, count = returned['result']
-+        return _w3_a_io.NodeOutput(await _w3_a_sdk.ImageRef._from_raw(passed_through), width, height, count, ui=returned['ui'])
++        returned = getsize(None, _w3_a_ShapeOnly(await _w3_a_described_shape(image)))
++        _shape_only, width, height, count = returned['result']
++        return _w3_a_io.NodeOutput(image, width, height, count, ui=returned['ui'])
 +
 +class GetImagesFromBatchIndexedSecure(_w3_a_io.ComfyNode):
 +    SDK_REFS = True
@@ -16687,6 +16800,7 @@
 +import pathlib as _w3_b_pathlib
 +from comfy_api.latest import io as _w3_b_io, sdk as _w3_b_sdk
 +from . import _packload as _w3_b_packload
++from ._ref_meta import ShapeOnly as _w3_b_ShapeOnly, described_shape as _w3_b_described_shape
 +from ._allocator import _allocator as _w3_b_allocator, _allocating_like as _w3_b_allocating_like
 +from ._tensor_utils import common_upscale as _w3_b_common_upscale
 +_w3_b_IMAGE_NODES = 'nodes/image_nodes.py'
@@ -16780,7 +16894,8 @@
 +
 +class GetLatentSizeAndCountSecure(_w3_b_io.ComfyNode):
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('raw',)
++    # rca-r2 P05 sweep: metadata only, answered on the host (`inspect`, no `raw`).
++    SDK_PERMISSIONS = ('inspect',)
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_b_io.Schema:
@@ -16788,10 +16903,12 @@
 +
 +    @classmethod
 +    async def execute(cls, latent) -> _w3_b_io.NodeOutput:
++        # Upstream reads only `latent["samples"].shape` and returns its input
++        # dict; the latent ref itself is returned instead of a re-upload.
 +        getsize = _w3_b_upstream('GetLatentSizeAndCount', 'getsize')
-+        returned = getsize(None, await latent.value())
-+        passthrough, *dims = returned['result']
-+        return _w3_b_io.NodeOutput(await _w3_b_sdk.LatentRef.from_value(passthrough), *dims, ui=returned['ui'])
++        returned = getsize(None, {'samples': _w3_b_ShapeOnly(await _w3_b_described_shape(latent))})
++        _shape_only, *dims = returned['result']
++        return _w3_b_io.NodeOutput(latent, *dims, ui=returned['ui'])
 +
 +class ImageAddMultiSecure(_w3_b_io.ComfyNode):
 +    SDK_REFS = True
@@ -16821,8 +16938,12 @@
 +    @classmethod
 +    async def execute(cls, source_images, overlap, overlap_side, overlap_mode, new_images=None) -> _w3_b_io.NodeOutput:
 +        extend = _w3_b_upstream('ImageBatchExtendWithOverlap', 'imagesfrombatch')
-+        source, start, extended = extend(None, await source_images.raw(), overlap, overlap_side, overlap_mode, None if new_images is None else await new_images.raw())
-+        return _w3_b_io.NodeOutput(await _w3_b_sdk.ImageRef._from_raw(source), await _w3_b_sdk.ImageRef._from_raw(start), await _w3_b_sdk.ImageRef._from_raw(extended))
++        source_pixels = await source_images.raw()
++        outputs = extend(None, source_pixels, overlap, overlap_side, overlap_mode, None if new_images is None else await new_images.raw())
++        # rca-r2 P05 sweep: upstream returns `source_images` itself (all three
++        # outputs when overlap > len). Hand that input ref back instead of
++        # re-uploading an unchanged copy; everything else is published.
++        return _w3_b_io.NodeOutput(*[source_images if value is source_pixels else await _w3_b_sdk.ImageRef._from_raw(value) for value in outputs])
 +
 +class ImageBatchFilterSecure(_w3_b_io.ComfyNode):
 +    SDK_REFS = True
@@ -17356,13 +17477,13 @@
 +        return self._tensor
 +
 +    def get_torch_device(self):
-+        return self._placement().device
++        return self._w3_f_placement().device
 +
 +    def intermediate_device(self):
-+        return self._placement().device
++        return self._w3_f_placement().device
 +
 +    def intermediate_dtype(self):
-+        return self._placement().dtype
++        return self._w3_f_placement().dtype
 +
 +    def __getattr__(self, name):
 +        raise AttributeError(f"comfy.model_management.{name} is unavailable in a guest. This stand-in answers placement only ({', '.join(self.ALLOWED)}), because a materialized input already determines it; {name} is host policy and must not be decided inside the sandbox.")
@@ -17505,14 +17626,19 @@
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_f_io.Schema:
-+        return _w3_f_io.Schema(node_id='TransitionImagesMultiSecure', display_name='🔒 Transition Images Multi (secure)', category='KJNodes/image', description='Creates transitions between images.', inputs=[_w3_f_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_f_io.Image.Input('image_1'), _w3_f_io.Combo.Input('interpolation', options=_w3_f_INTERPOLATIONS), _w3_f_io.Combo.Input('transition_type', options=_w3_f_TRANSITIONS), _w3_f_io.Int.Input('transitioning_frames', default=2, min=2, max=4096, step=1), _w3_f_io.Float.Input('blur_radius', default=0.0, min=0.0, max=100.0, step=0.1), _w3_f_io.Boolean.Input('reverse', default=False), _w3_f_io.Combo.Input('device', options=['CPU', 'GPU'], default='CPU'), _w3_f_io.Image.Input('image_2', optional=True)], outputs=[_w3_f_io.Image.Output(display_name='IMAGE')])
++        return _w3_f_io.Schema(accept_all_inputs=True, node_id='TransitionImagesMultiSecure', display_name='🔒 Transition Images Multi (secure)', category='KJNodes/image', description='Creates transitions between images.', inputs=[_w3_f_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_f_io.Image.Input('image_1'), _w3_f_io.Combo.Input('interpolation', options=_w3_f_INTERPOLATIONS), _w3_f_io.Combo.Input('transition_type', options=_w3_f_TRANSITIONS), _w3_f_io.Int.Input('transitioning_frames', default=2, min=2, max=4096, step=1), _w3_f_io.Float.Input('blur_radius', default=0.0, min=0.0, max=100.0, step=0.1), _w3_f_io.Boolean.Input('reverse', default=False), _w3_f_io.Combo.Input('device', options=['CPU', 'GPU'], default='CPU'), _w3_f_io.Image.Input('image_2', optional=True)], outputs=[_w3_f_io.Image.Output(display_name='IMAGE')])
 +
 +    @classmethod
-+    async def execute(cls, inputcount, image_1, interpolation, transition_type, transitioning_frames, blur_radius, reverse, device, image_2=None) -> _w3_f_io.NodeOutput:
++    async def execute(cls, inputcount, image_1, interpolation, transition_type, transitioning_frames, blur_radius, reverse, device, image_2=None, **kwargs) -> _w3_f_io.NodeOutput:
 +        first = await image_1.raw()
 +        images = {'image_1': first}
 +        if image_2 is not None:
 +            images['image_2'] = await image_2.raw()
++        for index in range(3, int(inputcount) + 1):
++            key = f'image_{index}'
++            value = kwargs.get(key)
++            if value is not None:
++                images[key] = await value.raw()
 +        transition = _w3_f_upstream('TransitionImagesMulti', 'transition')
 +        with _w3_f_placement.bound_to(first):
 +            out = transition(None, inputcount, transitioning_frames, transition_type, interpolation, device, blur_radius, reverse, **images)
@@ -18841,7 +18967,7 @@
 +}
 --- a/nodes/ltxv_nodes.py
 +++ b/v2/nodes/ltxv_nodes.py
-@@ -1,2358 +1,405 @@
+@@ -1,2358 +1,414 @@
 -from comfy_extras.nodes_lt import get_noise_mask, LTXVAddGuide, _append_guide_attention_entry
 -import types
 -import math
@@ -18942,6 +19068,14 @@
 +async def _remaining_m_structured(value):
 +    if isinstance(value, _remaining_m_sdk.ValueRef):
 +        return await value.value()
++    return value
++
++async def _remaining_m_pixels(value):
++    """fix-r1/L6 (P06a): an IMAGE nested in a DynamicCombo dict still arrives
++    as an ImageRef under SDK_REFS; resolve it to its tensor before any tensor
++    attribute (.shape, .movedim, slicing) is used. Tensors pass through."""
++    if isinstance(value, _remaining_m_sdk.TensorRef):
++        return await value.raw()
 +    return value
 +
 +async def _remaining_m_scale_factors(vae):
@@ -19080,7 +19214,7 @@
 +        image_keys = sorted((key for key in guides if key.startswith('image_')))
 +        for image_key in image_keys:
 +            index = image_key.split('_')[1]
-+            image = guides[image_key]
++            image = await _remaining_m_pixels(guides[image_key])
 +            frame_index = guides[f'frame_idx_{index}']
 +            strength = guides[f'strength_{index}']
 +            encoded_pixels, guiding_latent = await _remaining_m_encode(vae, latent_width, latent_height, image, scale_factors)
@@ -20177,6 +20311,7 @@
 -                continue
 -            strength = num_images[f"strength_{i}"]
 -
++            image = await _remaining_m_pixels(image)
 +            strength = images[f'strength_{index}']
              if image.shape[1] != height or image.shape[2] != width:
 -                pixels = comfy.utils.common_upscale(image.movedim(-1, 1), width, height, "bilinear", "center").movedim(1, -1)
@@ -21583,7 +21718,7 @@
 +}
 --- a/nodes/mask_nodes.py
 +++ b/v2/nodes/mask_nodes.py
-@@ -1,1689 +1,840 @@
+@@ -1,1689 +1,1008 @@
 -import torch
 -import torch.nn.functional as F
 -from torchvision.transforms import functional as TF
@@ -22106,6 +22241,7 @@
 +import types as _w3_m_types
 +from comfy_api.latest import io as _w3_m_io, sdk as _w3_m_sdk
 +from . import _packload as _w3_m_packload
++from ._ref_meta import ShapeOnly as _w3_m_ShapeOnly, described_shape as _w3_m_described_shape
 +_w3_m_MAX_RESOLUTION = 16384
 +_w3_m_REFUSED_AT_MODULE_SCOPE = ('folder_paths', 'model_management', 'ProgressBar')
 +_w3_m_MOD = None
@@ -22118,6 +22254,122 @@
 +
 +def _w3_m_read(stmt: _w3_m_ast.stmt) -> set[str]:
 +    return {n.id for n in _w3_m_ast.walk(stmt) if isinstance(n, _w3_m_ast.Name)}
++_w3_m_HOST_MODULES = ('comfy', 'folder_paths', 'server', 'nodes', 'execution', 'node_helpers')
++
++def _w3_m_host_import(stmt: _w3_m_ast.stmt) -> bool:
++    """fix-r1/L6: an absolute import of a module the secure guest refuses."""
++    if isinstance(stmt, _w3_m_ast.Import):
++        mods = [alias.name for alias in stmt.names]
++    elif isinstance(stmt, _w3_m_ast.ImportFrom) and stmt.level == 0 and stmt.module:
++        mods = [stmt.module]
++    else:
++        return False
++    return any(m.split('.')[0] in _w3_m_HOST_MODULES for m in mods)
++
++def _w3_m_morphology():
++    """`kornia.morphology`, or an exact local equivalent when kornia is absent.
++
++    fix-r1/L6: runtime base 0b86765f ships no kornia, and GrowMaskWithBlur
++    imports it lazily. For a 0/1 structuring kernel with kornia's default
++    geodesic border, dilation is the max and erosion the min over the kernel's
++    footprint, ignoring out-of-image pixels, which is what this computes.
++
++    Exact range (rca-r2-r2, review L2): bit-identical to kornia 0.8.3 for finite
++    masks with |value| < 1e4 and no -0.0, under the symmetric, centred 0/1
++    kernels GrowMaskWithBlur passes (cross and 3x3 square); KJ masks are in
++    [0, 1], so every GrowMaskWithBlur call is inside it. Outside it kornia
++    differs by construction: its geodesic border is -/+1e4 rather than an
++    exclusion, structuring-element zeros contribute x -/+ 1e4 instead of being
++    skipped, and dilation adds +0.0 (turning -0.0 into +0.0) over a reflected
++    element. Real kornia is used whenever it is importable.
++    """
++    try:
++        import kornia.morphology as morph
++        return morph
++    except ImportError:
++        pass
++    import torch
++    import torch.nn.functional as F
++
++    def _footprint_reduce(image, kernel, largest):
++        if image.ndim != 4:
++            raise ValueError('morphology expects a BCHW tensor')
++        kh, kw = kernel.shape[-2:]
++        offsets = [(dy, dx) for dy in range(kh) for dx in range(kw) if float(kernel[dy, dx]) != 0.0]
++        fill = float('-inf') if largest else float('inf')
++        top, left = kh // 2, kw // 2
++        padded = F.pad(image, (left, kw - 1 - left, top, kh - 1 - top), value=fill)
++        height, width = image.shape[-2:]
++        out = None
++        for dy, dx in offsets:
++            view = padded[..., dy:dy + height, dx:dx + width]
++            out = view if out is None else (torch.maximum(out, view) if largest else torch.minimum(out, view))
++        return image.clone() if out is None else out.contiguous()
++
++    class _Morphology:
++        @staticmethod
++        def dilation(tensor, kernel, **_kwargs):
++            return _footprint_reduce(tensor, kernel, True)
++
++        @staticmethod
++        def erosion(tensor, kernel, **_kwargs):
++            return _footprint_reduce(tensor, kernel, False)
++    return _Morphology()
++
++class _w3_m_LocalMorphology(_w3_m_ast.NodeTransformer):
++    """Rewrite upstream's lazy `import kornia.morphology as morph` to use
++    `_w3_m_morphology()` (real kornia when present)."""
++
++    def visit_Import(self, node):
++        if len(node.names) == 1 and node.names[0].name == 'kornia.morphology':
++            bound = node.names[0].asname or 'kornia'
++            if bound == 'kornia':
++                return node
++            call = _w3_m_ast.Call(func=_w3_m_ast.Name(id='_w3_m_morphology', ctx=_w3_m_ast.Load()), args=[], keywords=[])
++            return _w3_m_ast.copy_location(_w3_m_ast.Assign(targets=[_w3_m_ast.Name(id=bound, ctx=_w3_m_ast.Store())], value=call), node)
++        return node
++
++def _w3_m_guard_zero_peak(tree: _w3_m_ast.Module) -> _w3_m_ast.Module:
++    """rca-r2 (MIKE MASK audit, item 1): V1 defect fixed, recorded as an
++    accepted difference.
++
++    Upstream `GrowMaskWithBlur.expand_mask` renormalises with
++    `output = output / output.max()` when `decay_factor < 1`. On an all-zero
++    frame that is 0/0, so V1 publishes NaN and every later frame inherits it
++    through `previous_output`. The single statement becomes
++    `output = output / output.max() if output.max() != 0 else output`.
++
++    Equivalence (rca-r2-r2, review L3): identical to V1 on every call in which
++    V1 never divides by a zero peak. Where it does, V1 publishes NaN, or, with
++    blur_radius > 0, whatever tensor2pil's uint8 cast makes of NaN (a finite but
++    meaningless value); the candidate publishes V1-plus-this-guard instead: an
++    all-zero frame, and normal values for the frames after it. Exactly one such
++    statement must exist, or upstream changed and this loader refuses rather
++    than guess.
++    """
++    hits = 0
++    for cls in tree.body:
++        if not (isinstance(cls, _w3_m_ast.ClassDef) and cls.name == 'GrowMaskWithBlur'):
++            continue
++        for fn in cls.body:
++            if not (isinstance(fn, _w3_m_ast.FunctionDef) and fn.name == 'expand_mask'):
++                continue
++            for node in _w3_m_ast.walk(fn):
++                if not (isinstance(node, _w3_m_ast.Assign) and len(node.targets) == 1
++                        and isinstance(node.targets[0], _w3_m_ast.Name) and node.targets[0].id == 'output'):
++                    continue
++                value = node.value
++                if (isinstance(value, _w3_m_ast.BinOp) and isinstance(value.op, _w3_m_ast.Div)
++                        and _w3_m_ast.dump(value.left) == _w3_m_ast.dump(_w3_m_ast.Name(id='output', ctx=_w3_m_ast.Load()))
++                        and _w3_m_ast.unparse(value.right) == 'output.max()'):
++                    peak = _w3_m_ast.parse('output.max()', mode='eval').body
++                    node.value = _w3_m_ast.IfExp(
++                        test=_w3_m_ast.Compare(left=peak, ops=[_w3_m_ast.NotEq()], comparators=[_w3_m_ast.Constant(0)]),
++                        body=value, orelse=_w3_m_ast.Name(id='output', ctx=_w3_m_ast.Load()))
++                    hits += 1
++    if hits != 1:
++        raise RuntimeError(f'GrowMaskWithBlur.expand_mask has {hits} `output = output / output.max()` statements, expected 1; upstream changed shape and the 0/0 guard must be revisited')
++    return tree
 +
 +def _w3_m_mod():
 +    """Upstream's `mask_nodes`, executed with its refused preamble elided.
@@ -22142,6 +22394,14 @@
 +    for stmt in tree.body:
 +        if isinstance(stmt, (_w3_m_ast.ClassDef, _w3_m_ast.FunctionDef, _w3_m_ast.AsyncFunctionDef)):
 +            kept.append(stmt)
++            continue
++        # fix-r1/L6 (P08): also drop every absolute import FROM the host
++        # surface by module, not only by bound name. `from comfy.utils import
++        # common_upscale` and `from nodes import MAX_RESOLUTION` bind names the
++        # old filter did not list, survived, and raised ImportError from the
++        # guest import guard on the first node body that called _mod().
++        if _w3_m_host_import(stmt):
++            dropped |= _w3_m_bound(stmt) & refused
 +            continue
 +        touched = (_w3_m_bound(stmt) | _w3_m_read(stmt)) & refused
 +        if touched:
@@ -22214,10 +22474,14 @@
 +    if dropped != refused:
 +        raise RuntimeError(f"{', '.join(sorted(refused - dropped))} is no longer reached at the top of {path}; this loader exists only to elide the host surface it names, so upstream changed shape and it must be revisited")
 +    tree.body = kept
++    tree = _w3_m_ast.fix_missing_locations(_w3_m_guard_zero_peak(_w3_m_LocalMorphology().visit(tree)))
 +    name = f'{package}.mask_nodes_without_host_surface'
 +    module = _w3_m_types.ModuleType(name)
 +    module.__file__ = path
 +    module.__package__ = package
++    # Guest-local stand-ins for the host names the dropped imports provided.
++    from ._tensor_utils import common_upscale as _w3_m_common_upscale
++    module.__dict__.update({'common_upscale': _w3_m_common_upscale, 'MAX_RESOLUTION': _w3_m_MAX_RESOLUTION, '_w3_m_morphology': _w3_m_morphology})
 +    _w3_m_sys.modules[name] = module
 +    try:
 +        exec(compile(tree, path, 'exec'), module.__dict__)
@@ -22322,7 +22586,8 @@
 +
 +class GetMaskSizeAndCountSecure(_w3_m_io.ComfyNode):
 +    SDK_REFS = True
-+    SDK_PERMISSIONS = ('raw',)
++    # rca-r2 P05 sweep: metadata only, answered on the host (`inspect`, no `raw`).
++    SDK_PERMISSIONS = ('inspect',)
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_m_io.Schema:
@@ -22330,9 +22595,13 @@
 +
 +    @classmethod
 +    async def execute(cls, mask) -> _w3_m_io.NodeOutput:
-+        returned = _w3_m_mod().GetMaskSizeAndCount().getsize(await mask.raw())
-+        passed_through, width, height, count = returned['result']
-+        return _w3_m_io.NodeOutput(await _w3_m_sdk.MaskRef._from_raw(passed_through), width, height, count, ui=returned['ui'])
++        # rca-r2 P05 sweep (supersedes fix-r1/L6, which still read the whole
++        # mask for its shape): MaskRef has no typed shape op, so the host's
++        # `describe()` answers it; upstream runs on a shape-only stand-in and
++        # the input ref itself is returned, as V1 returns its input tensor.
++        returned = _w3_m_mod().GetMaskSizeAndCount().getsize(_w3_m_ShapeOnly(await _w3_m_described_shape(mask)))
++        _shape_only, width, height, count = returned['result']
++        return _w3_m_io.NodeOutput(mask, width, height, count, ui=returned['ui'])
 +
 +class GrowMaskWithBlurSecure(_w3_m_io.ComfyNode):
 +    SDK_REFS = True
@@ -22347,6 +22616,13 @@
 +        masks = await mask.raw()
 +        expand_mask = _w3_m_placed('GrowMaskWithBlur', 'expand_mask', masks.device)
 +        out = expand_mask(None, masks, expand, tapered_corners, flip_input, blur_radius, incremental_expandrate, lerp_alpha, decay_factor, **_w3_m_given(fill_holes=fill_holes))
++        # rca-r2: never publish NaN. After the 0/0 guard a NaN can only come
++        # from a non-finite input mask; refuse it by name instead of passing it
++        # on. This goes beyond V1-plus-guard (which would still publish it): an
++        # accepted difference of its own. NaN propagates through max(), so no
++        # full-size boolean tensor is built (review I2).
++        if out[0].numel() and bool(out[0].max().isnan()):
++            raise ValueError('GrowMaskWithBlur: the input mask contains NaN, so the grown mask would too; refusing to publish a non-finite MASK')
 +        return _w3_m_io.NodeOutput(await _w3_m_sdk.MaskRef._from_raw(out[0]), await _w3_m_sdk.MaskRef._from_raw(out[1]))
 +import ast as _w3_n_ast
 +import pathlib as _w3_n_pathlib
@@ -23952,10 +24228,37 @@
 -        
 -        return (result_masks.clamp(0, 1),)
 +            source = _w3_n_ast.get_source_segment(text, item)
-+            code = compile(_w3_n_ast.Module(body=[_w3_n_ast.parse(source).body[0]], type_ignores=[]), f'<kjnodes.{class_name}.{method}>', 'exec')
++            function = _w3_n_ast.parse(source).body[0]
++            fix = _w3_n_FIXES.get(key)
++            if fix is not None:
++                function = _w3_n_ast.fix_missing_locations(fix(function))
++            code = compile(_w3_n_ast.Module(body=[function], type_ignores=[]), f'<kjnodes.{class_name}.{method}>', 'exec')
 +            _w3_n_CODE[key] = code
 +            return code
 +    raise RuntimeError(f'{class_name}.{method} not found in upstream {_w3_n_SOURCE} — the pack changed shape and this conversion must be revisited')
++
++def _w3_n_zero_fill_no_components(function):
++    """rca-r2 (MIKE MASK audit, item 2): V1 defect fixed, recorded as an
++    accepted difference.
++
++    With no component above the size thresholds, upstream `SeparateMasks.separate`
++    returns `torch.empty((1, 64, 64), ...)`: uninitialised memory published as a
++    MASK. The one `torch.empty` call becomes `torch.zeros` with the same
++    arguments (shape, dtype float32, device): an empty mask. Exactly one such
++    call must exist, or upstream changed and this refuses rather than guess.
++    """
++    hits = 0
++    for node in _w3_n_ast.walk(function):
++        if (isinstance(node, _w3_n_ast.Call) and isinstance(node.func, _w3_n_ast.Attribute)
++                and node.func.attr == 'empty' and isinstance(node.func.value, _w3_n_ast.Name)
++                and node.func.value.id == 'torch'):
++            node.func.attr = 'zeros'
++            hits += 1
++    if hits != 1:
++        raise RuntimeError(f'SeparateMasks.separate has {hits} torch.empty calls, expected 1; upstream changed shape and the no-component fill must be revisited')
++    return function
++
++_w3_n_FIXES = {('SeparateMasks', 'separate'): _w3_n_zero_fill_no_components}
 +
 +def _w3_n_upstream(class_name: str, method: str):
 +    """Upstream's method, bound to `_namespace()`.
@@ -27638,7 +27941,7 @@
 +}
 --- a/nodes/nodes.py
 +++ b/v2/nodes/nodes.py
-@@ -1,3405 +1,1818 @@
+@@ -1,3405 +1,1828 @@
 -import torch
 -import torch.nn as nn
 -import numpy as np
@@ -29809,7 +30112,7 @@
 +
 +    @classmethod
 +    def define_schema(cls) -> _remaining_j_io.Schema:
-+        return _remaining_j_io.Schema(node_id='WidgetToStringSecure', display_name='🔒 Widget To String (secure)', category='KJNodes/text', description='Selects a node by id, title, or input link and returns one or more of its widget values as a string.', inputs=[_remaining_j_io.Int.Input('id', default=0, min=0, max=100000, step=1), _remaining_j_io.String.Input('widget_name', multiline=False), _remaining_j_io.Boolean.Input('return_all', default=False), _remaining_j_io.AnyType.Input('any_input', optional=True), _remaining_j_io.String.Input('node_title', default='', multiline=False, optional=True), _remaining_j_io.Int.Input('allowed_float_decimals', default=2, min=0, max=10, optional=True, tooltip='Number of decimal places to display for float values.')], outputs=[_remaining_j_io.String.Output()])
++        return _remaining_j_io.Schema(hidden=[_remaining_j_io.Hidden.prompt, _remaining_j_io.Hidden.dynprompt, _remaining_j_io.Hidden.extra_pnginfo], node_id='WidgetToStringSecure', display_name='🔒 Widget To String (secure)', category='KJNodes/text', description='Selects a node by id, title, or input link and returns one or more of its widget values as a string.', inputs=[_remaining_j_io.Int.Input('id', default=0, min=0, max=100000, step=1), _remaining_j_io.String.Input('widget_name', multiline=False), _remaining_j_io.Boolean.Input('return_all', default=False), _remaining_j_io.AnyType.Input('any_input', optional=True), _remaining_j_io.String.Input('node_title', default='', multiline=False, optional=True), _remaining_j_io.Int.Input('allowed_float_decimals', default=2, min=0, max=10, optional=True, tooltip='Number of decimal places to display for float values.')], outputs=[_remaining_j_io.String.Output()])
 +
 +    @classmethod
 +    def fingerprint_inputs(cls, id, node_title='', any_input=None, **kwargs):
@@ -30707,8 +31010,13 @@
 +from comfy_api.latest import io as _w3_g_io, sdk as _w3_g_sdk
 +from . import _packload as _w3_g_packload
 +_w3_g_SOURCE = 'nodes/nodes.py'
-+_w3_g_REFUSED_MODULES = ('folder_paths', 'node_helpers', 'comfy.model_management', 'comfy.patcher_extension', 'comfy.sampler_helpers', 'comfy.samplers')
-+_w3_g_REFUSED_MEMBERS = {'comfy.utils': ('ProgressBar', 'load_torch_file', 'save_torch_file')}
++#: rca-r2 P08 sweep: the guest refuses these packages whole (guest
++#: BLOCKED_MODULES), so an import from any of them is pruned by MODULE. The old
++#: per-name lists let `from nodes import MAX_RESOLUTION`, `from comfy.utils
++#: import common_upscale`, `comfy.comfy_types` and `comfy.latent_formats`
++#: through, and the first BOOLConstant / AppendStringsToList / CustomSigmas
++#: body in a guest raised ImportError.
++_w3_g_HOST_MODULES = ('comfy', 'folder_paths', 'server', 'nodes', 'execution', 'node_helpers')
 +_w3_g_MOD = None
 +
 +def _w3_g_mod():
@@ -30728,15 +31036,20 @@
 +    if isinstance(stmt, _w3_g_ast.Import):
 +
 +        def refused(alias) -> bool:
-+            return alias.name in _w3_g_REFUSED_MODULES
++            return alias.name.split('.')[0] in _w3_g_HOST_MODULES
 +
 +        def bound(alias) -> str:
 +            return alias.asname or alias.name.split('.')[0]
 +    elif isinstance(stmt, _w3_g_ast.ImportFrom) and stmt.level == 0:
-+        members = _w3_g_REFUSED_MEMBERS.get(stmt.module, ())
 +
 +        def refused(alias) -> bool:
-+            return stmt.module in _w3_g_REFUSED_MODULES or alias.name in members or f'{stmt.module}.{alias.name}' in _w3_g_REFUSED_MODULES
++            # `comfy_api.latest.ui` is host surface too: the guest wheel's
++            # `_ui.py` (bases 0b86765f and 0cd9adec) imports `comfy.audio`,
++            # `folder_paths` and `comfy.cli_args` at module scope, so upstream's
++            # `from comfy_api.latest import io, ui` keeps `io` and drops `ui`.
++            if stmt.module == 'comfy_api.latest' and alias.name in ('ui', 'UI'):
++                return True
++            return (stmt.module or '').split('.')[0] in _w3_g_HOST_MODULES
 +
 +        def bound(alias) -> str:
 +            return alias.asname or alias.name
@@ -31091,12 +31404,12 @@
 +
 +    @classmethod
 +    def define_schema(cls) -> _w3_i_io.Schema:
-+        return _w3_i_io.Schema(node_id='JoinStringMultiSecure', display_name='🔒 Join String Multi (secure)', category='KJNodes/text', description='Creates single string, or a list of strings, from\nmultiple input strings.\nYou can set how many inputs the node has,\nwith the **inputcount** and clicking update.', inputs=[_w3_i_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_i_io.String.Input('string_1', default='', force_input=True), _w3_i_io.String.Input('delimiter', default=' '), _w3_i_io.Boolean.Input('return_list', default=False), _w3_i_io.String.Input('string_2', default='', force_input=True, optional=True)], outputs=[_w3_i_io.String.Output(display_name='string')])
++        return _w3_i_io.Schema(accept_all_inputs=True, node_id='JoinStringMultiSecure', display_name='🔒 Join String Multi (secure)', category='KJNodes/text', description='Creates single string, or a list of strings, from\nmultiple input strings.\nYou can set how many inputs the node has,\nwith the **inputcount** and clicking update.', inputs=[_w3_i_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_i_io.String.Input('string_1', default='', force_input=True), _w3_i_io.String.Input('delimiter', default=' '), _w3_i_io.Boolean.Input('return_list', default=False), _w3_i_io.String.Input('string_2', default='', force_input=True, optional=True)], outputs=[_w3_i_io.String.Output(display_name='string')])
 +
 +    @classmethod
-+    async def execute(cls, inputcount, string_1, delimiter, return_list, string_2='') -> _w3_i_io.NodeOutput:
++    async def execute(cls, inputcount, string_1, delimiter, return_list, string_2='', **kwargs) -> _w3_i_io.NodeOutput:
 +        combine = _w3_i_upstream('JoinStringMulti', 'combine')
-+        out = combine(None, inputcount, delimiter, string_1=string_1, return_list=return_list, string_2=string_2)
++        out = combine(None, inputcount, delimiter, string_1=string_1, return_list=return_list, string_2=string_2, **kwargs)
 +        return _w3_i_io.NodeOutput(out[0])
 +
 +class LTX2BlockLoraSelectSecure(_w3_i_io.ComfyNode):
@@ -34839,7 +35152,7 @@
  
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,71469 @@
+@@ -0,0 +1,71556 @@
 +{
 +  "asset_directories": {
 +    "kjnodes_fonts": "fonts"
@@ -38071,7 +38384,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "ckpt_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "CheckpointPerturbWeights": {
 +      "class": "CheckpointPerturbWeightsSecure",
@@ -44391,7 +44711,7 @@
 +      ],
 +      "schema": {
 +        "attrs": {
-+          "accept_all_inputs": false,
++          "accept_all_inputs": true,
 +          "category": "KJNodes/image",
 +          "description": "Joins image batches end to end, cross fading over transitioning_frames between each pair along the chosen easing curve.",
 +          "display_name": "Cross Fade Images Multi",
@@ -45392,7 +45712,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "lora_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "DifferentialDiffusionAdvanced": {
 +      "class": "DifferentialDiffusionAdvancedSecure",
@@ -45755,7 +46082,15 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "model_name",
++          "extra_state_dict"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "DiffusionModelSelector": {
 +      "class": "DiffusionModelSelectorSecure",
@@ -45838,7 +46173,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "model_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "DownloadAndLoadCLIPSeg": {
 +      "class": "DownloadAndLoadCLIPSegSecure",
@@ -49517,7 +49859,15 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "model_name",
++          "extra_model_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "GLIGENTextBoxApplyBatchCoords": {
 +      "class": "GLIGENTextBoxApplyBatchCoordsSecure",
@@ -50178,7 +50528,7 @@
 +      },
 +      "module": "nodes.image_nodes",
 +      "permissions": [
-+        "raw"
++        "inspect"
 +      ],
 +      "schema": {
 +        "attrs": {
@@ -50464,7 +50814,7 @@
 +      },
 +      "module": "nodes.image_nodes",
 +      "permissions": [
-+        "raw"
++        "inspect"
 +      ],
 +      "schema": {
 +        "attrs": {
@@ -50689,7 +51039,7 @@
 +      },
 +      "module": "nodes.mask_nodes",
 +      "permissions": [
-+        "raw"
++        "inspect"
 +      ],
 +      "schema": {
 +        "attrs": {
@@ -60989,7 +61339,7 @@
 +      "permissions": [],
 +      "schema": {
 +        "attrs": {
-+          "accept_all_inputs": false,
++          "accept_all_inputs": true,
 +          "category": "KJNodes/text",
 +          "description": "Creates single string, or a list of strings, from\nmultiple input strings.\nYou can set how many inputs the node has,\nwith the **inputcount** and clicking update.",
 +          "display_name": "Join String Multi",
@@ -63123,7 +63473,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "lora_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "LTX2MemoryEfficientSageAttentionPatch": {
 +      "class": "LTX2MemoryEfficientSageAttentionPatchSecure",
@@ -90619,7 +90976,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": false
++        "validate_inputs": true
 +      },
 +      "module": "nodes.image_nodes",
 +      "permissions": [
@@ -90667,7 +91024,17 @@
 +              "optional": false,
 +              "options": [],
 +              "rawLink": null,
-+              "remote": null,
++              "remote": {
++                "$type": "remote-options",
++                "attrs": {
++                  "control_after_refresh": "first",
++                  "max_retries": null,
++                  "refresh": null,
++                  "refresh_button": true,
++                  "route": "/secure-nodes/assets/input?kind=image",
++                  "timeout": null
++                }
++              },
 +              "socketless": null,
 +              "tooltip": null,
 +              "upload": {
@@ -90916,7 +91283,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "image"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "LoadImagesFromFolderKJ": {
 +      "class": "LoadImagesFromFolderKJSecure",
@@ -91949,7 +92323,14 @@
 +        ],
 +        "outputs": []
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "lora_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "MaskBatchMulti": {
 +      "class": "MaskBatchMultiSecure",
@@ -93140,7 +93521,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "tiny_vae"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "ModelSaveKJ": {
 +      "class": "ModelSaveKJSecure",
@@ -95699,7 +96087,8 @@
 +      "module": "nodes.image_nodes",
 +      "permissions": [
 +        "raw",
-+        "ui"
++        "ui",
++        "inspect"
 +      ],
 +      "schema": {
 +        "attrs": {
@@ -102744,7 +103133,7 @@
 +      ],
 +      "schema": {
 +        "attrs": {
-+          "accept_all_inputs": false,
++          "accept_all_inputs": true,
 +          "category": "KJNodes/image",
 +          "description": "Creates transitions between images.",
 +          "display_name": "Transition Images Multi",
@@ -103226,7 +103615,14 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": true
++      "sdk_refs": true,
++      "validation_inputs": {
++        "args": [
++          "cls",
++          "vae_name"
++        ],
++        "kwargs": false
++      }
 +    },
 +    "VAEMergeKJ": {
 +      "class": "VAEMergeKJSecure",
@@ -106157,7 +106553,11 @@
 +          "price_badge": null,
 +          "search_aliases": []
 +        },
-+        "hidden": [],
++        "hidden": [
++          "prompt",
++          "dynprompt",
++          "extra_pnginfo"
++        ],
 +        "inputs": [
 +          {
 +            "attrs": {
@@ -106309,6 +106709,537 @@
 +  },
 +  "web_directory": "web"
 +}
+--- /dev/null
++++ b/v2/tests/test_image_and_mask_preview_chain.py
+@@ -0,0 +1,283 @@
++"""Regression test for the kjnodes repair: ImageAndMaskPreview feeds a linked node like V1 (gate).
++
++    run_in_gate.sh <snapshot dir x3f20054, or the pack folder> <.../v2/tests> <results> \
++        test_image_and_mask_preview_chain.py
++
++V1 ImageAndMaskPreview subclasses core's SaveImage. With pass_through off it returns self.save_images(...),
++which on this core is {"ui": ..., "result": (images,)}, so its output 0 is the composite in both modes. The
++guarded prompt: LoadImage -> LoadImageMask -> ImageAndMaskPreview(image, mask, opacity 1.0, "255, 255, 255")
++-> SaveImage(images = output 0), with pass_through off and on. Synthetic images, temporary folders.
++Checks, V1 (the pristine class) against V2 (host proxy from secure-nodes.json + a real guest, core's own
++nodes in the host as in the cloud backend):
++  * the node's outputs called directly: the composite tensor equals V1's (torch.equal), and the preview UI
++    has the same shape;
++  * the whole prompt through core's PromptExecutor: it succeeds, the SaveImage file's pixels equal V1's, and
++    ImageAndMaskPreview's preview pixels equal V1's.
++Every check records its own exception. Writes /results/image_and_mask_preview.json; exits 1 on any failure.
++"""
++
++import asyncio
++import importlib
++import json
++import os
++import shutil
++import sys
++import traceback
++import types
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay", "/tests"]
++
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++
++import comfy.samplers  # noqa: E402,F401
++import execution  # noqa: E402
++import folder_paths  # noqa: E402
++import nodes as core_nodes  # noqa: E402
++import numpy as np  # noqa: E402
++import torch  # noqa: E402
++from PIL import Image  # noqa: E402
++from comfy_api.latest import _sdk  # noqa: E402
++from comfy_secure_nodes import packdb  # noqa: E402
++from comfy_secure_nodes.transport.host import GuestSession  # noqa: E402
++
++PACK_FOLDER = "ComfyUI-KJNodes-HEAD"
++INPUT, TEMP, OUTPUT = Path("/tmp/kj-input"), Path("/tmp/kj-temp"), Path("/tmp/kj-output")
++PARAMS = dict(mask_color="255, 255, 255", mask_opacity=1.0)
++checks = []
++
++
++def record(name, ok, detail=None):
++    checks.append({"check": name, "ok": bool(ok), "detail": None if ok else str(detail)[:1500]})
++    print(("PASS " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:400]}"), flush=True)
++
++
++def guarded(name, fn):
++    try:
++        ok, detail = fn()
++    except Exception:  # noqa: BLE001
++        ok, detail = False, traceback.format_exc()[-1200:]
++    record(name, ok, detail)
++
++
++def pack_head() -> Path:
++    root = Path("/pack")
++    if (root / "v2").is_dir():
++        return root
++    return [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")][0]
++
++
++def snapshot_dir() -> Path:
++    root = Path("/pack")
++    if not (root / "v2").is_dir():
++        return root
++    snap = Path("/tmp/kj-snapshot")
++    if not (snap / PACK_FOLDER).is_dir():
++        shutil.copytree(root, snap / PACK_FOLDER, ignore=shutil.ignore_patterns("__pycache__"))
++    return snap
++
++
++def stage_folders():
++    for path, setter in ((INPUT, folder_paths.set_input_directory), (TEMP, folder_paths.set_temp_directory),
++                         (OUTPUT, folder_paths.set_output_directory)):
++        if path.exists():
++            shutil.rmtree(path)
++        path.mkdir(parents=True)
++        setter(str(path))
++    rng = np.random.default_rng(31)
++    Image.fromarray(rng.integers(0, 256, (192, 256, 3), dtype=np.uint8)).save(INPUT / "scene_256x192.png")
++    Image.fromarray(rng.integers(0, 256, (192, 256, 3), dtype=np.uint8)).save(INPUT / "mask_256x192.png")
++
++
++def pristine_class(head):
++    parent = types.ModuleType("kj_pristine")
++    parent.__path__ = [str(head)]
++    sys.modules["kj_pristine"] = parent
++    return importlib.import_module("kj_pristine.nodes.image_nodes").ImageAndMaskPreview
++
++
++class FakeServer:
++    def __init__(self):
++        self.client_id = None
++        self.last_node_id = None
++        self.events = []
++
++    def send_sync(self, event, data, sid=None):
++        self.events.append(event)
++
++    def queue_updated(self):
++        pass
++
++
++def prompt(pass_through, prefix):
++    return {
++        "1": {"class_type": "LoadImage", "inputs": {"image": "scene_256x192.png"}},
++        "2": {"class_type": "LoadImageMask", "inputs": {"channel": "red", "image": "mask_256x192.png"}},
++        "3": {"class_type": "ImageAndMaskPreview",
++              "inputs": dict(PARAMS, image=["1", 0], mask=["2", 0], pass_through=pass_through)},
++        "4": {"class_type": "SaveImage", "inputs": {"filename_prefix": prefix, "images": ["3", 0]}},
++    }
++
++
++def pixels(entry):
++    base = {"temp": TEMP, "output": OUTPUT}[entry["type"]]
++    with Image.open(base / entry.get("subfolder", "") / entry["filename"]) as image:
++        return np.asarray(image.convert("RGB")).copy()
++
++
++async def run_prompt(label, cls, pass_through):
++    saved = core_nodes.NODE_CLASS_MAPPINGS.get("ImageAndMaskPreview")
++    core_nodes.NODE_CLASS_MAPPINGS["ImageAndMaskPreview"] = cls
++    try:
++        executor = execution.PromptExecutor(FakeServer(), cache_type=False,
++                                            cache_args={"lru": 0, "ram": 0, "ram_inactive": 0})
++        await executor.execute_async(prompt(pass_through, f"kj-iamp/{label}-pt{int(pass_through)}/o0"),
++                                     f"kj-iamp-{label}-{int(pass_through)}", {}, ["4"])
++        errors = [m for m in executor.status_messages if m[0] == "execution_error"]
++        return {"success": executor.success, "errors": errors,
++                "outputs": executor.history_result.get("outputs") or {}}
++    finally:
++        if saved is None:
++            core_nodes.NODE_CLASS_MAPPINGS.pop("ImageAndMaskPreview", None)
++        else:
++            core_nodes.NODE_CLASS_MAPPINGS["ImageAndMaskPreview"] = saved
++
++
++def compare_prompts(pass_through, v1, v2):
++    tag = f"prompt (pass_through {pass_through})"
++    record(f"{tag}: V1 succeeds", v1["success"] and not v1["errors"], v1["errors"])
++    record(f"{tag}: V2 succeeds", v2["success"] and not v2["errors"], json.dumps(v2["errors"], default=str))
++
++    def saved_equal():
++        a, b = v1["outputs"]["4"]["images"], v2["outputs"]["4"]["images"]
++        if len(a) != 1 or len(b) != 1:
++            return False, f"{len(a)} vs {len(b)} saved images"
++        pa, pb = pixels(a[0]), pixels(b[0])
++        return (pa.shape == pb.shape and np.array_equal(pa, pb)), f"{pa.shape} vs {pb.shape}"
++    guarded(f"{tag}: SaveImage pixels == V1", saved_equal)
++
++    def preview_equal():
++        a = (v1["outputs"].get("3") or {}).get("images", [])
++        b = (v2["outputs"].get("3") or {}).get("images", [])
++        if len(a) != len(b) or [e["type"] for e in a] != [e["type"] for e in b]:
++            return False, f"{a} vs {b}"
++        for ea, eb in zip(a, b):
++            pa, pb = pixels(ea), pixels(eb)
++            if pa.shape != pb.shape or not np.array_equal(pa, pb):
++                return False, f"preview pixels differ {pa.shape} vs {pb.shape}"
++        return True, None
++    guarded(f"{tag}: ImageAndMaskPreview preview == V1", preview_equal)
++
++
++async def direct_outputs(cls, inputs):
++    if hasattr(cls, "GET_SCHEMA"):
++        cls.GET_SCHEMA()
++    output, ui, _sub, _pending = await execution.get_output_data(
++        "kj-iamp", "3", cls, {key: [value] for key, value in inputs.items()})
++    return output, ui
++
++
++async def run() -> dict:
++    facts = {}
++    head = pack_head()
++    stage_folders()
++    V1 = pristine_class(head)
++    image = core_nodes.LoadImage().load_image("scene_256x192.png")[0]
++    loader = core_nodes.LoadImageMask()
++    mask = getattr(loader, loader.FUNCTION)("mask_256x192.png", "red")[0]
++    v1_direct = {}
++    for pass_through in (False, True):
++        returned = V1().execute(pass_through=pass_through, image=image, mask=mask, **PARAMS)
++        v1_direct[pass_through] = returned if isinstance(returned, dict) else {"result": returned}
++    v1_prompts = {pt: await run_prompt("v1", V1, pt) for pt in (False, True)}
++
++    loaded = packdb.load_pack(snapshot_dir(), mount_name="custom_nodes.kj_iamp_proxy",
++                              pack_id="comfyui-kjnodes/x3f20054")
++    proxy = loaded.node_mappings["ImageAndMaskPreview"]
++    session = await GuestSession("kj-iamp").start()
++    facts["sandbox_kind"] = session.sandbox_kind
++
++    class Backend:
++        async def dispatch(self, plan, local_call, runtime=None):
++            # As CloudExecutionBackend: core's own nodes run in the host; pack nodes go to the guest.
++            if not str(getattr(plan, "node_module", "") or "").startswith("custom_nodes."):
++                return await local_call()
++            caps = set(plan.permissions or ())
++            if getattr(plan, "input_mode", "refs") == "values":
++                caps.add("raw")
++                plan.inputs = await _sdk.wrap_inputs(runtime.refs, plan.inputs)
++            return await session.execute(plan, runtime, capabilities=frozenset(caps), tenant="kj-iamp")
++
++    previous = _sdk.providers.execution_backend
++    _sdk.providers.register_execution_backend(Backend())
++    try:
++        for pass_through in (False, True):
++            tag = f"direct (pass_through {pass_through})"
++            want = v1_direct[pass_through]
++            try:
++                output, ui = await direct_outputs(proxy, dict(PARAMS, image=image, mask=mask,
++                                                              pass_through=pass_through))
++            except Exception:  # noqa: BLE001
++                record(f"{tag}: V2 runs", False, traceback.format_exc()[-1200:])
++                continue
++            want_tensor = want["result"][0]
++            got_tensor = output[0][0] if output and output[0] else None
++            ok = (isinstance(got_tensor, torch.Tensor) and got_tensor.shape == want_tensor.shape
++                  and got_tensor.dtype == want_tensor.dtype and torch.equal(got_tensor.cpu(), want_tensor.cpu()))
++            record(f"{tag}: output 0 == V1 composite", ok,
++                   f"{len(output)} outputs; {type(got_tensor).__name__} "
++                   f"{getattr(got_tensor, 'shape', None)} vs {tuple(want_tensor.shape)}")
++            want_ui = want.get("ui") or {}
++            got_ui = ui or {}
++
++            def preview_images_equal(want_ui=want_ui, got_ui=got_ui):
++                a, b = want_ui.get("images", []), got_ui.get("images", [])
++                if len(a) != len(b) or [e["type"] for e in a] != [e["type"] for e in b]:
++                    return False, f"{a} vs {b}"
++                for ea, eb in zip(a, b):
++                    pa, pb = pixels(ea), pixels(eb)
++                    if pa.shape != pb.shape or not np.array_equal(pa, pb):
++                        return False, f"preview pixels differ {pa.shape} vs {pb.shape}"
++                return True, None
++            guarded(f"{tag}: preview images == V1 (count, type, pixels)", preview_images_equal)
++            # The SDK's preview helper also reports core's V3 'animated' flag (False for a still image); V1's
++            # SaveImage UI has no such key. Any other difference in UI keys fails.
++            extra = sorted(set(got_ui) - set(want_ui))
++            record(f"{tag}: UI keys == V1's, apart from the SDK's animated=False flag",
++                   set(want_ui) <= set(got_ui) and extra in ([], ["animated"])
++                   and all(flag is False for flag in got_ui.get("animated", [])) if want_ui or got_ui else True,
++                   f"{sorted(want_ui)} vs {sorted(got_ui)}: {got_ui.get('animated')}")
++        for pass_through in (False, True):
++            try:
++                v2 = await run_prompt("v2", proxy, pass_through)
++            except Exception:  # noqa: BLE001
++                record(f"prompt (pass_through {pass_through}): V2 runs", False, traceback.format_exc()[-1200:])
++                continue
++            compare_prompts(pass_through, v1_prompts[pass_through], v2)
++    finally:
++        _sdk.providers.register_execution_backend(previous)
++        facts["guest_pid"] = session.last_guest_pid
++        await session.kill()
++    record("guest: out-of-process", facts.get("guest_pid") not in (None, os.getpid()), facts.get("guest_pid"))
++    return facts
++
++
++def main() -> int:
++    try:
++        facts = asyncio.run(run())
++    except Exception:  # noqa: BLE001
++        facts = {"error": traceback.format_exc()}
++        record("session", False, facts["error"])
++    failed = [c["check"] for c in checks if not c["ok"]]
++    result = {"pack": "comfyui-kjnodes", "repair": "r1 (ImageAndMaskPreview output with pass_through off)",
++              "checks": checks, "failed": failed, "facts": facts, "verdict": "PASS" if not failed else "FAIL"}
++    Path("/results/image_and_mask_preview.json").write_text(
++        json.dumps(result, indent=2, sort_keys=True, default=str) + "\n")
++    print(json.dumps({"verdict": result["verdict"], "failed": failed}))
++    return 1 if failed else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+--- /dev/null
++++ b/v2/tests/test_load_and_resize_image_validation.py
+@@ -0,0 +1,242 @@
++"""Regression test for the kjnodes repair: LoadAndResizeImage validates and loads like V1 (gate).
++
++    run_in_gate.sh <snapshot dir x3f20054, or the pack folder> <.../v2/tests> <results> \
++        test_load_and_resize_image_validation.py
++
++The guarded case, which core refused at validation ("Prompt outputs failed validation"): LoadAndResizeImage
++reading an image from the input folder, width 96, height 64, keep_proportion off, divisible_by 8, repeat 2,
++red mask channel. Synthetic images are staged in a temporary input folder. Checks:
++  * validation through core, in-process (the V3 class) and through a real guest (host proxy from
++    secure-nodes.json, backend mirroring CloudExecutionBackend, GuestSession): the staged file is accepted;
++    for a missing file, an [input]-annotated name (existing and missing), and three names outside the input
++    folder (a missing target, an existing target, and a symlink inside the folder that points outside), the
++    result equals V1's own VALIDATE_INPUTS on this core, which counts any of those three as missing;
++  * the load itself, in-process (core's V3 refs path) and through the guest: image, mask, width and height
++    equal V1's for the case's inputs and for an RGBA file.
++Every check records its own exception. Writes /results/load_and_resize.json; exits 1 on any failed check.
++"""
++
++import asyncio
++import importlib
++import importlib.util
++import json
++import os
++import shutil
++import sys
++import traceback
++import types
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay", "/tests"]
++
++from comfy.cli_args import args  # noqa: E402
++
++args.cpu = True
++
++import comfy.samplers  # noqa: E402,F401
++import execution  # noqa: E402
++import folder_paths  # noqa: E402
++import nodes as core_nodes  # noqa: E402
++import numpy as np  # noqa: E402
++import torch  # noqa: E402
++from PIL import Image  # noqa: E402
++from comfy_api.latest import _sdk  # noqa: E402
++from comfy_secure_nodes import packdb  # noqa: E402
++from comfy_secure_nodes.transport.host import GuestSession  # noqa: E402
++
++PACK_FOLDER = "ComfyUI-KJNodes-HEAD"
++INPUT = Path("/tmp/kj-input")
++OUTSIDE = Path("/tmp/kj-outside.png")
++CASE = dict(background_color="#000000", divisible_by=8, height=64, keep_proportion=False, mask_channel="red",
++            repeat=2, resize=True, width=96)
++NAMES = ("no_such_image.png", "generic_scene_768.png [input]", "missing.png [input]", "../escape.png",
++         "../kj-outside.png", "link_out.png")
++checks = []
++
++
++def record(name, ok, detail=None):
++    checks.append({"check": name, "ok": bool(ok), "detail": None if ok else str(detail)[:1500]})
++    print(("PASS " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:400]}"), flush=True)
++
++
++def pack_head() -> Path:
++    root = Path("/pack")
++    if (root / "v2").is_dir():
++        return root
++    return [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")][0]
++
++
++def snapshot_dir() -> Path:
++    root = Path("/pack")
++    if not (root / "v2").is_dir():
++        return root
++    snap = Path("/tmp/kj-snapshot")
++    if not (snap / PACK_FOLDER).is_dir():
++        shutil.copytree(root, snap / PACK_FOLDER, ignore=shutil.ignore_patterns("__pycache__"))
++    return snap
++
++
++def stage_inputs():
++    for name, setter, path in (("input", folder_paths.set_input_directory, INPUT),
++                               ("temp", folder_paths.set_temp_directory, Path("/tmp/kj-temp")),
++                               ("output", folder_paths.set_output_directory, Path("/tmp/kj-output"))):
++        if path.exists():
++            shutil.rmtree(path)
++        path.mkdir(parents=True)
++        setter(str(path))
++    rng = np.random.default_rng(21)
++    Image.fromarray(rng.integers(0, 256, (768, 768, 3), dtype=np.uint8)).save(INPUT / "generic_scene_768.png")
++    Image.fromarray(rng.integers(0, 256, (200, 300, 4), dtype=np.uint8)).save(INPUT / "rgba_300x200.png")
++    (INPUT / "notes.txt").write_text("not an image")
++    Image.fromarray(rng.integers(0, 256, (32, 32, 3), dtype=np.uint8)).save(OUTSIDE)
++    (INPUT / "link_out.png").symlink_to(OUTSIDE)
++    record("fixture: the outside image exists and link_out.png resolves to it",
++           OUTSIDE.is_file() and (INPUT / "link_out.png").resolve() == OUTSIDE.resolve(),
++           f"{OUTSIDE.is_file()} {(INPUT / 'link_out.png').resolve()}")
++
++
++def pristine_class(head):
++    parent = types.ModuleType("kj_pristine")
++    parent.__path__ = [str(head)]
++    sys.modules["kj_pristine"] = parent
++    return importlib.import_module("kj_pristine.nodes.image_nodes").LoadAndResizeImage
++
++
++def same(a, b):
++    if isinstance(a, torch.Tensor) or isinstance(b, torch.Tensor):
++        if not (isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor)):
++            return False, f"{type(a).__name__} vs {type(b).__name__}"
++        if a.dtype != b.dtype or a.shape != b.shape:
++            return False, f"{a.dtype}/{tuple(a.shape)} vs {b.dtype}/{tuple(b.shape)}"
++        if not torch.equal(a.cpu(), b.cpu()):
++            return False, f"max abs {(a.double().cpu() - b.double().cpu()).abs().max().item()!r}"
++        return True, None
++    return (type(a) is type(b) and a == b), f"{a!r} vs {b!r}"
++
++
++async def core_output(obj, node_id, inputs):
++    if hasattr(obj, "GET_SCHEMA"):
++        obj.GET_SCHEMA()
++    output, _ui, _sub, _pending = await execution.get_output_data(
++        "kj-load", node_id, obj, {key: [value] for key, value in inputs.items()})
++    return tuple(values[0] for values in output)
++
++
++def compare_load(label, want, got):
++    for index, name in enumerate(("image", "mask", "width", "height")):
++        ok, detail = same(want[index], got[index])
++        record(f"{label}: {name} == V1", ok, detail)
++
++
++def prompt(image):
++    return {"22": {"class_type": "LoadAndResizeImage", "inputs": dict(CASE, image=image)}}
++
++
++async def check_validation(label, V1):
++    """Core's validate_inputs for node 22, with LoadAndResizeImage mapped to the class under test."""
++    title = f"validation ({label}): the staged image is accepted"
++    try:
++        ok_flag, errors, _ = await execution.validate_inputs("kj-load", prompt("generic_scene_768.png"), "22", {})
++        record(title, ok_flag is True and not errors, errors)
++    except Exception:  # noqa: BLE001
++        record(title, False, traceback.format_exc()[-1200:])
++    for name in NAMES:
++        v1 = V1.VALIDATE_INPUTS(image=name)
++        title = f"validation ({label}) {name!r} matches V1 ({v1!r})"
++        try:
++            ok_flag, errors, _ = await execution.validate_inputs("kj-load", prompt(name), "22", {})
++        except Exception:  # noqa: BLE001
++            record(title, False, traceback.format_exc()[-1200:])
++            continue
++        if v1 is True:
++            ok = ok_flag is True and not errors
++        else:
++            ok = ok_flag is False and any(str(v1) in (e.get("details") or "") for e in errors)
++        record(title, ok, errors)
++
++
++async def run() -> dict:
++    facts = {}
++    head = pack_head()
++    stage_inputs()
++    V1 = pristine_class(head)
++    wants = {}
++    for name, extra in (("case", {}), ("rgba", {"keep_proportion": True})):
++        image = "generic_scene_768.png" if name == "case" else "rgba_300x200.png"
++        wants[name] = (image, dict(CASE, **extra), V1().load_image(image=image, **dict(CASE, **extra)))
++
++    spec = importlib.util.spec_from_file_location(
++        "kj_v2", head / "v2" / "__init__.py", submodule_search_locations=[str(head / "v2")])
++    package = importlib.util.module_from_spec(spec)
++    sys.modules["kj_v2"] = package
++    spec.loader.exec_module(package)
++    v2_cls = package.NODE_CLASS_MAPPINGS["LoadAndResizeImage"]
++    for name, (image, params, want) in wants.items():
++        try:
++            compare_load(f"in-process {name}", want, await core_output(v2_cls, "22", dict(params, image=image)))
++        except Exception:  # noqa: BLE001
++            record(f"in-process {name}: load", False, traceback.format_exc()[-1200:])
++
++    saved = core_nodes.NODE_CLASS_MAPPINGS.get("LoadAndResizeImage")
++    try:
++        core_nodes.NODE_CLASS_MAPPINGS["LoadAndResizeImage"] = v2_cls
++        await check_validation("in-process", V1)
++    finally:
++        if saved is None:
++            core_nodes.NODE_CLASS_MAPPINGS.pop("LoadAndResizeImage", None)
++        else:
++            core_nodes.NODE_CLASS_MAPPINGS["LoadAndResizeImage"] = saved
++
++    loaded = packdb.load_pack(snapshot_dir(), mount_name="custom_nodes.kj_load_proxy",
++                              pack_id="comfyui-kjnodes/x3f20054")
++    proxy = loaded.node_mappings["LoadAndResizeImage"]
++    session = await GuestSession("kj-load").start()
++    facts["sandbox_kind"] = session.sandbox_kind
++
++    class Backend:
++        async def dispatch(self, plan, local_call, runtime):
++            caps = set(plan.permissions or ())
++            if getattr(plan, "input_mode", "refs") == "values":
++                caps.add("raw")
++                plan.inputs = await _sdk.wrap_inputs(runtime.refs, plan.inputs)
++            return await session.execute(plan, runtime, capabilities=frozenset(caps), tenant="kj-load")
++
++    previous = _sdk.providers.execution_backend
++    _sdk.providers.register_execution_backend(Backend())
++    saved = core_nodes.NODE_CLASS_MAPPINGS.get("LoadAndResizeImage")
++    core_nodes.NODE_CLASS_MAPPINGS["LoadAndResizeImage"] = proxy
++    try:
++        await check_validation("guest", V1)
++        for name, (image, params, want) in wants.items():
++            try:
++                compare_load(f"guest {name}", want, await core_output(proxy, "22", dict(params, image=image)))
++            except Exception:  # noqa: BLE001
++                record(f"guest {name}: load", False, traceback.format_exc()[-1200:])
++    finally:
++        if saved is None:
++            core_nodes.NODE_CLASS_MAPPINGS.pop("LoadAndResizeImage", None)
++        else:
++            core_nodes.NODE_CLASS_MAPPINGS["LoadAndResizeImage"] = saved
++        _sdk.providers.register_execution_backend(previous)
++        facts["guest_pid"] = session.last_guest_pid
++        await session.kill()
++    record("guest: out-of-process", facts.get("guest_pid") not in (None, os.getpid()), facts.get("guest_pid"))
++    return facts
++
++
++def main() -> int:
++    try:
++        facts = asyncio.run(run())
++    except Exception:  # noqa: BLE001
++        facts = {"error": traceback.format_exc()}
++        record("session", False, facts["error"])
++    failed = [c["check"] for c in checks if not c["ok"]]
++    result = {"pack": "comfyui-kjnodes", "repair": "r1 (KJ rca r2 + guest validation fix + regression test)",
++              "checks": checks, "failed": failed, "facts": facts, "verdict": "PASS" if not failed else "FAIL"}
++    Path("/results/load_and_resize.json").write_text(json.dumps(result, indent=2, sort_keys=True, default=str) + "\n")
++    print(json.dumps({"verdict": result["verdict"], "failed": failed}))
++    return 1 if failed else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
 --- a/web/js/appearance.js
 +++ b/v2/web/js/appearance.js
 @@ -1,23 +1,22 @@

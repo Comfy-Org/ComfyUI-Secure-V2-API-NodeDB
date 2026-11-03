@@ -60,7 +60,9 @@ class BatchCropFromMaskSecure(_batchcrop_more_io.ComfyNode):
     async def execute(cls, original_images, masks, crop_size_mult, bbox_smooth_alpha) -> _batchcrop_more_io.NodeOutput:
         images = await original_images.raw()
         out = _batchcrop_more_mod().BatchCropFromMask().crop(await masks.raw(), images, crop_size_mult, bbox_smooth_alpha)
-        return _batchcrop_more_io.NodeOutput(await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), out[2], out[3], out[4])
+        # rca-r2 P05 sweep: output 0 is upstream's `original_images`, returned
+        # unchanged; pass the input ref through instead of re-uploading it.
+        return _batchcrop_more_io.NodeOutput(original_images if out[0] is images else await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), out[2], out[3], out[4])
 
 class BatchCropFromMaskAdvancedSecure(_batchcrop_more_io.ComfyNode):
     SDK_REFS = True
@@ -74,7 +76,8 @@ class BatchCropFromMaskAdvancedSecure(_batchcrop_more_io.ComfyNode):
     async def execute(cls, original_images, masks, crop_size_mult, bbox_smooth_alpha) -> _batchcrop_more_io.NodeOutput:
         images = await original_images.raw()
         out = _batchcrop_more_mod().BatchCropFromMaskAdvanced().crop(await masks.raw(), images, crop_size_mult, bbox_smooth_alpha)
-        return _batchcrop_more_io.NodeOutput(await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), await _batchcrop_more_sdk.MaskRef._from_raw(out[2]), await _batchcrop_more_sdk.ImageRef._from_raw(out[3]), await _batchcrop_more_sdk.MaskRef._from_raw(out[4]), out[5], out[6], out[7], out[8])
+        # rca-r2 P05 sweep: output 0 is upstream's unchanged `original_images`.
+        return _batchcrop_more_io.NodeOutput(original_images if out[0] is images else await _batchcrop_more_sdk.ImageRef._from_raw(out[0]), await _batchcrop_more_sdk.ImageRef._from_raw(out[1]), await _batchcrop_more_sdk.MaskRef._from_raw(out[2]), await _batchcrop_more_sdk.ImageRef._from_raw(out[3]), await _batchcrop_more_sdk.MaskRef._from_raw(out[4]), out[5], out[6], out[7], out[8])
 
 class BatchUncropSecure(_batchcrop_more_io.ComfyNode):
     SDK_REFS = True

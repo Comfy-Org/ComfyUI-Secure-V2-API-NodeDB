@@ -589,6 +589,7 @@ import pathlib as _remaining_d_pathlib
 import random as _remaining_d_random
 from comfy_api.latest import io as _remaining_d_io, sdk as _remaining_d_sdk
 from . import _packload as _remaining_d_packload
+from ._ref_meta import described_shape as _remaining_d_described_shape
 from ._allocator import _allocating_like as _remaining_d_allocating_like, _allocating_on as _remaining_d_allocating_on, _allocator as _remaining_d_allocator
 from ._tensor_utils import common_upscale as _remaining_d_common_upscale, composite as _remaining_d_composite, image_alpha_fix as _remaining_d_image_alpha_fix, repeat_to_batch_size as _remaining_d_repeat_to_batch_size
 _remaining_d_PACK_ROOT = _remaining_d_pathlib.Path(_remaining_d_packload.ROOT)
@@ -811,7 +812,9 @@ class FastPreviewSecure(_remaining_d_io.ComfyNode):
 
 class PreviewImageOrMaskSecure(_remaining_d_io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('raw', 'ui')
+    # rca-r2 round-trip sweep: `inspect` reads the rank on the host; `raw` is
+    # kept only for the fallback (a non-mask-rank ref that is not an ImageRef).
+    SDK_PERMISSIONS = ('raw', 'ui', 'inspect')
 
     @classmethod
     def define_schema(cls) -> _remaining_d_io.Schema:
@@ -819,8 +822,20 @@ class PreviewImageOrMaskSecure(_remaining_d_io.ComfyNode):
 
     @classmethod
     async def execute(cls, input) -> _remaining_d_io.NodeOutput:
-        value = await input.raw()
         ui_domain = _remaining_d_sdk.current_context().ui
+        # Upstream previews `input.ndim == 3` as a mask, anything else as an
+        # image, and only the rank decides. Preview the input ref itself: no
+        # materialize, no re-upload of an unchanged tensor. The engine's
+        # wrap_inputs hands EVERY tensor over as an ImageRef (kind IMAGE), masks
+        # included, so the mask branch accepts any tensor ref: the host's
+        # ui.preview_mask resolves the ref by its own kind and renders it with
+        # core PreviewMask, exactly what V1 does with the tensor (rca-r2-r2, M1).
+        rank = len(await _remaining_d_described_shape(input))
+        if rank == 3 and isinstance(input, _remaining_d_sdk.TensorRef):
+            return _remaining_d_io.NodeOutput(ui=await ui_domain.preview_mask(input))
+        if rank != 3 and isinstance(input, _remaining_d_sdk.ImageRef):
+            return _remaining_d_io.NodeOutput(ui=await ui_domain.preview_images(input))
+        value = await input.raw()
         if value.ndim == 3:
             ref = await _remaining_d_sdk.MaskRef._from_raw(value)
             ui_value = await ui_domain.preview_mask(ref)
@@ -857,7 +872,10 @@ class ImageAndMaskPreviewSecure(_remaining_d_io.ComfyNode):
         if pass_through:
             return _remaining_d_io.NodeOutput(ref)
         ui_value = await _remaining_d_sdk.current_context().ui.preview_images(ref)
-        return _remaining_d_io.NodeOutput(ui=ui_value)
+        # Repair r1: V1 returns SaveImage.save_images(...), and core's SaveImage
+        # returns {"ui": ..., "result": (images,)}, so V1's output 0 is the
+        # composite in this mode too; a node linked to it gets the same image.
+        return _remaining_d_io.NodeOutput(ref, ui=ui_value)
 from comfy_api.latest import io as _remaining_h_io, sdk as _remaining_h_sdk
 
 class SaveImageWithAlphaSecure(_remaining_h_io.ComfyNode):
@@ -915,6 +933,18 @@ class ImageUpscaleWithModelBatchedSecure(_remaining_p_io.ComfyNode):
         return _remaining_p_io.NodeOutput(await upscale_model.upscale(images, per_batch=per_batch, downscale_ratio=downscale_ratio, downscale_method=downscale_method, precision=precision))
 from comfy_api.latest import io as _remaining_r_io, sdk as _remaining_r_sdk
 
+def _remaining_r_annotated(name: str) -> tuple[str, str]:
+    """core folder_paths.annotated_filepath, for the asset broker (rca-r2-r2 B6).
+
+    `'<file> [output]'`, `'<file> [input]'` and `'<file> [temp]'` name a file in
+    that folder (the suffix and the space before it are dropped, in core's
+    order); anything else is in `input`. Returns (folder, name).
+    """
+    for folder, cut in (('output', 9), ('input', 8), ('temp', 7)):
+        if name.endswith(f'[{folder}]'):
+            return folder, name[:-cut]
+    return 'input', name
+
 def _remaining_r_string_to_color(color_string: str):
     import logging
     import numpy as np
@@ -952,8 +982,36 @@ class LoadAndResizeImageSecure(_remaining_r_io.ComfyNode):
     SDK_PERMISSIONS = ('assets', 'raw')
 
     @classmethod
+    async def validate_inputs(cls, image):
+        """V1 `VALIDATE_INPUTS(s, image)` (nodes/image_nodes.py:3341-3345), restored
+        (rca-r2-r2 B6). Declaring it makes Core hand `image` to this check
+        instead of testing it against the combo's options, as V1 does; the file
+        is looked up through the asset broker the way the body loads it.
+        A path-escaping name counts as missing, as in core
+        exists_annotated_filepath.
+
+        Repair r1: a name the broker refuses lexically (absolute, a NUL, a '..'
+        part) is answered here without a call. A name that resolves outside the
+        folder (a symlink) is refused by the broker with ValueError; called from
+        a sandbox, that refusal arrives as the transport's remote error, which
+        names the original type in `remote_type`. Both count as missing."""
+        folder, name = _remaining_r_annotated(image)
+        logical = str(name).replace('\\', '/')
+        if '\x00' in logical or logical.startswith('/') or '..' in logical.split('/'):
+            return 'Invalid image file: {}'.format(image)
+        try:
+            found = await _remaining_r_sdk.ctx().assets.exists(folder, name)
+        except Exception as error:
+            if not (isinstance(error, ValueError) or getattr(error, 'remote_type', None) == 'ValueError'):
+                raise
+            found = False
+        if not found:
+            return 'Invalid image file: {}'.format(image)
+        return True
+
+    @classmethod
     def define_schema(cls) -> _remaining_r_io.Schema:
-        return _remaining_r_io.Schema(node_id='LoadAndResizeImageSecure', display_name='🔒 Load & Resize Image (secure)', category='KJNodes/image', inputs=[_remaining_r_io.Combo.Input('image', options=[], upload=_remaining_r_io.UploadType.image, image_folder=_remaining_r_io.FolderType.input), _remaining_r_io.Boolean.Input('resize', default=False), _remaining_r_io.Int.Input('width', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('height', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('repeat', default=1, min=1, max=4096, step=1), _remaining_r_io.Boolean.Input('keep_proportion', default=False), _remaining_r_io.Int.Input('divisible_by', default=2, min=0, max=512, step=1), _remaining_r_io.Combo.Input('mask_channel', options=['alpha', 'red', 'green', 'blue'], default='alpha'), _remaining_r_io.String.Input('background_color', default='', tooltip='Fills transparent pixels with this color.')], outputs=[_remaining_r_io.Image.Output('image'), _remaining_r_io.Mask.Output('mask'), _remaining_r_io.Int.Output('width'), _remaining_r_io.Int.Output('height'), _remaining_r_io.String.Output('image_name')])
+        return _remaining_r_io.Schema(node_id='LoadAndResizeImageSecure', display_name='🔒 Load & Resize Image (secure)', category='KJNodes/image', inputs=[_remaining_r_io.Combo.Input('image', options=[], upload=_remaining_r_io.UploadType.image, image_folder=_remaining_r_io.FolderType.input, remote=_remaining_r_io.RemoteOptions(route='/secure-nodes/assets/input?kind=image', refresh_button=True)), _remaining_r_io.Boolean.Input('resize', default=False), _remaining_r_io.Int.Input('width', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('height', default=512, min=0, max=16384, step=8), _remaining_r_io.Int.Input('repeat', default=1, min=1, max=4096, step=1), _remaining_r_io.Boolean.Input('keep_proportion', default=False), _remaining_r_io.Int.Input('divisible_by', default=2, min=0, max=512, step=1), _remaining_r_io.Combo.Input('mask_channel', options=['alpha', 'red', 'green', 'blue'], default='alpha'), _remaining_r_io.String.Input('background_color', default='', tooltip='Fills transparent pixels with this color.')], outputs=[_remaining_r_io.Image.Output('image'), _remaining_r_io.Mask.Output('mask'), _remaining_r_io.Int.Output('width'), _remaining_r_io.Int.Output('height'), _remaining_r_io.String.Output('image_name')])
 
     @classmethod
     async def execute(cls, image, resize, width, height, repeat, keep_proportion, divisible_by, mask_channel, background_color) -> _remaining_r_io.NodeOutput:
@@ -962,7 +1020,9 @@ class LoadAndResizeImageSecure(_remaining_r_io.ComfyNode):
         import torch
         from PIL import Image, ImageOps, ImageSequence
         assets = _remaining_r_sdk.ctx().assets
-        asset = await assets.resolve('input', image)
+        # V1 loads folder_paths.get_annotated_filepath(image): honour the same
+        # '[output]' / '[input]' / '[temp]' annotations (rca-r2-r2 B6).
+        asset = await assets.resolve(*_remaining_r_annotated(image))
         content = await assets.read_bytes(asset)
         with Image.open(BytesIO(content)) as source:
             source_format = source.format
@@ -1270,6 +1330,7 @@ import pathlib as _w3_a_pathlib
 from contextlib import contextmanager as _w3_a_contextmanager
 from comfy_api.latest import io as _w3_a_io, sdk as _w3_a_sdk
 from . import _packload as _w3_a_packload
+from ._ref_meta import ShapeOnly as _w3_a_ShapeOnly, described_shape as _w3_a_described_shape
 _w3_a_SOURCE = 'nodes/image_nodes.py'
 _w3_a_MODULE_HELPERS = ('crossfade', 'ease_in', 'ease_out', 'ease_in_out', 'bounce', 'elastic', 'glitchy', 'exponential_ease_out', 'easing_functions')
 _w3_a_PARSED = None
@@ -1432,13 +1493,18 @@ class CrossFadeImagesMultiSecure(_w3_a_io.ComfyNode):
 
     @classmethod
     def define_schema(cls) -> _w3_a_io.Schema:
-        return _w3_a_io.Schema(node_id='CrossFadeImagesMultiSecure', display_name='🔒 Cross Fade Images Multi (secure)', category='KJNodes/image', description='Joins image batches end to end, cross fading over transitioning_frames between each pair along the chosen easing curve.', inputs=[_w3_a_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_a_io.Image.Input('image_1'), _w3_a_io.Combo.Input('interpolation', options=_w3_a_INTERPOLATIONS), _w3_a_io.Int.Input('transitioning_frames', default=1, min=0, max=4096, step=1), _w3_a_io.Image.Input('image_2', optional=True)], outputs=[_w3_a_io.Image.Output(display_name='IMAGE')])
+        return _w3_a_io.Schema(accept_all_inputs=True, node_id='CrossFadeImagesMultiSecure', display_name='🔒 Cross Fade Images Multi (secure)', category='KJNodes/image', description='Joins image batches end to end, cross fading over transitioning_frames between each pair along the chosen easing curve.', inputs=[_w3_a_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_a_io.Image.Input('image_1'), _w3_a_io.Combo.Input('interpolation', options=_w3_a_INTERPOLATIONS), _w3_a_io.Int.Input('transitioning_frames', default=1, min=0, max=4096, step=1), _w3_a_io.Image.Input('image_2', optional=True)], outputs=[_w3_a_io.Image.Output(display_name='IMAGE')])
 
     @classmethod
-    async def execute(cls, inputcount, image_1, interpolation, transitioning_frames, image_2=None) -> _w3_a_io.NodeOutput:
+    async def execute(cls, inputcount, image_1, interpolation, transitioning_frames, image_2=None, **kwargs) -> _w3_a_io.NodeOutput:
         images = {'image_1': await image_1.raw()}
         if image_2 is not None:
             images['image_2'] = await image_2.raw()
+        for index in range(3, int(inputcount) + 1):
+            key = f'image_{index}'
+            value = kwargs.get(key)
+            if value is not None:
+                images[key] = await value.raw()
         crossfadeimages = _w3_a_upstream('CrossFadeImagesMulti', 'crossfadeimages')
         out = crossfadeimages(None, inputcount, transitioning_frames, interpolation, **images)
         return _w3_a_io.NodeOutput(await _w3_a_sdk.ImageRef._from_raw(out[0]))
@@ -1459,7 +1525,9 @@ class GetImageRangeFromBatchSecure(_w3_a_io.ComfyNode):
 
 class GetImageSizeAndCountSecure(_w3_a_io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('raw',)
+    # rca-r2 P05: metadata only. `inspect` answers the shape on the host; the
+    # pixels never enter the guest (no `raw`), so a 5 GB video costs nothing.
+    SDK_PERMISSIONS = ('inspect',)
 
     @classmethod
     def define_schema(cls) -> _w3_a_io.Schema:
@@ -1467,10 +1535,13 @@ class GetImageSizeAndCountSecure(_w3_a_io.ComfyNode):
 
     @classmethod
     async def execute(cls, image) -> _w3_a_io.NodeOutput:
+        # Upstream reads only `.shape` and returns its input object. Run it on a
+        # shape-only stand-in and return the input ref itself: same values,
+        # same ui text, and the very tensor V1 would have passed on.
         getsize = _w3_a_upstream('GetImageSizeAndCount', 'getsize')
-        returned = getsize(None, await image.raw())
-        passed_through, width, height, count = returned['result']
-        return _w3_a_io.NodeOutput(await _w3_a_sdk.ImageRef._from_raw(passed_through), width, height, count, ui=returned['ui'])
+        returned = getsize(None, _w3_a_ShapeOnly(await _w3_a_described_shape(image)))
+        _shape_only, width, height, count = returned['result']
+        return _w3_a_io.NodeOutput(image, width, height, count, ui=returned['ui'])
 
 class GetImagesFromBatchIndexedSecure(_w3_a_io.ComfyNode):
     SDK_REFS = True
@@ -1503,6 +1574,7 @@ import ast as _w3_b_ast
 import pathlib as _w3_b_pathlib
 from comfy_api.latest import io as _w3_b_io, sdk as _w3_b_sdk
 from . import _packload as _w3_b_packload
+from ._ref_meta import ShapeOnly as _w3_b_ShapeOnly, described_shape as _w3_b_described_shape
 from ._allocator import _allocator as _w3_b_allocator, _allocating_like as _w3_b_allocating_like
 from ._tensor_utils import common_upscale as _w3_b_common_upscale
 _w3_b_IMAGE_NODES = 'nodes/image_nodes.py'
@@ -1596,7 +1668,8 @@ async def _w3_b_materialized(refs: dict) -> dict:
 
 class GetLatentSizeAndCountSecure(_w3_b_io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('raw',)
+    # rca-r2 P05 sweep: metadata only, answered on the host (`inspect`, no `raw`).
+    SDK_PERMISSIONS = ('inspect',)
 
     @classmethod
     def define_schema(cls) -> _w3_b_io.Schema:
@@ -1604,10 +1677,12 @@ class GetLatentSizeAndCountSecure(_w3_b_io.ComfyNode):
 
     @classmethod
     async def execute(cls, latent) -> _w3_b_io.NodeOutput:
+        # Upstream reads only `latent["samples"].shape` and returns its input
+        # dict; the latent ref itself is returned instead of a re-upload.
         getsize = _w3_b_upstream('GetLatentSizeAndCount', 'getsize')
-        returned = getsize(None, await latent.value())
-        passthrough, *dims = returned['result']
-        return _w3_b_io.NodeOutput(await _w3_b_sdk.LatentRef.from_value(passthrough), *dims, ui=returned['ui'])
+        returned = getsize(None, {'samples': _w3_b_ShapeOnly(await _w3_b_described_shape(latent))})
+        _shape_only, *dims = returned['result']
+        return _w3_b_io.NodeOutput(latent, *dims, ui=returned['ui'])
 
 class ImageAddMultiSecure(_w3_b_io.ComfyNode):
     SDK_REFS = True
@@ -1637,8 +1712,12 @@ class ImageBatchExtendWithOverlapSecure(_w3_b_io.ComfyNode):
     @classmethod
     async def execute(cls, source_images, overlap, overlap_side, overlap_mode, new_images=None) -> _w3_b_io.NodeOutput:
         extend = _w3_b_upstream('ImageBatchExtendWithOverlap', 'imagesfrombatch')
-        source, start, extended = extend(None, await source_images.raw(), overlap, overlap_side, overlap_mode, None if new_images is None else await new_images.raw())
-        return _w3_b_io.NodeOutput(await _w3_b_sdk.ImageRef._from_raw(source), await _w3_b_sdk.ImageRef._from_raw(start), await _w3_b_sdk.ImageRef._from_raw(extended))
+        source_pixels = await source_images.raw()
+        outputs = extend(None, source_pixels, overlap, overlap_side, overlap_mode, None if new_images is None else await new_images.raw())
+        # rca-r2 P05 sweep: upstream returns `source_images` itself (all three
+        # outputs when overlap > len). Hand that input ref back instead of
+        # re-uploading an unchanged copy; everything else is published.
+        return _w3_b_io.NodeOutput(*[source_images if value is source_pixels else await _w3_b_sdk.ImageRef._from_raw(value) for value in outputs])
 
 class ImageBatchFilterSecure(_w3_b_io.ComfyNode):
     SDK_REFS = True
@@ -2172,13 +2251,13 @@ class _w3_f_PlacementOnly:
         return self._tensor
 
     def get_torch_device(self):
-        return self._placement().device
+        return self._w3_f_placement().device
 
     def intermediate_device(self):
-        return self._placement().device
+        return self._w3_f_placement().device
 
     def intermediate_dtype(self):
-        return self._placement().dtype
+        return self._w3_f_placement().dtype
 
     def __getattr__(self, name):
         raise AttributeError(f"comfy.model_management.{name} is unavailable in a guest. This stand-in answers placement only ({', '.join(self.ALLOWED)}), because a materialized input already determines it; {name} is host policy and must not be decided inside the sandbox.")
@@ -2321,14 +2400,19 @@ class TransitionImagesMultiSecure(_w3_f_io.ComfyNode):
 
     @classmethod
     def define_schema(cls) -> _w3_f_io.Schema:
-        return _w3_f_io.Schema(node_id='TransitionImagesMultiSecure', display_name='🔒 Transition Images Multi (secure)', category='KJNodes/image', description='Creates transitions between images.', inputs=[_w3_f_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_f_io.Image.Input('image_1'), _w3_f_io.Combo.Input('interpolation', options=_w3_f_INTERPOLATIONS), _w3_f_io.Combo.Input('transition_type', options=_w3_f_TRANSITIONS), _w3_f_io.Int.Input('transitioning_frames', default=2, min=2, max=4096, step=1), _w3_f_io.Float.Input('blur_radius', default=0.0, min=0.0, max=100.0, step=0.1), _w3_f_io.Boolean.Input('reverse', default=False), _w3_f_io.Combo.Input('device', options=['CPU', 'GPU'], default='CPU'), _w3_f_io.Image.Input('image_2', optional=True)], outputs=[_w3_f_io.Image.Output(display_name='IMAGE')])
+        return _w3_f_io.Schema(accept_all_inputs=True, node_id='TransitionImagesMultiSecure', display_name='🔒 Transition Images Multi (secure)', category='KJNodes/image', description='Creates transitions between images.', inputs=[_w3_f_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_f_io.Image.Input('image_1'), _w3_f_io.Combo.Input('interpolation', options=_w3_f_INTERPOLATIONS), _w3_f_io.Combo.Input('transition_type', options=_w3_f_TRANSITIONS), _w3_f_io.Int.Input('transitioning_frames', default=2, min=2, max=4096, step=1), _w3_f_io.Float.Input('blur_radius', default=0.0, min=0.0, max=100.0, step=0.1), _w3_f_io.Boolean.Input('reverse', default=False), _w3_f_io.Combo.Input('device', options=['CPU', 'GPU'], default='CPU'), _w3_f_io.Image.Input('image_2', optional=True)], outputs=[_w3_f_io.Image.Output(display_name='IMAGE')])
 
     @classmethod
-    async def execute(cls, inputcount, image_1, interpolation, transition_type, transitioning_frames, blur_radius, reverse, device, image_2=None) -> _w3_f_io.NodeOutput:
+    async def execute(cls, inputcount, image_1, interpolation, transition_type, transitioning_frames, blur_radius, reverse, device, image_2=None, **kwargs) -> _w3_f_io.NodeOutput:
         first = await image_1.raw()
         images = {'image_1': first}
         if image_2 is not None:
             images['image_2'] = await image_2.raw()
+        for index in range(3, int(inputcount) + 1):
+            key = f'image_{index}'
+            value = kwargs.get(key)
+            if value is not None:
+                images[key] = await value.raw()
         transition = _w3_f_upstream('TransitionImagesMulti', 'transition')
         with _w3_f_placement.bound_to(first):
             out = transition(None, inputcount, transitioning_frames, transition_type, interpolation, device, blur_radius, reverse, **images)

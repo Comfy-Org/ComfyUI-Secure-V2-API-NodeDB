@@ -511,7 +511,7 @@ class WidgetToStringSecure(_remaining_j_io.ComfyNode):
 
     @classmethod
     def define_schema(cls) -> _remaining_j_io.Schema:
-        return _remaining_j_io.Schema(node_id='WidgetToStringSecure', display_name='🔒 Widget To String (secure)', category='KJNodes/text', description='Selects a node by id, title, or input link and returns one or more of its widget values as a string.', inputs=[_remaining_j_io.Int.Input('id', default=0, min=0, max=100000, step=1), _remaining_j_io.String.Input('widget_name', multiline=False), _remaining_j_io.Boolean.Input('return_all', default=False), _remaining_j_io.AnyType.Input('any_input', optional=True), _remaining_j_io.String.Input('node_title', default='', multiline=False, optional=True), _remaining_j_io.Int.Input('allowed_float_decimals', default=2, min=0, max=10, optional=True, tooltip='Number of decimal places to display for float values.')], outputs=[_remaining_j_io.String.Output()])
+        return _remaining_j_io.Schema(hidden=[_remaining_j_io.Hidden.prompt, _remaining_j_io.Hidden.dynprompt, _remaining_j_io.Hidden.extra_pnginfo], node_id='WidgetToStringSecure', display_name='🔒 Widget To String (secure)', category='KJNodes/text', description='Selects a node by id, title, or input link and returns one or more of its widget values as a string.', inputs=[_remaining_j_io.Int.Input('id', default=0, min=0, max=100000, step=1), _remaining_j_io.String.Input('widget_name', multiline=False), _remaining_j_io.Boolean.Input('return_all', default=False), _remaining_j_io.AnyType.Input('any_input', optional=True), _remaining_j_io.String.Input('node_title', default='', multiline=False, optional=True), _remaining_j_io.Int.Input('allowed_float_decimals', default=2, min=0, max=10, optional=True, tooltip='Number of decimal places to display for float values.')], outputs=[_remaining_j_io.String.Output()])
 
     @classmethod
     def fingerprint_inputs(cls, id, node_title='', any_input=None, **kwargs):
@@ -983,8 +983,13 @@ import types as _w3_g_types
 from comfy_api.latest import io as _w3_g_io, sdk as _w3_g_sdk
 from . import _packload as _w3_g_packload
 _w3_g_SOURCE = 'nodes/nodes.py'
-_w3_g_REFUSED_MODULES = ('folder_paths', 'node_helpers', 'comfy.model_management', 'comfy.patcher_extension', 'comfy.sampler_helpers', 'comfy.samplers')
-_w3_g_REFUSED_MEMBERS = {'comfy.utils': ('ProgressBar', 'load_torch_file', 'save_torch_file')}
+#: rca-r2 P08 sweep: the guest refuses these packages whole (guest
+#: BLOCKED_MODULES), so an import from any of them is pruned by MODULE. The old
+#: per-name lists let `from nodes import MAX_RESOLUTION`, `from comfy.utils
+#: import common_upscale`, `comfy.comfy_types` and `comfy.latent_formats`
+#: through, and the first BOOLConstant / AppendStringsToList / CustomSigmas
+#: body in a guest raised ImportError.
+_w3_g_HOST_MODULES = ('comfy', 'folder_paths', 'server', 'nodes', 'execution', 'node_helpers')
 _w3_g_MOD = None
 
 def _w3_g_mod():
@@ -1004,15 +1009,20 @@ def _w3_g_prune_import(stmt):
     if isinstance(stmt, _w3_g_ast.Import):
 
         def refused(alias) -> bool:
-            return alias.name in _w3_g_REFUSED_MODULES
+            return alias.name.split('.')[0] in _w3_g_HOST_MODULES
 
         def bound(alias) -> str:
             return alias.asname or alias.name.split('.')[0]
     elif isinstance(stmt, _w3_g_ast.ImportFrom) and stmt.level == 0:
-        members = _w3_g_REFUSED_MEMBERS.get(stmt.module, ())
 
         def refused(alias) -> bool:
-            return stmt.module in _w3_g_REFUSED_MODULES or alias.name in members or f'{stmt.module}.{alias.name}' in _w3_g_REFUSED_MODULES
+            # `comfy_api.latest.ui` is host surface too: the guest wheel's
+            # `_ui.py` (bases 0b86765f and 0cd9adec) imports `comfy.audio`,
+            # `folder_paths` and `comfy.cli_args` at module scope, so upstream's
+            # `from comfy_api.latest import io, ui` keeps `io` and drops `ui`.
+            if stmt.module == 'comfy_api.latest' and alias.name in ('ui', 'UI'):
+                return True
+            return (stmt.module or '').split('.')[0] in _w3_g_HOST_MODULES
 
         def bound(alias) -> str:
             return alias.asname or alias.name
@@ -1367,12 +1377,12 @@ class JoinStringMultiSecure(_w3_i_io.ComfyNode):
 
     @classmethod
     def define_schema(cls) -> _w3_i_io.Schema:
-        return _w3_i_io.Schema(node_id='JoinStringMultiSecure', display_name='🔒 Join String Multi (secure)', category='KJNodes/text', description='Creates single string, or a list of strings, from\nmultiple input strings.\nYou can set how many inputs the node has,\nwith the **inputcount** and clicking update.', inputs=[_w3_i_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_i_io.String.Input('string_1', default='', force_input=True), _w3_i_io.String.Input('delimiter', default=' '), _w3_i_io.Boolean.Input('return_list', default=False), _w3_i_io.String.Input('string_2', default='', force_input=True, optional=True)], outputs=[_w3_i_io.String.Output(display_name='string')])
+        return _w3_i_io.Schema(accept_all_inputs=True, node_id='JoinStringMultiSecure', display_name='🔒 Join String Multi (secure)', category='KJNodes/text', description='Creates single string, or a list of strings, from\nmultiple input strings.\nYou can set how many inputs the node has,\nwith the **inputcount** and clicking update.', inputs=[_w3_i_io.Int.Input('inputcount', default=2, min=2, max=1000, step=1), _w3_i_io.String.Input('string_1', default='', force_input=True), _w3_i_io.String.Input('delimiter', default=' '), _w3_i_io.Boolean.Input('return_list', default=False), _w3_i_io.String.Input('string_2', default='', force_input=True, optional=True)], outputs=[_w3_i_io.String.Output(display_name='string')])
 
     @classmethod
-    async def execute(cls, inputcount, string_1, delimiter, return_list, string_2='') -> _w3_i_io.NodeOutput:
+    async def execute(cls, inputcount, string_1, delimiter, return_list, string_2='', **kwargs) -> _w3_i_io.NodeOutput:
         combine = _w3_i_upstream('JoinStringMulti', 'combine')
-        out = combine(None, inputcount, delimiter, string_1=string_1, return_list=return_list, string_2=string_2)
+        out = combine(None, inputcount, delimiter, string_1=string_1, return_list=return_list, string_2=string_2, **kwargs)
         return _w3_i_io.NodeOutput(out[0])
 
 class LTX2BlockLoraSelectSecure(_w3_i_io.ComfyNode):

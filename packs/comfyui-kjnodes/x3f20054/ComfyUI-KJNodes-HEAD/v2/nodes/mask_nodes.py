@@ -440,6 +440,7 @@ import sys as _w3_m_sys
 import types as _w3_m_types
 from comfy_api.latest import io as _w3_m_io, sdk as _w3_m_sdk
 from . import _packload as _w3_m_packload
+from ._ref_meta import ShapeOnly as _w3_m_ShapeOnly, described_shape as _w3_m_described_shape
 _w3_m_MAX_RESOLUTION = 16384
 _w3_m_REFUSED_AT_MODULE_SCOPE = ('folder_paths', 'model_management', 'ProgressBar')
 _w3_m_MOD = None
@@ -452,6 +453,122 @@ def _w3_m_bound(stmt: _w3_m_ast.stmt) -> set[str]:
 
 def _w3_m_read(stmt: _w3_m_ast.stmt) -> set[str]:
     return {n.id for n in _w3_m_ast.walk(stmt) if isinstance(n, _w3_m_ast.Name)}
+_w3_m_HOST_MODULES = ('comfy', 'folder_paths', 'server', 'nodes', 'execution', 'node_helpers')
+
+def _w3_m_host_import(stmt: _w3_m_ast.stmt) -> bool:
+    """fix-r1/L6: an absolute import of a module the secure guest refuses."""
+    if isinstance(stmt, _w3_m_ast.Import):
+        mods = [alias.name for alias in stmt.names]
+    elif isinstance(stmt, _w3_m_ast.ImportFrom) and stmt.level == 0 and stmt.module:
+        mods = [stmt.module]
+    else:
+        return False
+    return any(m.split('.')[0] in _w3_m_HOST_MODULES for m in mods)
+
+def _w3_m_morphology():
+    """`kornia.morphology`, or an exact local equivalent when kornia is absent.
+
+    fix-r1/L6: runtime base 0b86765f ships no kornia, and GrowMaskWithBlur
+    imports it lazily. For a 0/1 structuring kernel with kornia's default
+    geodesic border, dilation is the max and erosion the min over the kernel's
+    footprint, ignoring out-of-image pixels, which is what this computes.
+
+    Exact range (rca-r2-r2, review L2): bit-identical to kornia 0.8.3 for finite
+    masks with |value| < 1e4 and no -0.0, under the symmetric, centred 0/1
+    kernels GrowMaskWithBlur passes (cross and 3x3 square); KJ masks are in
+    [0, 1], so every GrowMaskWithBlur call is inside it. Outside it kornia
+    differs by construction: its geodesic border is -/+1e4 rather than an
+    exclusion, structuring-element zeros contribute x -/+ 1e4 instead of being
+    skipped, and dilation adds +0.0 (turning -0.0 into +0.0) over a reflected
+    element. Real kornia is used whenever it is importable.
+    """
+    try:
+        import kornia.morphology as morph
+        return morph
+    except ImportError:
+        pass
+    import torch
+    import torch.nn.functional as F
+
+    def _footprint_reduce(image, kernel, largest):
+        if image.ndim != 4:
+            raise ValueError('morphology expects a BCHW tensor')
+        kh, kw = kernel.shape[-2:]
+        offsets = [(dy, dx) for dy in range(kh) for dx in range(kw) if float(kernel[dy, dx]) != 0.0]
+        fill = float('-inf') if largest else float('inf')
+        top, left = kh // 2, kw // 2
+        padded = F.pad(image, (left, kw - 1 - left, top, kh - 1 - top), value=fill)
+        height, width = image.shape[-2:]
+        out = None
+        for dy, dx in offsets:
+            view = padded[..., dy:dy + height, dx:dx + width]
+            out = view if out is None else (torch.maximum(out, view) if largest else torch.minimum(out, view))
+        return image.clone() if out is None else out.contiguous()
+
+    class _Morphology:
+        @staticmethod
+        def dilation(tensor, kernel, **_kwargs):
+            return _footprint_reduce(tensor, kernel, True)
+
+        @staticmethod
+        def erosion(tensor, kernel, **_kwargs):
+            return _footprint_reduce(tensor, kernel, False)
+    return _Morphology()
+
+class _w3_m_LocalMorphology(_w3_m_ast.NodeTransformer):
+    """Rewrite upstream's lazy `import kornia.morphology as morph` to use
+    `_w3_m_morphology()` (real kornia when present)."""
+
+    def visit_Import(self, node):
+        if len(node.names) == 1 and node.names[0].name == 'kornia.morphology':
+            bound = node.names[0].asname or 'kornia'
+            if bound == 'kornia':
+                return node
+            call = _w3_m_ast.Call(func=_w3_m_ast.Name(id='_w3_m_morphology', ctx=_w3_m_ast.Load()), args=[], keywords=[])
+            return _w3_m_ast.copy_location(_w3_m_ast.Assign(targets=[_w3_m_ast.Name(id=bound, ctx=_w3_m_ast.Store())], value=call), node)
+        return node
+
+def _w3_m_guard_zero_peak(tree: _w3_m_ast.Module) -> _w3_m_ast.Module:
+    """rca-r2 (MIKE MASK audit, item 1): V1 defect fixed, recorded as an
+    accepted difference.
+
+    Upstream `GrowMaskWithBlur.expand_mask` renormalises with
+    `output = output / output.max()` when `decay_factor < 1`. On an all-zero
+    frame that is 0/0, so V1 publishes NaN and every later frame inherits it
+    through `previous_output`. The single statement becomes
+    `output = output / output.max() if output.max() != 0 else output`.
+
+    Equivalence (rca-r2-r2, review L3): identical to V1 on every call in which
+    V1 never divides by a zero peak. Where it does, V1 publishes NaN, or, with
+    blur_radius > 0, whatever tensor2pil's uint8 cast makes of NaN (a finite but
+    meaningless value); the candidate publishes V1-plus-this-guard instead: an
+    all-zero frame, and normal values for the frames after it. Exactly one such
+    statement must exist, or upstream changed and this loader refuses rather
+    than guess.
+    """
+    hits = 0
+    for cls in tree.body:
+        if not (isinstance(cls, _w3_m_ast.ClassDef) and cls.name == 'GrowMaskWithBlur'):
+            continue
+        for fn in cls.body:
+            if not (isinstance(fn, _w3_m_ast.FunctionDef) and fn.name == 'expand_mask'):
+                continue
+            for node in _w3_m_ast.walk(fn):
+                if not (isinstance(node, _w3_m_ast.Assign) and len(node.targets) == 1
+                        and isinstance(node.targets[0], _w3_m_ast.Name) and node.targets[0].id == 'output'):
+                    continue
+                value = node.value
+                if (isinstance(value, _w3_m_ast.BinOp) and isinstance(value.op, _w3_m_ast.Div)
+                        and _w3_m_ast.dump(value.left) == _w3_m_ast.dump(_w3_m_ast.Name(id='output', ctx=_w3_m_ast.Load()))
+                        and _w3_m_ast.unparse(value.right) == 'output.max()'):
+                    peak = _w3_m_ast.parse('output.max()', mode='eval').body
+                    node.value = _w3_m_ast.IfExp(
+                        test=_w3_m_ast.Compare(left=peak, ops=[_w3_m_ast.NotEq()], comparators=[_w3_m_ast.Constant(0)]),
+                        body=value, orelse=_w3_m_ast.Name(id='output', ctx=_w3_m_ast.Load()))
+                    hits += 1
+    if hits != 1:
+        raise RuntimeError(f'GrowMaskWithBlur.expand_mask has {hits} `output = output / output.max()` statements, expected 1; upstream changed shape and the 0/0 guard must be revisited')
+    return tree
 
 def _w3_m_mod():
     """Upstream's `mask_nodes`, executed with its refused preamble elided.
@@ -477,6 +594,14 @@ def _w3_m_mod():
         if isinstance(stmt, (_w3_m_ast.ClassDef, _w3_m_ast.FunctionDef, _w3_m_ast.AsyncFunctionDef)):
             kept.append(stmt)
             continue
+        # fix-r1/L6 (P08): also drop every absolute import FROM the host
+        # surface by module, not only by bound name. `from comfy.utils import
+        # common_upscale` and `from nodes import MAX_RESOLUTION` bind names the
+        # old filter did not list, survived, and raised ImportError from the
+        # guest import guard on the first node body that called _mod().
+        if _w3_m_host_import(stmt):
+            dropped |= _w3_m_bound(stmt) & refused
+            continue
         touched = (_w3_m_bound(stmt) | _w3_m_read(stmt)) & refused
         if touched:
             dropped |= touched
@@ -485,10 +610,14 @@ def _w3_m_mod():
     if dropped != refused:
         raise RuntimeError(f"{', '.join(sorted(refused - dropped))} is no longer reached at the top of {path}; this loader exists only to elide the host surface it names, so upstream changed shape and it must be revisited")
     tree.body = kept
+    tree = _w3_m_ast.fix_missing_locations(_w3_m_guard_zero_peak(_w3_m_LocalMorphology().visit(tree)))
     name = f'{package}.mask_nodes_without_host_surface'
     module = _w3_m_types.ModuleType(name)
     module.__file__ = path
     module.__package__ = package
+    # Guest-local stand-ins for the host names the dropped imports provided.
+    from ._tensor_utils import common_upscale as _w3_m_common_upscale
+    module.__dict__.update({'common_upscale': _w3_m_common_upscale, 'MAX_RESOLUTION': _w3_m_MAX_RESOLUTION, '_w3_m_morphology': _w3_m_morphology})
     _w3_m_sys.modules[name] = module
     try:
         exec(compile(tree, path, 'exec'), module.__dict__)
@@ -593,7 +722,8 @@ class DrawMaskOnImageSecure(_w3_m_io.ComfyNode):
 
 class GetMaskSizeAndCountSecure(_w3_m_io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ('raw',)
+    # rca-r2 P05 sweep: metadata only, answered on the host (`inspect`, no `raw`).
+    SDK_PERMISSIONS = ('inspect',)
 
     @classmethod
     def define_schema(cls) -> _w3_m_io.Schema:
@@ -601,9 +731,13 @@ class GetMaskSizeAndCountSecure(_w3_m_io.ComfyNode):
 
     @classmethod
     async def execute(cls, mask) -> _w3_m_io.NodeOutput:
-        returned = _w3_m_mod().GetMaskSizeAndCount().getsize(await mask.raw())
-        passed_through, width, height, count = returned['result']
-        return _w3_m_io.NodeOutput(await _w3_m_sdk.MaskRef._from_raw(passed_through), width, height, count, ui=returned['ui'])
+        # rca-r2 P05 sweep (supersedes fix-r1/L6, which still read the whole
+        # mask for its shape): MaskRef has no typed shape op, so the host's
+        # `describe()` answers it; upstream runs on a shape-only stand-in and
+        # the input ref itself is returned, as V1 returns its input tensor.
+        returned = _w3_m_mod().GetMaskSizeAndCount().getsize(_w3_m_ShapeOnly(await _w3_m_described_shape(mask)))
+        _shape_only, width, height, count = returned['result']
+        return _w3_m_io.NodeOutput(mask, width, height, count, ui=returned['ui'])
 
 class GrowMaskWithBlurSecure(_w3_m_io.ComfyNode):
     SDK_REFS = True
@@ -618,6 +752,13 @@ class GrowMaskWithBlurSecure(_w3_m_io.ComfyNode):
         masks = await mask.raw()
         expand_mask = _w3_m_placed('GrowMaskWithBlur', 'expand_mask', masks.device)
         out = expand_mask(None, masks, expand, tapered_corners, flip_input, blur_radius, incremental_expandrate, lerp_alpha, decay_factor, **_w3_m_given(fill_holes=fill_holes))
+        # rca-r2: never publish NaN. After the 0/0 guard a NaN can only come
+        # from a non-finite input mask; refuse it by name instead of passing it
+        # on. This goes beyond V1-plus-guard (which would still publish it): an
+        # accepted difference of its own. NaN propagates through max(), so no
+        # full-size boolean tensor is built (review I2).
+        if out[0].numel() and bool(out[0].max().isnan()):
+            raise ValueError('GrowMaskWithBlur: the input mask contains NaN, so the grown mask would too; refusing to publish a non-finite MASK')
         return _w3_m_io.NodeOutput(await _w3_m_sdk.MaskRef._from_raw(out[0]), await _w3_m_sdk.MaskRef._from_raw(out[1]))
 import ast as _w3_n_ast
 import pathlib as _w3_n_pathlib
@@ -681,10 +822,37 @@ def _w3_n_compiled(class_name: str, method: str):
             if not (isinstance(item, _w3_n_ast.FunctionDef) and item.name == method):
                 continue
             source = _w3_n_ast.get_source_segment(text, item)
-            code = compile(_w3_n_ast.Module(body=[_w3_n_ast.parse(source).body[0]], type_ignores=[]), f'<kjnodes.{class_name}.{method}>', 'exec')
+            function = _w3_n_ast.parse(source).body[0]
+            fix = _w3_n_FIXES.get(key)
+            if fix is not None:
+                function = _w3_n_ast.fix_missing_locations(fix(function))
+            code = compile(_w3_n_ast.Module(body=[function], type_ignores=[]), f'<kjnodes.{class_name}.{method}>', 'exec')
             _w3_n_CODE[key] = code
             return code
     raise RuntimeError(f'{class_name}.{method} not found in upstream {_w3_n_SOURCE} — the pack changed shape and this conversion must be revisited')
+
+def _w3_n_zero_fill_no_components(function):
+    """rca-r2 (MIKE MASK audit, item 2): V1 defect fixed, recorded as an
+    accepted difference.
+
+    With no component above the size thresholds, upstream `SeparateMasks.separate`
+    returns `torch.empty((1, 64, 64), ...)`: uninitialised memory published as a
+    MASK. The one `torch.empty` call becomes `torch.zeros` with the same
+    arguments (shape, dtype float32, device): an empty mask. Exactly one such
+    call must exist, or upstream changed and this refuses rather than guess.
+    """
+    hits = 0
+    for node in _w3_n_ast.walk(function):
+        if (isinstance(node, _w3_n_ast.Call) and isinstance(node.func, _w3_n_ast.Attribute)
+                and node.func.attr == 'empty' and isinstance(node.func.value, _w3_n_ast.Name)
+                and node.func.value.id == 'torch'):
+            node.func.attr = 'zeros'
+            hits += 1
+    if hits != 1:
+        raise RuntimeError(f'SeparateMasks.separate has {hits} torch.empty calls, expected 1; upstream changed shape and the no-component fill must be revisited')
+    return function
+
+_w3_n_FIXES = {('SeparateMasks', 'separate'): _w3_n_zero_fill_no_components}
 
 def _w3_n_upstream(class_name: str, method: str):
     """Upstream's method, bound to `_namespace()`.
