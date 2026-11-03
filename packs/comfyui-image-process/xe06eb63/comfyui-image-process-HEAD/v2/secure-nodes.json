@@ -1,0 +1,2953 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "AchromaticStabilizer": {
+      "class": "AchromaticStabilizer",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Fix achromatic color instability across the image.Pixels with near-zero saturation have their hue snapped to 0 and their saturation zeroed out, then optionally smoothed.",
+          "display_name": "Achromatic Stabilizer",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": true,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "AchromaticStabilizer",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Image",
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to be processed."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Mask",
+              "extra_dict": {},
+              "id": "mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel mask.\nIf provided and preserve_alpha is True, this mask will be used as the alpha channel."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Smooth Transitions",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "smooth",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to apply a smoothing filter to the corrected areas.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.08,
+              "display_mode": null,
+              "display_name": "Saturation Threshold",
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "sat_threshold",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": 0.01,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "The saturation level below which pixels are considered artifacts.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 3,
+              "display_mode": null,
+              "display_name": "Smoothing Kernel Size",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "kernel_size",
+              "lazy": null,
+              "max": 15,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The size of the smoothing kernel to apply.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Preserve Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "preserve_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to preserve the alpha channel during processing.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "OUTPUT",
+              "id": "output",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "ALPHA",
+              "id": "mask",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "ColorPatchFlatten": {
+      "class": "ColorPatchFlatten",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Flatten HSV values across a color patch within a given tolerance.",
+          "display_name": "Color Patch Flatten",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": true,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "ColorPatchFlatten",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Image",
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to be processed."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Mask",
+              "extra_dict": {},
+              "id": "mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel mask."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.05,
+              "display_mode": null,
+              "display_name": "Flatten Tolerance",
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "flatten_tolerance",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": 0.01,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "How different colors can be conisdered as a same color patch.\nLarger number means weaker flattening effect.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "H",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "flatten_hue",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "S",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "flatten_saturation",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "V",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "flatten_brightness",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": null,
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "OUTPUT",
+              "id": "output",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "ALPHA",
+              "id": "mask",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "ColorPatchMerge": {
+      "class": "ColorPatchMerge",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Groups similar colors and replaces them with their local averages.",
+          "display_name": "Color Patch Merge",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": true,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "ColorPatchMerge",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Image",
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The image to be processed."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Mask",
+              "extra_dict": {},
+              "id": "mask",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel mask."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.05,
+              "display_mode": null,
+              "display_name": "Merge Tolerance",
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "merge_tolerance",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": false,
+              "rawLink": null,
+              "round": 0.01,
+              "socketless": null,
+              "step": 0.01,
+              "tooltip": "How different colors can be to stay in the same group.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 3,
+              "display_mode": null,
+              "display_name": "Neighborhood",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "neighborhood",
+              "lazy": null,
+              "max": 31,
+              "min": 3,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The neighborhood size (diameter) for the bilateral filter.\nUsed for 'Smooth' merging solution.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 20,
+              "display_mode": null,
+              "display_name": "Minimal Area",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "min_area",
+              "lazy": null,
+              "max": 1024,
+              "min": 2,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "The minimum area size for color patches.\nUsed for 'Unify' merging solution.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 2,
+              "display_mode": null,
+              "display_name": "Iterations",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "iterations",
+              "lazy": null,
+              "max": 16,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Number of growth iterations for color patches.\nMore iterations result in larger, more uniform color regions.\nUsed for 'Unify' merging solution.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Use Lab Colors",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "use_lab",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Convert RGB space to Lab colors.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "Smooth",
+              "display_name": "Merge Solution",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "merge_solution",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "Smooth",
+                "Unify"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "How to handle the color merging.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "OUTPUT",
+              "id": "output",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "ALPHA",
+              "id": "mask",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "ICOPacker": {
+      "class": "ICOPacker",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": true,
+          "category": "Wakaura",
+          "description": "Pack multiple images into a single ICO file.\nUse the node menu to add image/mask pairs per ICO size.",
+          "display_name": "ICO Packer",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "ICOPacker",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Crop Images",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_images",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, images (and masks) larger than the slot size are cropped to that size before packing.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "center",
+              "display_name": "Reference Point",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "crop_reference_point",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "center",
+                "top-left"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "When Crop Images is enabled, choose the anchor for the crop window.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "ico_packer",
+              "id": "ico_packer",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "ICO_PACKER",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "LoadICCProfile": {
+      "class": "LoadICCProfile",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "",
+          "display_name": "Load ICC Profile",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "LoadICCProfile",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": null,
+              "display_name": "Profile",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "profile",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "ICC_PROFILE",
+              "id": "icc_profile",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "ICC_PROFILE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "display_name": "ICC_INFO",
+              "id": "icc_profile_info",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAVIF": {
+      "class": "SaveImageAVIF",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as AVIF files.",
+          "display_name": "Save Image (AVIF)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAVIF",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedAVIF": {
+      "class": "SaveImageAdvancedAVIF",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as AVIF files.",
+          "display_name": "Save Image Advanced (AVIF)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedAVIF",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Clip the image with the provided mask.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 300,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "DPI",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dpi",
+              "lazy": null,
+              "max": 600,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The DPI to use when saving images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 80,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "Quality",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "quality",
+              "lazy": null,
+              "max": 100,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The quality of the saved images (0-100).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 6,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "Speed",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "speed",
+              "lazy": null,
+              "max": 10,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "AVIF encoding speed (0-10). 0 is slowest/best, 10 is fastest.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedBMP": {
+      "class": "SaveImageAdvancedBMP",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as BMP files.",
+          "display_name": "Save Image Advanced (BMP)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedBMP",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "24bit",
+              "display_name": "Bit Depth",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "bit_depth",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "24bit",
+                "32bit"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The bit depth to use when saving images as BMP.\n32bit supports alpha channel.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Clip the image with the provided mask.\nPlease note this only works on 32bit bit depth.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 300,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "DPI",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dpi",
+              "lazy": null,
+              "max": 600,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The DPI to use when saving images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedCustom": {
+      "class": "SaveImageAdvancedCustom",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves image to disk with additional options for metadata and compression.",
+          "display_name": "Save Image Advanced",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedCustom",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "ICC Profile",
+              "extra_dict": {},
+              "id": "icc_profile",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional ICC color profile to embed into the saved images."
+            },
+            "io_type": "ICC_PROFILE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Disable Metadata",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "disable_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to include the metadata to the saved image.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Clip the image with the provided mask.\nPlease note this does not work on JPG format.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 300,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "DPI",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dpi",
+              "lazy": null,
+              "max": 600,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The DPI to use when saving images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 4,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "Compression Level",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "compress_level",
+              "lazy": null,
+              "max": 9,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The compression level to use when saving images as PNG (0-9).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 90,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "Quality",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "quality",
+              "lazy": null,
+              "max": 100,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The quality to use when saving images as JPEG or WebP (1-100).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "none",
+              "display_name": "TIFF Compression",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiff_compression",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "none",
+                "tiff_lzw",
+                "tiff_deflate",
+                "tiff_adobe_deflate",
+                "packbits",
+                "jpeg",
+                "tiff_jpeg",
+                "tiff_ccitt"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The compression to use when saving images as TIFF.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "TGA RLE Compression",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tga_rle",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use RLE compression when saving as TGA.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "png",
+              "display_name": "Format",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "format",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "png",
+                "jpg",
+                "webp",
+                "tiff",
+                "bmp",
+                "tga",
+                "avif"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The format to save the image in.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedICO": {
+      "class": "SaveImageAdvancedICO",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Save images from an ICO Packer node to disk as a single bundled ICO file.\nEach packed size must match its image dimensions (e.g. 32\u00d732 for size 32).\nInvalid images are optionally saved as fallback PNGs.",
+          "display_name": "Save Image Advanced (ICO)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedICO",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "ICO Packer",
+              "extra_dict": {},
+              "id": "ico_packer",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Connect an ICO Packer node output.\nContains per-size images and optional masks."
+            },
+            "io_type": "ICO_PACKER",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "8bit",
+              "display_name": "Color Depth",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "color_depth",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "8bit",
+                "16bit",
+                "32bit"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The color depth of the images.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "none",
+              "display_name": "Compression",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "compression",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "none",
+                "RLE",
+                "ZIP"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The compression of the images.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to join the alpha channel of the images.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel of the images.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Sort by Size",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "sort_by_size",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, the images will be sorted by size before being bundled into the ICO file.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Save Invalid as PNG",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_invalid_as_png",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, images that fail ICO validation are saved as\nindividual PNG files with an `_INVALID` suffix.\nWhen disabled, invalid images are silently discarded.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedJPG": {
+      "class": "SaveImageAdvancedJPG",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as JPG files.",
+          "display_name": "Save Image Advanced (JPG)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedJPG",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Disable Metadata",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "disable_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Disable embedding EXIF data into the saved images.\nEmbed into `UserComment`.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 300,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "DPI",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dpi",
+              "lazy": null,
+              "max": 600,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The DPI to use when saving images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 95,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "Quality",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "quality",
+              "lazy": null,
+              "max": 100,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The quality of the saved images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedTGA": {
+      "class": "SaveImageAdvancedTGA",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as TGA files.",
+          "display_name": "Save Image Advanced (TGA)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedTGA",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "RLE Compression",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "rle",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to use RLE compression when saving as TGA.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Clip the image with the provided mask.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageAdvancedTIFF": {
+      "class": "SaveImageAdvancedTIFF",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as TIFF files.",
+          "display_name": "Save Image Advanced (TIFF)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageAdvancedTIFF",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Disable Metadata",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "disable_metadata",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Disable embedding EXIF data into the saved images.\nEmbed into `UserComment`.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Join Alpha Channel",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "join_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Clip the image with the provided mask.\nPlease note this does not work on JPG format.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Invert Alpha",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "invert_alpha",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to invert the alpha channel before saving.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 300,
+              "display_mode": {
+                "$type": "enum",
+                "enum": "NumberDisplay",
+                "name": "slider"
+              },
+              "display_name": "DPI",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dpi",
+              "lazy": null,
+              "max": 600,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": null,
+              "tooltip": "The DPI to use when saving images.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "none",
+              "display_name": "Compression",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tiff_compression",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "none",
+                "tiff_lzw",
+                "tiff_deflate",
+                "tiff_adobe_deflate",
+                "packbits",
+                "jpeg",
+                "tiff_jpeg",
+                "tiff_ccitt"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "The compression to use when saving images as TIFF.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": "Save to Input Folder",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_to_input_folder",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Whether to sync the image to the input folder.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageBMP": {
+      "class": "SaveImageBMP",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "inspect",
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as BMP files.",
+          "display_name": "Save Image (BMP)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageBMP",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true
+    },
+    "SaveImageICO": {
+      "class": "SaveImageICO",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Save the image batch to disk as a single bundled ICO file.\nImages must be square and one of the standard ICO sizes\n(16, 24, 32, 48, 64, 128, 256).\nInvalid images are optionally saved as fallback PNGs.",
+          "display_name": "Save Image (ICO)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageICO",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be bundled into a single ICO file.\nEach image must be square and match a valid ICO size\n(16, 24, 32, 48, 64, 128, or 256 px)."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": true,
+              "display_name": "Save Invalid as PNG",
+              "extra_dict": {},
+              "force_input": null,
+              "id": "save_invalid_as_png",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "When enabled, images that fail ICO validation are saved as\nindividual PNG files with an `_INVALID` suffix.\nWhen disabled, invalid images are silently discarded.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageJPG": {
+      "class": "SaveImageJPG",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [
+        "inspect",
+        "output"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as JPG files.",
+          "display_name": "Save Image (JPG)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageJPG",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": true,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageTGA": {
+      "class": "SaveImageTGA",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as TGA files.",
+          "display_name": "Save Image (TGA)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageTGA",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    },
+    "SaveImageTIFF": {
+      "class": "SaveImageTIFF",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "_secure_nodes",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "Wakaura",
+          "description": "Saves images to disk as TIFF files.",
+          "display_name": "Save Image (TIFF)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": true,
+          "loop_boundary": null,
+          "node_id": "SaveImageTIFF",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [
+          "prompt",
+          "extra_pnginfo"
+        ],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Images",
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "The images to be saved."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": "Alpha Masks",
+              "extra_dict": {},
+              "id": "masks",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional alpha channel masks to clip the saved images. If provided, these masks will be applied to the corresponding images before saving."
+            },
+            "io_type": "MASK",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": "ComfyUI",
+              "display_name": "Filename Prefix",
+              "dynamic_prompts": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "filename_prefix",
+              "lazy": null,
+              "multiline": false,
+              "optional": false,
+              "placeholder": null,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+              "widget_type": null
+            },
+            "io_type": "STRING",
+            "kind": "standard"
+          }
+        ],
+        "outputs": []
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls"
+        ],
+        "kwargs": true
+      }
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  },
+  "web_directory": "web"
+}
