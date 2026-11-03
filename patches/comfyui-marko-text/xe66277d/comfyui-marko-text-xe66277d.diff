@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,118 @@
 +# Marko Text â€” Secure Nodes V2
 +
 +This source conversion is pinned to
@@ -109,6 +109,16 @@
 +adoption. `ShowText` attribution is limited to this exact stamped upstream
 +revision. The four historical stamped workflows did not survive the retained
 +content-erasure screen, so no current corpus-unlock claim follows.
++
++## Repair: no Core node id is re-declared (MERVYN, 2026-11-03)
++- ComfyUI Core registers `ReplaceText` (comfy_extras). Core's own loader skips a custom node whose id is already a Core id
++  (`nodes.load_custom_node`: `if name not in ignore`), so on V1 that id is always served by Core and this pack's
++  version never runs. Secure Nodes stage composition is first-owner-wins and refuses a pack that re-declares a Core
++  id, so the whole pack was skipped.
++- v2 no longer registers `ReplaceText`: the entry is removed from the node mappings and from `secure-nodes.json`. Saved
++  workflows that use `ReplaceText` get Core's node, as on V1. Every other node is unchanged.
++- `tests/test_no_core_id_clash.py` loads Core's node set as Core does at startup and checks that the manifest declares
++  none of its ids.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,42 +1,3 @@
@@ -4477,7 +4487,7 @@
 +});
 --- /dev/null
 +++ b/v2/nodes.py
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,67 @@
 +"""Public V2 wrappers over the unchanged four original string computations."""
 +from comfy_api.latest import io
 +from . import _algorithms
@@ -4544,7 +4554,6 @@
 +    'ShowText': ShowText,
 +    'CombinationText': CombinationText,
 +    'PlaceholderText': PlaceholderText,
-+    'ReplaceText': ReplaceText,
 +}
 --- /dev/null
 +++ b/v2/pyproject.toml
@@ -4553,7 +4562,7 @@
 +requires-python = ">=3.13,<3.14"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,306 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "runtime": {
@@ -4785,117 +4794,6 @@
 +        "hidden": []
 +      }
 +    },
-+    "ReplaceText": {
-+      "module": "nodes",
-+      "class": "ReplaceText",
-+      "sdk_refs": true,
-+      "permissions": [],
-+      "methods": {
-+        "validate_inputs": false,
-+        "fingerprint_inputs": false,
-+        "check_lazy_status": false
-+      },
-+      "schema": {
-+        "attrs": {
-+          "node_id": "ReplaceText",
-+          "display_name": null,
-+          "category": "MK/text",
-+          "description": "",
-+          "search_aliases": [],
-+          "is_input_list": false,
-+          "is_output_node": false,
-+          "is_deprecated": false,
-+          "is_experimental": false,
-+          "is_dev_only": false,
-+          "is_api_node": false,
-+          "price_badge": null,
-+          "not_idempotent": false,
-+          "enable_expand": false,
-+          "accept_all_inputs": false,
-+          "essentials_category": null,
-+          "has_intermediate_output": false,
-+          "loop_boundary": null
-+        },
-+        "inputs": [
-+          {
-+            "kind": "standard",
-+            "io_type": "STRING",
-+            "attrs": {
-+              "id": "text",
-+              "display_name": null,
-+              "optional": false,
-+              "tooltip": null,
-+              "lazy": null,
-+              "extra_dict": {},
-+              "rawLink": null,
-+              "advanced": null,
-+              "default": null,
-+              "socketless": null,
-+              "widget_type": null,
-+              "force_input": null,
-+              "multiline": true,
-+              "placeholder": null,
-+              "dynamic_prompts": null
-+            }
-+          },
-+          {
-+            "kind": "standard",
-+            "io_type": "STRING",
-+            "attrs": {
-+              "id": "old_string",
-+              "display_name": null,
-+              "optional": false,
-+              "tooltip": null,
-+              "lazy": null,
-+              "extra_dict": {},
-+              "rawLink": null,
-+              "advanced": null,
-+              "default": "",
-+              "socketless": null,
-+              "widget_type": null,
-+              "force_input": null,
-+              "multiline": false,
-+              "placeholder": null,
-+              "dynamic_prompts": null
-+            }
-+          },
-+          {
-+            "kind": "standard",
-+            "io_type": "STRING",
-+            "attrs": {
-+              "id": "new_string",
-+              "display_name": null,
-+              "optional": false,
-+              "tooltip": null,
-+              "lazy": null,
-+              "extra_dict": {},
-+              "rawLink": null,
-+              "advanced": null,
-+              "default": "",
-+              "socketless": null,
-+              "widget_type": null,
-+              "force_input": null,
-+              "multiline": false,
-+              "placeholder": null,
-+              "dynamic_prompts": null
-+            }
-+          }
-+        ],
-+        "outputs": [
-+          {
-+            "kind": "standard",
-+            "io_type": "STRING",
-+            "attrs": {
-+              "id": "_0_STRING_",
-+              "display_name": "text",
-+              "tooltip": null,
-+              "is_output_list": false
-+            }
-+          }
-+        ],
-+        "hidden": []
-+      }
-+    },
 +    "ShowText": {
 +      "module": "nodes",
 +      "class": "ShowText",
@@ -4971,3 +4869,65 @@
 +  },
 +  "web_directory": "js"
 +}
+--- /dev/null
++++ b/v2/tests/test_no_core_id_clash.py
+@@ -0,0 +1,59 @@
++"""The pack registers no node id that ComfyUI Core already owns (gate test).
++
++    run_in_gate.sh <pack root (pristine + v2/)> <tests dir holding this file> <results dir> test_no_core_id_clash.py
++
++Core's own loader skips a custom node whose id is already a Core id (nodes.load_custom_node: `if name not in ignore`,
++with ignore = the base node names taken after the extra and API nodes load). So on V1 such an id is always served by
++Core. Secure Nodes stage composition is first-owner-wins and refuses the whole pack on a duplicate. This test loads
++Core's node set the way Core does at startup (nodes.py, comfy_extras, API nodes) and checks that the pack's manifest
++declares none of its ids. Writes /results/core_id_clash.json; exits 1 on a clash.
++"""
++import asyncio
++import json
++import sys
++from pathlib import Path
++
++sys.path[:0] = ["/core"]
++from comfy.cli_args import args as _cli_args  # noqa: E402
++
++_cli_args.cpu = True
++import nodes  # noqa: E402
++
++
++def pack_root(root=Path("/pack")):
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++def core_ids():
++    # The same order Core uses before loading custom nodes: built-ins, then extras and API nodes.
++    try:
++        result = nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=True)
++        if asyncio.iscoroutine(result):
++            asyncio.run(result)
++    except Exception as error:  # some extras need write access to /core; the ids that loaded still count
++        print(f"note: init_extra_nodes raised {type(error).__name__}: {error}")
++    return set(nodes.NODE_CLASS_MAPPINGS)
++
++
++def main():
++    out = Path("/results")
++    out.mkdir(parents=True, exist_ok=True)
++    manifest = json.loads((pack_root() / "v2" / "secure-nodes.json").read_text())
++    ids = set(manifest["nodes"])
++    core = core_ids()
++    clashes = sorted(ids & core)
++    control = "KSampler" in core  # negative control: a known Core id must be in the loaded set
++    report = {"pack_ids": len(ids), "core_ids": len(core), "clashes": clashes, "control_core_has_KSampler": control,
++              "passed": not clashes and control}
++    (out / "core_id_clash.json").write_text(json.dumps(report, indent=1))
++    print(json.dumps(report, indent=1))
++    return 0 if report["passed"] else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())

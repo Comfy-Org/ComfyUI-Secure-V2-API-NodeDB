@@ -64,5 +64,4 @@ NODE_CLASS_MAPPINGS = {
     'ShowText': ShowText,
     'CombinationText': CombinationText,
     'PlaceholderText': PlaceholderText,
-    'ReplaceText': ReplaceText,
 }

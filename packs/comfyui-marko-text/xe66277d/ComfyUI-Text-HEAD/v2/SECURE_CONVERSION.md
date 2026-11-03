@@ -106,3 +106,13 @@ service behavior, public queue execution, frontend acceptance or registry
 adoption. `ShowText` attribution is limited to this exact stamped upstream
 revision. The four historical stamped workflows did not survive the retained
 content-erasure screen, so no current corpus-unlock claim follows.
+
+## Repair: no Core node id is re-declared (MERVYN, 2026-11-03)
+- ComfyUI Core registers `ReplaceText` (comfy_extras). Core's own loader skips a custom node whose id is already a Core id
+  (`nodes.load_custom_node`: `if name not in ignore`), so on V1 that id is always served by Core and this pack's
+  version never runs. Secure Nodes stage composition is first-owner-wins and refuses a pack that re-declares a Core
+  id, so the whole pack was skipped.
+- v2 no longer registers `ReplaceText`: the entry is removed from the node mappings and from `secure-nodes.json`. Saved
+  workflows that use `ReplaceText` get Core's node, as on V1. Every other node is unchanged.
+- `tests/test_no_core_id_clash.py` loads Core's node set as Core does at startup and checks that the manifest declares
+  none of its ids.
