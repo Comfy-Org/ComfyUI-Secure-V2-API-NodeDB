@@ -79,3 +79,11 @@ in an isolated module realm and through the production opaque
 `sandbox="allow-scripts"` host, including exact hidden-JSON serialization and
 `loadGraphData` restoration. The checked patch pair is regenerated and applied
 to a fresh pristine copy before release.
+
+## Repair: manifest class bindings (MERVYN, 2026-11-03)
+- The guest loads each manifest row by its `class` name on its module, and the provisioning prewarm probe asserts
+  `hasattr(module, class)`. `_make_prompt_node` names its classes `<id>Secure` (the names `secure-nodes.json`
+  records), but they were bound only as `CreaPrompt`, `CreaPrompt_1` … `CreaPrompt_4`. The probe failed for those 5
+  rows, which fails provisioning for the whole pack.
+- `creaprompt.py` now also binds each class under its recorded name. Behaviour and the manifest are unchanged.
+- `tests/test_manifest_class_bindings.py` checks every row as the guest loads it (bare package, no `__init__`).

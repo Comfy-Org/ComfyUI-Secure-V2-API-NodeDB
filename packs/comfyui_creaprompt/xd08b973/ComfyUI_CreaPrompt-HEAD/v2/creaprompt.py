@@ -407,6 +407,14 @@ CreaPrompt_4 = _make_prompt_node(
     "CreaPrompt_4", "CreaPrompt node with weight", "csv+weight", weighted=True
 )
 
+# The guest loads each manifest row by its "class" name on this module (the provisioning prewarm probe asserts
+# hasattr(module, class)). _make_prompt_node names its classes "<id>Secure", so bind each one under that name too.
+CreaPromptSecure = CreaPrompt
+CreaPrompt_1Secure = CreaPrompt_1
+CreaPrompt_2Secure = CreaPrompt_2
+CreaPrompt_3Secure = CreaPrompt_3
+CreaPrompt_4Secure = CreaPrompt_4
+
 NODE_CLASS_MAPPINGS = {
     "CreaPrompt_0": CreaPromptDynamic,
     "CreaPrompt": CreaPrompt,

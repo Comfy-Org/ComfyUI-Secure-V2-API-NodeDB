@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,89 @@
 +# Secure Nodes V2 conversion ledger
 +
 +## Source identity
@@ -82,6 +82,14 @@
 +`sandbox="allow-scripts"` host, including exact hidden-JSON serialization and
 +`loadGraphData` restoration. The checked patch pair is regenerated and applied
 +to a fresh pristine copy before release.
++
++## Repair: manifest class bindings (MERVYN, 2026-11-03)
++- The guest loads each manifest row by its `class` name on its module, and the provisioning prewarm probe asserts
++  `hasattr(module, class)`. `_make_prompt_node` names its classes `<id>Secure` (the names `secure-nodes.json`
++  records), but they were bound only as `CreaPrompt`, `CreaPrompt_1` … `CreaPrompt_4`. The probe failed for those 5
++  rows, which fails provisioning for the whole pack.
++- `creaprompt.py` now also binds each class under its recorded name. Behaviour and the manifest are unchanged.
++- `tests/test_manifest_class_bindings.py` checks every row as the guest loads it (bare package, no `__init__`).
 --- /dev/null
 +++ b/v2/comfy-api.d.ts
 @@ -0,0 +1,3548 @@
@@ -4578,7 +4586,7 @@
 +providers: Providers = ...
 --- a/creaprompt.py
 +++ b/v2/creaprompt.py
-@@ -1,1144 +1,425 @@
+@@ -1,1144 +1,433 @@
 -# ComfyUI version of CreaPrompt by Jicé Deb 
 +"""Secure CreaPrompt nodes backed only by the pack's pinned prompt catalogues."""
 +from __future__ import annotations
@@ -6106,6 +6114,14 @@
 +CreaPrompt_4 = _make_prompt_node(
 +    "CreaPrompt_4", "CreaPrompt node with weight", "csv+weight", weighted=True
 +)
++
++# The guest loads each manifest row by its "class" name on this module (the provisioning prewarm probe asserts
++# hasattr(module, class)). _make_prompt_node names its classes "<id>Secure", so bind each one under that name too.
++CreaPromptSecure = CreaPrompt
++CreaPrompt_1Secure = CreaPrompt_1
++CreaPrompt_2Secure = CreaPrompt_2
++CreaPrompt_3Secure = CreaPrompt_3
++CreaPrompt_4Secure = CreaPrompt_4
 +
  NODE_CLASS_MAPPINGS = {
 -    "CreaPrompt_0": CreaPrompt_0,
@@ -52659,3 +52675,76 @@
 +hooks.removed(node);
 +hooks.removed(restored);
 +console.log('creaprompt frontend harness: PASS');
+--- /dev/null
++++ b/v2/tests/test_manifest_class_bindings.py
+@@ -0,0 +1,70 @@
++"""Every manifest row's class is a module attribute under the name the manifest records (gate test).
++
++    run_in_gate.sh <pack root (pristine + v2/)> <.../v2/tests> <results dir> test_manifest_class_bindings.py
++
++The production guest imports a row's module from v2/ as a bare namespace package (v2/__init__.py does not run) and
++looks the class up by the manifest's "class" name. The provisioning prewarm probe asserts exactly that:
++    assert all(hasattr(m, c) for e, m in zip(entries, modules) for c in e['classes'])
++This test reproduces it for every row, checks the attribute's __name__, and adds a negative control (an unbound
++name must be reported). Writes /results/class_bindings.json; exits 1 on any failure.
++"""
++import importlib
++import json
++import sys
++import types
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay"]
++from comfy.cli_args import args as _cli_args  # noqa: E402
++
++_cli_args.cpu = True
++
++
++def pack_root(root=Path("/pack")):
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++PACK = pack_root()
++V2 = PACK / "v2"
++RESULTS = Path("/results")
++PKG = "fi_v2_bare"
++
++
++def bare_package():
++    # The guest's view: a namespace package over v2/, so v2/__init__.py does not run.
++    module = types.ModuleType(PKG)
++    module.__path__ = [str(V2)]
++    sys.modules[PKG] = module
++    return module
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    manifest = json.loads((V2 / "secure-nodes.json").read_text())
++    bare_package()
++    rows, failed = [], []
++    for node_id, row in sorted(manifest["nodes"].items()):
++        module = importlib.import_module(f"{PKG}.{row['module']}")
++        cls = getattr(module, row["class"], None)
++        ok = cls is not None and getattr(cls, "__name__", None) == row["class"]
++        rows.append({"node_id": node_id, "module": row["module"], "class": row["class"], "ok": ok})
++        if not ok:
++            failed.append(node_id)
++    # Negative control: a class name the module does not bind must be caught.
++    first = next(iter(manifest["nodes"].values()))
++    control_module = importlib.import_module(f"{PKG}.{first['module']}")
++    control_caught = not hasattr(control_module, first["class"] + "_DoesNotExist")
++    report = {"rows": len(rows), "failed": failed, "negative_control_caught": control_caught,
++              "passed": not failed and control_caught, "details": rows}
++    (RESULTS / "class_bindings.json").write_text(json.dumps(report, indent=1))
++    print(json.dumps({k: report[k] for k in ("rows", "failed", "negative_control_caught", "passed")}, indent=1))
++    return 0 if report["passed"] else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
