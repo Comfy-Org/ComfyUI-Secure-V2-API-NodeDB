@@ -45,7 +45,8 @@ for name, setter in (('output', folder_paths.set_output_directory), ('temp', fol
                      ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
     (OUT / name).mkdir(parents=True, exist_ok=True)
     setter(str(OUT / name))
-for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'})):
+for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
+                  ('upscale_models', {'.safetensors'})):
     folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 CWD = OUT / 'cwd'
 CWD.mkdir(parents=True, exist_ok=True)
@@ -135,9 +136,13 @@ class StandinCLIP:
 
 
 class StandinVAE:
-    """Weightless VAE: the SDK recognises a VAE by encode + decode."""
+    """Weightless VAE: the SDK recognises a VAE by encode + decode. encode() is a deterministic, shape- and
+    pixel-sensitive stand-in (8x8 mean pool of the RGB channels plus their channel mean), so a different crop,
+    channel count or pixel value shows up in the latent."""
     def encode(self, pixels):
-        return pixels
+        x = pixels.movedim(-1, 1).float()
+        pooled = torch.nn.functional.avg_pool2d(x, 8)
+        return torch.cat([pooled, pooled.mean(dim=1, keepdim=True)], dim=1)
 
     def decode(self, samples):
         return samples
@@ -218,6 +223,34 @@ try:
 except Exception as error:  # recorded, never hidden
     loaded, LOAD_ERROR = False, f'{type(error).__name__}: {error}'
 
+# ---- the live host's catalogue menus, V2 side
+# The live host builds each V2 node's schema from the manifest and then fills its model and input menus with the
+# host catalogue (overlay comfy_secure_nodes/packdb.py: define_schema -> _core_model_menu_choices ->
+# _core_input_menu_choices); Easy-Use's frozen model combos are empty sentinel lists until then. The in-process
+# loader skips that host step, so the harness applies the overlay's own two functions to every V2 node's schema.
+HOST_MENUS = None
+if SIDE == 'v2' and loaded:
+    sys.path.insert(0, '/overlay')
+    try:
+        from comfy_secure_nodes import packdb as overlay_packdb
+    except Exception as error:  # recorded, never hidden
+        HOST_MENUS = f'unavailable: {type(error).__name__}: {error}'
+    else:
+        wrapped = 0
+        for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
+            if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
+                continue
+            base = cls.__dict__['define_schema'].__func__
+
+            def define_schema(klass, _base=base):
+                schema = _base(klass)
+                schema = overlay_packdb._core_model_menu_choices(schema, klass.SDK_PERMISSIONS)
+                return overlay_packdb._core_input_menu_choices(schema, klass.SDK_PERMISSIONS)
+
+            cls.define_schema = classmethod(define_schema)
+            wrapped += 1
+        HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
+
 
 class Server:
     def __init__(self):
@@ -230,7 +263,9 @@ class Server:
 
 def describe_file(path):
     data = path.read_bytes()
-    row = {'path': str(path.relative_to(OUT / 'output')), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
+    root = OUT / ('temp' if (OUT / 'temp') in path.parents else 'output')
+    row = {'path': f'{root.name}/{path.relative_to(root)}', 'sha256': hashlib.sha256(data).hexdigest(),
+           'bytes': len(data)}
     if path.suffix.lower() == '.png':
         from PIL import Image
         import numpy as np
@@ -246,7 +281,7 @@ def run_case(case):
         torch.manual_seed(20261102)
         prompt = json.loads(json.dumps(case['prompt']))
         prompt_id = f"{case['name']}-{index}"
-        before = {p for p in (OUT / 'output').rglob('*') if p.is_file()}
+        before = {p for root in ('output', 'temp') for p in (OUT / root).rglob('*') if p.is_file()}
         SENT.clear()
         valid = asyncio.run(execution.validate_prompt(prompt_id, prompt, None))
         if not valid[0]:
@@ -265,7 +300,8 @@ def run_case(case):
                                'exception_message': data.get('exception_message'),
                                'traceback_tail': ''.join(data.get('traceback') or [])[-1500:]})
         history = getattr(executor, 'history_result', None) or {}
-        files = sorted((p for p in (OUT / 'output').rglob('*') if p.is_file() and p not in before), key=str)
+        files = sorted((p for root in ('output', 'temp') for p in (OUT / root).rglob('*')
+                        if p.is_file() and p not in before), key=str)
         result['runs'].append({'success': bool(executor.success), 'errors': errors,
                                'ui': json.loads(json.dumps(history.get('outputs', {}), default=str)),
                                'files': [describe_file(p) for p in files],
@@ -276,7 +312,7 @@ def run_case(case):
 def main():
     cases = json.loads(Path(CASES).read_text())
     report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
-              'output_dir': str(OUT / 'output'),
+              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
               'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
               'routes': len(server.PromptServer.instance.routes), 'cases': []}
     if loaded:

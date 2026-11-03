@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,68 @@
 +# Secure conversion status
 +
 +Pinned upstream commit: `58e077a7435631301cf7443412515cf958e7f3d1`.
@@ -49,6 +49,26 @@
 +  Those items cannot be returned across the guest wire.
 +- `indexAnything` cannot see whether the upstream output is a list output. The original returns a one-item list
 +  output whole. V2 indexes into that single item, the same way the original treats a single value.
++
++## Repair round r2: `easy hiresFix`
++
++`easy hiresFix` now runs the selected upscale model, as the original does (`py/nodes/fix.py:61-149`). The previous
++handler resized the input image and never used the model.
++
++How it runs:
++- `models.load_upscale_model` loads the model and `UpscaleModelRef.upscale` runs it, host-side.
++- Tiling matches the original's `comfy.utils.tiled_scale` call: 192-px tiles, 8-px overlap, and the same
++  feathering and normalisation.
++- The result is clamped to [0, 1].
++- The rescale is optional. It uses the original's sizes: multiples of 8 from `enforce_mul_of_64`, the
++  `MAX_RESOLUTION` cap, and the widget width/height for "to Width/Height".
++- The pixels are cropped to multiples of 8 and their RGB channels VAE-encoded.
++- The node declares the `models` permission so that it can load the upscale model.
++
++Known differences:
++- The original's "Preview" saves temp files named `easyPreview_temp_…`. V2 previews through the platform preview,
++  which names them differently. The pixels are the same.
++- "Sender" and "Sender&Save" save the image like the original, but do not send the frontend `img-send` event.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,95 +1,12 @@
@@ -52663,7 +52683,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,5559 @@
+@@ -0,0 +1,5704 @@
 +"""Secure Nodes 2.0 implementations for the pinned Easy Use snapshot.
 +
 +The original pack mixes useful tensor/value helpers with model loading,
@@ -52696,7 +52716,7 @@
 +from . import _segformer
 +from . import _transparent_vae
 +from ._image_ops import common_upscale
-+from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
++from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported, wrap_output
 +from ._wildcard_runtime import load_catalogue as _load_wildcard_catalogue
 +from ._wildcard_runtime import matrix as _wildcard_matrix_values
 +from ._wildcard_runtime import populate as _populate_catalogue_wildcards
@@ -57693,36 +57713,181 @@
 +    return execute
 +
 +
-+async def _hires_fix(pipe=None, image=None, vae=None, rescale_after_model=True,
-+                     rescale_method="lanczos", rescale="by percentage",
-+                     percent=100, width=1024, height=1024, longer_side=1024,
-+                     crop="disabled", image_output="Hide", save_prefix="ComfyUI",
-+                     **_kwargs):
-+    source = dict(pipe or {})
-+    image = image or source.get("images")
-+    vae = vae or source.get("vae")
-+    if image is None or vae is None:
-+        raise ValueError("easy hiresFix needs an image and VAE")
-+    value = await _raw(image)
-+    if rescale_after_model:
-+        source_height, source_width = value.shape[1:3]
-+        if rescale == "by percentage":
-+            width = round(source_width * int(percent) / 100)
-+            height = round(source_height * int(percent) / 100)
++_HIRES_MAX_RESOLUTION = 16384  # nodes.MAX_RESOLUTION, which the original's percentage branch caps at
++
++
++_HIRES_TILE = 128 + 64  # py/nodes/fix.py:81-82
++
++
++_HIRES_OVERLAP = 8
++
++
++def _hires_enforce_mul_of_64(d):
++    """easySampler.enforce_mul_of_64 (py/libs/sampler.py:31-43), verbatim."""
++    d = int(d)
++    if d <= 7:
++        d = 8
++    leftover = d % 8  # 8 is the number of pixels per byte
++    if leftover != 0:  # if the number of pixels is not a multiple of 8
++        if (leftover < 4):  # if the number of pixels is less than 4
++            d -= leftover  # remove the leftover pixels
++        else:  # if the number of pixels is more than 4
++            d += 8 - leftover  # add the leftover pixels
++
++    return int(d)
++
++
++async def _hires_model_pass(upscale_model, tile):
++    """One upscale-model call on a B,C,H,W tile, run host-side (the model never enters the guest)."""
++    tile_ref = await wrap_output(tile.movedim(1, -1), "IMAGE")
++    upscaled = await upscale_model.upscale(tile_ref, per_batch=1)
++    return (await upscaled.raw()).movedim(-1, 1)
++
++
++async def _hires_tiled_scale(upscale_model, image):
++    """comfy.utils.tiled_scale(samples, model, tile 192, overlap 8, upscale_amount=model.scale), as the original calls
++    it (py/nodes/fix.py:79-87), with the same per-image fast path, tile positions, feather masks and normalisation
++    (comfy/utils.py tiled_scale_multidim). The scale is read from the first model output."""
++    pixels = await _raw(image)
++    samples = pixels.movedim(-1, -3)
++    tile, overlap = (_HIRES_TILE, _HIRES_TILE), (_HIRES_OVERLAP, _HIRES_OVERLAP)
++    output = None
++    scale = None
++    for b in range(samples.shape[0]):
++        s = samples[b:b + 1]
++        if all(s.shape[d + 2] <= tile[d] for d in range(2)):
++            whole = image if samples.shape[0] == 1 else await image.select_batch([b])
++            upscaled = await upscale_model.upscale(whole, per_batch=1)
++            ps = (await upscaled.raw()).movedim(-1, 1)
++            if output is None:
++                scale = round(ps.shape[2] / s.shape[2])
++                output = torch.empty([samples.shape[0], 3, round(scale * samples.shape[2]),
++                                      round(scale * samples.shape[3])], device="cpu")
++            output[b:b + 1] = ps.to("cpu")
++            continue
++        positions = [range(0, s.shape[d + 2] - overlap[d], tile[d] - overlap[d]) if s.shape[d + 2] > tile[d] else [0]
++                     for d in range(2)]
++        out = out_div = None
++        for it in itertools.product(*positions):
++            s_in = s
++            starts = []
++            for d in range(2):
++                pos = max(0, min(s.shape[d + 2] - overlap[d], it[d]))
++                length = min(tile[d], s.shape[d + 2] - pos)
++                s_in = s_in.narrow(d + 2, pos, length)
++                starts.append(pos)
++            ps = (await _hires_model_pass(upscale_model, s_in)).to("cpu")
++            if output is None:
++                scale = round(ps.shape[2] / s_in.shape[2])
++                output = torch.empty([samples.shape[0], 3, round(scale * samples.shape[2]),
++                                      round(scale * samples.shape[3])], device="cpu")
++            if out is None:
++                out = output[b:b + 1].zero_()
++                out_div = torch.zeros([s.shape[0], 1] + [round(scale * v) for v in s.shape[2:]], device="cpu")
++            upscaled_pos = [round(scale * pos) for pos in starts]
++            mask = torch.ones([1, 1] + list(ps.shape[2:]), device="cpu")
++            for d in range(2, 4):
++                feather = round(scale * overlap[d - 2])
++                if feather >= mask.shape[d]:
++                    continue
++                for t in range(feather):
++                    a = (t + 1) / feather
++                    mask.narrow(d, t, 1).mul_(a)
++                    mask.narrow(d, mask.shape[d] - 1 - t, 1).mul_(a)
++            o, o_d, ps_view, mask_view = out, out_div, ps, mask
++            for d in range(2):
++                length = min(ps_view.shape[d + 2], o.shape[d + 2] - upscaled_pos[d])
++                o = o.narrow(d + 2, upscaled_pos[d], length)
++                o_d = o_d.narrow(d + 2, upscaled_pos[d], length)
++                if length < ps_view.shape[d + 2]:
++                    ps_view = ps_view.narrow(d + 2, 0, length)
++                    mask_view = mask_view.narrow(d + 2, 0, length)
++            o.add_(ps_view * mask_view)
++            o_d.add_(mask_view)
++        out.div_(out_div)
++    return output
++
++
++async def _hires_fix(model_name, rescale_after_model=True, rescale_method="nearest-exact",
++                     rescale="by percentage", percent=50, width=1024, height=1024, longer_side=1024,
++                     crop="disabled", image_output="Preview", link_id=0, save_prefix="ComfyUI",
++                     pipe=None, image=None, vae=None, **_kwargs):
++    """easy hiresFix as the original (py/nodes/fix.py:61-149): the upscale model (host-side, tiled exactly like the
++    original), clamp, the optional rescale, then a VAE encode of the 8-px-cropped RGB pixels."""
++    if pipe is not None:
++        image = image if image is not None else pipe["images"]
++        vae = vae if vae is not None else pipe.get("vae")
++    elif image is None or vae is None:
++        raise ValueError("pipe or image or vae missing.")
++    upscale_model = await _ctx().models.load_upscale_model(str(model_name))
++    s = await _hires_tiled_scale(upscale_model, image)
++    s = torch.clamp(s.movedim(-3, -1), min=0, max=1.0)
++
++    if rescale_after_model == True:
++        samples = s.movedim(-1, 1)
++        orig_height = samples.shape[2]
++        orig_width = samples.shape[3]
++        if rescale == "by percentage" and percent != 0:
++            height = percent / 100 * orig_height
++            width = percent / 100 * orig_width
++            if (width > _HIRES_MAX_RESOLUTION):
++                width = _HIRES_MAX_RESOLUTION
++            if (height > _HIRES_MAX_RESOLUTION):
++                height = _HIRES_MAX_RESOLUTION
++            width = _hires_enforce_mul_of_64(width)
++            height = _hires_enforce_mul_of_64(height)
 +        elif rescale == "to longer side - maintain aspect":
-+            factor = int(longer_side) / max(source_width, source_height)
-+            width, height = round(source_width * factor), round(source_height * factor)
-+        width, height = max(8, int(width) // 8 * 8), max(8, int(height) // 8 * 8)
-+        value = _scale_image(value, width, height, crop, rescale_method)
-+    image_ref = await sdk.ImageRef._from_raw(value)
-+    latent = await vae.encode(image_ref)
-+    source.update({"images": image_ref, "samples": latent, "vae": vae})
-+    ui = {}
-+    if image_output in ("Save", "Hide&Save", "Sender&Save"):
-+        ui = await _ctx().output.save_images(image_ref, filename_prefix=save_prefix)
-+    elif image_output in ("Preview", "Sender"):
-+        ui = await _ctx().ui.preview_images(image_ref)
-+    return {"ui": ui, "result": (source, value, latent)}
++            longer_side = _hires_enforce_mul_of_64(longer_side)
++            if orig_width > orig_height:
++                width, height = longer_side, _hires_enforce_mul_of_64(longer_side * orig_height / orig_width)
++            else:
++                width, height = _hires_enforce_mul_of_64(longer_side * orig_width / orig_height), longer_side
++        s = common_upscale(samples, width, height, rescale_method, crop)
++        s = s.movedim(1, -1)
++
++    # vae_encode_crop_pixels (py/nodes/fix.py:52-59), then encode the RGB channels
++    x = (s.shape[1] // 8) * 8
++    y = (s.shape[2] // 8) * 8
++    pixels = s
++    if s.shape[1] != x or s.shape[2] != y:
++        x_offset = (s.shape[1] % 8) // 2
++        y_offset = (s.shape[2] % 8) // 2
++        pixels = s[:, x_offset:x + x_offset, y_offset:y + y_offset, :]
++    latent = await vae.encode(await wrap_output(pixels[:, :, :, :3], "IMAGE"))
++
++    image_ref = await wrap_output(s, "IMAGE")
++    if pipe is not None:
++        new_pipe = {
++            "model": pipe['model'],
++            "positive": pipe['positive'],
++            "negative": pipe['negative'],
++            "vae": vae,
++            "clip": pipe['clip'],
++
++            "samples": latent,
++            "images": image_ref,
++            "seed": pipe['seed'],
++
++            "loader_settings": {
++                **pipe["loader_settings"],
++            }
++        }
++    else:
++        new_pipe = {}
++
++    # easySave (py/libs/utils.py:255-266): Hide shows nothing; Preview previews; every other mode saves.
++    if image_output in ("Hide", "None"):
++        results = []
++    elif image_output in ("Preview", "Preview&Choose"):
++        results = (await _ctx().ui.preview_images(image_ref)).get("images", [])
++    else:
++        results = (await _ctx().output.save_images(image_ref, filename_prefix=save_prefix)).get("images", [])
++
++    if image_output in ("Hide", "Hide&Save"):
++        return (new_pipe, image_ref, latent)
++
++    return {"ui": {"images": results},
++            "result": (new_pipe, image_ref, latent)}
 +
 +
 +_SD3_ASPECT_RATIOS = {
@@ -58138,7 +58303,7 @@
 +    "easy applyPowerPaint", "easy applyInpaint",
 +}, "models")
 +
-+_permissions({"easy hiresFix"}, "output", "raw", "ui")
++_permissions({"easy hiresFix"}, "models", "output", "raw", "ui")
 +_permissions({"easy samLoaderPipe"}, "models")
 +_permissions({"easy ultralyticsDetectorPipe"}, "models")
 +_permissions({"easy detailerFix"}, "output", "raw", "sample", "ui")
@@ -63925,7 +64090,7 @@
  Repository = "https://github.com/yolain/ComfyUI-Easy-Use"
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,53608 @@
+@@ -0,0 +1,53609 @@
 +{
 +  "asset_directories": {
 +    "easy_wildcards": "wildcards"
@@ -81650,6 +81815,7 @@
 +      },
 +      "module": "_secure_nodes",
 +      "permissions": [
++        "models",
 +        "output",
 +        "raw",
 +        "ui"
@@ -117536,7 +117702,7 @@
 +}
 --- /dev/null
 +++ b/v2/tests/easyuse_parity_worker.py
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,329 @@
 +"""One side of the comfyui-easy-use repair-round parity run (to-50% gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -117584,7 +117750,8 @@
 +                     ('input', folder_paths.set_input_directory), ('user', folder_paths.set_user_directory)):
 +    (OUT / name).mkdir(parents=True, exist_ok=True)
 +    setter(str(OUT / name))
-+for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'})):
++for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors', '.pt'}),
++                  ('upscale_models', {'.safetensors'})):
 +    folder_paths.folder_names_and_paths[key] = ([str(Path(FIXTURES) / key)], exts)
 +CWD = OUT / 'cwd'
 +CWD.mkdir(parents=True, exist_ok=True)
@@ -117674,9 +117841,13 @@
 +
 +
 +class StandinVAE:
-+    """Weightless VAE: the SDK recognises a VAE by encode + decode."""
++    """Weightless VAE: the SDK recognises a VAE by encode + decode. encode() is a deterministic, shape- and
++    pixel-sensitive stand-in (8x8 mean pool of the RGB channels plus their channel mean), so a different crop,
++    channel count or pixel value shows up in the latent."""
 +    def encode(self, pixels):
-+        return pixels
++        x = pixels.movedim(-1, 1).float()
++        pooled = torch.nn.functional.avg_pool2d(x, 8)
++        return torch.cat([pooled, pooled.mean(dim=1, keepdim=True)], dim=1)
 +
 +    def decode(self, samples):
 +        return samples
@@ -117757,6 +117928,34 @@
 +except Exception as error:  # recorded, never hidden
 +    loaded, LOAD_ERROR = False, f'{type(error).__name__}: {error}'
 +
++# ---- the live host's catalogue menus, V2 side
++# The live host builds each V2 node's schema from the manifest and then fills its model and input menus with the
++# host catalogue (overlay comfy_secure_nodes/packdb.py: define_schema -> _core_model_menu_choices ->
++# _core_input_menu_choices); Easy-Use's frozen model combos are empty sentinel lists until then. The in-process
++# loader skips that host step, so the harness applies the overlay's own two functions to every V2 node's schema.
++HOST_MENUS = None
++if SIDE == 'v2' and loaded:
++    sys.path.insert(0, '/overlay')
++    try:
++        from comfy_secure_nodes import packdb as overlay_packdb
++    except Exception as error:  # recorded, never hidden
++        HOST_MENUS = f'unavailable: {type(error).__name__}: {error}'
++    else:
++        wrapped = 0
++        for node_id, cls in list(core_nodes.NODE_CLASS_MAPPINGS.items()):
++            if not getattr(cls, 'SDK_REFS', False) or '_secure_nodes' not in getattr(cls, '__module__', ''):
++                continue
++            base = cls.__dict__['define_schema'].__func__
++
++            def define_schema(klass, _base=base):
++                schema = _base(klass)
++                schema = overlay_packdb._core_model_menu_choices(schema, klass.SDK_PERMISSIONS)
++                return overlay_packdb._core_input_menu_choices(schema, klass.SDK_PERMISSIONS)
++
++            cls.define_schema = classmethod(define_schema)
++            wrapped += 1
++        HOST_MENUS = f'overlay packdb._core_model_menu_choices + _core_input_menu_choices on {wrapped} V2 nodes'
++
 +
 +class Server:
 +    def __init__(self):
@@ -117769,7 +117968,9 @@
 +
 +def describe_file(path):
 +    data = path.read_bytes()
-+    row = {'path': str(path.relative_to(OUT / 'output')), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
++    root = OUT / ('temp' if (OUT / 'temp') in path.parents else 'output')
++    row = {'path': f'{root.name}/{path.relative_to(root)}', 'sha256': hashlib.sha256(data).hexdigest(),
++           'bytes': len(data)}
 +    if path.suffix.lower() == '.png':
 +        from PIL import Image
 +        import numpy as np
@@ -117785,7 +117986,7 @@
 +        torch.manual_seed(20261102)
 +        prompt = json.loads(json.dumps(case['prompt']))
 +        prompt_id = f"{case['name']}-{index}"
-+        before = {p for p in (OUT / 'output').rglob('*') if p.is_file()}
++        before = {p for root in ('output', 'temp') for p in (OUT / root).rglob('*') if p.is_file()}
 +        SENT.clear()
 +        valid = asyncio.run(execution.validate_prompt(prompt_id, prompt, None))
 +        if not valid[0]:
@@ -117804,7 +118005,8 @@
 +                               'exception_message': data.get('exception_message'),
 +                               'traceback_tail': ''.join(data.get('traceback') or [])[-1500:]})
 +        history = getattr(executor, 'history_result', None) or {}
-+        files = sorted((p for p in (OUT / 'output').rglob('*') if p.is_file() and p not in before), key=str)
++        files = sorted((p for root in ('output', 'temp') for p in (OUT / root).rglob('*')
++                        if p.is_file() and p not in before), key=str)
 +        result['runs'].append({'success': bool(executor.success), 'errors': errors,
 +                               'ui': json.loads(json.dumps(history.get('outputs', {}), default=str)),
 +                               'files': [describe_file(p) for p in files],
@@ -117815,7 +118017,7 @@
 +def main():
 +    cases = json.loads(Path(CASES).read_text())
 +    report = {'side': SIDE, 'loaded': bool(loaded), 'load_error': LOAD_ERROR, 'pack_path': pack_path,
-+              'output_dir': str(OUT / 'output'),
++              'output_dir': str(OUT / 'output'), 'host_menus': HOST_MENUS,
 +              'wire': None if WIRE is None else '/overlay/comfy_secure_nodes/transport/wire.py encode()',
 +              'routes': len(server.PromptServer.instance.routes), 'cases': []}
 +    if loaded:
@@ -117832,7 +118034,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/test_easyuse_repair_parity.py
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,357 @@
 +"""Tier-1 parity for comfyui-easy-use repair rounds: the pristine pack (58e077a7) vs the repaired V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, original side only):
@@ -117845,7 +118047,9 @@
 +  REFUSED-AS-DESIGNED  the original succeeds; V2 raises its named "not available in this secure build" RuntimeError
 +  KNOWN-DIFFERENCE     both sides behave as SECURE_CONVERSION.md documents
 +  PLATFORM-DEFECT      a case that needs a platform fix (not this pack); reported, not counted as a pass or fail
-+Cases use synthetic inputs only (seeded tensors, literal text); no upstream media, workflows or model files.
++Cases use synthetic inputs only (seeded tensors, literal text, a seeded 2x upscale model built here with spandrel's
++own Compact architecture); no upstream media, workflows or model files. Rounds are cumulative: ROUND (default: the
++latest) runs that round's cases and every earlier round's.
 +"""
 +import copy
 +import json
@@ -117857,8 +118061,26 @@
 +TESTS = Path(__file__).resolve().parent
 +RESULTS = Path('/results')
 +WORK = Path('/tmp/amy-easyuse-parity')
-+ROUND = sys.argv[1] if len(sys.argv) > 1 else 'r1'
++ROUNDS = ['r1', 'r2']
++ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 +FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
++UPSCALE_MODEL = 'amy-x2-compact.safetensors'
++
++
++def make_fixtures():
++    """A seeded, weight-random 2x SRVGGNetCompact (spandrel's Compact architecture), saved as safetensors."""
++    import torch
++    from safetensors.torch import save_file
++    try:
++        from spandrel.architectures.Compact import SRVGGNetCompact
++    except ImportError:
++        from spandrel.architectures.Compact.__arch.SRVGG import SRVGGNetCompact
++    folder = WORK / 'fixtures' / 'upscale_models'
++    folder.mkdir(parents=True, exist_ok=True)
++    torch.manual_seed(20261103)
++    net = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type='prelu')
++    state = {k: v.detach().contiguous() for k, v in net.state_dict().items()}
++    save_file(state, str(folder / UPSCALE_MODEL))
 +
 +
 +def n(node_id, class_type, **inputs):
@@ -117974,7 +118196,71 @@
 +         expect='platform:sdk-pipe-classification',
 +         note='live A/B defect: PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification); weightless stand-ins'),
 +]
-+CASES = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES}[ROUND]
++
++
++def hires(image=None, vae=None, pipe=None, node_id='20', **options):
++    inputs = {'model_name': UPSCALE_MODEL, 'rescale_after_model': True, 'rescale_method': 'area',
++              'rescale': 'to Width/Height', 'percent': 100, 'width': 128, 'height': 128, 'longer_side': 128,
++              'crop': 'disabled', 'image_output': 'Hide', 'link_id': 0, 'save_prefix': 'hires'}
++    inputs.update(options)
++    for key, value in (('image', image), ('vae', vae), ('pipe', pipe)):
++        if value is not None:
++            inputs[key] = value
++    return n(node_id, 'easy hiresFix', **inputs)
++
++
++def hires_probes(node_id='20'):
++    return g(save([node_id, 1], 'hires-out', 'saved'), probe([node_id, 2], node_id='latent', label='latent'),
++             probe([node_id, 0], node_id='pipe', label='pipe'))
++
++
++def vae(node_id='v'):
++    return n(node_id, 'AMYTestVAE')
++
++
++HIRES_CASES = [
++    case('hires-to-wh-hide', g(img('1', 31, width=64, height=64), vae(), hires(['1', 0], ['v', 0]), hires_probes()),
++         note='live A/B defect: the upscale model was never applied (image to Width/Height, Hide)'),
++    case('hires-to-wh-crop', g(img('1', 32, width=64, height=48), vae(),
++                               hires(['1', 0], ['v', 0], width=100, height=76, rescale_method='bicubic'),
++                               hires_probes())),
++    case('hires-percent', g(img('1', 33, width=40, height=56), vae(),
++                            hires(['1', 0], ['v', 0], rescale='by percentage', percent=75, rescale_method='bilinear'),
++                            hires_probes())),
++    case('hires-percent-zero', g(img('1', 34, width=40, height=40), vae(),
++                                 hires(['1', 0], ['v', 0], rescale='by percentage', percent=0, width=72, height=64,
++                                       rescale_method='nearest-exact'), hires_probes())),
++    case('hires-longer-side', g(img('1', 35, width=50, height=30), vae(),
++                                hires(['1', 0], ['v', 0], rescale='to longer side - maintain aspect', longer_side=100,
++                                      rescale_method='lanczos', crop='center'), hires_probes())),
++    case('hires-no-rescale', g(img('1', 36, width=37, height=45), vae(),
++                               hires(['1', 0], ['v', 0], rescale_after_model=False), hires_probes())),
++    case('hires-tiled', g(img('1', 37, width=300, height=210), vae(),
++                          hires(['1', 0], ['v', 0], rescale='by percentage', percent=50, rescale_method='bislerp'),
++                          hires_probes())),
++    case('hires-tiled-batch2', g(img('1', 38, width=200, height=100, batch=2), vae(),
++                                 hires(['1', 0], ['v', 0], width=128, height=64), hires_probes())),
++    case('hires-batch2-single-tile', g(img('1', 39, width=48, height=40, batch=2), vae(),
++                                       hires(['1', 0], ['v', 0], width=96, height=80), hires_probes())),
++    case('hires-save', g(img('1', 40, width=64, height=48), vae(),
++                         hires(['1', 0], ['v', 0], width=64, height=64, image_output='Save', save_prefix='hires-save'),
++                         hires_probes())),
++    case('hires-preview', g(img('1', 41, width=32, height=32), vae(),
++                            hires(['1', 0], ['v', 0], width=64, height=64, image_output='Preview')),
++         expect='known:preview-name'),
++    case('hires-missing-inputs', g(hires(), probe(['20', 1])), expect='error'),
++    case('hires-pipe', g(n('m', 'AMYTestModel'), n('c', 'AMYTestClip'), vae(), n('p', 'AMYTestCond', seed=1),
++                         n('q', 'AMYTestCond', seed=2), n('l', 'EmptyLatentImage', width=64, height=64, batch_size=1),
++                         img('i', 42, width=32, height=32),
++                         n('22', 'easy pipeIn', model=['m', 0], pos=['p', 0], neg=['q', 0], latent=['l', 0],
++                           vae=['v', 0], clip=['c', 0], image=['i', 0]),
++                         hires(pipe=['22', 0], width=64, height=64), save(['20', 1], 'hires-pipe', 'saved'),
++                         probe(['20', 2], node_id='latent', label='latent')),
++         expect='platform:sdk-pipe-classification',
++         note='PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification)'),
++]
++CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES}
++CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 +if FILTER:
 +    CASES = [c for c in CASES if FILTER in c['name']]
 +
@@ -118049,6 +118335,17 @@
 +        ok = pixels_same and widgets_o == [[['hello']]] and widgets_c == [[]] and co['ui'] == cc['ui']
 +        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
 +                'widgets_values': {'original': widgets_o, 'v2': widgets_c}, 'pixels_same': pixels_same}
++    if expect == 'known:preview-name':
++        # Same preview pixels; the original's temp file is named easyPreview_temp_*, the platform preview's is not.
++        files_o = [f for f in co['files'] if f['path'].startswith('temp/')]
++        files_c = [f for f in cc['files'] if f['path'].startswith('temp/')]
++        ui_o, ui_c = co['ui'].get('20', {}).get('images', []), cc['ui'].get('20', {}).get('images', [])
++        ok = (len(files_o) == len(files_c) == 1 and files_o[0]['pixels_sha256'] == files_c[0]['pixels_sha256']
++              and files_o[0]['size'] == files_c[0]['size'] and len(ui_o) == len(ui_c) == 1
++              and ui_o[0].get('type') == ui_c[0].get('type') == 'temp'
++              and not [f for f in co['files'] + cc['files'] if f['path'].startswith('output/')])
++        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
++                'names': [ui_o, ui_c], 'files': [files_o, files_c]}
 +    if co != cc:
 +        return {**row, 'verdict': 'MISMATCH', 'original': co, 'v2': cc}
 +    return {**row, 'verdict': 'EXACT', 'observed': co}
@@ -118057,6 +118354,7 @@
 +def main():
 +    RESULTS.mkdir(parents=True, exist_ok=True)
 +    (WORK / 'fixtures').mkdir(parents=True, exist_ok=True)
++    make_fixtures()
 +    (WORK / 'cases.json').write_text(json.dumps(CASES, indent=1))
 +    original = run_side('original')
 +    converted = run_side('v2')
@@ -118073,7 +118371,9 @@
 +        tampered = copy.deepcopy(by_c['show-dict'])
 +        tampered['runs'][-1]['ui']['2']['text'][0] += ' '
 +        control = compare(spec, by_o['show-dict'], tampered)
-+    report = {'pack': 'comfyui-easy-use', 'round': ROUND, 'pin': '58e077a7435631301cf7443412515cf958e7f3d1',
++    report = {'pack': 'comfyui-easy-use', 'round': ROUND, 'rounds_run': ROUNDS[:ROUNDS.index(ROUND) + 1],
++              'pin': '58e077a7435631301cf7443412515cf958e7f3d1',
++              'host_menus_v2': converted.get('host_menus'),
 +              'harness': 'ComfyUI core at /core (PromptExecutor, classic cache) on both sides; V2 results and UI '
 +                         'encoded with the live overlay transport/wire.py; torch seeded before every prompt',
 +              'core_sdk_classification': 'patched' if 'hasattr(v.get("samples"), "shape")' in

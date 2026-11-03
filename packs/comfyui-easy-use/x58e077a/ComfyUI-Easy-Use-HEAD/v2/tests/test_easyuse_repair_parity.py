@@ -10,7 +10,9 @@ the live guest-wire encoder on every V2 node's results and UI. Each case declare
   REFUSED-AS-DESIGNED  the original succeeds; V2 raises its named "not available in this secure build" RuntimeError
   KNOWN-DIFFERENCE     both sides behave as SECURE_CONVERSION.md documents
   PLATFORM-DEFECT      a case that needs a platform fix (not this pack); reported, not counted as a pass or fail
-Cases use synthetic inputs only (seeded tensors, literal text); no upstream media, workflows or model files.
+Cases use synthetic inputs only (seeded tensors, literal text, a seeded 2x upscale model built here with spandrel's
+own Compact architecture); no upstream media, workflows or model files. Rounds are cumulative: ROUND (default: the
+latest) runs that round's cases and every earlier round's.
 """
 import copy
 import json
@@ -22,8 +24,26 @@ import sys
 TESTS = Path(__file__).resolve().parent
 RESULTS = Path('/results')
 WORK = Path('/tmp/amy-easyuse-parity')
-ROUND = sys.argv[1] if len(sys.argv) > 1 else 'r1'
+ROUNDS = ['r1', 'r2']
+ROUND = sys.argv[1] if len(sys.argv) > 1 else ROUNDS[-1]
 FILTER = sys.argv[2] if len(sys.argv) > 2 else ''
+UPSCALE_MODEL = 'amy-x2-compact.safetensors'
+
+
+def make_fixtures():
+    """A seeded, weight-random 2x SRVGGNetCompact (spandrel's Compact architecture), saved as safetensors."""
+    import torch
+    from safetensors.torch import save_file
+    try:
+        from spandrel.architectures.Compact import SRVGGNetCompact
+    except ImportError:
+        from spandrel.architectures.Compact.__arch.SRVGG import SRVGGNetCompact
+    folder = WORK / 'fixtures' / 'upscale_models'
+    folder.mkdir(parents=True, exist_ok=True)
+    torch.manual_seed(20261103)
+    net = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=8, num_conv=2, upscale=2, act_type='prelu')
+    state = {k: v.detach().contiguous() for k, v in net.state_dict().items()}
+    save_file(state, str(folder / UPSCALE_MODEL))
 
 
 def n(node_id, class_type, **inputs):
@@ -139,7 +159,71 @@ PIPE_CASES = [
          expect='platform:sdk-pipe-classification',
          note='live A/B defect: PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification); weightless stand-ins'),
 ]
-CASES = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES}[ROUND]
+
+
+def hires(image=None, vae=None, pipe=None, node_id='20', **options):
+    inputs = {'model_name': UPSCALE_MODEL, 'rescale_after_model': True, 'rescale_method': 'area',
+              'rescale': 'to Width/Height', 'percent': 100, 'width': 128, 'height': 128, 'longer_side': 128,
+              'crop': 'disabled', 'image_output': 'Hide', 'link_id': 0, 'save_prefix': 'hires'}
+    inputs.update(options)
+    for key, value in (('image', image), ('vae', vae), ('pipe', pipe)):
+        if value is not None:
+            inputs[key] = value
+    return n(node_id, 'easy hiresFix', **inputs)
+
+
+def hires_probes(node_id='20'):
+    return g(save([node_id, 1], 'hires-out', 'saved'), probe([node_id, 2], node_id='latent', label='latent'),
+             probe([node_id, 0], node_id='pipe', label='pipe'))
+
+
+def vae(node_id='v'):
+    return n(node_id, 'AMYTestVAE')
+
+
+HIRES_CASES = [
+    case('hires-to-wh-hide', g(img('1', 31, width=64, height=64), vae(), hires(['1', 0], ['v', 0]), hires_probes()),
+         note='live A/B defect: the upscale model was never applied (image to Width/Height, Hide)'),
+    case('hires-to-wh-crop', g(img('1', 32, width=64, height=48), vae(),
+                               hires(['1', 0], ['v', 0], width=100, height=76, rescale_method='bicubic'),
+                               hires_probes())),
+    case('hires-percent', g(img('1', 33, width=40, height=56), vae(),
+                            hires(['1', 0], ['v', 0], rescale='by percentage', percent=75, rescale_method='bilinear'),
+                            hires_probes())),
+    case('hires-percent-zero', g(img('1', 34, width=40, height=40), vae(),
+                                 hires(['1', 0], ['v', 0], rescale='by percentage', percent=0, width=72, height=64,
+                                       rescale_method='nearest-exact'), hires_probes())),
+    case('hires-longer-side', g(img('1', 35, width=50, height=30), vae(),
+                                hires(['1', 0], ['v', 0], rescale='to longer side - maintain aspect', longer_side=100,
+                                      rescale_method='lanczos', crop='center'), hires_probes())),
+    case('hires-no-rescale', g(img('1', 36, width=37, height=45), vae(),
+                               hires(['1', 0], ['v', 0], rescale_after_model=False), hires_probes())),
+    case('hires-tiled', g(img('1', 37, width=300, height=210), vae(),
+                          hires(['1', 0], ['v', 0], rescale='by percentage', percent=50, rescale_method='bislerp'),
+                          hires_probes())),
+    case('hires-tiled-batch2', g(img('1', 38, width=200, height=100, batch=2), vae(),
+                                 hires(['1', 0], ['v', 0], width=128, height=64), hires_probes())),
+    case('hires-batch2-single-tile', g(img('1', 39, width=48, height=40, batch=2), vae(),
+                                       hires(['1', 0], ['v', 0], width=96, height=80), hires_probes())),
+    case('hires-save', g(img('1', 40, width=64, height=48), vae(),
+                         hires(['1', 0], ['v', 0], width=64, height=64, image_output='Save', save_prefix='hires-save'),
+                         hires_probes())),
+    case('hires-preview', g(img('1', 41, width=32, height=32), vae(),
+                            hires(['1', 0], ['v', 0], width=64, height=64, image_output='Preview')),
+         expect='known:preview-name'),
+    case('hires-missing-inputs', g(hires(), probe(['20', 1])), expect='error'),
+    case('hires-pipe', g(n('m', 'AMYTestModel'), n('c', 'AMYTestClip'), vae(), n('p', 'AMYTestCond', seed=1),
+                         n('q', 'AMYTestCond', seed=2), n('l', 'EmptyLatentImage', width=64, height=64, batch_size=1),
+                         img('i', 42, width=32, height=32),
+                         n('22', 'easy pipeIn', model=['m', 0], pos=['p', 0], neg=['q', 0], latent=['l', 0],
+                           vae=['v', 0], clip=['c', 0], image=['i', 0]),
+                         hires(pipe=['22', 0], width=64, height=64), save(['20', 1], 'hires-pipe', 'saved'),
+                         probe(['20', 2], node_id='latent', label='latent')),
+         expect='platform:sdk-pipe-classification',
+         note='PIPE_LINE reaches the guest as a LatentRef (platform _sdk classification)'),
+]
+CASES_BY_ROUND = {'r1': SHOW_CASES + INDEX_CASES + PIPE_CASES, 'r2': HIRES_CASES}
+CASES = [c for r in ROUNDS[:ROUNDS.index(ROUND) + 1] for c in CASES_BY_ROUND[r]]
 if FILTER:
     CASES = [c for c in CASES if FILTER in c['name']]
 
@@ -214,6 +298,17 @@ def compare(spec, orig, conv):
         ok = pixels_same and widgets_o == [[['hello']]] and widgets_c == [[]] and co['ui'] == cc['ui']
         return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
                 'widgets_values': {'original': widgets_o, 'v2': widgets_c}, 'pixels_same': pixels_same}
+    if expect == 'known:preview-name':
+        # Same preview pixels; the original's temp file is named easyPreview_temp_*, the platform preview's is not.
+        files_o = [f for f in co['files'] if f['path'].startswith('temp/')]
+        files_c = [f for f in cc['files'] if f['path'].startswith('temp/')]
+        ui_o, ui_c = co['ui'].get('20', {}).get('images', []), cc['ui'].get('20', {}).get('images', [])
+        ok = (len(files_o) == len(files_c) == 1 and files_o[0]['pixels_sha256'] == files_c[0]['pixels_sha256']
+              and files_o[0]['size'] == files_c[0]['size'] and len(ui_o) == len(ui_c) == 1
+              and ui_o[0].get('type') == ui_c[0].get('type') == 'temp'
+              and not [f for f in co['files'] + cc['files'] if f['path'].startswith('output/')])
+        return {**row, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
+                'names': [ui_o, ui_c], 'files': [files_o, files_c]}
     if co != cc:
         return {**row, 'verdict': 'MISMATCH', 'original': co, 'v2': cc}
     return {**row, 'verdict': 'EXACT', 'observed': co}
@@ -222,6 +317,7 @@ def compare(spec, orig, conv):
 def main():
     RESULTS.mkdir(parents=True, exist_ok=True)
     (WORK / 'fixtures').mkdir(parents=True, exist_ok=True)
+    make_fixtures()
     (WORK / 'cases.json').write_text(json.dumps(CASES, indent=1))
     original = run_side('original')
     converted = run_side('v2')
@@ -238,7 +334,9 @@ def main():
         tampered = copy.deepcopy(by_c['show-dict'])
         tampered['runs'][-1]['ui']['2']['text'][0] += ' '
         control = compare(spec, by_o['show-dict'], tampered)
-    report = {'pack': 'comfyui-easy-use', 'round': ROUND, 'pin': '58e077a7435631301cf7443412515cf958e7f3d1',
+    report = {'pack': 'comfyui-easy-use', 'round': ROUND, 'rounds_run': ROUNDS[:ROUNDS.index(ROUND) + 1],
+              'pin': '58e077a7435631301cf7443412515cf958e7f3d1',
+              'host_menus_v2': converted.get('host_menus'),
               'harness': 'ComfyUI core at /core (PromptExecutor, classic cache) on both sides; V2 results and UI '
                          'encoded with the live overlay transport/wire.py; torch seeded before every prompt',
               'core_sdk_classification': 'patched' if 'hasattr(v.get("samples"), "shape")' in

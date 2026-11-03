@@ -30,7 +30,7 @@ from . import _ipadapter
 from . import _segformer
 from . import _transparent_vae
 from ._image_ops import common_upscale
-from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported
+from ._secure_runtime import SCHEMAS, bind_node, materialize, sdk, unsupported, wrap_output
 from ._wildcard_runtime import load_catalogue as _load_wildcard_catalogue
 from ._wildcard_runtime import matrix as _wildcard_matrix_values
 from ._wildcard_runtime import populate as _populate_catalogue_wildcards
@@ -5027,36 +5027,181 @@ def _provider(node_id: str):
     return execute
 
 
-async def _hires_fix(pipe=None, image=None, vae=None, rescale_after_model=True,
-                     rescale_method="lanczos", rescale="by percentage",
-                     percent=100, width=1024, height=1024, longer_side=1024,
-                     crop="disabled", image_output="Hide", save_prefix="ComfyUI",
-                     **_kwargs):
-    source = dict(pipe or {})
-    image = image or source.get("images")
-    vae = vae or source.get("vae")
-    if image is None or vae is None:
-        raise ValueError("easy hiresFix needs an image and VAE")
-    value = await _raw(image)
-    if rescale_after_model:
-        source_height, source_width = value.shape[1:3]
-        if rescale == "by percentage":
-            width = round(source_width * int(percent) / 100)
-            height = round(source_height * int(percent) / 100)
+_HIRES_MAX_RESOLUTION = 16384  # nodes.MAX_RESOLUTION, which the original's percentage branch caps at
+
+
+_HIRES_TILE = 128 + 64  # py/nodes/fix.py:81-82
+
+
+_HIRES_OVERLAP = 8
+
+
+def _hires_enforce_mul_of_64(d):
+    """easySampler.enforce_mul_of_64 (py/libs/sampler.py:31-43), verbatim."""
+    d = int(d)
+    if d <= 7:
+        d = 8
+    leftover = d % 8  # 8 is the number of pixels per byte
+    if leftover != 0:  # if the number of pixels is not a multiple of 8
+        if (leftover < 4):  # if the number of pixels is less than 4
+            d -= leftover  # remove the leftover pixels
+        else:  # if the number of pixels is more than 4
+            d += 8 - leftover  # add the leftover pixels
+
+    return int(d)
+
+
+async def _hires_model_pass(upscale_model, tile):
+    """One upscale-model call on a B,C,H,W tile, run host-side (the model never enters the guest)."""
+    tile_ref = await wrap_output(tile.movedim(1, -1), "IMAGE")
+    upscaled = await upscale_model.upscale(tile_ref, per_batch=1)
+    return (await upscaled.raw()).movedim(-1, 1)
+
+
+async def _hires_tiled_scale(upscale_model, image):
+    """comfy.utils.tiled_scale(samples, model, tile 192, overlap 8, upscale_amount=model.scale), as the original calls
+    it (py/nodes/fix.py:79-87), with the same per-image fast path, tile positions, feather masks and normalisation
+    (comfy/utils.py tiled_scale_multidim). The scale is read from the first model output."""
+    pixels = await _raw(image)
+    samples = pixels.movedim(-1, -3)
+    tile, overlap = (_HIRES_TILE, _HIRES_TILE), (_HIRES_OVERLAP, _HIRES_OVERLAP)
+    output = None
+    scale = None
+    for b in range(samples.shape[0]):
+        s = samples[b:b + 1]
+        if all(s.shape[d + 2] <= tile[d] for d in range(2)):
+            whole = image if samples.shape[0] == 1 else await image.select_batch([b])
+            upscaled = await upscale_model.upscale(whole, per_batch=1)
+            ps = (await upscaled.raw()).movedim(-1, 1)
+            if output is None:
+                scale = round(ps.shape[2] / s.shape[2])
+                output = torch.empty([samples.shape[0], 3, round(scale * samples.shape[2]),
+                                      round(scale * samples.shape[3])], device="cpu")
+            output[b:b + 1] = ps.to("cpu")
+            continue
+        positions = [range(0, s.shape[d + 2] - overlap[d], tile[d] - overlap[d]) if s.shape[d + 2] > tile[d] else [0]
+                     for d in range(2)]
+        out = out_div = None
+        for it in itertools.product(*positions):
+            s_in = s
+            starts = []
+            for d in range(2):
+                pos = max(0, min(s.shape[d + 2] - overlap[d], it[d]))
+                length = min(tile[d], s.shape[d + 2] - pos)
+                s_in = s_in.narrow(d + 2, pos, length)
+                starts.append(pos)
+            ps = (await _hires_model_pass(upscale_model, s_in)).to("cpu")
+            if output is None:
+                scale = round(ps.shape[2] / s_in.shape[2])
+                output = torch.empty([samples.shape[0], 3, round(scale * samples.shape[2]),
+                                      round(scale * samples.shape[3])], device="cpu")
+            if out is None:
+                out = output[b:b + 1].zero_()
+                out_div = torch.zeros([s.shape[0], 1] + [round(scale * v) for v in s.shape[2:]], device="cpu")
+            upscaled_pos = [round(scale * pos) for pos in starts]
+            mask = torch.ones([1, 1] + list(ps.shape[2:]), device="cpu")
+            for d in range(2, 4):
+                feather = round(scale * overlap[d - 2])
+                if feather >= mask.shape[d]:
+                    continue
+                for t in range(feather):
+                    a = (t + 1) / feather
+                    mask.narrow(d, t, 1).mul_(a)
+                    mask.narrow(d, mask.shape[d] - 1 - t, 1).mul_(a)
+            o, o_d, ps_view, mask_view = out, out_div, ps, mask
+            for d in range(2):
+                length = min(ps_view.shape[d + 2], o.shape[d + 2] - upscaled_pos[d])
+                o = o.narrow(d + 2, upscaled_pos[d], length)
+                o_d = o_d.narrow(d + 2, upscaled_pos[d], length)
+                if length < ps_view.shape[d + 2]:
+                    ps_view = ps_view.narrow(d + 2, 0, length)
+                    mask_view = mask_view.narrow(d + 2, 0, length)
+            o.add_(ps_view * mask_view)
+            o_d.add_(mask_view)
+        out.div_(out_div)
+    return output
+
+
+async def _hires_fix(model_name, rescale_after_model=True, rescale_method="nearest-exact",
+                     rescale="by percentage", percent=50, width=1024, height=1024, longer_side=1024,
+                     crop="disabled", image_output="Preview", link_id=0, save_prefix="ComfyUI",
+                     pipe=None, image=None, vae=None, **_kwargs):
+    """easy hiresFix as the original (py/nodes/fix.py:61-149): the upscale model (host-side, tiled exactly like the
+    original), clamp, the optional rescale, then a VAE encode of the 8-px-cropped RGB pixels."""
+    if pipe is not None:
+        image = image if image is not None else pipe["images"]
+        vae = vae if vae is not None else pipe.get("vae")
+    elif image is None or vae is None:
+        raise ValueError("pipe or image or vae missing.")
+    upscale_model = await _ctx().models.load_upscale_model(str(model_name))
+    s = await _hires_tiled_scale(upscale_model, image)
+    s = torch.clamp(s.movedim(-3, -1), min=0, max=1.0)
+
+    if rescale_after_model == True:
+        samples = s.movedim(-1, 1)
+        orig_height = samples.shape[2]
+        orig_width = samples.shape[3]
+        if rescale == "by percentage" and percent != 0:
+            height = percent / 100 * orig_height
+            width = percent / 100 * orig_width
+            if (width > _HIRES_MAX_RESOLUTION):
+                width = _HIRES_MAX_RESOLUTION
+            if (height > _HIRES_MAX_RESOLUTION):
+                height = _HIRES_MAX_RESOLUTION
+            width = _hires_enforce_mul_of_64(width)
+            height = _hires_enforce_mul_of_64(height)
         elif rescale == "to longer side - maintain aspect":
-            factor = int(longer_side) / max(source_width, source_height)
-            width, height = round(source_width * factor), round(source_height * factor)
-        width, height = max(8, int(width) // 8 * 8), max(8, int(height) // 8 * 8)
-        value = _scale_image(value, width, height, crop, rescale_method)
-    image_ref = await sdk.ImageRef._from_raw(value)
-    latent = await vae.encode(image_ref)
-    source.update({"images": image_ref, "samples": latent, "vae": vae})
-    ui = {}
-    if image_output in ("Save", "Hide&Save", "Sender&Save"):
-        ui = await _ctx().output.save_images(image_ref, filename_prefix=save_prefix)
-    elif image_output in ("Preview", "Sender"):
-        ui = await _ctx().ui.preview_images(image_ref)
-    return {"ui": ui, "result": (source, value, latent)}
+            longer_side = _hires_enforce_mul_of_64(longer_side)
+            if orig_width > orig_height:
+                width, height = longer_side, _hires_enforce_mul_of_64(longer_side * orig_height / orig_width)
+            else:
+                width, height = _hires_enforce_mul_of_64(longer_side * orig_width / orig_height), longer_side
+        s = common_upscale(samples, width, height, rescale_method, crop)
+        s = s.movedim(1, -1)
+
+    # vae_encode_crop_pixels (py/nodes/fix.py:52-59), then encode the RGB channels
+    x = (s.shape[1] // 8) * 8
+    y = (s.shape[2] // 8) * 8
+    pixels = s
+    if s.shape[1] != x or s.shape[2] != y:
+        x_offset = (s.shape[1] % 8) // 2
+        y_offset = (s.shape[2] % 8) // 2
+        pixels = s[:, x_offset:x + x_offset, y_offset:y + y_offset, :]
+    latent = await vae.encode(await wrap_output(pixels[:, :, :, :3], "IMAGE"))
+
+    image_ref = await wrap_output(s, "IMAGE")
+    if pipe is not None:
+        new_pipe = {
+            "model": pipe['model'],
+            "positive": pipe['positive'],
+            "negative": pipe['negative'],
+            "vae": vae,
+            "clip": pipe['clip'],
+
+            "samples": latent,
+            "images": image_ref,
+            "seed": pipe['seed'],
+
+            "loader_settings": {
+                **pipe["loader_settings"],
+            }
+        }
+    else:
+        new_pipe = {}
+
+    # easySave (py/libs/utils.py:255-266): Hide shows nothing; Preview previews; every other mode saves.
+    if image_output in ("Hide", "None"):
+        results = []
+    elif image_output in ("Preview", "Preview&Choose"):
+        results = (await _ctx().ui.preview_images(image_ref)).get("images", [])
+    else:
+        results = (await _ctx().output.save_images(image_ref, filename_prefix=save_prefix)).get("images", [])
+
+    if image_output in ("Hide", "Hide&Save"):
+        return (new_pipe, image_ref, latent)
+
+    return {"ui": {"images": results},
+            "result": (new_pipe, image_ref, latent)}
 
 
 _SD3_ASPECT_RATIOS = {
@@ -5472,7 +5617,7 @@ _permissions({
     "easy applyPowerPaint", "easy applyInpaint",
 }, "models")
 
-_permissions({"easy hiresFix"}, "output", "raw", "ui")
+_permissions({"easy hiresFix"}, "models", "output", "raw", "ui")
 _permissions({"easy samLoaderPipe"}, "models")
 _permissions({"easy ultralyticsDetectorPipe"}, "models")
 _permissions({"easy detailerFix"}, "output", "raw", "sample", "ui")

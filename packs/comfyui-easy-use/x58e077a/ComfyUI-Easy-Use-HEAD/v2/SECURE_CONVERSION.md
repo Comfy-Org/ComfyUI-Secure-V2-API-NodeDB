@@ -46,3 +46,23 @@ Known differences:
   Those items cannot be returned across the guest wire.
 - `indexAnything` cannot see whether the upstream output is a list output. The original returns a one-item list
   output whole. V2 indexes into that single item, the same way the original treats a single value.
+
+## Repair round r2: `easy hiresFix`
+
+`easy hiresFix` now runs the selected upscale model, as the original does (`py/nodes/fix.py:61-149`). The previous
+handler resized the input image and never used the model.
+
+How it runs:
+- `models.load_upscale_model` loads the model and `UpscaleModelRef.upscale` runs it, host-side.
+- Tiling matches the original's `comfy.utils.tiled_scale` call: 192-px tiles, 8-px overlap, and the same
+  feathering and normalisation.
+- The result is clamped to [0, 1].
+- The rescale is optional. It uses the original's sizes: multiples of 8 from `enforce_mul_of_64`, the
+  `MAX_RESOLUTION` cap, and the widget width/height for "to Width/Height".
+- The pixels are cropped to multiples of 8 and their RGB channels VAE-encoded.
+- The node declares the `models` permission so that it can load the upscale model.
+
+Known differences:
+- The original's "Preview" saves temp files named `easyPreview_temp_…`. V2 previews through the platform preview,
+  which names them differently. The pixels are the same.
+- "Sender" and "Sender&Save" save the image like the original, but do not send the frontend `img-send` event.
