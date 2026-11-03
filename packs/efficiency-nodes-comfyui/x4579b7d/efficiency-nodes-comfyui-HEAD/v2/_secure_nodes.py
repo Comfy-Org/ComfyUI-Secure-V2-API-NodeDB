@@ -22,6 +22,7 @@ import torch.nn.functional as F
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from ._secure_runtime import SCHEMAS, bind_node, sdk
+from . import _bnk_tiling as _bnk
 
 
 _NATIVE_SCHEDULERS = {
@@ -2291,28 +2292,197 @@ async def _post_scripts(
 
     tile = _script_tile((script or {}).get("tile"))
     if tile:
+        # efficiency_nodes.py:651-677: decode if needed, ImageScaleBy nearest-exact, VAE encode, TiledKSampler.
+        if tile.get("control_net") is not None:
+            raise RuntimeError(
+                "Tiled Upscaler Script is not available in this secure build with use_controlnet: the original applies "
+                "the tile ControlNet with the legacy ControlNetApply and slices its hint per tile")
         image = image or await (
             vae.decode_tiled(latent, tile_size=320)
             if "tiled" in vae_decode else vae.decode(latent)
         )
         image = await _resize_image_raw(image, float(tile["upscale_by"]))
+        if "tiled" in vae_decode:
+            # The original calls VAEEncodeTiled().encode(vae, pixels, 320) (efficiency_nodes.py:470); core's encode
+            # needs overlap as well (nodes.py:412), so the original fails here.
+            raise TypeError("VAEEncodeTiled.encode() missing 1 required positional argument: 'overlap'")
         latent = await vae.encode(await image.rgb())
-        use_positive, use_negative = positive, negative
-        if tile.get("control_net") is not None:
-            use_positive, use_negative = await tile["control_net"].apply(
-                positive, negative, image, strength=float(tile.get("strength", 1.0))
-            )
-        # Tiling remains a pack algorithm.  Sampling each bounded tile and
-        # feathering overlaps is implemented by the helper below.
         latent = await _sample_tiled(
-            latent, model=model, positive=use_positive, negative=use_negative,
+            latent, model=model, positive=positive, negative=negative,
             seed=tile["seed"], steps=tile["steps"], cfg=cfg,
             sampler_name=sampler_name, scheduler=scheduler,
             denoise=tile["denoise"], tile_size=tile["tile_size"],
-            strategy=tile["strategy"],
+            strategy=tile["strategy"], noise_recipe=_script_noise((script or {}).get("noise")),
         )
         image = None
     return latent, image
+
+
+_BNK_PLAIN_LATENT_FAMILIES = {"sd1", "sdxl", "sdxl_refiner", "svd"}
+
+
+_BNK_DISCARD_PENULTIMATE_SAMPLERS = {"dpm_2", "dpm_2_ancestral", "uni_pc", "uni_pc_bh2"}
+
+
+def _bnk_prepare_noise(latent_image, seed, noise_inds=None):
+    """comfy.sample.prepare_noise / prepare_noise_inner (core comfy/sample.py:9-35) for a dense latent:
+    torch.manual_seed(seed) is the default CPU generator, seeded; a fresh generator seeded alike gives the same stream."""
+    generator = torch.Generator(device="cpu").manual_seed(int(seed))
+    if noise_inds is None:
+        return torch.randn(latent_image.size(), dtype=torch.float32, layout=latent_image.layout, generator=generator,
+                           device="cpu").to(dtype=latent_image.dtype)
+
+    unique_inds, inverse = np.unique(noise_inds, return_inverse=True)
+    noises = []
+    for i in range(unique_inds[-1] + 1):
+        noise = torch.randn([1] + list(latent_image.size())[1:], dtype=torch.float32, layout=latent_image.layout,
+                            generator=generator, device="cpu").to(dtype=latent_image.dtype)
+        if i in unique_inds:
+            noises.append(noise)
+    noises = [noises[i] for i in inverse]
+    return torch.cat(noises, axis=0)
+
+
+async def _bnk_sample_tile(model, positive, negative, tiled_noise, tiled_latent, tiled_mask, *, steps, cfg,
+                           sampler_name, scheduler, sigma_schedule, start_step, last_step, force_full_denoise, seed,
+                           steer_cfg):
+    """One tile's sampler.sample(tiled_noise, pos, neg, cfg, latent_image=tiled_latent, start_step, last_step,
+    force_full_denoise, denoise_mask=tiled_mask, seed) (bnk_tiled_samplers.py:283), run host-side. tiled_noise None is
+    the original's all-zero tile noise (bnk_tiled_samplers.py:253-254), which is the host's disabled noise; otherwise it
+    is the padded strategy's slice of the full noise (bnk_tiled_samplers.py:250-251), passed as explicit noise. The tile
+    mask rides as the latent's noise mask, which the host hands to the sampler as its denoise mask."""
+    tile = {"samples": tiled_latent.contiguous()}
+    if tiled_mask is not None:
+        tile["noise_mask"] = tiled_mask.contiguous()
+    noise_ref = None
+    if tiled_noise is not None:
+        # ctx.sample takes explicit noise only as a TENSOR ref, and the SDK has no public constructor for one from a
+        # node's own tensor; this is the call corpus main's padded path already made for its tile noise.
+        noise_ref = await sdk.TensorRef._from_raw(tiled_noise.contiguous())
+    result = await _ctx().sample(
+        latent=await sdk.LatentRef.from_value(tile), steps=int(steps), model=model, positive=positive,
+        negative=negative, cfg=float(cfg), seed=int(seed), sampler_name=str(sampler_name), scheduler=str(scheduler),
+        denoise=1.0, disable_noise=noise_ref is None, start_step=int(start_step), last_step=int(last_step),
+        force_full_denoise=bool(force_full_denoise), noise=noise_ref, sigma_schedule=sigma_schedule,
+        steer_cfg=bool(steer_cfg))
+    return (await result.value())["samples"]
+
+
+async def _bnk_sample_common(model, add_noise, noise_seed, tile_width, tile_height, tiling_strategy, steps, cfg,
+                             sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step,
+                             return_with_leftover_noise, denoise=1.0, *, noise_recipe=None):
+    """sample_common (py/bnk_tiled_samplers.py:104-299), step for step: the same noise, start sigma, tiles, step ranges,
+    masks and write-back. Model-owned work runs host-side: the start sigma through ModelRef.sampling_sigma_delta and each
+    tile's partial schedule through ctx.sample."""
+    end_at_step = min(end_at_step, steps)
+    value = dict(await latent_image.value())
+    samples = value["samples"]
+    if getattr(samples, "is_nested", False):
+        raise RuntimeError("Tiled Upscaler Script is not available in this secure build for nested latents")
+    noise_mask = value["noise_mask"] if "noise_mask" in value else None
+    force_full_denoise = return_with_leftover_noise == "enable"
+    if add_noise == "disable":
+        noise = torch.zeros(samples.size(), dtype=samples.dtype, layout=samples.layout, device="cpu")
+    else:
+        skip = value["batch_index"] if "batch_index" in value else None
+        # Inside KSampler (Efficient) a Noise Control Script replaces comfy.sample.prepare_noise (efficiency_nodes.py:
+        # 505-515); _explicit_noise is this pack's port of that noise, as the main pass uses it.
+        noise_ref = await _explicit_noise(latent_image, int(noise_seed), noise_recipe)
+        if noise_ref is not None:
+            noise = (await noise_ref.raw()).to(device="cpu", dtype=samples.dtype)
+        else:
+            noise = _bnk_prepare_noise(samples, int(noise_seed), skip)
+
+    if noise_mask is not None:
+        # sample_common calls comfy.sample.prepare_mask here (bnk_tiled_samplers.py:117); core no longer has it.
+        raise AttributeError("module 'comfy.sample' has no attribute 'prepare_mask'")
+
+    shape = samples.shape
+    samples = samples.clone()
+
+    tile_width = min(shape[-1] * 8, tile_width)
+    tile_height = min(shape[2] * 8, tile_height)
+
+    # The original slices ControlNet hints, T2I adapters, area/mask conditioning and GLIGEN boxes per tile
+    # (bnk_tiled_samplers.py:151-192, 260-281); a guest cannot slice those.
+    if await positive.has_spatial_metadata() or await negative.has_spatial_metadata():
+        raise RuntimeError(
+            "Tiled Upscaler Script is not available in this secure build with ControlNet, area, mask, GLIGEN or "
+            "reference-latent conditioning: the original slices spatial conditioning per tile")
+
+    scheduler_name, sigma_schedule = _scheduler_recipe(scheduler, 1.0)
+    if sigma_schedule is not None and str(sampler_name) in _BNK_DISCARD_PENULTIMATE_SAMPLERS:
+        raise RuntimeError(
+            f"Tiled Upscaler Script is not available in this secure build with the {scheduler} scheduler and the "
+            f"{sampler_name} sampler: the original drops the schedule's penultimate sigma for this sampler")
+    if tiling_strategy != 'padded':
+        # samples += sampler.sigmas[start_at_step].cpu() * model.model.process_latent_out(noise)
+        family = await model.family()
+        if family not in _BNK_PLAIN_LATENT_FAMILIES:
+            raise RuntimeError(
+                f"Tiled Upscaler Script is not available in this secure build for {family} latents: the original "
+                "pre-noises the latent through the model's latent format, which only SD1/SD2/SDXL/SVD expose here")
+        scale = float(await model.latent_scale_factor())
+        delta = await model.sampling_sigma_delta(
+            steps=int(steps), sampler_name=str(sampler_name), scheduler=scheduler_name,
+            start_step=int(start_at_step), end_step=int(steps), denoise=1.0, sigma_schedule=sigma_schedule)
+        # delta is (sigmas[start] - sigmas[steps]) / scale; every core schedule ends at 0, so this recovers the float32
+        # sigmas[start] exactly.
+        sigma = torch.tensor(float(delta) * scale, dtype=torch.float32)
+        samples += sigma * (noise / scale)
+
+    gen = torch.Generator(device="cpu").manual_seed(int(noise_seed))
+    if tiling_strategy == 'random' or tiling_strategy == 'random strict':
+        tiles = _bnk.get_tiles_and_masks_rgrid(end_at_step - start_at_step, samples.shape, tile_height, tile_width, gen)
+    elif tiling_strategy == 'padded':
+        tiles = _bnk.get_tiles_and_masks_padded(end_at_step - start_at_step, samples.shape, tile_height, tile_width)
+    else:
+        tiles = _bnk.get_tiles_and_masks_simple(end_at_step - start_at_step, samples.shape, tile_height, tile_width)
+
+    steer_cfg = bool(noise_recipe and noise_recipe.get("cfg_denoiser"))
+    if tiling_strategy == "random strict":
+        samples_next = samples.clone()
+    for img_pass in tiles:
+        for i in range(len(img_pass)):
+            for tile_h, tile_h_len, tile_w, tile_w_len, tile_steps, tile_mask in img_pass[i]:
+                tiled_mask = None
+                if tile_mask is not None:
+                    tiled_mask = tile_mask
+
+                if tiling_strategy == 'padded' or tiling_strategy == 'random strict':
+                    tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask = _bnk.mask_at_boundary(
+                        tile_h, tile_h_len, tile_w, tile_w_len, tile_height, tile_width, samples.shape[-2],
+                        samples.shape[-1], tiled_mask, "cpu")
+
+                if tiled_mask is not None and tiled_mask.sum().cpu() == 0.0:
+                    continue
+
+                tiled_latent = _bnk.get_slice(samples, tile_h, tile_h_len, tile_w, tile_w_len)
+
+                if tiling_strategy == 'padded':
+                    tiled_noise = _bnk.get_slice(noise, tile_h, tile_h_len, tile_w, tile_w_len)
+                else:
+                    tiled_noise = None  # torch.zeros_like(tiled_latent): a noise mask already failed above
+
+                tile_result = await _bnk_sample_tile(
+                    model, positive, negative, tiled_noise, tiled_latent, tiled_mask, steps=steps, cfg=cfg,
+                    sampler_name=sampler_name, scheduler=scheduler_name, sigma_schedule=sigma_schedule,
+                    start_step=start_at_step + i * tile_steps, last_step=start_at_step + i * tile_steps + tile_steps,
+                    force_full_denoise=force_full_denoise and i + 1 == end_at_step - start_at_step, seed=noise_seed,
+                    steer_cfg=steer_cfg)
+                tile_result = tile_result.cpu()
+                if tiled_mask is not None:
+                    tiled_mask = tiled_mask.cpu()
+                if tiling_strategy == "random strict":
+                    _bnk.set_slice(samples_next, tile_result, tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask)
+                else:
+                    _bnk.set_slice(samples, tile_result, tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask)
+            if tiling_strategy == "random strict":
+                samples = samples_next.clone()
+
+    out = dict(value)
+    out["samples"] = samples.cpu()
+    return await sdk.LatentRef.from_value(out)
 
 
 async def _sample_tiled(
@@ -2329,277 +2499,17 @@ async def _sample_tiled(
     denoise,
     tile_size,
     strategy,
+    noise_recipe=None,
 ):
-    if float(denoise) <= 0:
-        return latent
-    value = dict(await latent.value())
-    samples = value["samples"].clone()
-    total_steps = max(int(steps), int(int(steps) / float(denoise)))
-    start_step = max(0, total_steps - int(steps))
-    height, width = map(int, samples.shape[-2:])
-    tile_height = min(height, max(8, int(tile_size) // 8))
-    tile_width = min(width, max(8, int(tile_size) // 8))
-    if height <= tile_height and width <= tile_width:
-        return await _sample_once(
-            model=model, positive=positive, negative=negative, latent=latent,
-            seed=seed, steps=total_steps, cfg=cfg, sampler_name=sampler_name,
-            scheduler=scheduler, denoise=1.0, start_step=start_step,
-            end_step=total_steps,
-        )
-
-    batch = int(samples.shape[0])
-
-    source_mask = value.get("noise_mask")
-    if isinstance(source_mask, torch.Tensor):
-        source_mask = source_mask.detach().float().cpu()
-        while source_mask.ndim < 4:
-            source_mask = source_mask.unsqueeze(1)
-        if source_mask.shape[1] != 1:
-            source_mask = source_mask[:, :1]
-        if tuple(source_mask.shape[-2:]) != (height, width):
-            source_mask = F.interpolate(
-                source_mask, size=(height, width), mode="bilinear",
-                align_corners=False,
-            )
-        if source_mask.shape[0] != batch:
-            repeats = math.ceil(batch / max(1, int(source_mask.shape[0])))
-            source_mask = source_mask.repeat(repeats, 1, 1, 1)[:batch]
-    else:
-        source_mask = None
-
-    noise_ref = await latent.random_noise(int(seed), "cpu")
-    global_noise = (await noise_ref.raw()).to(dtype=samples.dtype, device="cpu")
-
-    strategy = str(strategy)
-    if strategy not in {"simple", "padded", "random", "random strict"}:
-        raise ValueError(f"unknown tiled sampling strategy {strategy!r}")
-
-    # The legacy sampler creates one full-image noise field.  Non-padded
-    # strategies add it once before slicing, so overlapping/random tiles do
-    # not independently reseed.  The scalar schedule query keeps all tiling
-    # and mask arithmetic here while core owns the model-specific sigma scale.
-    if strategy != "padded":
-        scheduler_name, sigma_schedule = _scheduler_recipe(scheduler, 1.0)
-        sigma = await model.sampling_sigma_delta(
-            steps=total_steps,
-            sampler_name=str(sampler_name),
-            scheduler=scheduler_name,
-            start_step=start_step,
-            end_step=total_steps,
-            denoise=1.0,
-            sigma_schedule=sigma_schedule,
-        )
-        scaled_noise = global_noise * float(sigma)
-        if source_mask is not None:
-            scaled_noise = scaled_noise * source_mask.to(scaled_noise)
-        samples.add_(scaled_noise)
-
-    def simple_tiles():
-        return [[(
-            y, min(tile_height, height - y),
-            x, min(tile_width, width - x), None,
-        ) for y in range(0, height, tile_height)
-          for x in range(0, width, tile_width)]]
-
-    def padded_passes():
-        size_h = max(4, (tile_height // 4) * 4)
-        size_w = max(4, (tile_width // 4) * 4)
-        quarter_h = size_h // 4
-        quarter_w = size_w // 4
-        ys = list(range(0, height, size_h))
-        xs = list(range(0, width, size_w))
-        shifted_y = list(range(
-            size_h // 2, max(size_h // 2, height - size_h // 2), size_h
-        ))
-        shifted_x = list(range(
-            size_w // 2, max(size_w // 2, width - size_w // 2), size_w
-        ))
-
-        def grid(y_values, x_values, mask_height, mask_width):
-            tiles = []
-            for y_index, y in enumerate(y_values):
-                for x_index, x in enumerate(x_values):
-                    h = min(size_h, height - y)
-                    w = min(size_w, width - x)
-                    mask = torch.zeros((batch, 1, h, w), dtype=torch.float32)
-                    top = 0 if mask_height and y_index == 0 else quarter_h
-                    bottom = (
-                        h if mask_height and y_index == len(y_values) - 1
-                        else min(h, size_h - quarter_h)
-                    )
-                    left = 0 if mask_width and x_index == 0 else quarter_w
-                    right = (
-                        w if mask_width and x_index == len(x_values) - 1
-                        else min(w, size_w - quarter_w)
-                    )
-                    if top < bottom and left < right:
-                        mask[:, :, top:bottom, left:right] = 1.0
-                    tiles.append((y, h, x, w, mask))
-            return tiles
-
-        return [
-            grid(ys, xs, True, True),
-            grid(shifted_y, xs, False, True),
-            grid(ys, shifted_x, True, False),
-            grid(shifted_y, shifted_x, False, False),
-        ]
-
-    def random_step_tiles(generator: torch.Generator, step_index: int):
-        def coordinates(length, size, jitter):
-            count = int((length + jitter - 1) // size + 1)
-            points = [
-                int(np.clip(size * index - jitter, 0, length))
-                for index in range(count + 1)
-            ]
-            return [
-                (first, second - first)
-                for first, second in zip(points, points[1:])
-                if second > first
-            ]
-
-        values = torch.rand((2,), generator=generator).tolist()
-        jitter_x = (
-            int(values[0] * tile_width),
-            int(((values[0] + 0.5) % 1.0) * tile_width),
-        )
-        jitter_y = (
-            int(values[1] * tile_height),
-            int(((values[1] + 0.5) % 1.0) * tile_height),
-        )
-        y_sets = [coordinates(height, tile_height, item) for item in jitter_y]
-        x_sets = [coordinates(width, tile_width, item) for item in jitter_x]
-        tiles = []
-        if step_index % 2 == 0:
-            for y_index, (y, h) in enumerate(y_sets[0]):
-                for x, w in x_sets[y_index % 2]:
-                    tiles.append((y, h, x, w, None))
-        else:
-            for x_index, (x, w) in enumerate(x_sets[0]):
-                for y, h in y_sets[x_index % 2]:
-                    tiles.append((y, h, x, w, None))
-        return tiles
-
-    def boundary_tile(y, h, x, w, mask):
-        if ((h == tile_height or h == height)
-                and (w == tile_width or w == width)):
-            return y, h, x, w, mask
-        offset_y = min(0, height - (y + tile_height))
-        offset_x = min(0, width - (x + tile_width))
-        full_mask = torch.zeros(
-            (batch, 1, tile_height, tile_width), dtype=torch.float32
-        )
-        source = 1.0 if mask is None else mask
-        full_mask[
-            :, :,
-            -offset_y:h if offset_y == 0 else tile_height,
-            -offset_x:w if offset_x == 0 else tile_width,
-        ] = source
-        return (
-            y + offset_y, tile_height,
-            x + offset_x, tile_width,
-            full_mask,
-        )
-
-    async def run_tile(source, tile, first_step, last_step, *, strict=False):
-        y, h, x, w, mask = tile
-        if source_mask is not None:
-            sliced_source_mask = source_mask[..., y:y + h, x:x + w]
-            mask = (
-                sliced_source_mask
-                if mask is None else mask * sliced_source_mask
-            )
-        if strict or strategy == "padded":
-            y, h, x, w, mask = boundary_tile(y, h, x, w, mask)
-        if mask is not None and not bool(mask.any()):
-            return y, h, x, w, mask
-        tile_value = {
-            "samples": source[..., y:y + h, x:x + w].clone()
-        }
-        if mask is not None:
-            tile_value["noise_mask"] = mask
-        tile_ref = await sdk.LatentRef.from_value(tile_value)
-        pos_tile = await positive.spatial_crop(
-            x=x, y=y, width=w, height=h,
-            source_width=width, source_height=height,
-        )
-        neg_tile = await negative.spatial_crop(
-            x=x, y=y, width=w, height=h,
-            source_width=width, source_height=height,
-        )
-        explicit_noise = None
-        add_noise = "disable"
-        if strategy == "padded":
-            explicit_noise = await sdk.TensorRef._from_raw(
-                global_noise[..., y:y + h, x:x + w].clone()
-            )
-            add_noise = "enable"
-        sampled = await _sample_once(
-            model=model,
-            positive=pos_tile,
-            negative=neg_tile,
-            latent=tile_ref,
-            seed=int(seed),
-            steps=total_steps,
-            cfg=cfg,
-            sampler_name=sampler_name,
-            scheduler=scheduler,
-            denoise=1.0,
-            start_step=first_step,
-            end_step=last_step,
-            leftover_noise=("disable" if last_step >= total_steps else "enable"),
-            add_noise=add_noise,
-            explicit_noise=explicit_noise,
-        )
-        result = (await sampled.value())["samples"]
-        destination = source[..., y:y + h, x:x + w]
-        if mask is None:
-            destination.copy_(result)
-        else:
-            blend = mask.to(device=destination.device, dtype=destination.dtype)
-            destination.copy_(destination * (1.0 - blend) + result * blend)
-        return y, h, x, w, mask
-
-    if strategy in {"random", "random strict"}:
-        generator = torch.Generator(device="cpu").manual_seed(int(seed))
-        for step_index in range(int(steps)):
-            tiles = random_step_tiles(generator, step_index)
-            if strategy == "random strict":
-                next_samples = samples.clone()
-                for tile in tiles:
-                    before = samples.clone()
-                    y, h, x, w, mask = await run_tile(
-                        before,
-                        tile,
-                        start_step + step_index,
-                        start_step + step_index + 1,
-                        strict=True,
-                    )
-                    changed = before[..., y:y + h, x:x + w]
-                    destination = next_samples[..., y:y + h, x:x + w]
-                    if mask is None:
-                        destination.copy_(changed)
-                    else:
-                        blend = mask.to(destination)
-                        destination.copy_(
-                            destination * (1.0 - blend) + changed * blend
-                        )
-                samples = next_samples
-            else:
-                for tile in tiles:
-                    await run_tile(
-                        samples,
-                        tile,
-                        start_step + step_index,
-                        start_step + step_index + 1,
-                    )
-    else:
-        passes = padded_passes() if strategy == "padded" else simple_tiles()
-        for tiles in passes:
-            for tile in tiles:
-                await run_tile(samples, tile, start_step, total_steps)
-
-    value["samples"] = samples
-    return await sdk.LatentRef.from_value(value)
+    """TiledKSampler.sample (py/bnk_tiled_samplers.py:326-328) as KSampler (Efficient) calls it for the Tiled Upscaler
+    Script (efficiency_nodes.py:670-673): steps_total = int(steps / denoise), then sample_common from steps_total - steps
+    to steps_total with denoise 1.0."""
+    steps = int(steps)
+    steps_total = int(steps / denoise)
+    return await _bnk_sample_common(
+        model, 'enable', int(seed), int(tile_size), int(tile_size), str(strategy), steps_total, cfg, sampler_name,
+        scheduler, positive, negative, latent, steps_total - steps, steps_total, 'disable', denoise=1.0,
+        noise_recipe=noise_recipe)
 
 
 async def _decode_result(vae, latent, vae_decode):

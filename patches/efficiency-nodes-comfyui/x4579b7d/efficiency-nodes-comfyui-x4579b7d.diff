@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,63 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `4579b7d6076b2870998a08f5d37883fbc8261ff2`. The sealed node schemas and permissions are in `secure-nodes.json`.
@@ -29,6 +29,41 @@
 +  which have no portable value.
 +- The original's script nodes add their entry to the incoming dict in place. V2 adds it to a copy, so an earlier node's
 +  output does not change afterwards.
++
++## Repair round r2: Tiled Upscaler Script samples like the original
++
++KSampler's tile pass now follows the original's code paths (`efficiency_nodes.py:651-673`, `py/bnk_tiled_samplers.py`).
++Before this round, V2 had its own sampler ("sample each tile and feather the overlaps"), so its images differed.
++
++How it runs:
++- Decode the latent, unless an image is already there. Resize it with ImageScaleBy nearest-exact and VAE-encode it.
++- Then run the pack's vendored BlenderNeko TiledKSampler (`py/bnk_tiled_samplers.py`, `sample_common`), step for step:
++  - The noise is `comfy.sample.prepare_noise` (seed, batch_index), or the Noise Control Script's noise when that
++    script is attached, as inside KSampler (Efficient).
++  - Except with "padded", the latent is pre-noised with `sigmas[start] * process_latent_out(noise)`. The start sigma
++    comes from the host's schedule (`ModelRef.sampling_sigma_delta`) and is exact, because every core schedule ends
++    at 0.
++  - Tiles, steps and masks come from the original tiling ("simple", "random", "random strict", "padded"). The helpers
++    are `py/bnk_tiling.py`, copied verbatim to `_bnk_tiling.py`.
++  - Each tile's partial schedule (start/last step) runs host-side through `ctx.sample`, with the original's tile noise
++    (zero, or with "padded" the tile's slice of the full noise) and tile mask. The result is written back the same way.
++
++Known differences, all named refusals or the original's own errors:
++- With use_controlnet, the original applies the ControlNet with the legacy ControlNetApply and slices its hint per
++  tile. V2 refuses by name.
++- Conditioning with ControlNet, area, mask or GLIGEN entries is refused, because the original slices those per tile.
++  Reference latents are refused too, because the host check groups them with the others.
++- Pre-noising is exact only for latent formats whose `process_out` is `latent / scale_factor` (SD1, SD2, SDXL, SVD).
++  Other model families are refused, except with "padded", which does not pre-noise.
++- With an AYS scheduler and dpm_2, dpm_2_ancestral, uni_pc or uni_pc_bh2, the original's sampler drops the schedule's
++  penultimate sigma; the host's AYS schedule does not. That combination is refused.
++- A latent with a noise mask fails as it does in the original: `comfy.sample.prepare_mask` no longer exists in core.
++- With "tiled" VAE decoding, the original's `VAEEncodeTiled().encode(vae, pixels, 320)` fails, because core requires
++  `overlap`. V2 raises the same TypeError.
++
++Known private SDK use: with "padded", each tile's noise slice reaches `ctx.sample(noise=...)` through
++`sdk.TensorRef._from_raw` (`_bnk_sample_tile`), as before this round. This stays until the SDK has a public TensorRef
++constructor for a node's own tensor, or `ctx.sample` accepts such a tensor as noise.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,18 +1,14 @@
@@ -64,6 +99,185 @@
 +    "WEB_DIRECTORY",
 +    "CC_VERSION",
 +]
+--- /dev/null
++++ b/v2/_bnk_tiling.py
+@@ -0,0 +1,175 @@
++import torch
++import itertools
++import numpy as np
++
++def grouper(n, iterable):
++    it = iter(iterable)
++    while True:
++        chunk = list(itertools.islice(it, n))
++        if not chunk:
++            return
++        yield chunk
++
++def create_batches(n, iterable):
++    groups = itertools.groupby(iterable, key= lambda x: (x[1], x[3]))
++    for _, x in groups:
++        for y in grouper(n, x):
++            yield y
++
++
++def get_slice(tensor, h, h_len, w, w_len):
++    t = tensor.narrow(-2, h, h_len)
++    t = t.narrow(-1, w, w_len)
++    return t
++
++def set_slice(tensor1,tensor2,  h, h_len, w, w_len, mask=None):
++    if mask is not None:
++        tensor1[:,:,h:h+h_len,w:w+w_len] = tensor1[:,:,h:h+h_len,w:w+w_len] * (1 - mask) +  tensor2 * mask
++    else:
++        tensor1[:,:,h:h+h_len,w:w+w_len] = tensor2
++
++def get_tiles_and_masks_simple(steps, latent_shape, tile_height, tile_width):
++    latent_size_h = latent_shape[-2]
++    latent_size_w = latent_shape[-1]
++    tile_size_h = int(tile_height // 8)
++    tile_size_w = int(tile_width // 8)
++
++    h = np.arange(0,latent_size_h, tile_size_h)
++    w = np.arange(0,latent_size_w, tile_size_w)
++
++    def create_tile(hs, ws, i, j):
++        h = int(hs[i])
++        w = int(ws[j])
++        h_len = min(tile_size_h, latent_size_h - h)
++        w_len = min(tile_size_w, latent_size_w - w)
++        return (h, h_len, w, w_len, steps, None)
++
++    passes = [
++        [[create_tile(h, w, i, j) for i in range(len(h)) for j in range(len(w))]],
++    ]
++    return passes
++
++def get_tiles_and_masks_padded(steps, latent_shape, tile_height, tile_width):
++    batch_size = latent_shape[0]
++    latent_size_h = latent_shape[-2]
++    latent_size_w = latent_shape[-1]
++
++    tile_size_h = int(tile_height // 8)
++    tile_size_h = int((tile_size_h // 4) * 4)
++    tile_size_w = int(tile_width // 8)
++    tile_size_w = int((tile_size_w // 4) * 4)
++
++    #masks
++    mask_h = [0,tile_size_h // 4, tile_size_h - tile_size_h // 4, tile_size_h]
++    mask_w = [0,tile_size_w // 4, tile_size_w - tile_size_w // 4, tile_size_w]
++    masks = [[] for _ in range(3)]
++    for i in range(3):
++        for j in range(3):
++            mask = torch.zeros((batch_size,1,tile_size_h, tile_size_w), dtype=torch.float32, device='cpu')
++            mask[:,:,mask_h[i]:mask_h[i+1],mask_w[j]:mask_w[j+1]] = 1.0
++            masks[i].append(mask)
++    
++    def create_mask(h_ind, w_ind, h_ind_max, w_ind_max, mask_h, mask_w, h_len, w_len):
++        mask = masks[1][1]
++        if not (h_ind == 0 or h_ind == h_ind_max or w_ind == 0 or w_ind == w_ind_max):
++            return get_slice(mask, 0, h_len, 0, w_len)
++        mask = mask.clone()
++        if h_ind == 0 and mask_h:
++            mask += masks[0][1]
++        if h_ind == h_ind_max and mask_h:
++            mask += masks[2][1]
++        if w_ind == 0 and mask_w:
++            mask += masks[1][0]
++        if w_ind == w_ind_max and mask_w:
++            mask += masks[1][2]
++        if h_ind == 0 and w_ind == 0 and mask_h and mask_w:
++            mask += masks[0][0]
++        if h_ind == 0 and w_ind == w_ind_max and mask_h and mask_w:
++            mask += masks[0][2]
++        if h_ind == h_ind_max and w_ind == 0 and mask_h and mask_w:
++            mask += masks[2][0]
++        if h_ind == h_ind_max and w_ind == w_ind_max and mask_h and mask_w:
++            mask += masks[2][2]
++        return get_slice(mask, 0, h_len, 0, w_len)
++
++    h = np.arange(0,latent_size_h, tile_size_h)
++    h_shift = np.arange(tile_size_h // 2, latent_size_h - tile_size_h // 2, tile_size_h)
++    w = np.arange(0,latent_size_w, tile_size_w)
++    w_shift = np.arange(tile_size_w // 2, latent_size_w - tile_size_h // 2, tile_size_w)
++    
++
++    def create_tile(hs, ws, mask_h, mask_w, i, j):
++        h = int(hs[i])
++        w = int(ws[j])
++        h_len = min(tile_size_h, latent_size_h - h)
++        w_len = min(tile_size_w, latent_size_w - w)
++        mask = create_mask(i,j,len(hs)-1, len(ws)-1, mask_h, mask_w, h_len, w_len)
++        return (h, h_len, w, w_len, steps, mask)
++    
++    passes = [
++        [[create_tile(h,       w,       True,  True,  i, j) for i in range(len(h))       for j in range(len(w))]],
++        [[create_tile(h_shift, w,       False, True,  i, j) for i in range(len(h_shift)) for j in range(len(w))]],
++        [[create_tile(h,       w_shift, True,  False, i, j) for i in range(len(h))       for j in range(len(w_shift))]],
++        [[create_tile(h_shift, w_shift, False, False, i,j) for i in range(len(h_shift)) for j in range(len(w_shift))]],
++    ]
++    
++    return passes
++
++def mask_at_boundary(h, h_len, w, w_len, tile_size_h, tile_size_w, latent_size_h, latent_size_w, mask, device='cpu'):
++    tile_size_h = int(tile_size_h // 8)
++    tile_size_w = int(tile_size_w // 8)
++    
++    if (h_len == tile_size_h or h_len == latent_size_h) and (w_len == tile_size_w or w_len == latent_size_w):
++        return h, h_len, w, w_len, mask
++    h_offset = min(0, latent_size_h - (h + tile_size_h))
++    w_offset = min(0, latent_size_w - (w + tile_size_w))
++    new_mask = torch.zeros((1,1,tile_size_h, tile_size_w), dtype=torch.float32, device=device)
++    new_mask[:,:,-h_offset:h_len if h_offset == 0 else tile_size_h, -w_offset:w_len if w_offset == 0 else tile_size_w] =  1.0 if mask is None else mask
++    return h + h_offset, tile_size_h, w + w_offset, tile_size_w, new_mask
++
++def get_tiles_and_masks_rgrid(steps, latent_shape, tile_height, tile_width, generator):
++
++    def calc_coords(latent_size, tile_size, jitter):
++        tile_coords = int((latent_size + jitter - 1) // tile_size + 1)
++        tile_coords = [np.clip(tile_size * c - jitter, 0, latent_size) for c in range(tile_coords + 1)]
++        tile_coords = [(c1, c2-c1) for c1, c2 in zip(tile_coords, tile_coords[1:])]
++        return tile_coords
++    
++    #calc stuff
++    batch_size = latent_shape[0]
++    latent_size_h = latent_shape[-2]
++    latent_size_w = latent_shape[-1]
++    tile_size_h = int(tile_height // 8)
++    tile_size_w = int(tile_width // 8)
++
++    tiles_all = []
++
++    for s in range(steps):
++        rands = torch.rand((2,), dtype=torch.float32, generator=generator, device='cpu').numpy()
++
++        jitter_w1 = int(rands[0] * tile_size_w)
++        jitter_w2 = int(((rands[0] + .5) % 1.0) * tile_size_w)
++        jitter_h1 = int(rands[1] * tile_size_h)
++        jitter_h2 = int(((rands[1] + .5) % 1.0) * tile_size_h)
++
++        #calc number of tiles
++        tiles_h = [
++            calc_coords(latent_size_h, tile_size_h, jitter_h1),
++            calc_coords(latent_size_h, tile_size_h, jitter_h2)
++        ]
++        tiles_w = [
++            calc_coords(latent_size_w, tile_size_w, jitter_w1),
++            calc_coords(latent_size_w, tile_size_w, jitter_w2)
++        ]
++
++        tiles = []
++        if s % 2 == 0:
++            for i, h in enumerate(tiles_h[0]):
++                for w in tiles_w[i%2]:
++                    tiles.append((int(h[0]), int(h[1]), int(w[0]), int(w[1]), 1, None))
++        else:
++            for i, w in enumerate(tiles_w[0]):
++                for h in tiles_h[i%2]:
++                    tiles.append((int(h[0]), int(h[1]), int(w[0]), int(w[1]), 1, None))
++        tiles_all.append(tiles)
++    return [tiles_all]
+\ No newline at end of file
 --- /dev/null
 +++ b/v2/_schemas.json
 @@ -0,0 +1,28623 @@
@@ -28692,7 +28906,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,3234 @@
+@@ -0,0 +1,3144 @@
 +"""Secure Nodes 2.0 implementations for Efficiency Nodes' pinned surface.
 +
 +The original pack mixes workflow data helpers with global monkey patches,
@@ -28717,6 +28931,7 @@
 +from PIL import Image, ImageDraw, ImageFont, ImageOps
 +
 +from ._secure_runtime import SCHEMAS, bind_node, sdk
++from . import _bnk_tiling as _bnk
 +
 +
 +_NATIVE_SCHEDULERS = {
@@ -30986,28 +31201,197 @@
 +
 +    tile = _script_tile((script or {}).get("tile"))
 +    if tile:
++        # efficiency_nodes.py:651-677: decode if needed, ImageScaleBy nearest-exact, VAE encode, TiledKSampler.
++        if tile.get("control_net") is not None:
++            raise RuntimeError(
++                "Tiled Upscaler Script is not available in this secure build with use_controlnet: the original applies "
++                "the tile ControlNet with the legacy ControlNetApply and slices its hint per tile")
 +        image = image or await (
 +            vae.decode_tiled(latent, tile_size=320)
 +            if "tiled" in vae_decode else vae.decode(latent)
 +        )
 +        image = await _resize_image_raw(image, float(tile["upscale_by"]))
++        if "tiled" in vae_decode:
++            # The original calls VAEEncodeTiled().encode(vae, pixels, 320) (efficiency_nodes.py:470); core's encode
++            # needs overlap as well (nodes.py:412), so the original fails here.
++            raise TypeError("VAEEncodeTiled.encode() missing 1 required positional argument: 'overlap'")
 +        latent = await vae.encode(await image.rgb())
-+        use_positive, use_negative = positive, negative
-+        if tile.get("control_net") is not None:
-+            use_positive, use_negative = await tile["control_net"].apply(
-+                positive, negative, image, strength=float(tile.get("strength", 1.0))
-+            )
-+        # Tiling remains a pack algorithm.  Sampling each bounded tile and
-+        # feathering overlaps is implemented by the helper below.
 +        latent = await _sample_tiled(
-+            latent, model=model, positive=use_positive, negative=use_negative,
++            latent, model=model, positive=positive, negative=negative,
 +            seed=tile["seed"], steps=tile["steps"], cfg=cfg,
 +            sampler_name=sampler_name, scheduler=scheduler,
 +            denoise=tile["denoise"], tile_size=tile["tile_size"],
-+            strategy=tile["strategy"],
++            strategy=tile["strategy"], noise_recipe=_script_noise((script or {}).get("noise")),
 +        )
 +        image = None
 +    return latent, image
++
++
++_BNK_PLAIN_LATENT_FAMILIES = {"sd1", "sdxl", "sdxl_refiner", "svd"}
++
++
++_BNK_DISCARD_PENULTIMATE_SAMPLERS = {"dpm_2", "dpm_2_ancestral", "uni_pc", "uni_pc_bh2"}
++
++
++def _bnk_prepare_noise(latent_image, seed, noise_inds=None):
++    """comfy.sample.prepare_noise / prepare_noise_inner (core comfy/sample.py:9-35) for a dense latent:
++    torch.manual_seed(seed) is the default CPU generator, seeded; a fresh generator seeded alike gives the same stream."""
++    generator = torch.Generator(device="cpu").manual_seed(int(seed))
++    if noise_inds is None:
++        return torch.randn(latent_image.size(), dtype=torch.float32, layout=latent_image.layout, generator=generator,
++                           device="cpu").to(dtype=latent_image.dtype)
++
++    unique_inds, inverse = np.unique(noise_inds, return_inverse=True)
++    noises = []
++    for i in range(unique_inds[-1] + 1):
++        noise = torch.randn([1] + list(latent_image.size())[1:], dtype=torch.float32, layout=latent_image.layout,
++                            generator=generator, device="cpu").to(dtype=latent_image.dtype)
++        if i in unique_inds:
++            noises.append(noise)
++    noises = [noises[i] for i in inverse]
++    return torch.cat(noises, axis=0)
++
++
++async def _bnk_sample_tile(model, positive, negative, tiled_noise, tiled_latent, tiled_mask, *, steps, cfg,
++                           sampler_name, scheduler, sigma_schedule, start_step, last_step, force_full_denoise, seed,
++                           steer_cfg):
++    """One tile's sampler.sample(tiled_noise, pos, neg, cfg, latent_image=tiled_latent, start_step, last_step,
++    force_full_denoise, denoise_mask=tiled_mask, seed) (bnk_tiled_samplers.py:283), run host-side. tiled_noise None is
++    the original's all-zero tile noise (bnk_tiled_samplers.py:253-254), which is the host's disabled noise; otherwise it
++    is the padded strategy's slice of the full noise (bnk_tiled_samplers.py:250-251), passed as explicit noise. The tile
++    mask rides as the latent's noise mask, which the host hands to the sampler as its denoise mask."""
++    tile = {"samples": tiled_latent.contiguous()}
++    if tiled_mask is not None:
++        tile["noise_mask"] = tiled_mask.contiguous()
++    noise_ref = None
++    if tiled_noise is not None:
++        # ctx.sample takes explicit noise only as a TENSOR ref, and the SDK has no public constructor for one from a
++        # node's own tensor; this is the call corpus main's padded path already made for its tile noise.
++        noise_ref = await sdk.TensorRef._from_raw(tiled_noise.contiguous())
++    result = await _ctx().sample(
++        latent=await sdk.LatentRef.from_value(tile), steps=int(steps), model=model, positive=positive,
++        negative=negative, cfg=float(cfg), seed=int(seed), sampler_name=str(sampler_name), scheduler=str(scheduler),
++        denoise=1.0, disable_noise=noise_ref is None, start_step=int(start_step), last_step=int(last_step),
++        force_full_denoise=bool(force_full_denoise), noise=noise_ref, sigma_schedule=sigma_schedule,
++        steer_cfg=bool(steer_cfg))
++    return (await result.value())["samples"]
++
++
++async def _bnk_sample_common(model, add_noise, noise_seed, tile_width, tile_height, tiling_strategy, steps, cfg,
++                             sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step,
++                             return_with_leftover_noise, denoise=1.0, *, noise_recipe=None):
++    """sample_common (py/bnk_tiled_samplers.py:104-299), step for step: the same noise, start sigma, tiles, step ranges,
++    masks and write-back. Model-owned work runs host-side: the start sigma through ModelRef.sampling_sigma_delta and each
++    tile's partial schedule through ctx.sample."""
++    end_at_step = min(end_at_step, steps)
++    value = dict(await latent_image.value())
++    samples = value["samples"]
++    if getattr(samples, "is_nested", False):
++        raise RuntimeError("Tiled Upscaler Script is not available in this secure build for nested latents")
++    noise_mask = value["noise_mask"] if "noise_mask" in value else None
++    force_full_denoise = return_with_leftover_noise == "enable"
++    if add_noise == "disable":
++        noise = torch.zeros(samples.size(), dtype=samples.dtype, layout=samples.layout, device="cpu")
++    else:
++        skip = value["batch_index"] if "batch_index" in value else None
++        # Inside KSampler (Efficient) a Noise Control Script replaces comfy.sample.prepare_noise (efficiency_nodes.py:
++        # 505-515); _explicit_noise is this pack's port of that noise, as the main pass uses it.
++        noise_ref = await _explicit_noise(latent_image, int(noise_seed), noise_recipe)
++        if noise_ref is not None:
++            noise = (await noise_ref.raw()).to(device="cpu", dtype=samples.dtype)
++        else:
++            noise = _bnk_prepare_noise(samples, int(noise_seed), skip)
++
++    if noise_mask is not None:
++        # sample_common calls comfy.sample.prepare_mask here (bnk_tiled_samplers.py:117); core no longer has it.
++        raise AttributeError("module 'comfy.sample' has no attribute 'prepare_mask'")
++
++    shape = samples.shape
++    samples = samples.clone()
++
++    tile_width = min(shape[-1] * 8, tile_width)
++    tile_height = min(shape[2] * 8, tile_height)
++
++    # The original slices ControlNet hints, T2I adapters, area/mask conditioning and GLIGEN boxes per tile
++    # (bnk_tiled_samplers.py:151-192, 260-281); a guest cannot slice those.
++    if await positive.has_spatial_metadata() or await negative.has_spatial_metadata():
++        raise RuntimeError(
++            "Tiled Upscaler Script is not available in this secure build with ControlNet, area, mask, GLIGEN or "
++            "reference-latent conditioning: the original slices spatial conditioning per tile")
++
++    scheduler_name, sigma_schedule = _scheduler_recipe(scheduler, 1.0)
++    if sigma_schedule is not None and str(sampler_name) in _BNK_DISCARD_PENULTIMATE_SAMPLERS:
++        raise RuntimeError(
++            f"Tiled Upscaler Script is not available in this secure build with the {scheduler} scheduler and the "
++            f"{sampler_name} sampler: the original drops the schedule's penultimate sigma for this sampler")
++    if tiling_strategy != 'padded':
++        # samples += sampler.sigmas[start_at_step].cpu() * model.model.process_latent_out(noise)
++        family = await model.family()
++        if family not in _BNK_PLAIN_LATENT_FAMILIES:
++            raise RuntimeError(
++                f"Tiled Upscaler Script is not available in this secure build for {family} latents: the original "
++                "pre-noises the latent through the model's latent format, which only SD1/SD2/SDXL/SVD expose here")
++        scale = float(await model.latent_scale_factor())
++        delta = await model.sampling_sigma_delta(
++            steps=int(steps), sampler_name=str(sampler_name), scheduler=scheduler_name,
++            start_step=int(start_at_step), end_step=int(steps), denoise=1.0, sigma_schedule=sigma_schedule)
++        # delta is (sigmas[start] - sigmas[steps]) / scale; every core schedule ends at 0, so this recovers the float32
++        # sigmas[start] exactly.
++        sigma = torch.tensor(float(delta) * scale, dtype=torch.float32)
++        samples += sigma * (noise / scale)
++
++    gen = torch.Generator(device="cpu").manual_seed(int(noise_seed))
++    if tiling_strategy == 'random' or tiling_strategy == 'random strict':
++        tiles = _bnk.get_tiles_and_masks_rgrid(end_at_step - start_at_step, samples.shape, tile_height, tile_width, gen)
++    elif tiling_strategy == 'padded':
++        tiles = _bnk.get_tiles_and_masks_padded(end_at_step - start_at_step, samples.shape, tile_height, tile_width)
++    else:
++        tiles = _bnk.get_tiles_and_masks_simple(end_at_step - start_at_step, samples.shape, tile_height, tile_width)
++
++    steer_cfg = bool(noise_recipe and noise_recipe.get("cfg_denoiser"))
++    if tiling_strategy == "random strict":
++        samples_next = samples.clone()
++    for img_pass in tiles:
++        for i in range(len(img_pass)):
++            for tile_h, tile_h_len, tile_w, tile_w_len, tile_steps, tile_mask in img_pass[i]:
++                tiled_mask = None
++                if tile_mask is not None:
++                    tiled_mask = tile_mask
++
++                if tiling_strategy == 'padded' or tiling_strategy == 'random strict':
++                    tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask = _bnk.mask_at_boundary(
++                        tile_h, tile_h_len, tile_w, tile_w_len, tile_height, tile_width, samples.shape[-2],
++                        samples.shape[-1], tiled_mask, "cpu")
++
++                if tiled_mask is not None and tiled_mask.sum().cpu() == 0.0:
++                    continue
++
++                tiled_latent = _bnk.get_slice(samples, tile_h, tile_h_len, tile_w, tile_w_len)
++
++                if tiling_strategy == 'padded':
++                    tiled_noise = _bnk.get_slice(noise, tile_h, tile_h_len, tile_w, tile_w_len)
++                else:
++                    tiled_noise = None  # torch.zeros_like(tiled_latent): a noise mask already failed above
++
++                tile_result = await _bnk_sample_tile(
++                    model, positive, negative, tiled_noise, tiled_latent, tiled_mask, steps=steps, cfg=cfg,
++                    sampler_name=sampler_name, scheduler=scheduler_name, sigma_schedule=sigma_schedule,
++                    start_step=start_at_step + i * tile_steps, last_step=start_at_step + i * tile_steps + tile_steps,
++                    force_full_denoise=force_full_denoise and i + 1 == end_at_step - start_at_step, seed=noise_seed,
++                    steer_cfg=steer_cfg)
++                tile_result = tile_result.cpu()
++                if tiled_mask is not None:
++                    tiled_mask = tiled_mask.cpu()
++                if tiling_strategy == "random strict":
++                    _bnk.set_slice(samples_next, tile_result, tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask)
++                else:
++                    _bnk.set_slice(samples, tile_result, tile_h, tile_h_len, tile_w, tile_w_len, tiled_mask)
++            if tiling_strategy == "random strict":
++                samples = samples_next.clone()
++
++    out = dict(value)
++    out["samples"] = samples.cpu()
++    return await sdk.LatentRef.from_value(out)
 +
 +
 +async def _sample_tiled(
@@ -31024,277 +31408,17 @@
 +    denoise,
 +    tile_size,
 +    strategy,
++    noise_recipe=None,
 +):
-+    if float(denoise) <= 0:
-+        return latent
-+    value = dict(await latent.value())
-+    samples = value["samples"].clone()
-+    total_steps = max(int(steps), int(int(steps) / float(denoise)))
-+    start_step = max(0, total_steps - int(steps))
-+    height, width = map(int, samples.shape[-2:])
-+    tile_height = min(height, max(8, int(tile_size) // 8))
-+    tile_width = min(width, max(8, int(tile_size) // 8))
-+    if height <= tile_height and width <= tile_width:
-+        return await _sample_once(
-+            model=model, positive=positive, negative=negative, latent=latent,
-+            seed=seed, steps=total_steps, cfg=cfg, sampler_name=sampler_name,
-+            scheduler=scheduler, denoise=1.0, start_step=start_step,
-+            end_step=total_steps,
-+        )
-+
-+    batch = int(samples.shape[0])
-+
-+    source_mask = value.get("noise_mask")
-+    if isinstance(source_mask, torch.Tensor):
-+        source_mask = source_mask.detach().float().cpu()
-+        while source_mask.ndim < 4:
-+            source_mask = source_mask.unsqueeze(1)
-+        if source_mask.shape[1] != 1:
-+            source_mask = source_mask[:, :1]
-+        if tuple(source_mask.shape[-2:]) != (height, width):
-+            source_mask = F.interpolate(
-+                source_mask, size=(height, width), mode="bilinear",
-+                align_corners=False,
-+            )
-+        if source_mask.shape[0] != batch:
-+            repeats = math.ceil(batch / max(1, int(source_mask.shape[0])))
-+            source_mask = source_mask.repeat(repeats, 1, 1, 1)[:batch]
-+    else:
-+        source_mask = None
-+
-+    noise_ref = await latent.random_noise(int(seed), "cpu")
-+    global_noise = (await noise_ref.raw()).to(dtype=samples.dtype, device="cpu")
-+
-+    strategy = str(strategy)
-+    if strategy not in {"simple", "padded", "random", "random strict"}:
-+        raise ValueError(f"unknown tiled sampling strategy {strategy!r}")
-+
-+    # The legacy sampler creates one full-image noise field.  Non-padded
-+    # strategies add it once before slicing, so overlapping/random tiles do
-+    # not independently reseed.  The scalar schedule query keeps all tiling
-+    # and mask arithmetic here while core owns the model-specific sigma scale.
-+    if strategy != "padded":
-+        scheduler_name, sigma_schedule = _scheduler_recipe(scheduler, 1.0)
-+        sigma = await model.sampling_sigma_delta(
-+            steps=total_steps,
-+            sampler_name=str(sampler_name),
-+            scheduler=scheduler_name,
-+            start_step=start_step,
-+            end_step=total_steps,
-+            denoise=1.0,
-+            sigma_schedule=sigma_schedule,
-+        )
-+        scaled_noise = global_noise * float(sigma)
-+        if source_mask is not None:
-+            scaled_noise = scaled_noise * source_mask.to(scaled_noise)
-+        samples.add_(scaled_noise)
-+
-+    def simple_tiles():
-+        return [[(
-+            y, min(tile_height, height - y),
-+            x, min(tile_width, width - x), None,
-+        ) for y in range(0, height, tile_height)
-+          for x in range(0, width, tile_width)]]
-+
-+    def padded_passes():
-+        size_h = max(4, (tile_height // 4) * 4)
-+        size_w = max(4, (tile_width // 4) * 4)
-+        quarter_h = size_h // 4
-+        quarter_w = size_w // 4
-+        ys = list(range(0, height, size_h))
-+        xs = list(range(0, width, size_w))
-+        shifted_y = list(range(
-+            size_h // 2, max(size_h // 2, height - size_h // 2), size_h
-+        ))
-+        shifted_x = list(range(
-+            size_w // 2, max(size_w // 2, width - size_w // 2), size_w
-+        ))
-+
-+        def grid(y_values, x_values, mask_height, mask_width):
-+            tiles = []
-+            for y_index, y in enumerate(y_values):
-+                for x_index, x in enumerate(x_values):
-+                    h = min(size_h, height - y)
-+                    w = min(size_w, width - x)
-+                    mask = torch.zeros((batch, 1, h, w), dtype=torch.float32)
-+                    top = 0 if mask_height and y_index == 0 else quarter_h
-+                    bottom = (
-+                        h if mask_height and y_index == len(y_values) - 1
-+                        else min(h, size_h - quarter_h)
-+                    )
-+                    left = 0 if mask_width and x_index == 0 else quarter_w
-+                    right = (
-+                        w if mask_width and x_index == len(x_values) - 1
-+                        else min(w, size_w - quarter_w)
-+                    )
-+                    if top < bottom and left < right:
-+                        mask[:, :, top:bottom, left:right] = 1.0
-+                    tiles.append((y, h, x, w, mask))
-+            return tiles
-+
-+        return [
-+            grid(ys, xs, True, True),
-+            grid(shifted_y, xs, False, True),
-+            grid(ys, shifted_x, True, False),
-+            grid(shifted_y, shifted_x, False, False),
-+        ]
-+
-+    def random_step_tiles(generator: torch.Generator, step_index: int):
-+        def coordinates(length, size, jitter):
-+            count = int((length + jitter - 1) // size + 1)
-+            points = [
-+                int(np.clip(size * index - jitter, 0, length))
-+                for index in range(count + 1)
-+            ]
-+            return [
-+                (first, second - first)
-+                for first, second in zip(points, points[1:])
-+                if second > first
-+            ]
-+
-+        values = torch.rand((2,), generator=generator).tolist()
-+        jitter_x = (
-+            int(values[0] * tile_width),
-+            int(((values[0] + 0.5) % 1.0) * tile_width),
-+        )
-+        jitter_y = (
-+            int(values[1] * tile_height),
-+            int(((values[1] + 0.5) % 1.0) * tile_height),
-+        )
-+        y_sets = [coordinates(height, tile_height, item) for item in jitter_y]
-+        x_sets = [coordinates(width, tile_width, item) for item in jitter_x]
-+        tiles = []
-+        if step_index % 2 == 0:
-+            for y_index, (y, h) in enumerate(y_sets[0]):
-+                for x, w in x_sets[y_index % 2]:
-+                    tiles.append((y, h, x, w, None))
-+        else:
-+            for x_index, (x, w) in enumerate(x_sets[0]):
-+                for y, h in y_sets[x_index % 2]:
-+                    tiles.append((y, h, x, w, None))
-+        return tiles
-+
-+    def boundary_tile(y, h, x, w, mask):
-+        if ((h == tile_height or h == height)
-+                and (w == tile_width or w == width)):
-+            return y, h, x, w, mask
-+        offset_y = min(0, height - (y + tile_height))
-+        offset_x = min(0, width - (x + tile_width))
-+        full_mask = torch.zeros(
-+            (batch, 1, tile_height, tile_width), dtype=torch.float32
-+        )
-+        source = 1.0 if mask is None else mask
-+        full_mask[
-+            :, :,
-+            -offset_y:h if offset_y == 0 else tile_height,
-+            -offset_x:w if offset_x == 0 else tile_width,
-+        ] = source
-+        return (
-+            y + offset_y, tile_height,
-+            x + offset_x, tile_width,
-+            full_mask,
-+        )
-+
-+    async def run_tile(source, tile, first_step, last_step, *, strict=False):
-+        y, h, x, w, mask = tile
-+        if source_mask is not None:
-+            sliced_source_mask = source_mask[..., y:y + h, x:x + w]
-+            mask = (
-+                sliced_source_mask
-+                if mask is None else mask * sliced_source_mask
-+            )
-+        if strict or strategy == "padded":
-+            y, h, x, w, mask = boundary_tile(y, h, x, w, mask)
-+        if mask is not None and not bool(mask.any()):
-+            return y, h, x, w, mask
-+        tile_value = {
-+            "samples": source[..., y:y + h, x:x + w].clone()
-+        }
-+        if mask is not None:
-+            tile_value["noise_mask"] = mask
-+        tile_ref = await sdk.LatentRef.from_value(tile_value)
-+        pos_tile = await positive.spatial_crop(
-+            x=x, y=y, width=w, height=h,
-+            source_width=width, source_height=height,
-+        )
-+        neg_tile = await negative.spatial_crop(
-+            x=x, y=y, width=w, height=h,
-+            source_width=width, source_height=height,
-+        )
-+        explicit_noise = None
-+        add_noise = "disable"
-+        if strategy == "padded":
-+            explicit_noise = await sdk.TensorRef._from_raw(
-+                global_noise[..., y:y + h, x:x + w].clone()
-+            )
-+            add_noise = "enable"
-+        sampled = await _sample_once(
-+            model=model,
-+            positive=pos_tile,
-+            negative=neg_tile,
-+            latent=tile_ref,
-+            seed=int(seed),
-+            steps=total_steps,
-+            cfg=cfg,
-+            sampler_name=sampler_name,
-+            scheduler=scheduler,
-+            denoise=1.0,
-+            start_step=first_step,
-+            end_step=last_step,
-+            leftover_noise=("disable" if last_step >= total_steps else "enable"),
-+            add_noise=add_noise,
-+            explicit_noise=explicit_noise,
-+        )
-+        result = (await sampled.value())["samples"]
-+        destination = source[..., y:y + h, x:x + w]
-+        if mask is None:
-+            destination.copy_(result)
-+        else:
-+            blend = mask.to(device=destination.device, dtype=destination.dtype)
-+            destination.copy_(destination * (1.0 - blend) + result * blend)
-+        return y, h, x, w, mask
-+
-+    if strategy in {"random", "random strict"}:
-+        generator = torch.Generator(device="cpu").manual_seed(int(seed))
-+        for step_index in range(int(steps)):
-+            tiles = random_step_tiles(generator, step_index)
-+            if strategy == "random strict":
-+                next_samples = samples.clone()
-+                for tile in tiles:
-+                    before = samples.clone()
-+                    y, h, x, w, mask = await run_tile(
-+                        before,
-+                        tile,
-+                        start_step + step_index,
-+                        start_step + step_index + 1,
-+                        strict=True,
-+                    )
-+                    changed = before[..., y:y + h, x:x + w]
-+                    destination = next_samples[..., y:y + h, x:x + w]
-+                    if mask is None:
-+                        destination.copy_(changed)
-+                    else:
-+                        blend = mask.to(destination)
-+                        destination.copy_(
-+                            destination * (1.0 - blend) + changed * blend
-+                        )
-+                samples = next_samples
-+            else:
-+                for tile in tiles:
-+                    await run_tile(
-+                        samples,
-+                        tile,
-+                        start_step + step_index,
-+                        start_step + step_index + 1,
-+                    )
-+    else:
-+        passes = padded_passes() if strategy == "padded" else simple_tiles()
-+        for tiles in passes:
-+            for tile in tiles:
-+                await run_tile(samples, tile, start_step, total_steps)
-+
-+    value["samples"] = samples
-+    return await sdk.LatentRef.from_value(value)
++    """TiledKSampler.sample (py/bnk_tiled_samplers.py:326-328) as KSampler (Efficient) calls it for the Tiled Upscaler
++    Script (efficiency_nodes.py:670-673): steps_total = int(steps / denoise), then sample_common from steps_total - steps
++    to steps_total with denoise 1.0."""
++    steps = int(steps)
++    steps_total = int(steps / denoise)
++    return await _bnk_sample_common(
++        model, 'enable', int(seed), int(tile_size), int(tile_size), str(strategy), steps_total, cfg, sampler_name,
++        scheduler, positive, negative, latent, steps_total - steps, steps_total, 'disable', denoise=1.0,
++        noise_recipe=noise_recipe)
 +
 +
 +async def _decode_result(vae, latent, vae_decode):
@@ -72945,6 +73069,440 @@
 +
 +main()
 --- /dev/null
++++ b/v2/tests/eff_tiled_fakeops.py
+@@ -0,0 +1,431 @@
++"""Deterministic stand-ins for the model-owned work of the Tiled Upscaler Script, shared by both sides of
++test_efficiency_tiled_parity.py.
++
++The original (py/bnk_tiled_samplers.py TiledKSampler) and the V2 port (_secure_nodes._sample_tiled) both run on the
++same real ComfyUI scheduling code: comfy.samplers.KSampler sigma schedules, denoise and start/last-step slicing,
++comfy.sample.prepare_noise and comfy.sampler_helpers.prepare_mask. Only the diffusion step itself
++(comfy.samplers.sample) and the VAE are stand-ins. So an output difference can only come from the pack-side control
++flow: noise, the pre-noise sigma, tiles, step ranges, masks and write-back.
++On the V2 side, ctx.sample and the ModelRef/CondRef queries follow the host's implementations
++(comfy_secure_nodes transport/host.py _h_sample; comfy_api latest _sdk.py _model_sampling_sigma_delta,
++_model_latent_scale_factor, _model_family, _cond_has_spatial_metadata), including the guest wire rule that only refs,
++JSON scalars and containers cross. Both sides run on top of the same real core code.
++Every diffusion call is recorded, with its arguments and result by digest, so the two call sequences can be compared.
++"""
++from __future__ import annotations
++
++import hashlib
++import math
++
++import torch
++import torch.nn.functional as F
++
++CALLS: list = []      # diffusion and VAE calls, comparable between V1 and V2
++BOUNDARY: list = []   # V2-only host-call arguments, for the report
++
++
++def digest(value) -> str:
++    t = torch.as_tensor(value).detach().cpu().contiguous()
++    return hashlib.sha256(t.numpy().tobytes()).hexdigest()[:16] + f":{tuple(t.shape)}:{str(t.dtype)}"
++
++
++def text_tag(value) -> float:
++    return (sum((i + 1) * ord(c) for i, c in enumerate(str(value))) % 997) / 997.0
++
++
++def cond_tag(cond) -> float:
++    total = 0.0
++    for row in cond:
++        total += float(torch.as_tensor(row[0]).double().sum())
++        total += text_tag(sorted((k, repr(v)) for k, v in row[1].items() if k in ("area", "strength")))
++    return round(total, 6)
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Model stand-in: real latent formats and a real discrete sampling schedule, no weights
++# --------------------------------------------------------------------------------------------------------------------
++class FakeBaseModel:
++    def __init__(self, family: str, tag: float):
++        import comfy.latent_formats
++        import comfy.model_sampling
++
++        class _Sampling(comfy.model_sampling.ModelSamplingDiscrete, comfy.model_sampling.EPS):
++            pass
++
++        self.family = family
++        self.tag = float(tag)
++        self.latent_format = {"sdxl": comfy.latent_formats.SDXL, "flux": comfy.latent_formats.Flux}.get(
++            family, comfy.latent_formats.SD15)()
++        self.model_sampling = _Sampling(None)
++
++    def process_latent_out(self, latent):
++        return self.latent_format.process_out(latent)
++
++    def process_latent_in(self, latent):
++        return self.latent_format.process_in(latent)
++
++
++class FakePatcher:
++    """What comfy.sample.sample, comfy.samplers.KSampler and the original's sample_common read from a ModelPatcher."""
++
++    def __init__(self, base, load_device=None, offload_device=None, model_options=None):
++        self.model = base
++        self.model_options = {} if model_options is None else model_options
++        self.load_device = torch.device("cpu")
++
++    def get_model_object(self, name):
++        return getattr(self.model, name)
++
++    def model_dtype(self):
++        return torch.float32
++
++    def memory_required(self, shape):
++        return 0
++
++
++def fake_inner_sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model_options={},
++                      latent_image=None, denoise_mask=None, callback=None, disable_pbar=False, seed=None):
++    """Stand-in for comfy.samplers.sample: every argument moves the result; the mask is prepared by core."""
++    import comfy.sampler_helpers
++
++    sig = sigmas.detach().cpu().float()
++    base = latent_image.detach().cpu().float()
++    n = noise.detach().cpu().float()
++    mask = None
++    if denoise_mask is not None:
++        mask = comfy.sampler_helpers.prepare_mask(denoise_mask, noise.shape, "cpu").float()
++    name = getattr(getattr(sampler, "sampler_function", None), "__name__", repr(sampler))
++    ptag, ntag = cond_tag(positive), cond_tag(negative)
++    g = torch.Generator().manual_seed(int(seed))
++    x = base + n * sig[0]
++    for i in range(len(sig) - 1):
++        step = float(sig[i] - sig[i + 1]) / (1.0 + float(sig[i]))
++        eps = torch.randn(tuple(x.shape), generator=g)
++        x = (x * (1.0 - 0.1 * step) + 0.01 * float(cfg) + 0.003 * ptag - 0.002 * ntag + 0.004 * text_tag(name)
++             + 0.005 * model.model.tag + 0.01 * eps * float(sig[i + 1]))
++        if mask is not None:
++            x = x * mask + (base + n * sig[i + 1]) * (1.0 - mask)
++    x = x.contiguous()
++    CALLS.append(("sample", name, [round(float(s), 6) for s in sig], round(float(cfg), 6), int(seed), ptag, ntag,
++                  digest(noise), digest(latent_image), digest(mask) if mask is not None else None, digest(x)))
++    return x
++
++
++def install_core_fakes():
++    """Both sides: the diffusion step is the stand-in; loading models is a no-op."""
++    import comfy.model_management
++    import comfy.samplers
++
++    comfy.samplers.sample = fake_inner_sample
++    comfy.model_management.load_models_gpu = lambda *a, **k: None
++    comfy.model_management.load_model_gpu = lambda *a, **k: None
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# VAE stand-in (both sides)
++# --------------------------------------------------------------------------------------------------------------------
++def encode(pixels):
++    """VAE encode stand-in: crop to multiples of 8, 8x8 average pool, 4 channels."""
++    x = torch.as_tensor(pixels)[..., :3].movedim(-1, 1).float()
++    h, w = x.shape[-2] // 8 * 8, x.shape[-1] // 8 * 8
++    pooled = F.avg_pool2d(x[..., :h, :w], 8)
++    out = torch.cat([pooled * 2 - 1, pooled.mean(dim=1, keepdim=True)], dim=1).contiguous()
++    CALLS.append(("encode", digest(pixels), digest(out)))
++    return out
++
++
++def decode(latent, tiled=False):
++    """VAE decode stand-in: bilinear x8 upsample of 3 latent channels to BHWC in [0, 1]."""
++    x = torch.as_tensor(latent)[:, :3].float()
++    img = ((F.interpolate(x, scale_factor=8, mode="bilinear", align_corners=False) + 1) / 2).clamp(0, 1)
++    img = img.movedim(1, -1).contiguous()
++    if tiled:
++        img = (img * 0.999 + 0.0005).clamp(0, 1).contiguous()
++    CALLS.append(("decode", "tiled" if tiled else "plain", digest(latent), digest(img)))
++    return img
++
++
++class V1Vae:
++    """What core's VAEDecode / VAEEncode / VAEDecodeTiled nodes call on a VAE."""
++
++    def decode(self, samples):
++        return decode(samples)
++
++    def encode(self, pixels):
++        return encode(pixels)
++
++    def temporal_compression_decode(self):
++        return None
++
++    def spacial_compression_decode(self):
++        return 8
++
++    def decode_tiled(self, samples, tile_x=None, tile_y=None, overlap=None, tile_t=None, overlap_t=None):
++        BOUNDARY.append(("v1_decode_tiled", tile_x, tile_y, overlap, tile_t, overlap_t))
++        return decode(samples, tiled=True)
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# V2 side: fake refs with the host's behaviour
++# --------------------------------------------------------------------------------------------------------------------
++_JSON = (str, int, float, bool, type(None))
++
++
++def wire_check(value, where="argument"):
++    """transport/wire.py encode: refs, JSON scalars and containers cross; anything else is a hard error."""
++    if isinstance(value, Ref) or isinstance(value, _JSON):
++        return
++    if isinstance(value, (list, tuple)):
++        for v in value:
++            wire_check(v, where)
++        return
++    if isinstance(value, dict):
++        for v in value.values():
++            wire_check(v, where)
++        return
++    raise TypeError(f"value of type {type(value).__name__} cannot cross the guest wire; "
++                    f"only refs, callbacks, JSON scalars and containers are marshalable ({where})")
++
++
++def _crossed(value):
++    """A value stored on or read back from the host is a copy, as across the real wire."""
++    if isinstance(value, torch.Tensor):
++        return value.detach().clone()
++    if isinstance(value, dict):
++        return {k: _crossed(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [_crossed(v) for v in value]
++    return value
++
++
++class Ref:
++    _count = 0
++
++    def __init__(self, kind, value=None):
++        Ref._count += 1
++        self.id = f"{kind}-{Ref._count}"
++        self.kind = kind
++        self._value = value
++
++    async def value(self):
++        return _crossed(self._value)
++
++    async def raw(self):
++        return _crossed(self._value)
++
++
++class LatentRef(Ref):
++    def __init__(self, value):
++        assert isinstance(value, dict) and isinstance(value.get("samples"), torch.Tensor), "LATENT must be a dict"
++        super().__init__("LATENT", _crossed(value))
++
++    @classmethod
++    async def from_value(cls, value):
++        return cls(value)
++
++    async def random_noise(self, seed, source="cpu", batch_size=None):
++        import comfy.sample
++        assert source == "cpu"
++        value = self._value
++        return TensorRef(comfy.sample.prepare_noise(value["samples"], int(seed), value.get("batch_index")))
++
++
++class TensorRef(Ref):
++    def __init__(self, value):
++        super().__init__("TENSOR", _crossed(value))
++
++    @classmethod
++    async def _from_raw(cls, value):
++        return cls(value)
++
++
++class ImageRef(Ref):
++    def __init__(self, value):
++        t = torch.as_tensor(value)
++        assert t.ndim == 4 and t.shape[-1] in (1, 3, 4), f"IMAGE must be BHWC, got {tuple(t.shape)}"
++        super().__init__("IMAGE", t)
++
++    @classmethod
++    async def _from_raw(cls, value):
++        return cls(value)
++
++    async def rgb(self):
++        return ImageRef(self._value[..., :3])
++
++
++class CondRef(Ref):
++    def __init__(self, cond):
++        super().__init__("CONDITIONING", cond)
++
++    async def has_spatial_metadata(self):
++        spatial = {"area", "mask", "gligen", "control", "reference_latents"}
++        return any(spatial.intersection(row[1]) for row in self._value)
++
++    async def spatial_crop(self, **kwargs):
++        """Only the previous V2 (negative control) calls this; without spatial metadata a crop is the same cond."""
++        assert not await self.has_spatial_metadata()
++        BOUNDARY.append(("cond_spatial_crop", tuple(sorted(kwargs.items()))))
++        return CondRef(self._value)
++
++
++class ModelRef(Ref):
++    def __init__(self, patcher):
++        super().__init__("MODEL", patcher)
++
++    async def family(self):
++        return self._value.model.family
++
++    async def latent_scale_factor(self):
++        return float(self._value.model.latent_format.scale_factor)
++
++    async def sampling_sigma_delta(self, *, steps, sampler_name, scheduler, start_step, end_step, denoise=1.0,
++                                   sigma_schedule=None):
++        """The host op (comfy_api latest _sdk.py _model_sampling_sigma_delta), on the same core code."""
++        import comfy.samplers
++        params = {"steps": int(steps), "sampler_name": str(sampler_name), "scheduler": str(scheduler),
++                  "start_step": int(start_step), "end_step": int(end_step), "denoise": float(denoise),
++                  "sigma_schedule": sigma_schedule}
++        wire_check(params, "model.sampling_sigma_delta")
++        BOUNDARY.append(("sampling_sigma_delta", tuple(sorted((k, repr(v)) for k, v in params.items()))))
++        steps, start_step, end_step, denoise = (params["steps"], params["start_step"], params["end_step"],
++                                                params["denoise"])
++        if not 1 <= steps <= 10000:
++            raise ValueError("steps must be in [1, 10000]")
++        if not 0 <= start_step <= end_step <= steps:
++            raise ValueError("sigma step range is outside the schedule")
++        if not math.isfinite(denoise) or not 0.0 <= denoise <= 1.0:
++            raise ValueError("denoise must be finite and in [0, 1]")
++        if sampler_name not in comfy.samplers.KSampler.SAMPLERS:
++            raise ValueError("unknown sampler name")
++        if scheduler not in comfy.samplers.KSampler.SCHEDULERS:
++            raise ValueError("unknown scheduler name")
++        value = self._value
++        if sigma_schedule is None:
++            sigmas = comfy.samplers.KSampler(value, steps=steps, device=value.load_device, sampler=sampler_name,
++                                             scheduler=scheduler, denoise=denoise,
++                                             model_options=value.model_options).sigmas
++        else:
++            total_steps = steps if denoise > 0.9999 else int(steps / denoise)
++            sigmas = schedule_sigmas(sigma_schedule, total_steps)
++            if denoise <= 0.9999:
++                sigmas = sigmas[-(steps + 1):]
++        scale = float(value.model.latent_format.scale_factor)
++        return float((sigmas[start_step] - sigmas[end_step]).detach().cpu()) / scale
++
++
++def schedule_sigmas(sigma_schedule, total_steps):
++    """The host's typed sigma schedules (host.py _h_sample run_sampling)."""
++    kind = sigma_schedule.get("kind")
++    if kind == "gits":
++        assert set(sigma_schedule) == {"kind", "coeff", "denoise"}
++        from comfy_extras.nodes_gits import GITSScheduler
++        return GITSScheduler.execute(sigma_schedule["coeff"], total_steps, sigma_schedule["denoise"])[0]
++    if kind == "ays":
++        assert set(sigma_schedule) == {"kind", "model_type", "denoise"}
++        from comfy_extras.nodes_align_your_steps import AlignYourStepsScheduler
++        return AlignYourStepsScheduler().get_sigmas(sigma_schedule["model_type"], total_steps,
++                                                    sigma_schedule["denoise"])[0]
++    raise ValueError("sample sigma_schedule kind is not supported")
++
++
++class V2Vae(Ref):
++    def __init__(self):
++        super().__init__("VAE")
++
++    async def encode(self, image):
++        assert isinstance(image, ImageRef)
++        return LatentRef({"samples": encode(image._value)})
++
++    async def decode(self, latent, *, allow_extended_range=False):
++        assert isinstance(latent, LatentRef) and allow_extended_range is False
++        return ImageRef(decode(latent._value["samples"]))
++
++    async def decode_tiled(self, latent, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=8, *,
++                           allow_extended_range=False):
++        assert isinstance(latent, LatentRef) and allow_extended_range is False
++        BOUNDARY.append(("v2_decode_tiled", int(tile_size), int(overlap), int(temporal_size), int(temporal_overlap)))
++        return ImageRef(decode(latent._value["samples"], tiled=True))
++
++
++class V2Ctx:
++    async def sample(self, latent, steps, on_step=None, *, model=None, positive=None, negative=None, cfg=8.0, seed=0,
++                     sampler_name="euler", scheduler="normal", denoise=1.0, steer_cfg=False, disable_noise=False,
++                     start_step=None, last_step=None, force_full_denoise=False, sampler=None, noise=None,
++                     sigma_factor=1.0, sigma_schedule=None, sigmas=None, guider=None, cache=None,
++                     return_denoised=False, fix_empty_latent=True):
++        """Guest _RemoteSample marshalling, then the host's _h_sample on the same core code (comfy.sample.sample)."""
++        import comfy.sample
++        import comfy.samplers
++        parameters = {
++            "latent": latent, "steps": int(steps), "on_step": on_step, "model": model, "positive": positive,
++            "negative": negative, "cfg": float(cfg), "seed": int(seed), "sampler_name": str(sampler_name),
++            "scheduler": str(scheduler), "denoise": float(denoise), "steer_cfg": bool(steer_cfg),
++            "disable_noise": bool(disable_noise), "start_step": start_step, "last_step": last_step,
++            "force_full_denoise": bool(force_full_denoise), "sampler": sampler, "noise": noise,
++            "sigma_factor": float(sigma_factor), "sigma_schedule": sigma_schedule, "sigmas": sigmas,
++            "guider": guider, "cache": cache, "return_denoised": return_denoised}
++        wire_check(parameters, "ctx.sample")
++        BOUNDARY.append(("ctx.sample", tuple(sorted((k, v.id if isinstance(v, Ref) else repr(v))
++                                                    for k, v in parameters.items()))))
++        assert on_step is None and sampler is None and sigmas is None and guider is None and cache is None
++        assert not return_denoised and parameters["sigma_factor"] == 1.0
++        steps, seed, cfg, denoise = parameters["steps"], parameters["seed"], parameters["cfg"], parameters["denoise"]
++        if not 1 <= steps <= 10000:
++            raise ValueError("sample steps must be in [1, 10000]")
++        if not 0 <= seed <= (1 << 64) - 1:
++            raise ValueError("sample seed must be in the unsigned 64-bit range")
++        if not math.isfinite(denoise) or not 0.0 <= denoise <= 1.0:
++            raise ValueError("sample denoise must be finite and in [0, 1]")
++        start_step = None if start_step is None else int(start_step)
++        last_step = None if last_step is None else int(last_step)
++        if start_step is not None and not 0 <= start_step <= 10000:
++            raise ValueError("sample start_step must be in [0, 10000]")
++        if last_step is not None and not 0 <= last_step <= 10000:
++            raise ValueError("sample last_step must be in [0, 10000]")
++        if start_step is not None and last_step is not None and start_step > last_step:
++            raise ValueError("sample start_step must not exceed last_step")
++        if noise is not None and disable_noise:
++            raise ValueError("sample explicit noise cannot be combined with disable_noise")
++        if sampler_name not in comfy.samplers.KSampler.SAMPLERS:
++            raise ValueError(f"unknown sampler {sampler_name!r}")
++        if scheduler not in comfy.samplers.KSampler.SCHEDULERS:
++            raise ValueError(f"unknown scheduler {scheduler!r}")
++        model_obj = model._value
++        latent_dict = latent._value
++        latent_image = latent_dict["samples"]
++        if fix_empty_latent:
++            latent_image = comfy.sample.fix_empty_latent_channels(model_obj, latent_image)
++        if noise is not None:
++            noise_obj = noise._value
++            assert isinstance(noise_obj, torch.Tensor) and tuple(noise_obj.shape) == tuple(latent_image.shape)
++            sampling_noise = noise_obj.to(device="cpu", dtype=latent_image.dtype).clone()
++        else:
++            sampling_noise = (torch.zeros_like(latent_image) if bool(disable_noise)
++                              else comfy.sample.prepare_noise(latent_image, seed, latent_dict.get("batch_index")))
++        custom_sigmas = None
++        if sigma_schedule is not None:
++            if denoise <= 0.0:
++                return LatentRef(dict(latent_dict))
++            total_steps = steps if denoise > 0.9999 else int(steps / denoise)
++            if total_steps < 2:
++                raise ValueError("custom sigma schedule needs at least 2 steps")
++            custom_sigmas = schedule_sigmas(sigma_schedule, total_steps)
++            if denoise <= 0.9999:
++                custom_sigmas = custom_sigmas[-(steps + 1):]
++            custom_sigmas = custom_sigmas * 1.0
++        result = comfy.sample.sample(
++            model_obj, sampling_noise, steps, cfg, sampler_name, scheduler, positive._value, negative._value,
++            latent_image, denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
++            force_full_denoise=force_full_denoise, noise_mask=latent_dict.get("noise_mask"), sigmas=custom_sigmas,
++            callback=None, disable_pbar=True, seed=seed)
++        out = dict(latent_dict)
++        out["samples"] = result
++        return LatentRef(out)
++
++
++CTX = V2Ctx()
++
++
++def reset():
++    CALLS.clear()
++    BOUNDARY.clear()
+--- /dev/null
 +++ b/v2/tests/test_efficiency_repair_parity.py
 @@ -0,0 +1,230 @@
 +"""Tier-1 parity for efficiency-nodes-comfyui repair rounds: the pristine pack (4579b7d6) vs the repaired V2 conversion.
@@ -73177,3 +73735,403 @@
 +
 +
 +main()
+--- /dev/null
++++ b/v2/tests/test_efficiency_tiled_parity.py
+@@ -0,0 +1,397 @@
++"""Tier-1 parity for the Tiled Upscaler Script's sampling: the original (V1) against the V2 port, side by side, CPU only.
++
++Run in the lane gate: run_in_gate.sh <pack root (pristine + v2/)> <this tests dir> <results dir>
++test_efficiency_tiled_parity.py
++
++Both sides run the same real ComfyUI scheduling code with the same stand-in diffusion step and VAE
++(eff_tiled_fakeops.py). Everything else is the pack's own code:
++- V1 imports the pristine py/bnk_tiled_samplers.py (and its py/bnk_tiling.py) with /core first, and calls
++  TiledKSampler().sample as KSampler (Efficient) does (efficiency_nodes.py:670-673). The pack's AYS scheduler patch is
++  applied around it, as inside KSampler (Efficient) (efficiency_nodes.py:478-494).
++- V2 loads v2/ as a bare namespace package against the guest SDK base, like the production loader, and calls
++  _sample_tiled.
++The "post_*" cases cover the whole tile block. V1 runs efficiency_nodes.py:651-673 as written there, with core's real
++VAEDecode, VAEDecodeTiled, ImageScaleBy, VAEEncode and VAEEncodeTiled nodes. V2 runs _post_scripts.
++Per case, the test compares:
++- the output latent, exactly (float32 equality);
++- the sequence of diffusion/VAE calls with argument and result digests;
++- for error cases, the exception type and message.
++Each case has an expected verdict: EXACT, ERROR-PARITY (both raise the same error), or REFUSED-AS-DESIGNED (V1 runs,
++V2 raises its named refusal). The comparator negative control must turn red. If the previous V2 module is present
++(tests/old/_secure_nodes.py, lane-only), it runs as a second control and must differ.
++"""
++from __future__ import annotations
++
++import asyncio
++import importlib
++import json
++import os
++import shutil
++import subprocess
++import sys
++import traceback
++import types
++from pathlib import Path
++
++PACK = Path("/pack")
++TESTS = Path(__file__).resolve().parent
++RESULTS = Path(os.environ.get("RESULTS", "/results"))
++BASE = "/bases/0cd9adec273a703eb3d1c715d83ff1c7d2bb00746330c866c7e3ac644c80ebbb/common-site-packages"
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Cases
++# --------------------------------------------------------------------------------------------------------------------
++def _case(cid, expect, *, shape=(1, 4, 48, 72), strategy="simple", tile_size=256, steps=2, denoise=0.35,
++          seed=20261102, cfg=1.0, sampler_name="euler", scheduler="normal", family="sd1", batch_index=None,
++          noise_mask=False, area=False, post=None, refusal=None):
++    return dict(cid=cid, expect=expect, shape=shape, strategy=strategy, tile_size=tile_size, steps=steps,
++                denoise=denoise, seed=seed, cfg=cfg, sampler_name=sampler_name, scheduler=scheduler, family=family,
++                batch_index=batch_index, noise_mask=noise_mask, area=area, post=post, refusal=refusal)
++
++
++CASES = [
++    _case("simple_low_denoise", "EXACT"),
++    _case("simple_multistep_karras", "EXACT", shape=(1, 4, 40, 56), steps=6, denoise=0.5, cfg=6.5,
++          sampler_name="dpmpp_2m", scheduler="karras", seed=7),
++    _case("simple_denoise_1", "EXACT", shape=(1, 4, 32, 40), steps=3, denoise=1.0, seed=11),
++    _case("simple_single_tile", "EXACT", shape=(1, 4, 24, 24), steps=4, denoise=0.6, seed=12),
++    _case("random", "EXACT", strategy="random", steps=4, denoise=0.5, seed=21),
++    _case("random_strict", "EXACT", strategy="random strict", steps=4, denoise=0.5, seed=22),
++    _case("random_strict_odd_size", "EXACT", shape=(1, 4, 37, 53), strategy="random strict", steps=3, denoise=0.45,
++          seed=23, tile_size=320),
++    _case("random_batch2_index", "EXACT", shape=(2, 4, 32, 48), strategy="random", steps=3, denoise=0.5, seed=24,
++          batch_index=[3, 1]),
++    _case("simple_dpm2_discard_penultimate", "EXACT", steps=5, denoise=0.5, sampler_name="dpm_2", seed=25),
++    _case("simple_euler_ancestral_seed_max", "EXACT", steps=3, denoise=0.5, sampler_name="euler_ancestral",
++          seed=0xffffffffffffffff),
++    _case("simple_sdxl", "EXACT", family="sdxl", steps=4, denoise=0.5, seed=26),
++    _case("random_ays_sd1", "EXACT", strategy="random", scheduler="AYS SD1", steps=4, denoise=0.5, seed=27),
++    _case("padded", "EXACT", strategy="padded", steps=3, denoise=0.5, seed=32),
++    _case("padded_odd_size", "EXACT", shape=(1, 4, 37, 53), strategy="padded", steps=2, denoise=0.4, seed=36,
++          tile_size=320),
++    # Batch 2 with a boundary tile: the original's mask_at_boundary builds a batch-1 mask and fails.
++    _case("padded_batch2_index_error", "ERROR-PARITY", shape=(2, 4, 32, 48), strategy="padded", steps=2, denoise=0.4,
++          seed=40, batch_index=[0, 2]),
++    _case("padded_flux_family", "EXACT", strategy="padded", family="flux", steps=2, denoise=0.5, seed=37),
++    _case("padded_ays_sdxl", "EXACT", strategy="padded", family="sdxl", scheduler="AYS SDXL", steps=3, denoise=0.6,
++          seed=38),
++    _case("noise_mask_error", "ERROR-PARITY", noise_mask=True, seed=31),
++    _case("padded_noise_mask_error", "ERROR-PARITY", strategy="padded", noise_mask=True, seed=39),
++    _case("area_cond_refused", "REFUSED-AS-DESIGNED", area=True, seed=33,
++          refusal="the original slices spatial conditioning per tile"),
++    _case("flux_family_refused", "REFUSED-AS-DESIGNED", family="flux", seed=34, refusal="for flux latents"),
++    _case("ays_dpm2_refused", "REFUSED-AS-DESIGNED", scheduler="AYS SD1", sampler_name="dpm_2", steps=3, denoise=0.5,
++          seed=35, refusal="drops the schedule's penultimate sigma"),
++    _case("post_simple_block", "EXACT", shape=(1, 4, 32, 48), steps=2, denoise=0.35, seed=41,
++          post=dict(upscale_by=1.5, vae_decode="true")),
++    _case("post_random_upscale2", "EXACT", shape=(1, 4, 24, 32), strategy="random", steps=3, denoise=0.5, seed=42,
++          post=dict(upscale_by=2.0, vae_decode="true")),
++    _case("post_padded_block", "EXACT", shape=(1, 4, 24, 40), strategy="padded", steps=2, denoise=0.5, seed=44,
++          post=dict(upscale_by=1.5, vae_decode="true")),
++    _case("post_tiled_vae_error", "ERROR-PARITY", shape=(1, 4, 32, 48), seed=43,
++          post=dict(upscale_by=1.5, vae_decode="true (tiled)")),
++]
++
++
++def make_latent(shape, seed):
++    import torch
++    g = torch.Generator().manual_seed(int(seed) % (1 << 63))
++    return (torch.randn(shape, generator=g) * 0.8).contiguous()
++
++
++def make_cond(value, area=False):
++    import torch
++    extra = {"area": (16, 24, 8, 16), "strength": 1.0} if area else {}
++    return [[torch.full((1, 4, 8), float(value)), {"pooled_output": torch.full((1, 8), float(value) / 2), **extra}]]
++
++
++def latent_dict(case):
++    import torch
++    value = {"samples": make_latent(case["shape"], case["seed"])}
++    if case["batch_index"] is not None:
++        value["batch_index"] = list(case["batch_index"])
++    if case["noise_mask"]:
++        b, _c, h, w = case["shape"]
++        value["noise_mask"] = torch.linspace(0, 1, h * w).reshape(1, 1, h, w).repeat(b, 1, 1, 1)
++    return value
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Children
++# --------------------------------------------------------------------------------------------------------------------
++def _force_cpu():
++    try:
++        from comfy.cli_args import args
++        args.cpu = True
++    except Exception:  # noqa: BLE001
++        pass
++
++
++def _copytree(src: Path, dst: Path, skip_v2: bool):
++    if dst.exists():
++        shutil.rmtree(dst)
++    ignore = shutil.ignore_patterns("__pycache__", *(["v2"] if skip_v2 else []))
++    shutil.copytree(src, dst, ignore=ignore)
++
++
++def _run_case(run, case):
++    import numpy as np
++    sys.path.insert(0, str(TESTS))
++    import eff_tiled_fakeops as fk
++    fk.reset()
++    res = {}
++    try:
++        out = run(case)
++        res["output"] = np.ascontiguousarray(out.detach().cpu().numpy())
++    except Exception as e:  # noqa: BLE001
++        res["error"] = f"{type(e).__name__}: {e}"
++        res["traceback"] = traceback.format_exc()[-2500:]
++    res["calls"] = [list(c) for c in fk.CALLS]
++    res["boundary"] = [repr(b) for b in fk.BOUNDARY]
++    return res
++
++
++def _save(results: dict, out: Path):
++    import numpy as np
++    arrays = {k: v.pop("output") for k, v in results.items() if "output" in v}
++    np.savez(out.with_suffix(".npz"), **arrays)
++    out.with_suffix(".json").write_text(json.dumps(results, indent=1, sort_keys=True, default=str))
++
++
++def child_v1(out: Path):
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/eff-v1") / "pack"
++    _copytree(PACK, dst, skip_v2=True)
++    sys.path[:0] = ["/core"]
++    os.chdir("/tmp")
++    _force_cpu()
++    sys.path.insert(0, str(TESTS))
++    import comfy.model_patcher
++    import comfy.samplers
++    import eff_tiled_fakeops as fk
++    import nodes
++    from comfy_extras.nodes_align_your_steps import AlignYourStepsScheduler
++    fk.install_core_fakes()
++    comfy.model_patcher.ModelPatcher = fk.FakePatcher
++    # The pristine pack modules, imported as a package under a private name (the pack's py/ has no __init__.py).
++    pkg = types.ModuleType("eff_py")
++    pkg.__path__ = [str(dst / "py")]
++    sys.modules["eff_py"] = pkg
++    bnk = importlib.import_module("eff_py.bnk_tiled_samplers")
++
++    # efficiency_nodes.py:478-494, as KSampler (Efficient) wraps all of its sampling: AYS/GITS scheduler names.
++    original_calculation = comfy.samplers.calculate_sigmas
++
++    def calculate_sigmas(model_sampling, scheduler_name: str, steps):
++        if scheduler_name.startswith("AYS"):
++            return AlignYourStepsScheduler().get_sigmas(scheduler_name.split(" ")[1], steps, denoise=1.0)[0]
++        return original_calculation(model_sampling, scheduler_name, steps)
++
++    comfy.samplers.KSampler.SCHEDULERS = comfy.samplers.KSampler.SCHEDULERS + ["AYS SD1", "AYS SDXL", "AYS SVD", "GITS"]
++    comfy.samplers.calculate_sigmas = calculate_sigmas
++
++    def tiled(case, latent):
++        model = fk.FakePatcher(fk.FakeBaseModel(case["family"], 0.375))
++        return bnk.TiledKSampler().sample(
++            model, case["seed"], case["tile_size"], case["tile_size"], case["strategy"], case["steps"], case["cfg"],
++            case["sampler_name"], case["scheduler"], make_cond(0.5, case["area"]), make_cond(-0.25), latent,
++            denoise=case["denoise"])[0]
++
++    def run(case):
++        latent = latent_dict(case)
++        post = case["post"]
++        if post is None:
++            return tiled(case, latent)["samples"]
++        # efficiency_nodes.py:651-673 (tile block of KSampler (Efficient)), with vae_decode_latent / vae_encode_image
++        # as defined at efficiency_nodes.py:466-470.
++        vae = fk.V1Vae()
++        vae_decode = post["vae_decode"]
++        images = (nodes.VAEDecodeTiled().decode(vae, latent, 320)[0] if "tiled" in vae_decode
++                  else nodes.VAEDecode().decode(vae, latent)[0])
++        upscaled_image = nodes.ImageScaleBy().upscale(images, "nearest-exact", post["upscale_by"])[0]
++        upscaled_latent = (nodes.VAEEncodeTiled().encode(vae, upscaled_image, 320)[0] if "tiled" in vae_decode
++                           else nodes.VAEEncode().encode(vae, upscaled_image)[0])
++        return tiled(case, upscaled_latent)["samples"]
++
++    results = {case["cid"]: _run_case(run, case) for case in CASES}
++    _save(results, out)
++
++
++def _load_v2(module_root: Path, pkg: str):
++    sys.path[:0] = [BASE, "/overlay", "/core"]
++    os.chdir("/tmp")
++    _force_cpu()
++    p = types.ModuleType(pkg)
++    p.__path__ = [str(module_root)]
++    p.__package__ = pkg
++    sys.modules[pkg] = p
++    return importlib.import_module(f"{pkg}._secure_nodes")
++
++
++def _v2_runner(port, fk):
++    def run(case):
++        model = fk.ModelRef(fk.FakePatcher(fk.FakeBaseModel(case["family"], 0.375)))
++        positive, negative = fk.CondRef(make_cond(0.5, case["area"])), fk.CondRef(make_cond(-0.25))
++        latent = fk.LatentRef(latent_dict(case))
++        post = case["post"]
++        if post is None:
++            result = asyncio.run(port._sample_tiled(
++                latent, model=model, positive=positive, negative=negative, seed=case["seed"], steps=case["steps"],
++                cfg=case["cfg"], sampler_name=case["sampler_name"], scheduler=case["scheduler"],
++                denoise=case["denoise"], tile_size=case["tile_size"], strategy=case["strategy"]))
++            return result._value["samples"]
++        # The Tiled Upscaler Script node's own SCRIPT entry, as the V2 node emits it.
++        script = asyncio.run(port._tile_script(
++            post["upscale_by"], case["tile_size"], case["strategy"], case["steps"], case["seed"], case["denoise"],
++            False, "none", 1.0, script=None))[0]
++        result_latent, image = asyncio.run(port._post_scripts(
++            latent, None, model=model, positive=positive, negative=negative, vae=fk.V2Vae(), cfg=case["cfg"],
++            sampler_name=case["sampler_name"], scheduler=case["scheduler"], seed=case["seed"],
++            vae_decode=post["vae_decode"], script=script))
++        assert image is None
++        return result_latent._value["samples"]
++    return run
++
++
++def _patch_port(port, fk):
++    port.sdk = types.SimpleNamespace(LatentRef=fk.LatentRef, TensorRef=fk.TensorRef, ImageRef=fk.ImageRef,
++                                     ctx=lambda: fk.CTX)
++    port._ctx = lambda: fk.CTX
++
++
++def child_v2(out: Path):
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/eff-v2/v2")
++    _copytree(PACK / "v2", dst, skip_v2=False)
++    port = _load_v2(dst, "eff_v2")
++    sys.path.insert(0, str(TESTS))
++    import comfy.samplers  # noqa: F401
++    import eff_tiled_fakeops as fk
++    fk.install_core_fakes()
++    _patch_port(port, fk)
++    results = {case["cid"]: _run_case(_v2_runner(port, fk), case) for case in CASES}
++    _save(results, out)
++
++
++def child_old(out: Path):
++    """The previous V2 (corpus main) under the same fakes: expected to differ from V1."""
++    sys.argv = [sys.argv[0]]
++    dst = Path("/tmp/eff-old/v2")
++    _copytree(PACK / "v2", dst, skip_v2=False)
++    shutil.copyfile(TESTS / "old" / "_secure_nodes.py", dst / "_secure_nodes.py")
++    port = _load_v2(dst, "eff_v2_old")
++    sys.path.insert(0, str(TESTS))
++    import eff_tiled_fakeops as fk
++    fk.install_core_fakes()
++    _patch_port(port, fk)
++    results = {case["cid"]: _run_case(_v2_runner(port, fk), case) for case in CASES}
++    _save(results, out)
++
++
++# --------------------------------------------------------------------------------------------------------------------
++# Parent
++# --------------------------------------------------------------------------------------------------------------------
++def _spawn(kind: str, out: Path):
++    proc = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve()), kind, str(out)], capture_output=True,
++                          text=True, env=dict(os.environ), timeout=3000)
++    (RESULTS / f"{kind}.stderr.txt").write_text(proc.stderr[-200000:])
++    (RESULTS / f"{kind}.stdout.txt").write_text(proc.stdout[-200000:])
++    if proc.returncode != 0:
++        raise RuntimeError(f"{kind} child failed rc={proc.returncode}: {proc.stderr[-3000:]}")
++    import numpy as np
++    meta = json.loads(out.with_suffix(".json").read_text())
++    with np.load(out.with_suffix(".npz"), allow_pickle=False) as z:
++        for k in z.files:
++            meta[k]["output"] = z[k]
++    return meta
++
++
++def _compare(a: dict, b: dict) -> list[str]:
++    import numpy as np
++    diffs = []
++    if ("error" in a) != ("error" in b):
++        diffs.append(f"error presence: v1={a.get('error')!r} v2={b.get('error')!r}")
++    elif "error" in a:
++        if a["error"] != b["error"]:
++            diffs.append(f"error text: v1={a['error']!r} v2={b['error']!r}")
++    else:
++        x, y = a["output"], b["output"]
++        if x.shape != y.shape or x.dtype != y.dtype:
++            diffs.append(f"output shape/dtype: v1={x.shape}/{x.dtype} v2={y.shape}/{y.dtype}")
++        elif not np.array_equal(x, y):
++            d = np.abs(x.astype(np.float64) - y.astype(np.float64))
++            diffs.append(f"output values: max|d|={float(d.max()):.3g}, differing={int((d > 0).sum())}/{d.size}")
++    if a["calls"] != b["calls"]:
++        n = next((i for i, (p, q) in enumerate(zip(a["calls"], b["calls"])) if p != q),
++                 min(len(a["calls"]), len(b["calls"])))
++        diffs.append(f"call sequence differs at #{n} (v1 {len(a['calls'])} calls, v2 {len(b['calls'])}): "
++                     f"v1={a['calls'][n] if n < len(a['calls']) else None} "
++                     f"v2={b['calls'][n] if n < len(b['calls']) else None}")
++    return diffs
++
++
++def _verdict(case, a, b):
++    diffs = _compare(a, b)
++    if case["expect"] == "REFUSED-AS-DESIGNED":
++        ok = ("error" not in a and "error" in b and b["error"].startswith("RuntimeError: Tiled Upscaler Script is not "
++                                                                         "available in this secure build")
++              and case["refusal"] in b["error"])
++        return ("REFUSED-AS-DESIGNED" if ok else "UNEXPECTED"), diffs
++    if diffs:
++        return "MISMATCH", diffs
++    return ("ERROR-PARITY" if "error" in a else "EXACT"), diffs
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    tmp = Path("/tmp/eff-tiled-parity")
++    tmp.mkdir(parents=True, exist_ok=True)
++    v1 = _spawn("child_v1", tmp / "v1")
++    v2 = _spawn("child_v2", tmp / "v2")
++    report = {"cases": {}, "met": 0, "failed": 0}
++    for case in CASES:
++        cid = case["cid"]
++        a, b = v1[cid], v2[cid]
++        verdict, diffs = _verdict(case, a, b)
++        met = verdict == case["expect"]
++        report["cases"][cid] = {
++            "expect": case["expect"], "verdict": verdict, "met": met, "diffs": diffs,
++            "v1_error": a.get("error"), "v2_error": b.get("error"),
++            "v1_traceback": a.get("traceback"), "v2_traceback": b.get("traceback"),
++            "calls": len(a["calls"]), "output_shape": list(a["output"].shape) if "output" in a else None,
++            "v2_boundary_sample": b["boundary"][:4],
++        }
++        report["met" if met else "failed"] += 1
++    # Negative control 1: the comparator must see a change of one value by one float32 ulp.
++    import numpy as np
++    ref = v2["simple_low_denoise"]
++    flipped = dict(ref, output=ref["output"].copy())
++    flat = flipped["output"].reshape(-1)
++    flat[12345 % flat.size] = np.nextafter(flat[12345 % flat.size], np.float32(np.inf))
++    report["negative_control_comparator"] = {"diffs": _compare(v1["simple_low_denoise"], flipped)}
++    report["negative_control_comparator"]["red"] = bool(report["negative_control_comparator"]["diffs"])
++    # Negative control 2 (lane-only): the previous V2 under the same fakes.
++    if (TESTS / "old" / "_secure_nodes.py").is_file():
++        old = _spawn("child_old", tmp / "old")
++        report["previous_v2_control"] = {cid: {"diffs": _compare(v1[cid], old[cid]), "error": old[cid].get("error")}
++                                         for cid in old}
++        report["previous_v2_control_red"] = all(bool(x["diffs"]) for x in report["previous_v2_control"].values())
++    report["ok"] = report["failed"] == 0 and report["negative_control_comparator"]["red"]
++    (RESULTS / "tiled-parity.json").write_text(json.dumps(report, indent=1, sort_keys=True, default=str))
++    print(json.dumps({k: report[k] for k in ("ok", "met", "failed")}))
++    for cid, r in report["cases"].items():
++        print(f"{r['verdict']:20s} expect={r['expect']:20s} {cid:34s} calls={r['calls']} "
++              f"{(r['diffs'][:1] or [r['v2_error'] or ''])[0][:160]}")
++    print("negative control (comparator) red:", report["negative_control_comparator"]["red"])
++    if "previous_v2_control" in report:
++        for cid, r in report["previous_v2_control"].items():
++            print(f"previous V2 {cid:34s} {(r['diffs'][:1] or ['NO DIFF'])[0][:150]}")
++    sys.exit(0 if report["ok"] else 1)
++
++
++if __name__ == "__main__":
++    if len(sys.argv) >= 3 and sys.argv[1] in ("child_v1", "child_v2", "child_old"):
++        globals()[sys.argv[1]](Path(sys.argv[2]))
++    else:
++        main()
