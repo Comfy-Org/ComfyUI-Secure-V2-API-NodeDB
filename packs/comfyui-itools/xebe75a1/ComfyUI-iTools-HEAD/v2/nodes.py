@@ -366,10 +366,129 @@ def _styler_fingerprint(template_name=None, **_kwargs):
 _prompt_styler.fingerprint_inputs = _styler_fingerprint
 
 
-async def _template_parts(file_name: str, template_name: str):
-    file_name = _safe_name(file_name, suffix=".yaml")
-    selected = _choose_template(await _style_data(file_name), str(template_name))
-    return selected["prompt"], selected["negative_prompt"], selected["name"], file_name
+async def _v1_load_yaml_data(folder: str, file_name: Any):
+    """V1 shared.load_yaml_data(<folder>/<file_name>), with the file read through the broker (repair r1).
+
+    V1 opens the file as UTF-8 text (universal newlines) and yaml.safe_load()s it. Anything that is not a
+    list, or any error, gives None (V1 also prints a diagnostic).
+    """
+    try:
+        name = _safe_name(file_name)
+        if not await _ctx().assets.exists(folder, name):
+            raise FileNotFoundError(name)
+        text = (await _asset_bytes(folder, name)).decode("utf-8")
+        _yaml_data = yaml.safe_load(text.replace("\r\n", "\n").replace("\r", "\n"))
+        if isinstance(_yaml_data, list):
+            return _yaml_data
+        else:
+            raise ValueError("YAML content is not a list of objects.")
+    except FileNotFoundError:
+        pass
+    except yaml.YAMLError:
+        pass
+    except Exception:
+        pass
+    return None
+
+
+async def _v1_get_template_value_from_yaml_file(file_name, template_name):
+    """V1 prompter_multi.get_template_value_from_yaml_file, line for line (repair r1).
+
+    V1 reads styles/<file>, then styles/more examples/<file>; the first non-empty list wins.
+    """
+    positive_prompt = ""
+    negative_prompt = ""
+    _yaml_data = (await _v1_load_yaml_data(_STYLE_FOLDERS[0], file_name)
+                  or await _v1_load_yaml_data(_STYLE_FOLDERS[1], file_name))
+
+    if template_name == "random":
+        # Pick a random template
+        available_templates = [t['name'] for t in _yaml_data if 'name' in t and 'prompt' in t and t['name'] != "random" and t['name'] != "none"]
+        if not available_templates:
+            raise ValueError("No valid templates found in the YAML file.")
+        template_name = random.choice(available_templates)
+
+    try:
+        # Ensure the data is a list of templates
+        if not isinstance(_yaml_data, list):
+            raise ValueError("Invalid data. Expected a list of templates.")
+
+        # Iterate over each template in the YAML data
+        for template in _yaml_data:
+            # Skip if the template does not have 'name' or 'prompt' fields
+            if 'name' not in template or 'prompt' not in template:
+                continue
+
+            # If the template name matches, process it
+            if template['name'] == template_name:
+                if template['prompt']:
+                    positive_prompt = template['prompt']
+
+                # Handle negative prompts
+                yaml_negative_prompt = template.get('negative_prompt', "")
+                if yaml_negative_prompt:
+                    negative_prompt = yaml_negative_prompt
+                return positive_prompt, negative_prompt, template_name
+
+        # If no matching template is found, raise an error
+        raise ValueError(f"No template found with name '{template_name}'.")
+
+    except ValueError as ve:
+        raise ve  # Propagate specific errors for better debugging
+    except Exception as e:
+        raise RuntimeError(f"An unexpected error occurred: {str(e)}")
+
+
+async def _v1_combine_multi(text_positive, text_negative,
+                            base_file, base_style,
+                            second_file, second_style,
+                            third_file, third_style,
+                            fourth_file, fourth_style):
+    """V1 prompter_multi.combine_multi, line for line (repair r1)."""
+    base_p, base_n, base_t = await _v1_get_template_value_from_yaml_file(base_file, base_style)
+    if "{prompt}" in base_p:
+        base_p = base_p.replace("{prompt}", text_positive)
+    else:
+        base_p = f"{text_positive}. {base_p}" if base_p else text_positive
+
+    # Negative
+    base_n = base_n.strip()
+    if not base_n:
+        base_n = text_negative
+        prepend_neg = False
+    else:
+        prepend_neg = True
+
+    # Secondary templates
+    s2_p, s2_n, s2_t = await _v1_get_template_value_from_yaml_file(second_file, second_style)
+    s3_p, s3_n, s3_t = await _v1_get_template_value_from_yaml_file(third_file, third_style)
+    s4_p, s4_n, s4_t = await _v1_get_template_value_from_yaml_file(fourth_file, fourth_style)
+
+    # Clean placeholders. As in V1, each result is discarded, so the secondary templates keep
+    # their "{prompt}" text in the output.
+    for p in (s2_p, s3_p, s4_p):
+        p.replace("of {prompt}", "").replace("{prompt}", "")
+
+    total_p = f"{base_p},{s2_p},{s3_p},{s4_p}"
+
+    if prepend_neg:
+        total_n = f"{text_negative},{base_n},{s2_n},{s3_n},{s4_n}"
+    else:
+        total_n = f"{base_n},{s2_n},{s3_n},{s4_n}"
+
+    def get_template_format(f, t):
+        if t != "none":
+            return f"({f[:-5]}:{t})".replace(" | ", "|").replace(" > ", ">")
+        return ""
+
+    _templates = (
+        get_template_format(base_file, base_t)
+        + get_template_format(second_file, s2_t)
+        + get_template_format(third_file, s3_t)
+        + get_template_format(fourth_file, s4_t)
+    )
+
+    return _clean_text(total_p), _clean_text(total_n), _templates
 
 
 async def _prompt_styler_extra(
@@ -385,31 +504,19 @@ async def _prompt_styler_extra(
     fourth_style,
     **_kwargs,
 ):
-    positive = _bounded_text(text_positive, "positive prompt")
-    negative = _bounded_text(text_negative, "negative prompt")
-    base = await _template_parts(base_file, base_style)
-    extras = [
-        await _template_parts(second_file, second_style),
-        await _template_parts(third_file, third_style),
-        await _template_parts(fourth_file, fourth_style),
-    ]
-    base_prompt, base_negative, _, _ = base
-    if "{prompt}" in base_prompt:
-        base_prompt = base_prompt.replace("{prompt}", positive)
-    elif base_prompt:
-        base_prompt = f"{positive}. {base_prompt}"
-    else:
-        base_prompt = positive
-    extra_prompts = [p.replace("of {prompt}", "").replace("{prompt}", "") for p, *_ in extras]
-    total_positive = ",".join([base_prompt, *extra_prompts])
-    negatives = [base_negative, *(item[1] for item in extras)]
-    total_negative = ",".join([negative, *negatives]) if base_negative else ",".join([negative, *negatives[1:]])
-
-    def used(item):
-        _, _, template, file_name = item
-        return "" if template == "none" else f"({file_name[:-5]}:{template})"
-
-    return _clean_text(total_positive), _clean_text(total_negative), used(base) + "".join(map(used, extras))
+    positive_prompt, negative_prompt, _templates = await _v1_combine_multi(
+        _bounded_text(text_positive, "positive prompt"),
+        _bounded_text(text_negative, "negative prompt"),
+        base_file,
+        base_style,
+        second_file,
+        second_style,
+        third_file,
+        third_style,
+        fourth_file,
+        fourth_style,
+    )
+    return positive_prompt, negative_prompt, _templates
 
 
 def _extra_fingerprint(**kwargs):
@@ -867,6 +974,18 @@ NODE_CLASS_MAPPINGS = {
     )
     for node_id, (handler, permissions) in _HANDLERS.items()
 }
+
+
+async def _extra_validate_inputs(cls, base_style, second_style, third_style, fourth_style):
+    """V1 VALIDATE_INPUTS(cls, base_style, second_style, third_style, fourth_style): True (repair r1).
+
+    Each style menu depends on the file chosen beside it, so V1 has core skip those four menu checks.
+    Core reads this exact argument list, so the file menus are still checked.
+    """
+    return True
+
+
+NODE_CLASS_MAPPINGS["iToolsPromptStylerExtra"].validate_inputs = classmethod(_extra_validate_inputs)
 NODE_DISPLAY_NAME_MAPPINGS = {
     node_id: definition["schema"]["attrs"]["display_name"]
     for node_id, definition in SCHEMAS.items()

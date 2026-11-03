@@ -57,3 +57,17 @@ allow-scripts iframe-shaped harnesses.
   pickers/downloads replace ambient filesystem and browser-storage access.
 
 Rejected: none. Pending API gaps: none.
+
+## Repair r1
+
+- **Prompt Styler Extra follows the original's text exactly.** `combine_multi` and
+  `get_template_value_from_yaml_file` are ported line for line, and only the two file reads go through the
+  asset broker. That covers three things:
+  - the original's placeholder clean-up has no effect, so the second to fourth templates keep their
+    `{prompt}` text;
+  - template names in `used_templates` have `" | "` and `" > "` compacted;
+  - templates are looked up by name among entries that have a prompt, in `styles/` and then
+    `styles/more examples/`.
+- **Style menus.** The node declares the original's validator for its four style inputs. A style chosen
+  from a file other than the default is therefore accepted, as in the original. The file menus are still
+  checked.
