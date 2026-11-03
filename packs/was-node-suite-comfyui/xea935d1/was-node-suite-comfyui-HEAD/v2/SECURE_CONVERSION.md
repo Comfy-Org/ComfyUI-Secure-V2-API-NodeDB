@@ -1,6 +1,6 @@
 # Secure conversion notes
 
-This conversion is derived from was-ns v2 (corpus main 856bb0a7, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
+This conversion is derived from was-ns v2 (corpus main 7090689a, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
 - `was_v2/originals.py`: every block is copied from this pin's `WAS_Node_Suite.py`. Code that differs from the fork: `WAS_Random_Number` (WAS_Node_Suite.py:12462-12505).
 - `was_v2/schemas.json`: captured from this pin in the gate. `secure-nodes.json` comes from the real encoder.
 - File references (`WAS_Node_Suite.py:<line>`) point at this pin's file.
@@ -9,10 +9,11 @@ This conversion is derived from was-ns v2 (corpus main 856bb0a7, AMY's conversio
 Pinned upstream commit: `ea935d1044ae5a26efa54ebeb18fe9020af49a45` (WASasquatch/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 72 of the 220 registered node ids are converted. The other 148 are registered with their real schemas and refuse
+Status: 73 of the 220 registered node ids are converted. The other 147 are registered with their real schemas and refuse
 with `was-node-suite-comfyui/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
-with their own message (Known differences). The original declares one more id,
+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image
+Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter refuse with their own message (Known
+differences). The original declares one more id,
 `CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 (WAS_Node_Suite.py:14611-14669). It is not registered here.
 
@@ -37,6 +38,8 @@ Converted:
   `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 - Round 6: Image Transpose, Mask Invert and Image Flip.
 - Round 7: Load Image Batch, over the input folder (Known differences).
+- Round 8: Image Monitor Effects Filter (WAS_Tools_Class members `digital_distortion`, `signal_distortion`,
+  `tv_vhs_distortion`), and Image Save's webp with embed_workflow (Known differences).
 
 ## How the conversion is built
 
@@ -60,23 +63,28 @@ Converted:
 `tests/test_was_node_suite_parity.py` runs the pristine pack and this conversion through ComfyUI's real executor, side
 by side, on generated test workflows:
 - weightless MODEL/CLIP stand-ins that record every LoRA patch;
-- frozen clocks, and the global torch RNG seeded before every prompt.
+- frozen clocks, and the global torch, Python and numpy RNGs seeded before every prompt.
 It checks every converted node's outputs and files, the error and refusal cases, one refused node, and the schema of
-every registered id against the original. A tampered output must turn the comparison red.
+every registered id against the original. A tampered output must turn the comparison red. While the cases run, an
+import guard lets V2 code import only the standard library and the sealed guest base (guest_common.lock); a probe
+import of a package outside both must be stopped.
 
 ## Known differences
 
 - Image Save:
   - Refused by name:
     - extension jpg/jpeg: the writer's JPEG subsampling differs from Pillow's default;
-    - webp with embed_workflow: the original writes the prompt and workflow into EXIF 0x010F/0x010E
-      (WAS_Node_Suite.py:7413-7417);
     - show_history: the original reads its history database from its pack folder;
     - output paths outside the output folder (absolute, Windows or `..`), and path separators in filename_prefix;
     - replacing an existing file: the managed writer never overwrites;
-    - an output folder with more names than the asset catalogue lists at once (4096).
+    - an output folder the host cannot list (more than 4096 names at once).
+  - webp with embed_workflow: the original writes "Prompt:" and "Workflow:" text into EXIF tags 0x010F and 0x010E
+    (WAS_Node_Suite.py:7406-7418). The managed writer writes the same tags, byte for byte, when the prompt has exactly
+    one extra_pnginfo entry (the workflow), both are plain JSON (no NaN or Infinity), and together they stay below
+    960 KiB. Anything else is refused by name: the original's tags then cannot be written. A host started with
+    `--disable-metadata` writes no EXIF tags.
   - PNG files lack the pHYs (DPI) chunk the original writes (`dpi=(dpi, dpi)`, WAS_Node_Suite.py:7444-7451). WEBP files
-    lack the original's empty EXIF chunk. Pixels and text chunks are identical.
+    without embed_workflow lack the original's empty EXIF chunk. Pixels and text chunks are identical.
 - Text Multiline and Image Save tokens:
   - `[time]` and `[time(...)]` use the guest's clock.
   - `[hostname]`, `[user]`, `[cuda_device]` and `[cuda_name]` read the host machine (WAS_Node_Suite.py:834-852) and are
@@ -100,9 +108,15 @@ every registered id against the original. A tampered output must turn the compar
 - Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
   the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
   outputs are equal only when both processes start from the same RNG state.
+- Image Monitor Effects Filter draws from numpy's global RNG (np.random, WAS_Node_Suite.py:1801-1872), as the original
+  does, but in the guest's process: as with Image Film Grain, outputs are equal only when both processes start from
+  the same RNG state.
 - Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
   (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
   yet. They return once it does.
+- Image Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter are refused by name at
+  validation. The original imports the pilgram package when they run (WAS_Node_Suite.py:1661, 1755, 3067), and this
+  pack's guest runtime does not provide it. They return once it does.
 - Load Image Batch:
   - It reads only ComfyUI's input folder. `path` must be `input` or `input/<folder>`: the original resolved a relative
     path against ComfyUI's working directory, where `input` is that folder. Any other path, absolute paths

@@ -1,9 +1,9 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,159 @@
 +# Secure conversion notes
 +
-+This conversion is derived from was-ns v2 (corpus main 856bb0a7, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
++This conversion is derived from was-ns v2 (corpus main 7090689a, AMY's conversion of the ltdrdata/was-node-suite-comfyui fork at `44de7058`) by `derive_was_original.py`. The fork is this pin plus 6 commits. The derivation copies was-ns's code and re-takes every pin-specific file from this pin:
 +- `was_v2/originals.py`: every block is copied from this pin's `WAS_Node_Suite.py`. Code that differs from the fork: `WAS_Random_Number` (WAS_Node_Suite.py:12462-12505).
 +- `was_v2/schemas.json`: captured from this pin in the gate. `secure-nodes.json` comes from the real encoder.
 +- File references (`WAS_Node_Suite.py:<line>`) point at this pin's file.
@@ -12,10 +12,11 @@
 +Pinned upstream commit: `ea935d1044ae5a26efa54ebeb18fe9020af49a45` (WASasquatch/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 72 of the 220 registered node ids are converted. The other 148 are registered with their real schemas and refuse
++Status: 73 of the 220 registered node ids are converted. The other 147 are registered with their real schemas and refuse
 +with `was-node-suite-comfyui/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
-+so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
-+with their own message (Known differences). The original declares one more id,
++so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes, Text Random Prompt, Image
++Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter refuse with their own message (Known
++differences). The original declares one more id,
 +`CLIPTextEncode (BlenderNeko Advanced + NSP)`, only when another pack (ComfyUI_ADV_CLIP_emb) is installed
 +(WAS_Node_Suite.py:14611-14669). It is not registered here.
 +
@@ -40,6 +41,8 @@
 +  `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 +- Round 6: Image Transpose, Mask Invert and Image Flip.
 +- Round 7: Load Image Batch, over the input folder (Known differences).
++- Round 8: Image Monitor Effects Filter (WAS_Tools_Class members `digital_distortion`, `signal_distortion`,
++  `tv_vhs_distortion`), and Image Save's webp with embed_workflow (Known differences).
 +
 +## How the conversion is built
 +
@@ -63,23 +66,28 @@
 +`tests/test_was_node_suite_parity.py` runs the pristine pack and this conversion through ComfyUI's real executor, side
 +by side, on generated test workflows:
 +- weightless MODEL/CLIP stand-ins that record every LoRA patch;
-+- frozen clocks, and the global torch RNG seeded before every prompt.
++- frozen clocks, and the global torch, Python and numpy RNGs seeded before every prompt.
 +It checks every converted node's outputs and files, the error and refusal cases, one refused node, and the schema of
-+every registered id against the original. A tampered output must turn the comparison red.
++every registered id against the original. A tampered output must turn the comparison red. While the cases run, an
++import guard lets V2 code import only the standard library and the sealed guest base (guest_common.lock); a probe
++import of a package outside both must be stopped.
 +
 +## Known differences
 +
 +- Image Save:
 +  - Refused by name:
 +    - extension jpg/jpeg: the writer's JPEG subsampling differs from Pillow's default;
-+    - webp with embed_workflow: the original writes the prompt and workflow into EXIF 0x010F/0x010E
-+      (WAS_Node_Suite.py:7413-7417);
 +    - show_history: the original reads its history database from its pack folder;
 +    - output paths outside the output folder (absolute, Windows or `..`), and path separators in filename_prefix;
 +    - replacing an existing file: the managed writer never overwrites;
-+    - an output folder with more names than the asset catalogue lists at once (4096).
++    - an output folder the host cannot list (more than 4096 names at once).
++  - webp with embed_workflow: the original writes "Prompt:" and "Workflow:" text into EXIF tags 0x010F and 0x010E
++    (WAS_Node_Suite.py:7406-7418). The managed writer writes the same tags, byte for byte, when the prompt has exactly
++    one extra_pnginfo entry (the workflow), both are plain JSON (no NaN or Infinity), and together they stay below
++    960 KiB. Anything else is refused by name: the original's tags then cannot be written. A host started with
++    `--disable-metadata` writes no EXIF tags.
 +  - PNG files lack the pHYs (DPI) chunk the original writes (`dpi=(dpi, dpi)`, WAS_Node_Suite.py:7444-7451). WEBP files
-+    lack the original's empty EXIF chunk. Pixels and text chunks are identical.
++    without embed_workflow lack the original's empty EXIF chunk. Pixels and text chunks are identical.
 +- Text Multiline and Image Save tokens:
 +  - `[time]` and `[time(...)]` use the guest's clock.
 +  - `[hostname]`, `[user]`, `[cuda_device]` and `[cuda_name]` read the host machine (WAS_Node_Suite.py:834-852) and are
@@ -103,9 +111,15 @@
 +- Image Film Grain draws its grain from Python's global `random` module. Blend Latents' "random" operation draws from
 +  the global torch RNG. Both behave as the original does, but in the guest's process: as with Latent Noise Injection,
 +  outputs are equal only when both processes start from the same RNG state.
++- Image Monitor Effects Filter draws from numpy's global RNG (np.random, WAS_Node_Suite.py:1801-1872), as the original
++  does, but in the guest's process: as with Image Film Grain, outputs are equal only when both processes start from
++  the same RNG state.
 +- Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
 +  (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
 +  yet. They return once it does.
++- Image Shadows and Highlights, Image Dragan Photography Filter and Image Style Filter are refused by name at
++  validation. The original imports the pilgram package when they run (WAS_Node_Suite.py:1661, 1755, 3067), and this
++  pack's guest runtime does not provide it. They return once it does.
 +- Load Image Batch:
 +  - It reads only ComfyUI's input folder. `path` must be `input` or `input/<folder>`: the original resolved a relative
 +    path against ComfyUI's working directory, where `input` is that folder. Any other path, absolute paths
@@ -5117,7 +5131,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28656 @@
+@@ -0,0 +1,28650 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -14026,7 +14040,7 @@
 +      "methods": {
 +        "check_lazy_status": false,
 +        "fingerprint_inputs": false,
-+        "validate_inputs": true
++        "validate_inputs": false
 +      },
 +      "module": "was_v2.nodes",
 +      "permissions": [],
@@ -14147,13 +14161,7 @@
 +          }
 +        ]
 +      },
-+      "sdk_refs": false,
-+      "validation_inputs": {
-+        "args": [
-+          "cls"
-+        ],
-+        "kwargs": true
-+      }
++      "sdk_refs": false
 +    },
 +    "Image Nova Filter": {
 +      "class": "WAS_V2_Image_Nova_Filter_85bdbf75",
@@ -33919,7 +33927,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,952 @@
+@@ -0,0 +1,997 @@
 +"""Tier-1 parity: WAS Node Suite, WASasquatch/was-node-suite-comfyui (ea935d10), derived from was-ns v2 vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -34059,9 +34067,10 @@
 +    return node('3', 'Image Save', **inputs)
 +
 +
-+def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True):
++def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None):
++    extra_pnginfo = extra if extra is not None else ({'workflow': WORKFLOW} if workflow else None)
 +    return {'name': name, 'prompt': prompt, 'expect': expect, 'allow': sorted(allow), 'runs': runs,
-+            'preexisting': preexisting or {}, 'extra_pnginfo': {'workflow': WORKFLOW} if workflow else None}
++            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo}
 +
 +
 +PNG = {'DECODED-EXACT-PNG-PHYS'}
@@ -34151,7 +34160,14 @@
 +    case('save-prefix-as-filename-new', g(image(), save(overwrite_mode='prefix_as_filename', output_path='fixed'),
 +                                          probe(files=['3', 1])), allow=PNG),
 +    case('save-jpg-refused', g(image(), save(extension='jpg')), expect='refusal'),
-+    case('save-webp-embed-refused', g(image(), save(extension='webp')), expect='refusal'),
++    # webp with embed_workflow: the original's EXIF Prompt/Workflow tags, written by the managed writer (batch 8)
++    case('save-webp-embed', g(image(), save(extension='webp', quality=85), probe(files=['3', 1]))),
++    case('save-webp-embed-lossless', g(image(batch=2), save(extension='webp', lossless_webp='true'),
++                                       probe(files=['3', 1]))),
++    case('save-webp-embed-no-workflow-refused', g(image(), save(extension='webp')), expect='refusal',
++         workflow=False),
++    case('save-webp-embed-two-entries-refused', g(image(), save(extension='webp')), expect='refusal',
++         extra={'workflow': WORKFLOW, 'notes': {'by': 'test'}}),
 +    case('save-history-refused', g(image(), save(show_history='true')), expect='refusal'),
 +    case('save-absolute-path-refused', g(image(), save(output_path='/tmp/amy-was-parity/abs-out')),
 +         expect='refusal-outside'),
@@ -34567,6 +34583,39 @@
 +                                                        probe(**BATCH_PROBE)), runs=2),
 +]
 +
++# ---- phase B batch 8: monitor effects (numpy's global RNG, seeded before every prompt on both sides) and the
++# pilgram nodes, refused by name while the original runs with the pinned pilgram wheel
++MONITOR_MODES = (('digital', 'Digital Distortion', 5, 2), ('signal', 'Signal Distortion', 3, 10),
++                 ('tv', 'TV Distortion', 4, 10))
++CASES += [
++    case(f'image-monitor-{label}', g(image(width=16, height=12, seed=24),
++                                     node('11', 'Image Monitor Effects Filter', image=['2', 0], mode=mode,
++                                          amplitude=amplitude, offset=offset),
++                                     probe(image=['11', 0])))
++    for label, mode, amplitude, offset in MONITOR_MODES
++] + [
++    # TV Distortion with an amplitude above the image height: the original's own modulo by zero
++    case('image-monitor-tv-amplitude-error', g(image(width=16, height=12, seed=24),
++                                               node('11', 'Image Monitor Effects Filter', image=['2', 0],
++                                                    mode='TV Distortion', amplitude=20, offset=10),
++                                               probe(image=['11', 0])), expect='error'),
++    case('image-shadows-highlights-needs-pilgram',
++         g(image(seed=25), node('11', 'Image Shadows and Highlights', image=['2', 0], shadow_threshold=75.0,
++                                shadow_factor=1.5, shadow_smoothing=0.25, highlight_threshold=175.0,
++                                highlight_factor=0.5, highlight_smoothing=0.25, simplify_isolation=0.0),
++           probe(image=['11', 0])),
++         expect='refused-named:computes it with the pilgram package'),
++    case('image-dragan-needs-pilgram',
++         g(image(seed=26), node('11', 'Image Dragan Photography Filter', image=['2', 0], saturation=1.0,
++                                contrast=1.0, brightness=1.0, sharpness=1.0, highpass_radius=6.0, highpass_samples=1,
++                                highpass_strength=1.0, colorize='true'),
++           probe(image=['11', 0])),
++         expect='refused-named:computes it with the pilgram package'),
++    case('image-style-filter-needs-pilgram',
++         g(image(seed=27), node('11', 'Image Style Filter', image=['2', 0], style='aden'), probe(image=['11', 0])),
++         expect='refused-named:computes it with the pilgram package'),
++]
++
 +
 +# ---- was-node-suite-comfyui (ea935d10): cases whose expected outcome differs on the original, set by
 +# derive_was_original.py (both sides run this pin's code here)
@@ -34843,6 +34892,8 @@
 +    bare_ok = (bare.get('rows') == len(converted['pack_ids']) and bare.get('ok') == bare.get('rows')
 +               and not bare.get('failures') and bare.get('root_init_executed') is False
 +               and bare.get('values_mode_issues') == {})
++    guard = converted.get('guest_import_guard') or {}
++    guard_ok = guard.get('blocked') == [] and guard.get('negative_control_caught') is True
 +    schemas = compare_schemas(original, converted)
 +    schema_counts = {}
 +    for value in schemas.values():
@@ -34854,6 +34905,7 @@
 +              'counts': counts, 'cases': rows, 'schema_counts': schema_counts,
 +              'schemas': {k: v for k, v in schemas.items() if v != 'EXACT'}, 'schema_ids': sorted(schemas),
 +              'values_mode_boundary_checked': converted.get('values_mode_boundary_checked'),
++              'guest_import_guard': guard,
 +              'bare_load': {'ok': bare_ok, 'rows': bare.get('rows'), 'loaded': bare.get('ok'),
 +                            'failures': bare.get('failures'), 'root_init_executed': bare.get('root_init_executed'),
 +                            'converted': bare.get('converted'), 'values_mode_issues': bare.get('values_mode_issues'),
@@ -34864,17 +34916,18 @@
 +    print(json.dumps({'counts': counts, 'schema_counts': schema_counts,
 +                      'schema_issues': dict(list(report['schemas'].items())[:12]),
 +                      'bare_load': {k: report['bare_load'][k] for k in ('ok', 'rows', 'loaded', 'root_init_executed')},
++                      'guest_import_guard': guard,
 +                      'negative_control': report['negative_control']}, indent=1))
 +    ok = control['verdict'] == 'MISMATCH' and set(counts) <= {
 +        'EXACT', 'DECODED-EXACT', 'ERROR-PARITY', 'REFUSED-AS-DESIGNED', 'KNOWN-DIFFERENCE'} \
-+        and schema_counts.get('DIFFERS', 0) == 0 and bare_ok
++        and schema_counts.get('DIFFERS', 0) == 0 and bare_ok and guard_ok
 +    sys.exit(0 if ok else 1)
 +
 +
 +main()
 --- /dev/null
 +++ b/v2/tests/was_parity_worker.py
-@@ -0,0 +1,489 @@
+@@ -0,0 +1,538 @@
 +"""One side of the WAS Node Suite parity run (gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -34915,6 +34968,7 @@
 +
 +import comfy.options  # noqa: E402
 +comfy.options.enable_args_parsing()
++import numpy  # noqa: E402
 +import torch  # noqa: E402
 +torch.set_num_threads(1)
 +import folder_paths  # noqa: E402
@@ -35127,6 +35181,49 @@
 +}
 +core_nodes.NODE_CLASS_MAPPINGS.update(STANDINS)
 +
++# ---- the guest's import base (LANE-SPEC 3c), V2 side only: installed before the pack loads and kept for the whole
++# run. An import statement executed by v2 code (module level or inside a function; v2/tests excepted) must name the
++# standard library or a top-level module of the sealed guest base: the 41 pins of guest_common.lock (sha256
++# 333e9487246431a7...). Anything else raises ModuleNotFoundError, as it would in a guest, and is recorded. The gate
++# image has more (scipy, cv2, kornia, ...), which is why a parity run alone cannot show what a guest imports.
++GUEST_LOCK_MODULES = {
++    'av', 'blake3', 'comfy_api', 'comfy_secure_nodes', 'comfy_secure_sdk', 'filelock', 'fsspec', 'iniconfig', 'jinja2',
++    'markupsafe', 'mpmath', 'networkx', 'numpy', 'nvidia', 'packaging', 'PIL', 'pluggy', 'psutil', 'pygments', 'pytest',
++    '_pytest', 'py', 'pytest_asyncio', 'safetensors', 'setuptools', 'pkg_resources', '_distutils_hack', 'sympy',
++    'torch', 'functorch', 'torchgen', 'triton', 'typing_extensions', 'wheel',
++}
++V2_ROOT = '/pack/v2/'
++GUARD = {'blocked': []}
++if SIDE == 'v2':
++    import builtins
++    _real_import = builtins.__import__
++
++    def _guest_import(name, globals=None, locals=None, fromlist=(), level=0):
++        if level == 0:
++            caller = sys._getframe(1).f_code.co_filename
++            if caller.startswith(V2_ROOT) and not caller.startswith(V2_ROOT + 'tests/'):
++                top = name.split('.')[0]
++                if top not in sys.stdlib_module_names and top not in GUEST_LOCK_MODULES:
++                    GUARD['blocked'].append(f'{caller[len(V2_ROOT):]}: {name}')
++                    raise ModuleNotFoundError(f'guest import guard: {name!r} is not in the guest', name=name)
++        return _real_import(name, globals, locals, fromlist, level)
++    builtins.__import__ = _guest_import
++
++
++def guard_negative_control():
++    """The guard must stop an import of kornia, which the gate image has and the guest base does not, made by code
++    under /pack/v2."""
++    before = len(GUARD['blocked'])
++    try:
++        exec(compile('import kornia\n', V2_ROOT + '_guard_probe.py', 'exec'), {'__name__': 'guard_probe'})
++        caught = False
++    except ModuleNotFoundError:
++        caught = True
++    probe = GUARD['blocked'][before:]
++    del GUARD['blocked'][before:]
++    return caught and probe == ['_guard_probe.py: kornia']
++
++
 +# ---- load the pack under test
 +if SIDE == 'original':
 +    pack_dir = OUT / 'nodes-root' / 'custom_nodes' / 'was-node-suite-comfyui'
@@ -35329,6 +35426,7 @@
 +            continue
 +        torch.manual_seed(20261102)
 +        random.seed(20261102)
++        numpy.random.seed(20261102)
 +        executor = execution.PromptExecutor(Server(), cache_type=execution.CacheType.CLASSIC,
 +                                            cache_args={'lru': 0, 'ram': 0, 'ram_inactive': 0})
 +        extra = {} if case.get('extra_pnginfo') is None else {'extra_pnginfo': case['extra_pnginfo']}
@@ -35360,6 +35458,10 @@
 +            import traceback
 +            report['cases'].append({'name': case['name'], 'harness_error': f'{type(error).__name__}: {error}',
 +                                    'traceback': traceback.format_exc()[-3000:]})
++    if SIDE == 'v2':
++        report['guest_import_guard'] = {'base': 'guest_common.lock (41 pins, sha256 333e9487246431a7...)',
++                                        'blocked': list(GUARD['blocked']),
++                                        'negative_control_caught': guard_negative_control()}
 +    (OUT / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
 +
 +
@@ -35370,7 +35472,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,615 @@
+@@ -0,0 +1,653 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35395,8 +35497,8 @@
 +from . import originals
 +from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
 +                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
-+                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_SCIPY, NO_NETWORK, SecureConversionRefusal,
-+                       not_converted)
++                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_PILGRAM, NEEDS_SCIPY, NO_NETWORK,
++                       SecureConversionRefusal, not_converted)
 +from .schema_v3 import ROWS, build_schema
 +from .tokens import TextTokens
 +
@@ -35477,6 +35579,8 @@
 +    "Image Transpose": ("WAS_Image_Transpose", "image_transpose"),
 +    "Mask Invert": ("WAS_Mask_Invert", "add_masks"),
 +    "Image Flip": ("WAS_Image_Flip", "image_flip"),
++    # phase B batch 8
++    "Image Monitor Effects Filter": ("WAS_Image_Monitor_Distortion_Filter", "image_monitor_filters"),
 +}
 +# WAS_Mask_Combine_Batch.__init__ only builds a WAS_Tools_Class (WAS_Node_Suite.py:978-2412, the pack's large filter
 +# toolbox), which combine_masks never uses; V2 creates the instance without running __init__.
@@ -35486,6 +35590,13 @@
 +    "Image Lucy Sharpen": NEEDS_SCIPY.format(node="Image Lucy Sharpen", use="scipy.signal.convolve2d"),
 +    "Mask Fill Holes": NEEDS_SCIPY.format(node="Mask Fill Holes", use="scipy.ndimage.binary_fill_holes"),
 +    "Text Random Prompt": NO_NETWORK.format(node="Text Random Prompt"),
++    # WAS_Tools_Class.shadows_and_highlights / dragan_filter and WAS_Image_Style_Filter (WAS_Node_Suite.py:1656-1749,
++    # 3063-3067) import pilgram when they run
++    "Image Shadows and Highlights": NEEDS_PILGRAM.format(node="Image Shadows and Highlights",
++                                                         use="pilgram.css.blending.color"),
++    "Image Dragan Photography Filter": NEEDS_PILGRAM.format(node="Image Dragan Photography Filter",
++                                                            use="pilgram.css.blending.overlay and color"),
++    "Image Style Filter": NEEDS_PILGRAM.format(node="Image Style Filter", use="its photo filters"),
 +}
 +# The original's IS_CHANGED, as V2 fingerprint_inputs (WAS_Node_Suite.py:10979-10981: always changed)
 +# Random Number's IS_CHANGED raises (hashlib's update on an int, WAS_Node_Suite.py:12501-12505); core turns that into
@@ -35783,6 +35894,32 @@
 +
 +
 +# ---- Image Save (WAS_Image_Save.was_save_images)
++_WEBP_EMBED_LIMIT = 960 * 1024  # below the guest wire's 1 MiB frame, which carries this metadata to the writer
++
++
++def _webp_embed_metadata(prompt, extra_pnginfo):
++    """WAS_Node_Suite.py:7406-7418 (webp with embed_workflow): EXIF 0x010F holds "Prompt:" + json.dumps(prompt) and
++    0x010E holds "Workflow:" + the json.dumps of every extra_pnginfo value, joined. Given save_metadata=False and
++    extra_metadata, the managed writer stores "<key>:" + json.dumps(value) in 0x010F, 0x010E, ... in key order
++    (ImageSaveHelper._create_webp_metadata), so the two agree when the prompt has exactly one extra_pnginfo entry."""
++    if prompt is None:
++        why = "there is no prompt, so the original writes the Workflow tag alone"
++    elif not isinstance(extra_pnginfo, dict) or len(extra_pnginfo) != 1:
++        count = len(extra_pnginfo) if isinstance(extra_pnginfo, dict) else 0
++        why = f"the prompt has {count} workflow entries"
++    else:
++        metadata = {"Prompt": prompt, "Workflow": next(iter(extra_pnginfo.values()))}
++        try:
++            size = len(json.dumps(metadata, allow_nan=False).encode("utf-8"))
++        except (TypeError, ValueError):
++            why = "the prompt or workflow holds values that are not plain JSON, such as NaN or Infinity"
++        else:
++            if size <= _WEBP_EMBED_LIMIT:
++                return metadata
++            why = f"the prompt and workflow take {size} bytes"
++    raise SecureConversionRefusal(IMAGE_SAVE_WEBP_EMBED.format(why=why))
++
++
 +async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
 +                      extension='png', dpi=96, quality=100, optimize_image="true", lossless_webp="false",
 +                      overwrite_mode='false', filename_number_padding=4, filename_number_start='false',
@@ -35796,8 +35933,9 @@
 +    optimize_image = (optimize_image == "true")
 +    if extension in ("jpg", "jpeg"):
 +        raise SecureConversionRefusal(IMAGE_SAVE_JPEG.format(ext=extension))
++    webp_metadata = None
 +    if extension == "webp" and embed_workflow == "true":
-+        raise SecureConversionRefusal(IMAGE_SAVE_WEBP_EMBED)
++        webp_metadata = _webp_embed_metadata(prompt, extra_pnginfo)
 +    if show_history == "true" and show_previews == "true":
 +        raise SecureConversionRefusal(IMAGE_SAVE_HISTORY)
 +
@@ -35829,8 +35967,8 @@
 +        pattern = f"{re.escape(filename_prefix)}{re.escape(delimiter)}(\\d+)"
 +    try:
 +        listed = await sdk.ctx().assets.list("output", prefix=folder, recursive=False)
-+    except ValueError as error:
-+        raise SecureConversionRefusal(IMAGE_SAVE_LISTING.format(path=folder or "output")) from error
++    except Exception as error:  # the host's listing limit; in a guest it arrives as a transport error
++        raise SecureConversionRefusal(IMAGE_SAVE_LISTING.format(path=folder or "output", reason=error)) from error
 +    existing_counters = [
 +        int(re.search(pattern, filename).group(1))
 +        for filename in (posixpath.basename(name) for name in listed)
@@ -35881,6 +36019,8 @@
 +                           "compress_level": 9 if optimize_image else 6}
 +            elif extension == 'webp':
 +                options = {"quality": quality, "lossless": lossless_webp, "save_metadata": False}
++                if webp_metadata is not None:
++                    options["extra_metadata"] = webp_metadata
 +            elif extension in ('tiff', 'gif'):
 +                options = {"optimize": optimize_image, "save_metadata": False}
 +            else:
@@ -35988,7 +36128,7 @@
 +CONVERTED_IDS = sorted(_CONVERTED)
 --- /dev/null
 +++ b/v2/was_v2/originals.py
-@@ -0,0 +1,3058 @@
+@@ -0,0 +1,3178 @@
 +"""Functions and node classes copied verbatim from WAS_Node_Suite.py at ea935d1044ae5a26efa54ebeb18fe9020af49a45.
 +
 +The build extracts each block by name from the pinned file (the line ranges are noted above each block) and checks
@@ -38948,6 +39088,50 @@
 +        return (batch_tensor, )
 +
 +
++# --- WAS_Node_Suite.py:4222-4262
++class WAS_Image_Monitor_Distortion_Filter:
++    def __init__(self):
++        pass
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        return {
++            "required": {
++                "image": ("IMAGE",),
++                "mode": (["Digital Distortion", "Signal Distortion", "TV Distortion"],),
++                "amplitude": ("INT", {"default": 5, "min": 1, "max": 255, "step": 1}),
++                "offset": ("INT", {"default": 10, "min": 1, "max": 255, "step": 1}),
++            },
++        }
++
++    RETURN_TYPES = ("IMAGE",)
++    RETURN_NAMES = ("image",)
++    FUNCTION = "image_monitor_filters"
++
++    CATEGORY = "WAS Suite/Image/Filter"
++
++    def image_monitor_filters(self, image, mode="Digital Distortion", amplitude=5, offset=5):
++
++        # Convert images to PIL
++        image = tensor2pil(image)
++
++        # WAS Filters
++        WTools = WAS_Tools_Class()
++
++        # Apply image effect
++        if mode:
++            if mode == 'Digital Distortion':
++                image = WTools.digital_distortion(image, amplitude, offset)
++            elif mode == 'Signal Distortion':
++                image = WTools.signal_distortion(image, amplitude)
++            elif mode == 'TV Distortion':
++                image = WTools.tv_vhs_distortion(image, amplitude)
++            else:
++                image = image
++
++        return (pil2tensor(image), )
++
++
 +# --- WAS_Node_Suite.py:978-981 (class line and docstring; selected members follow)
 +class WAS_Tools_Class():
 +    """
@@ -39047,9 +39231,85 @@
 +            image = ImageOps.invert(image.convert("L"))
 +            image = image.filter(ImageFilter.GaussianBlur(radius=int(radius)))
 +            return image.convert("RGB")
++
++    # --- WAS_Node_Suite.py:1801-1825
++    def digital_distortion(self, image, amplitude=5, line_width=2):
++
++        im = np.array(image)
++
++        x, y, z = im.shape
++        sine_wave = amplitude * np.sin(np.linspace(-np.pi, np.pi, y))
++        sine_wave = sine_wave.astype(int)
++
++        left_distortion = np.zeros((x, y, z), dtype=np.uint8)
++        right_distortion = np.zeros((x, y, z), dtype=np.uint8)
++        for i in range(y):
++            left_distortion[:, i, :] = np.roll(im[:, i, :], -sine_wave[i], axis=0)
++            right_distortion[:, i, :] = np.roll(im[:, i, :], sine_wave[i], axis=0)
++
++        distorted_image = np.maximum(left_distortion, right_distortion)
++        scan_lines = np.zeros((x, y), dtype=np.float32)
++        scan_lines[::line_width, :] = 1
++        scan_lines = np.minimum(scan_lines * amplitude*50.0, 1)  # Scale scan line values
++        scan_lines = np.tile(scan_lines[:, :, np.newaxis], (1, 1, z))  # Add channel dimension
++        distorted_image = np.where(scan_lines > 0, np.random.permutation(im), distorted_image)
++        distorted_image = np.roll(distorted_image, np.random.randint(0, y), axis=1)
++
++        distorted_image = Image.fromarray(distorted_image)
++
++        return distorted_image
++
++    # --- WAS_Node_Suite.py:1827-1840
++    def signal_distortion(self, image, amplitude):
++
++        img_array = np.array(image)
++        row_shifts = np.random.randint(-amplitude, amplitude + 1, size=img_array.shape[0])
++        distorted_array = np.zeros_like(img_array)
++
++        for y in range(img_array.shape[0]):
++            x_shift = row_shifts[y]
++            x_shift = x_shift + y % (amplitude * 2) - amplitude
++            distorted_array[y,:] = np.roll(img_array[y,:], x_shift, axis=0)
++
++        distorted_image = Image.fromarray(distorted_array)
++
++        return distorted_image
++
++    # --- WAS_Node_Suite.py:1842-1872
++    def tv_vhs_distortion(self, image, amplitude=10):
++        np_image = np.array(image)
++        offset_variance = int(image.height / amplitude)
++        row_shifts = np.random.randint(-offset_variance, offset_variance + 1, size=image.height)
++        distorted_array = np.zeros_like(np_image)
++
++        for y in range(np_image.shape[0]):
++            x_shift = row_shifts[y]
++            x_shift = x_shift + y % (offset_variance * 2) - offset_variance
++            distorted_array[y,:] = np.roll(np_image[y,:], x_shift, axis=0)
++
++        h, w, c = distorted_array.shape
++        x_scale = np.linspace(0, 1, w)
++        y_scale = np.linspace(0, 1, h)
++        x_idx = np.broadcast_to(x_scale, (h, w))
++        y_idx = np.broadcast_to(y_scale.reshape(h, 1), (h, w))
++        noise = np.random.rand(h, w, c) * 0.1
++        distortion = np.sin(x_idx * 50) * 0.5 + np.sin(y_idx * 50) * 0.5
++        distorted_array = distorted_array + distortion[:, :, np.newaxis] + noise
++
++        distorted_image = Image.fromarray(np.uint8(distorted_array))
++        distorted_image = distorted_image.resize((image.width, image.height))
++
++        image_enhance = ImageEnhance.Color(image)
++        image = image_enhance.enhance(0.5)
++
++        effect_image = ImageChops.overlay(image, distorted_image)
++        result_image = ImageChops.overlay(image, effect_image)
++        result_image = ImageChops.blend(image, result_image, 0.25)
++
++        return result_image
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,89 @@
 +"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
 +
 +PACK = "was-node-suite-comfyui"
@@ -39075,9 +39335,10 @@
 +)
 +
 +IMAGE_SAVE_WEBP_EMBED = (
-+    f"{PACK}/Image Save: extension 'webp' with embed_workflow 'true' is not supported on Secure Nodes V2. The "
-+    "original writes the prompt and workflow into EXIF tags 0x010F and 0x010E; the managed image writer cannot write "
-+    "those tags. Set embed_workflow to 'false', or use png."
++    f"{PACK}/Image Save: extension 'webp' with embed_workflow 'true' cannot be written exactly for this prompt "
++    "({why}). The original writes 'Prompt:' and 'Workflow:' text into EXIF tags 0x010F and 0x010E; the managed image "
++    "writer writes the same tags only for a prompt with exactly one workflow entry, as JSON without NaN or Infinity, "
++    "below 960 KiB in all. Set embed_workflow to 'false', or use png."
 +)
 +
 +IMAGE_SAVE_HISTORY = (
@@ -39102,13 +39363,18 @@
 +)
 +
 +IMAGE_SAVE_LISTING = (
-+    f"{PACK}/Image Save: output folder {{path!r}} holds more names than the asset catalogue lists at once (4096), so "
-+    "the next file number cannot be computed the way the original computed it."
++    f"{PACK}/Image Save: the host could not list output folder {{path!r}} ({{reason}}), so the next file number "
++    "cannot be computed the way the original computed it. A Secure Nodes V2 node lists at most 4096 names at once."
 +)
 +
 +NEEDS_SCIPY = (
 +    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with {{use}} from scipy, "
 +    "which the guest runtime for this pack does not provide yet."
++)
++
++NEEDS_PILGRAM = (
++    f"{PACK}/{{node}} is not available on Secure Nodes V2 yet: the original computes it with the pilgram package "
++    "({use}), which the guest runtime for this pack does not provide yet."
 +)
 +
 +NO_NETWORK = (

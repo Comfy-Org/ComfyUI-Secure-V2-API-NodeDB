@@ -137,9 +137,10 @@ def save(**options):
     return node('3', 'Image Save', **inputs)
 
 
-def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True):
+def case(name, prompt, expect='outputs', allow=(), runs=1, preexisting=None, workflow=True, extra=None):
+    extra_pnginfo = extra if extra is not None else ({'workflow': WORKFLOW} if workflow else None)
     return {'name': name, 'prompt': prompt, 'expect': expect, 'allow': sorted(allow), 'runs': runs,
-            'preexisting': preexisting or {}, 'extra_pnginfo': {'workflow': WORKFLOW} if workflow else None}
+            'preexisting': preexisting or {}, 'extra_pnginfo': extra_pnginfo}
 
 
 PNG = {'DECODED-EXACT-PNG-PHYS'}
@@ -229,7 +230,14 @@ CASES = [
     case('save-prefix-as-filename-new', g(image(), save(overwrite_mode='prefix_as_filename', output_path='fixed'),
                                           probe(files=['3', 1])), allow=PNG),
     case('save-jpg-refused', g(image(), save(extension='jpg')), expect='refusal'),
-    case('save-webp-embed-refused', g(image(), save(extension='webp')), expect='refusal'),
+    # webp with embed_workflow: the original's EXIF Prompt/Workflow tags, written by the managed writer (batch 8)
+    case('save-webp-embed', g(image(), save(extension='webp', quality=85), probe(files=['3', 1]))),
+    case('save-webp-embed-lossless', g(image(batch=2), save(extension='webp', lossless_webp='true'),
+                                       probe(files=['3', 1]))),
+    case('save-webp-embed-no-workflow-refused', g(image(), save(extension='webp')), expect='refusal',
+         workflow=False),
+    case('save-webp-embed-two-entries-refused', g(image(), save(extension='webp')), expect='refusal',
+         extra={'workflow': WORKFLOW, 'notes': {'by': 'test'}}),
     case('save-history-refused', g(image(), save(show_history='true')), expect='refusal'),
     case('save-absolute-path-refused', g(image(), save(output_path='/tmp/amy-was-parity/abs-out')),
          expect='refusal-outside'),
@@ -645,6 +653,39 @@ CASES += [
                                                         probe(**BATCH_PROBE)), runs=2),
 ]
 
+# ---- phase B batch 8: monitor effects (numpy's global RNG, seeded before every prompt on both sides) and the
+# pilgram nodes, refused by name while the original runs with the pinned pilgram wheel
+MONITOR_MODES = (('digital', 'Digital Distortion', 5, 2), ('signal', 'Signal Distortion', 3, 10),
+                 ('tv', 'TV Distortion', 4, 10))
+CASES += [
+    case(f'image-monitor-{label}', g(image(width=16, height=12, seed=24),
+                                     node('11', 'Image Monitor Effects Filter', image=['2', 0], mode=mode,
+                                          amplitude=amplitude, offset=offset),
+                                     probe(image=['11', 0])))
+    for label, mode, amplitude, offset in MONITOR_MODES
+] + [
+    # TV Distortion with an amplitude above the image height: the original's own modulo by zero
+    case('image-monitor-tv-amplitude-error', g(image(width=16, height=12, seed=24),
+                                               node('11', 'Image Monitor Effects Filter', image=['2', 0],
+                                                    mode='TV Distortion', amplitude=20, offset=10),
+                                               probe(image=['11', 0])), expect='error'),
+    case('image-shadows-highlights-needs-pilgram',
+         g(image(seed=25), node('11', 'Image Shadows and Highlights', image=['2', 0], shadow_threshold=75.0,
+                                shadow_factor=1.5, shadow_smoothing=0.25, highlight_threshold=175.0,
+                                highlight_factor=0.5, highlight_smoothing=0.25, simplify_isolation=0.0),
+           probe(image=['11', 0])),
+         expect='refused-named:computes it with the pilgram package'),
+    case('image-dragan-needs-pilgram',
+         g(image(seed=26), node('11', 'Image Dragan Photography Filter', image=['2', 0], saturation=1.0,
+                                contrast=1.0, brightness=1.0, sharpness=1.0, highpass_radius=6.0, highpass_samples=1,
+                                highpass_strength=1.0, colorize='true'),
+           probe(image=['11', 0])),
+         expect='refused-named:computes it with the pilgram package'),
+    case('image-style-filter-needs-pilgram',
+         g(image(seed=27), node('11', 'Image Style Filter', image=['2', 0], style='aden'), probe(image=['11', 0])),
+         expect='refused-named:computes it with the pilgram package'),
+]
+
 
 # ---- was-node-suite-comfyui (ea935d10): cases whose expected outcome differs on the original, set by
 # derive_was_original.py (both sides run this pin's code here)
@@ -921,6 +962,8 @@ def main():
     bare_ok = (bare.get('rows') == len(converted['pack_ids']) and bare.get('ok') == bare.get('rows')
                and not bare.get('failures') and bare.get('root_init_executed') is False
                and bare.get('values_mode_issues') == {})
+    guard = converted.get('guest_import_guard') or {}
+    guard_ok = guard.get('blocked') == [] and guard.get('negative_control_caught') is True
     schemas = compare_schemas(original, converted)
     schema_counts = {}
     for value in schemas.values():
@@ -932,6 +975,7 @@ def main():
               'counts': counts, 'cases': rows, 'schema_counts': schema_counts,
               'schemas': {k: v for k, v in schemas.items() if v != 'EXACT'}, 'schema_ids': sorted(schemas),
               'values_mode_boundary_checked': converted.get('values_mode_boundary_checked'),
+              'guest_import_guard': guard,
               'bare_load': {'ok': bare_ok, 'rows': bare.get('rows'), 'loaded': bare.get('ok'),
                             'failures': bare.get('failures'), 'root_init_executed': bare.get('root_init_executed'),
                             'converted': bare.get('converted'), 'values_mode_issues': bare.get('values_mode_issues'),
@@ -942,10 +986,11 @@ def main():
     print(json.dumps({'counts': counts, 'schema_counts': schema_counts,
                       'schema_issues': dict(list(report['schemas'].items())[:12]),
                       'bare_load': {k: report['bare_load'][k] for k in ('ok', 'rows', 'loaded', 'root_init_executed')},
+                      'guest_import_guard': guard,
                       'negative_control': report['negative_control']}, indent=1))
     ok = control['verdict'] == 'MISMATCH' and set(counts) <= {
         'EXACT', 'DECODED-EXACT', 'ERROR-PARITY', 'REFUSED-AS-DESIGNED', 'KNOWN-DIFFERENCE'} \
-        and schema_counts.get('DIFFERS', 0) == 0 and bare_ok
+        and schema_counts.get('DIFFERS', 0) == 0 and bare_ok and guard_ok
     sys.exit(0 if ok else 1)
 
 

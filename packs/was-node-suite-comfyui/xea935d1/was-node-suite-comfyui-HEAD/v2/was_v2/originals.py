@@ -2957,6 +2957,50 @@ class WAS_Image_Flip:
         return (batch_tensor, )
 
 
+# --- WAS_Node_Suite.py:4222-4262
+class WAS_Image_Monitor_Distortion_Filter:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "mode": (["Digital Distortion", "Signal Distortion", "TV Distortion"],),
+                "amplitude": ("INT", {"default": 5, "min": 1, "max": 255, "step": 1}),
+                "offset": ("INT", {"default": 10, "min": 1, "max": 255, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "image_monitor_filters"
+
+    CATEGORY = "WAS Suite/Image/Filter"
+
+    def image_monitor_filters(self, image, mode="Digital Distortion", amplitude=5, offset=5):
+
+        # Convert images to PIL
+        image = tensor2pil(image)
+
+        # WAS Filters
+        WTools = WAS_Tools_Class()
+
+        # Apply image effect
+        if mode:
+            if mode == 'Digital Distortion':
+                image = WTools.digital_distortion(image, amplitude, offset)
+            elif mode == 'Signal Distortion':
+                image = WTools.signal_distortion(image, amplitude)
+            elif mode == 'TV Distortion':
+                image = WTools.tv_vhs_distortion(image, amplitude)
+            else:
+                image = image
+
+        return (pil2tensor(image), )
+
+
 # --- WAS_Node_Suite.py:978-981 (class line and docstring; selected members follow)
 class WAS_Tools_Class():
     """
@@ -3056,3 +3100,79 @@ class WAS_Tools_Class():
             image = ImageOps.invert(image.convert("L"))
             image = image.filter(ImageFilter.GaussianBlur(radius=int(radius)))
             return image.convert("RGB")
+
+    # --- WAS_Node_Suite.py:1801-1825
+    def digital_distortion(self, image, amplitude=5, line_width=2):
+
+        im = np.array(image)
+
+        x, y, z = im.shape
+        sine_wave = amplitude * np.sin(np.linspace(-np.pi, np.pi, y))
+        sine_wave = sine_wave.astype(int)
+
+        left_distortion = np.zeros((x, y, z), dtype=np.uint8)
+        right_distortion = np.zeros((x, y, z), dtype=np.uint8)
+        for i in range(y):
+            left_distortion[:, i, :] = np.roll(im[:, i, :], -sine_wave[i], axis=0)
+            right_distortion[:, i, :] = np.roll(im[:, i, :], sine_wave[i], axis=0)
+
+        distorted_image = np.maximum(left_distortion, right_distortion)
+        scan_lines = np.zeros((x, y), dtype=np.float32)
+        scan_lines[::line_width, :] = 1
+        scan_lines = np.minimum(scan_lines * amplitude*50.0, 1)  # Scale scan line values
+        scan_lines = np.tile(scan_lines[:, :, np.newaxis], (1, 1, z))  # Add channel dimension
+        distorted_image = np.where(scan_lines > 0, np.random.permutation(im), distorted_image)
+        distorted_image = np.roll(distorted_image, np.random.randint(0, y), axis=1)
+
+        distorted_image = Image.fromarray(distorted_image)
+
+        return distorted_image
+
+    # --- WAS_Node_Suite.py:1827-1840
+    def signal_distortion(self, image, amplitude):
+
+        img_array = np.array(image)
+        row_shifts = np.random.randint(-amplitude, amplitude + 1, size=img_array.shape[0])
+        distorted_array = np.zeros_like(img_array)
+
+        for y in range(img_array.shape[0]):
+            x_shift = row_shifts[y]
+            x_shift = x_shift + y % (amplitude * 2) - amplitude
+            distorted_array[y,:] = np.roll(img_array[y,:], x_shift, axis=0)
+
+        distorted_image = Image.fromarray(distorted_array)
+
+        return distorted_image
+
+    # --- WAS_Node_Suite.py:1842-1872
+    def tv_vhs_distortion(self, image, amplitude=10):
+        np_image = np.array(image)
+        offset_variance = int(image.height / amplitude)
+        row_shifts = np.random.randint(-offset_variance, offset_variance + 1, size=image.height)
+        distorted_array = np.zeros_like(np_image)
+
+        for y in range(np_image.shape[0]):
+            x_shift = row_shifts[y]
+            x_shift = x_shift + y % (offset_variance * 2) - offset_variance
+            distorted_array[y,:] = np.roll(np_image[y,:], x_shift, axis=0)
+
+        h, w, c = distorted_array.shape
+        x_scale = np.linspace(0, 1, w)
+        y_scale = np.linspace(0, 1, h)
+        x_idx = np.broadcast_to(x_scale, (h, w))
+        y_idx = np.broadcast_to(y_scale.reshape(h, 1), (h, w))
+        noise = np.random.rand(h, w, c) * 0.1
+        distortion = np.sin(x_idx * 50) * 0.5 + np.sin(y_idx * 50) * 0.5
+        distorted_array = distorted_array + distortion[:, :, np.newaxis] + noise
+
+        distorted_image = Image.fromarray(np.uint8(distorted_array))
+        distorted_image = distorted_image.resize((image.width, image.height))
+
+        image_enhance = ImageEnhance.Color(image)
+        image = image_enhance.enhance(0.5)
+
+        effect_image = ImageChops.overlay(image, distorted_image)
+        result_image = ImageChops.overlay(image, effect_image)
+        result_image = ImageChops.blend(image, result_image, 0.25)
+
+        return result_image
