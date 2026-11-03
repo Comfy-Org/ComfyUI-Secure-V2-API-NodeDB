@@ -63,3 +63,21 @@ NO_NETWORK = (
     f"{PACK}/{{node}} is not available on Secure Nodes V2: the original fetches its prompts from an online search "
     "service when it runs, and a Secure Nodes V2 node has no network access."
 )
+
+LOAD_BATCH_PATH = (
+    f"{PACK}/Load Image Batch: path {{path!r}} is outside ComfyUI's input folder. The original read any folder on the "
+    "host; a Secure Nodes V2 node reads only the input folder. Put the images in a folder under input/ and enter its "
+    "path as 'input/<folder>'."
+)
+
+LOAD_BATCH_PATTERN = (
+    f"{PACK}/Load Image Batch: pattern {{pattern!r}} reaches outside the folder in path (it is absolute or has a '..' "
+    "part). A Secure Nodes V2 node reads only ComfyUI's input folder: put the images in a folder under input/, enter "
+    "that folder as path, and use a pattern inside it."
+)
+
+LOAD_BATCH_LISTING = (
+    f"{PACK}/Load Image Batch: the host could not list {{path!r}} ({{reason}}). A Secure Nodes V2 node lists at most "
+    "4096 files at once, and only files that stay inside ComfyUI's input folder (links out of it are not followed). "
+    "Split a larger batch into folders under input/ of at most 4096 files each."
+)

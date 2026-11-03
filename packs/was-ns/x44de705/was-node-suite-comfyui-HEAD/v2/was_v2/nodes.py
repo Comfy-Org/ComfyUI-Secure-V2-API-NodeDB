@@ -5,19 +5,25 @@ Each id gets its own class (no concrete parent class), built from the original's
 Pure value nodes call the original's method from originals.py (copied verbatim from WAS_Node_Suite.py by the
 build); nodes that touch models, tensors or files go through the guest SDK.
 """
+import glob
 import hashlib
+import io as io_bytes
 import json
 import os
 import posixpath
+import random
 import re
 import sys
+
+from PIL import Image, ImageOps
 
 from comfy_api.latest import io, sdk
 
 from . import originals
 from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY, NO_NETWORK,
-                       SecureConversionRefusal, not_converted)
+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
+                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_SCIPY, NO_NETWORK, SecureConversionRefusal,
+                       not_converted)
 from .schema_v3 import ROWS, build_schema
 from .tokens import TextTokens
 
@@ -236,6 +242,173 @@ async def _upscale_model_loader(cls, model_name):
     return io.NodeOutput(await sdk.ctx().models.load_upscale_model(model_name), model_name)
 
 
+# ---- Load Image Batch (WAS_Load_Image_Batch, WAS_Node_Suite.py:5313-5437), phase B batch 7
+# Folder reads go through the SDK as in the converted directory loaders of other packs: ctx.assets.list over the input
+# folder, then ctx.assets.resolve and read_bytes for each file. In the guest a host-side error reaches the pack as a
+# transport error rather than as its builtin type, so no branch here depends on an exception's type.
+# ALLOWED_EXT (WAS_Node_Suite.py:162-163)
+_IMAGE_EXTENSIONS = ('.jpeg', '.jpg', '.png', '.tiff', '.gif', '.bmp', '.webp')
+_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def _batch_folder(path):
+    """The input-folder subfolder that the original's `path` names. The original globbed `path` on the host, relative
+    to ComfyUI's working directory, where `input` is the input folder; a V2 node reads only that folder. Backslashes
+    count as separators, as on a Windows host."""
+    text = path.replace("\\", "/")
+    if text.startswith("/") or _DRIVE.match(text):
+        raise SecureConversionRefusal(LOAD_BATCH_PATH.format(path=path))
+    normalized = posixpath.normpath(text)
+    if normalized == "input":
+        return ""
+    if normalized.startswith("input/"):
+        return normalized[len("input/"):]
+    raise SecureConversionRefusal(LOAD_BATCH_PATH.format(path=path))
+
+
+def _batch_pattern(pattern):
+    """The original's pattern relative to the folder (glob.glob(os.path.join(glob.escape(path), pattern),
+    recursive=True), WAS_Node_Suite.py:5395-5399), and whether it reaches into subfolders. A '.' part or a doubled
+    separator names the same files for glob and is dropped; the last part is kept as it is (a trailing separator
+    matches only folders). An absolute pattern or a '..' part reads outside the folder and is refused."""
+    text = pattern.replace("\\", "/")
+    parts = text.split("/")
+    if text.startswith("/") or _DRIVE.match(text) or ".." in parts:
+        raise SecureConversionRefusal(LOAD_BATCH_PATTERN.format(pattern=pattern))
+    kept = [part for part in parts[:-1] if part not in ("", ".")] + parts[-1:]
+    return "/".join(kept), len(kept) > 1 or kept == ["**"]
+
+
+def _listing_refusal(folder, error):
+    return SecureConversionRefusal(LOAD_BATCH_LISTING.format(path=posixpath.join("input", folder), reason=error))
+
+
+async def _batch_paths(folder, pattern):
+    """BatchImageLoader.load_images (WAS_Node_Suite.py:5395-5399): glob.glob(os.path.join(glob.escape(path), pattern),
+    recursive=True), image extensions only, then sorted by absolute path, which within one folder is the order of the
+    names. Returns (whether the original's os.path.exists(path) held, as far as the SDK can tell, the batch)."""
+    pattern, recursive = _batch_pattern(pattern)
+    assets = sdk.ctx().assets
+    try:
+        if folder and await assets.exists("input", folder):
+            return True, []  # path names a file: the original's glob inside it found nothing
+        listed = list(await assets.list("input", prefix=folder, recursive=recursive))
+    except Exception as error:  # the host's listing limit (4096 names) or a folder it cannot confine to the input
+        raise _listing_refusal(folder, error) from error
+    exists = bool(listed)
+    if not exists and not recursive:
+        # Files only in subfolders: the folder exists for os.path.exists. The SDK lists files, not folders.
+        try:
+            exists = bool(await assets.list("input", prefix=folder, recursive=True))
+        except Exception:
+            exists = True  # more files below than the host lists at once
+    matcher = re.compile(glob.translate(pattern, recursive=True, include_hidden=False))
+    batch = []
+    for name in listed:
+        relative = name[len(folder) + 1:] if folder else name
+        if matcher.match(relative) and relative.lower().endswith(_IMAGE_EXTENSIONS):
+            batch.append(name)
+    return exists, sorted(batch)
+
+
+def _batch_key(label):
+    return "load-image-batch:" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:40]
+
+
+async def _batch_state(label, path, pattern):
+    """BatchImageLoader.__init__ (WAS_Node_Suite.py:5379-5393): the label's counter, reset to 0 (and stored with the
+    new path and pattern) when the label's stored path or pattern differ. The original kept these in its database in
+    the pack folder; V2 keeps them in the pack's host storage."""
+    storage = sdk.ctx().storage
+    stored = await storage.get(_batch_key(label))
+    state = json.loads(stored) if stored else {}
+    if state.get("path") != path or state.get("pattern") != pattern:
+        state = {"label": label, "path": path, "pattern": pattern, "counter": 0}
+        await storage.set(_batch_key(label), json.dumps(state))
+    return state
+
+
+async def _batch_open(name):
+    data = await sdk.ctx().assets.read_bytes(await sdk.ctx().assets.resolve("input", name))
+    image = Image.open(io_bytes.BytesIO(data))
+    image = ImageOps.exif_transpose(image)
+    return (image, posixpath.basename(name))
+
+
+async def _batch_by_id(names, image_id):
+    # get_image_by_id (WAS_Node_Suite.py:5401-5407): an invalid index prints and returns None
+    if image_id < 0 or image_id >= len(names):
+        originals.cstr(f"Invalid image index `{image_id}`").error.print()
+        return
+    return await _batch_open(names[image_id])
+
+
+async def _load_image_batch(cls, path, pattern='*', index=0, mode="single_image", seed=0, label='Batch 001',
+                            allow_RGBA_output='false', filename_text_extension='true'):
+    allow_RGBA_output = (allow_RGBA_output == 'true')
+    if not path:
+        return io.NodeOutput(None)  # os.path.exists('') is False: the original returned (None, )
+    folder = _batch_folder(path)
+    exists, names = await _batch_paths(folder, pattern)
+    if not exists:
+        return io.NodeOutput(None)  # no such folder in the input folder: the original returned (None, )
+    state = await _batch_state(label, path, pattern)
+    if mode == 'single_image':
+        image, filename = await _batch_by_id(names, index)
+    elif mode == 'incremental_image':
+        # get_next_image (WAS_Node_Suite.py:5409-5420)
+        counter = state["counter"]
+        if counter >= len(names):
+            counter = 0
+        name = names[counter]
+        counter += 1
+        if counter == len(names):
+            counter = 0
+        originals.cstr(f'{originals.cstr.color.YELLOW}{label}{originals.cstr.color.END} Index: {counter}').msg.print()
+        state["counter"] = counter
+        await sdk.ctx().storage.set(_batch_key(label), json.dumps(state))
+        image, filename = await _batch_open(name)
+    else:
+        random.seed(seed)
+        newindex = int(random.random() * len(names))
+        image, filename = await _batch_by_id(names, newindex)
+    if not allow_RGBA_output:
+        image = image.convert("RGB")
+    if filename_text_extension == "false":
+        filename = os.path.splitext(filename)[0]
+    return io.NodeOutput(originals.pil2tensor(image), filename)
+
+
+async def _load_image_batch_fingerprint(cls, **kwargs):
+    # IS_CHANGED (WAS_Node_Suite.py:5428-5437): always changed in the incremental and random modes. For a single image,
+    # the sha256 of os.path.join(path, <base name of the file at the label's stored counter>). Whatever fails there (an
+    # empty batch, a file in a subfolder, which that join misses) makes core count the node as changed, as it did for
+    # the original.
+    if kwargs['mode'] != 'single_image':
+        return float("NaN")
+    path, pattern, label = kwargs['path'], kwargs['pattern'], kwargs['label']
+    folder = _batch_folder(path)
+    _exists, names = await _batch_paths(folder, pattern)
+    state = await _batch_state(label, path, pattern)
+    counter = state["counter"] if state["counter"] < len(names) else 0
+    assets = sdk.ctx().assets
+    target = posixpath.join(folder, posixpath.basename(names[counter]))
+    return await assets.digest(await assets.resolve("input", target), "sha256")
+
+
+async def _load_image_batch_validate(cls, path=None, pattern=None):
+    # A path or pattern that leaves the input folder is refused before the prompt runs; linked values are checked when
+    # the node runs.
+    try:
+        if isinstance(path, str) and path:
+            _batch_folder(path)
+        if isinstance(pattern, str):
+            _batch_pattern(pattern)
+    except SecureConversionRefusal as refusal:
+        return str(refusal)
+    return True
+
+
 # ---- Image Save (WAS_Image_Save.was_save_images)
 async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
                       extension='png', dpi=96, quality=100, optimize_image="true", lossless_webp="false",
@@ -398,6 +571,9 @@ _CONVERTED["Checkpoint Loader"] = {
     "execute": classmethod(_checkpoint_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
     "validate_inputs": classmethod(_combine_validators(_catalogue_validate("configs", "config_name"),
                                                        _catalogue_validate("checkpoints", "ckpt_name")))}
+_CONVERTED["Load Image Batch"] = {
+    "execute": classmethod(_load_image_batch), "fingerprint_inputs": classmethod(_load_image_batch_fingerprint),
+    "validate_inputs": classmethod(_load_image_batch_validate), "SDK_PERMISSIONS": ("assets", "storage")}
 _CONVERTED["Upscale Model Loader"] = {
     "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
     "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}

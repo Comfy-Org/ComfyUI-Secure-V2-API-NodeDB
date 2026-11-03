@@ -3,7 +3,7 @@
 Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 schemas and permissions are in `secure-nodes.json`.
 
-Status: 71 of the 220 registered node ids are converted. The other 149 are registered with their real schemas and refuse
+Status: 72 of the 220 registered node ids are converted. The other 148 are registered with their real schemas and refuse
 with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
 so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
 with their own message (Known differences). The original declares one more id,
@@ -30,6 +30,7 @@ Converted:
   Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
   `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 - Round 6: Image Transpose, Mask Invert and Image Flip.
+- Round 7: Load Image Batch, over the input folder (Known differences).
 
 ## How the conversion is built
 
@@ -96,6 +97,30 @@ every registered id against the original. A tampered output must turn the compar
 - Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
   (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
   yet. They return once it does.
+- Load Image Batch:
+  - It reads only ComfyUI's input folder. `path` must be `input` or `input/<folder>`: the original resolved a relative
+    path against ComfyUI's working directory, where `input` is that folder. Any other path, absolute paths
+    included, is refused by name at validation, with a message to put the images under input/.
+  - A pattern that is absolute or has a `..` part would read outside the folder; it is refused by name too.
+  - Backslashes in path and pattern count as folder separators, as on a Windows host. On a Linux host the original
+    found no such folder and returned no image.
+  - Within the input folder the batch is the original's: the same glob (recursive, hidden files skipped), image
+    extensions, order, decoding with EXIF transpose, RGB/RGBA handling, and the same errors for a bad index or an
+    empty batch. The single-image fingerprint is the original's IS_CHANGED.
+  - The host lists at most 4096 files at once, counting subfolders when the pattern reaches into them, and does not
+    follow links out of the input folder. A folder it cannot list is refused by name.
+  - A folder that holds no files at all returns no image, as a missing folder does in the original. The original
+    went on with an empty folder and failed on the index.
+  - Each label's counter, path and pattern live in the pack's host storage (`ctx.storage`). The original kept them
+    in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:155-158, 874).
+    - They survive restarts: the host keeps them on disk.
+    - They are kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and
+      user shares them, as everyone shared the original's database. On a multi-tenant host each tenant has its own.
+    - The host keeps at most 256 entries per pack, which means at most 256 labels.
+  - V2 writes no image history. The original also added each batch's file paths to its history database
+    (update_history_images, WAS_Node_Suite.py:941-964).
+  - The random mode seeds Python's `random` module, as the original does. As with Text Random Line, the reseeded
+    module is the guest's.
 - Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
   and a Secure Nodes V2 node has no network access.
 - Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected

@@ -61,6 +61,40 @@ def make_fixtures():
     save_file({key: value.contiguous() for key, value in upscaler.state_dict().items()},
               str(FIXTURES / 'upscale_models' / 'test-upscale-x2.safetensors'))
 
+    # Load Image Batch: synthetic images in the input folder (each worker copies FIXTURES/input into its own)
+    from PIL import Image
+    batch = FIXTURES / 'input' / 'batch'
+    (batch / 'sub').mkdir(parents=True, exist_ok=True)
+    (FIXTURES / 'input' / 'other').mkdir(parents=True, exist_ok=True)
+
+    def pixels(width, height, seed, channels=3):
+        generator = torch.Generator().manual_seed(seed)
+        values = (torch.rand((height, width, channels), generator=generator) * 255).to(torch.uint8).numpy()
+        return Image.fromarray(values)
+
+    pixels(10, 8, 1).save(batch / 'b.png')
+    pixels(12, 9, 2).save(batch / 'a.jpg', quality=90)
+    pixels(7, 7, 3).save(batch / 'C.PNG')
+    pixels(8, 8, 4, channels=4).save(batch / 'rgba.png')
+    (batch / 'notes.txt').write_text('not an image\n')
+    pixels(6, 6, 5).save(batch / '.hidden.png')
+    pixels(9, 5, 6).save(batch / 'sub' / 'd.png')
+    exif = Image.Exif()
+    exif[0x0112] = 6  # orientation: rotate 90 degrees clockwise
+    pixels(10, 6, 7).save(batch / 'rot.jpg', quality=90, exif=exif)
+    pixels(5, 5, 8).save(FIXTURES / 'input' / 'other' / 'e.png')
+    # a folder whose only file sits in a subfolder; a folder with more names than the host lists at once (4096);
+    # and a folder outside the input folder, which only an absolute path reaches
+    (FIXTURES / 'input' / 'nested' / 'deep').mkdir(parents=True, exist_ok=True)
+    pixels(4, 4, 9).save(FIXTURES / 'input' / 'nested' / 'deep' / 'x.png')
+    many = FIXTURES / 'input' / 'many'
+    many.mkdir(parents=True, exist_ok=True)
+    for number in range(4100):
+        (many / f'note-{number:04d}.txt').write_text('x')
+    pixels(6, 5, 10).save(many / 'one.png')
+    (FIXTURES / 'elsewhere').mkdir(parents=True, exist_ok=True)
+    pixels(7, 4, 11).save(FIXTURES / 'elsewhere' / 'f.png')
+
 
 def text(node_id, value):
     return {node_id: {'class_type': 'AMYTestString', 'inputs': {'text': value}}}
@@ -557,6 +591,61 @@ CASES += [
 ]
 
 
+# ---- phase B batch 7: Load Image Batch over the input folder
+def batch_loader(node_id='11', **inputs):
+    values = dict(mode='single_image', seed=0, index=0, label='Batch 001', path='input/batch', pattern='*',
+                  allow_RGBA_output='false', filename_text_extension='true')
+    values.update(inputs)
+    return node(node_id, 'Load Image Batch', **values)
+
+
+BATCH_PROBE = dict(image=['11', 0], text=['11', 1])
+CASES += [
+    case('load-batch-single-index-1', g(batch_loader(index=1, label='single'), probe(**BATCH_PROBE))),
+    case('load-batch-single-rgba-no-extension', g(batch_loader(index=3, label='rgba', allow_RGBA_output='true',
+                                                               filename_text_extension='false'),
+                                                  probe(**BATCH_PROBE))),
+    case('load-batch-exif-rotated', g(batch_loader(index=4, label='rot'), probe(**BATCH_PROBE))),
+    case('load-batch-incremental-wraps', g(batch_loader(mode='incremental_image', label='inc'), probe(**BATCH_PROBE)),
+         runs=7),
+    case('load-batch-random', g(batch_loader(mode='random', seed=12345, label='rnd'), probe(**BATCH_PROBE)), runs=2),
+    case('load-batch-recursive-pattern', g(batch_loader(pattern='**/*.png', index=2, label='rec'),
+                                           probe(**BATCH_PROBE))),
+    case('load-batch-index-out-of-range-error', g(batch_loader(index=99, label='oor'), probe(image=['11', 0])),
+         expect='error'),
+    case('load-batch-missing-folder', g(batch_loader(path='input/nope', label='missing'), probe(image=['11', 0]))),
+    # outside the input folder: the original loads from an absolute folder or follows '..'; V2 refuses at validation
+    case('load-batch-absolute-path-refused', g(batch_loader(path=str(FIXTURES / 'elsewhere'), label='abs'),
+                                               probe(**BATCH_PROBE)),
+         expect="refused-named:is outside ComfyUI's input folder"),
+    case('load-batch-relative-outside-refused', g(batch_loader(path='frames', label='rel'), probe(image=['11', 0])),
+         expect="refused-named:is outside ComfyUI's input folder"),
+    case('load-batch-pattern-parent-refused', g(batch_loader(pattern='../other/*.png', label='up'),
+                                                probe(**BATCH_PROBE)),
+         expect='refused-named:reaches outside the folder in path'),
+    # the folders the SDK cannot tell from others: a path naming a file, a folder with files only in subfolders
+    case('load-batch-path-is-a-file-error', g(batch_loader(path='input/batch/a.jpg', label='file'),
+                                              probe(image=['11', 0])), expect='error'),
+    case('load-batch-only-subfolders-error', g(batch_loader(path='input/nested', label='nested'),
+                                               probe(image=['11', 0])), expect='error'),
+    case('load-batch-dot-pattern', g(batch_loader(pattern='./*.png', index=1, label='dot'), probe(**BATCH_PROBE))),
+    # more files than the host lists at once: the original loads the one image, V2 refuses by name when it runs
+    case('load-batch-too-many-files-refused', g(batch_loader(path='input/many', pattern='*.png', label='many'),
+                                                probe(**BATCH_PROBE)), expect='refusal'),
+    # a Windows separator: V2 reads input/batch, the original on this Linux host finds no such folder
+    case('load-batch-backslash-path-known', g(batch_loader(path='input\\batch', index=1, label='bs1'),
+                                              batch_loader(node_id='12', path='input/batch', index=1, label='bs2'),
+                                              probe(image=['11', 0]), probe_at('98', image=['12', 0], text=['12', 1])),
+         expect='known:backslash-path'),
+    # one label across two cases: the second folder resets the label's counter, as the original's database did
+    case('load-batch-shared-label-first-folder', g(batch_loader(mode='incremental_image', label='shared'),
+                                                   probe(**BATCH_PROBE)), runs=2),
+    case('load-batch-shared-label-new-folder-resets', g(batch_loader(mode='incremental_image', label='shared',
+                                                                     path='input/other'),
+                                                        probe(**BATCH_PROBE)), runs=2),
+]
+
+
 def run_side(side):
     out = WORK / side
     out.mkdir(parents=True, exist_ok=True)
@@ -696,6 +785,15 @@ def compare_case(spec, orig, conv, output_dir):
         ok = all(errors_o) and errors_o == errors_c
         return {'case': name, 'expect': expect, 'verdict': 'ERROR-PARITY' if ok else 'MISMATCH',
                 'errors': [errors_o, errors_c]}
+    if expect == 'known:backslash-path':
+        # node 11 reads 'input\\batch', node 12 'input/batch': the original (Linux) returns no image for node 11; V2
+        # gives node 11 exactly what both sides give node 12
+        ui_o, ui_c = [_ui(r) for r in runs_o], [_ui(r) for r in runs_c]
+        ok = not any(errors_o) and not any(errors_c) and ui_o[-1]['98'] == ui_c[-1]['98'] \
+            and ui_o[-1]['99']['probe']['image'] == ['NoneType', None] \
+            and ui_c[-1]['99']['probe']['image'] == ui_c[-1]['98']['probe']['image']
+        return {'case': name, 'expect': expect, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
+                'original': ui_o, 'v2': ui_c, 'errors': [errors_o, errors_c]}
     if expect in ('refusal', 'refusal-outside'):
         refused = all(e and e[-1][0] == 'SecureConversionRefusal' for e in errors_c)
         if expect == 'refusal':

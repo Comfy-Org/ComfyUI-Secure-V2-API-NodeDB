@@ -52,6 +52,12 @@ for key, exts in (('checkpoints', {'.safetensors'}), ('loras', {'.safetensors'})
 OUTPUT = OUT / 'output'
 CWD = OUT / 'cwd'
 CWD.mkdir(parents=True, exist_ok=True)
+# The input folder holds the synthetic image fixtures; the original resolves a relative folder path against ComfyUI's
+# working directory, where `input` is the input folder.
+if (Path(FIXTURES) / 'input').is_dir():
+    shutil.copytree(Path(FIXTURES) / 'input', OUT / 'input', dirs_exist_ok=True)
+if not (CWD / 'input').exists():
+    (CWD / 'input').symlink_to(OUT / 'input', target_is_directory=True)
 os.chdir(CWD)
 
 import comfy.lora  # noqa: E402
@@ -267,6 +273,7 @@ PACK_IDS = sorted(PACK_MODULE.NODE_CLASS_MAPPINGS)
 BOUNDARY_CHECKED = []
 if SIDE == 'v2':
     import importlib
+    import inspect
     sys.path.insert(0, '/overlay')
     from comfy_api.latest import _sdk as SDK
     FIX = importlib.import_module('comfy_secure_nodes.guest.fixr1_compat')
@@ -288,12 +295,53 @@ if SIDE == 'v2':
         original = cls.execute
         declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
 
-        def checked(c, **kwargs):
-            result = original(**kwargs)
+        def check_all(result):
             for index, value in enumerate(list(getattr(result, 'result', None) or [])):
                 _check_output(value, declared[index] if index < len(declared) else '')
             return result
+
+        # core runs execute as a coroutine only when it is a coroutine function, so the wrapper keeps that shape
+        if inspect.iscoroutinefunction(original):
+            async def checked(c, **kwargs):
+                return check_all(await original(**kwargs))
+        else:
+            def checked(c, **kwargs):
+                return check_all(original(**kwargs))
         cls.execute = classmethod(checked)
+
+    class _PackStorage:
+        """The host's pack storage for one tenant and pack (comfy_secure_nodes/storage.py): string keys of at most 128
+        bytes, string values of at most 1 MiB, at most 256 entries, kept across prompts. Core's in-process SDK has only
+        a stub for ctx.storage."""
+
+        def __init__(self):
+            self.values = {}
+
+        @staticmethod
+        def _check_key(key):
+            if not isinstance(key, str) or not 1 <= len(key.encode('utf-8')) <= 128 or '\x00' in key:
+                raise ValueError('invalid storage key')
+
+        async def get(self, key):
+            self._check_key(key)
+            return self.values.get(key)
+
+        async def set(self, key, value):
+            self._check_key(key)
+            if not isinstance(value, str) or len(value.encode('utf-8')) > 1024 * 1024:
+                raise ValueError('invalid storage value')
+            if key not in self.values and len(self.values) >= 256:
+                raise ValueError('storage is full')
+            self.values[key] = value
+
+    PACK_STORAGE = _PackStorage()
+    _original_build = SDK.InProcessCtxProvider.build
+
+    def _build_with_storage(self, plan):
+        context = _original_build(self, plan)
+        context.storage = PACK_STORAGE
+        return context
+    SDK.InProcessCtxProvider.build = _build_with_storage
 
     _nodes_module = sys.modules[PACK_MODULE.__name__ + '.was_v2.nodes']
     for _node_id in _nodes_module.CONVERTED_IDS:

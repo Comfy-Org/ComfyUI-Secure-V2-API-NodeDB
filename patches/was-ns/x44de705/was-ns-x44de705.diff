@@ -1,12 +1,12 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,139 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `44de705818d4663fefefde57ffe0ea5a9ea39df4` (ltdrdata/was-node-suite-comfyui). The sealed node
 +schemas and permissions are in `secure-nodes.json`.
 +
-+Status: 71 of the 220 registered node ids are converted. The other 149 are registered with their real schemas and refuse
++Status: 72 of the 220 registered node ids are converted. The other 148 are registered with their real schemas and refuse
 +with `was-ns/<node id> is not yet converted to Secure Nodes V2`: at validation, or, for Number PI (it has no inputs,
 +so core never calls its validate_inputs), when it runs. Image Lucy Sharpen, Mask Fill Holes and Text Random Prompt refuse
 +with their own message (Known differences). The original declares one more id,
@@ -33,6 +33,7 @@
 +  Gaussian Region. The last two call members of the pack's WAS_Tools_Class (`stitch_image`,
 +  `Masking.gaussian_region`), which originals.py copies verbatim into a class that keeps only those members.
 +- Round 6: Image Transpose, Mask Invert and Image Flip.
++- Round 7: Load Image Batch, over the input folder (Known differences).
 +
 +## How the conversion is built
 +
@@ -99,6 +100,30 @@
 +- Image Lucy Sharpen and Mask Fill Holes are refused by name at validation. The original computes them with scipy
 +  (scipy.signal.convolve2d, scipy.ndimage.binary_fill_holes), and this pack's guest runtime does not provide scipy
 +  yet. They return once it does.
++- Load Image Batch:
++  - It reads only ComfyUI's input folder. `path` must be `input` or `input/<folder>`: the original resolved a relative
++    path against ComfyUI's working directory, where `input` is that folder. Any other path, absolute paths
++    included, is refused by name at validation, with a message to put the images under input/.
++  - A pattern that is absolute or has a `..` part would read outside the folder; it is refused by name too.
++  - Backslashes in path and pattern count as folder separators, as on a Windows host. On a Linux host the original
++    found no such folder and returned no image.
++  - Within the input folder the batch is the original's: the same glob (recursive, hidden files skipped), image
++    extensions, order, decoding with EXIF transpose, RGB/RGBA handling, and the same errors for a bad index or an
++    empty batch. The single-image fingerprint is the original's IS_CHANGED.
++  - The host lists at most 4096 files at once, counting subfolders when the pattern reaches into them, and does not
++    follow links out of the input folder. A folder it cannot list is refused by name.
++  - A folder that holds no files at all returns no image, as a missing folder does in the original. The original
++    went on with an empty folder and failed on the index.
++  - Each label's counter, path and pattern live in the pack's host storage (`ctx.storage`). The original kept them
++    in its settings database in its pack folder (was_suite_settings.json, WAS_Node_Suite.py:155-158, 874).
++    - They survive restarts: the host keeps them on disk.
++    - They are kept per tenant and per pack, not per ComfyUI user. On a single-tenant install every workflow and
++      user shares them, as everyone shared the original's database. On a multi-tenant host each tenant has its own.
++    - The host keeps at most 256 entries per pack, which means at most 256 labels.
++  - V2 writes no image history. The original also added each batch's file paths to its history database
++    (update_history_images, WAS_Node_Suite.py:941-964).
++  - The random mode seeds Python's `random` module, as the original does. As with Text Random Line, the reseeded
++    module is the guest's.
 +- Text Random Prompt is refused by name: the original fetches its prompts from an online search service when it runs,
 +  and a Secure Nodes V2 node has no network access.
 +- Bus Node takes and returns handles. It tests them for truth as the original tested the objects: a connected
@@ -5086,7 +5111,7 @@
  [project.urls]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,28651 @@
+@@ -0,0 +1,28656 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -21959,11 +21984,14 @@
 +      "class": "WAS_V2_Load_Image_Batch_735dfeae",
 +      "methods": {
 +        "check_lazy_status": false,
-+        "fingerprint_inputs": false,
++        "fingerprint_inputs": true,
 +        "validate_inputs": true
 +      },
 +      "module": "was_v2.nodes",
-+      "permissions": [],
++      "permissions": [
++        "assets",
++        "storage"
++      ],
 +      "schema": {
 +        "attrs": {
 +          "accept_all_inputs": false,
@@ -22184,9 +22212,11 @@
 +      "sdk_refs": false,
 +      "validation_inputs": {
 +        "args": [
-+          "cls"
++          "cls",
++          "path",
++          "pattern"
 +        ],
-+        "kwargs": true
++        "kwargs": false
 +      }
 +    },
 +    "Load Lora": {
@@ -33883,7 +33913,7 @@
 +                  'errors': {k: v['input_types_error'] for k, v in rows.items() if 'input_types_error' in v}}))
 --- /dev/null
 +++ b/v2/tests/test_was_node_suite_parity.py
-@@ -0,0 +1,845 @@
+@@ -0,0 +1,943 @@
 +"""Tier-1 parity: WAS Node Suite fork (44de7058) vs its Secure Nodes V2 conversion.
 +
 +Run in the to-50% gate (DEPS = the pinned wheels in DEPS.json, for the original side only):
@@ -33946,6 +33976,40 @@
 +    (FIXTURES / 'upscale_models').mkdir(parents=True, exist_ok=True)
 +    save_file({key: value.contiguous() for key, value in upscaler.state_dict().items()},
 +              str(FIXTURES / 'upscale_models' / 'test-upscale-x2.safetensors'))
++
++    # Load Image Batch: synthetic images in the input folder (each worker copies FIXTURES/input into its own)
++    from PIL import Image
++    batch = FIXTURES / 'input' / 'batch'
++    (batch / 'sub').mkdir(parents=True, exist_ok=True)
++    (FIXTURES / 'input' / 'other').mkdir(parents=True, exist_ok=True)
++
++    def pixels(width, height, seed, channels=3):
++        generator = torch.Generator().manual_seed(seed)
++        values = (torch.rand((height, width, channels), generator=generator) * 255).to(torch.uint8).numpy()
++        return Image.fromarray(values)
++
++    pixels(10, 8, 1).save(batch / 'b.png')
++    pixels(12, 9, 2).save(batch / 'a.jpg', quality=90)
++    pixels(7, 7, 3).save(batch / 'C.PNG')
++    pixels(8, 8, 4, channels=4).save(batch / 'rgba.png')
++    (batch / 'notes.txt').write_text('not an image\n')
++    pixels(6, 6, 5).save(batch / '.hidden.png')
++    pixels(9, 5, 6).save(batch / 'sub' / 'd.png')
++    exif = Image.Exif()
++    exif[0x0112] = 6  # orientation: rotate 90 degrees clockwise
++    pixels(10, 6, 7).save(batch / 'rot.jpg', quality=90, exif=exif)
++    pixels(5, 5, 8).save(FIXTURES / 'input' / 'other' / 'e.png')
++    # a folder whose only file sits in a subfolder; a folder with more names than the host lists at once (4096);
++    # and a folder outside the input folder, which only an absolute path reaches
++    (FIXTURES / 'input' / 'nested' / 'deep').mkdir(parents=True, exist_ok=True)
++    pixels(4, 4, 9).save(FIXTURES / 'input' / 'nested' / 'deep' / 'x.png')
++    many = FIXTURES / 'input' / 'many'
++    many.mkdir(parents=True, exist_ok=True)
++    for number in range(4100):
++        (many / f'note-{number:04d}.txt').write_text('x')
++    pixels(6, 5, 10).save(many / 'one.png')
++    (FIXTURES / 'elsewhere').mkdir(parents=True, exist_ok=True)
++    pixels(7, 4, 11).save(FIXTURES / 'elsewhere' / 'f.png')
 +
 +
 +def text(node_id, value):
@@ -34443,6 +34507,61 @@
 +]
 +
 +
++# ---- phase B batch 7: Load Image Batch over the input folder
++def batch_loader(node_id='11', **inputs):
++    values = dict(mode='single_image', seed=0, index=0, label='Batch 001', path='input/batch', pattern='*',
++                  allow_RGBA_output='false', filename_text_extension='true')
++    values.update(inputs)
++    return node(node_id, 'Load Image Batch', **values)
++
++
++BATCH_PROBE = dict(image=['11', 0], text=['11', 1])
++CASES += [
++    case('load-batch-single-index-1', g(batch_loader(index=1, label='single'), probe(**BATCH_PROBE))),
++    case('load-batch-single-rgba-no-extension', g(batch_loader(index=3, label='rgba', allow_RGBA_output='true',
++                                                               filename_text_extension='false'),
++                                                  probe(**BATCH_PROBE))),
++    case('load-batch-exif-rotated', g(batch_loader(index=4, label='rot'), probe(**BATCH_PROBE))),
++    case('load-batch-incremental-wraps', g(batch_loader(mode='incremental_image', label='inc'), probe(**BATCH_PROBE)),
++         runs=7),
++    case('load-batch-random', g(batch_loader(mode='random', seed=12345, label='rnd'), probe(**BATCH_PROBE)), runs=2),
++    case('load-batch-recursive-pattern', g(batch_loader(pattern='**/*.png', index=2, label='rec'),
++                                           probe(**BATCH_PROBE))),
++    case('load-batch-index-out-of-range-error', g(batch_loader(index=99, label='oor'), probe(image=['11', 0])),
++         expect='error'),
++    case('load-batch-missing-folder', g(batch_loader(path='input/nope', label='missing'), probe(image=['11', 0]))),
++    # outside the input folder: the original loads from an absolute folder or follows '..'; V2 refuses at validation
++    case('load-batch-absolute-path-refused', g(batch_loader(path=str(FIXTURES / 'elsewhere'), label='abs'),
++                                               probe(**BATCH_PROBE)),
++         expect="refused-named:is outside ComfyUI's input folder"),
++    case('load-batch-relative-outside-refused', g(batch_loader(path='frames', label='rel'), probe(image=['11', 0])),
++         expect="refused-named:is outside ComfyUI's input folder"),
++    case('load-batch-pattern-parent-refused', g(batch_loader(pattern='../other/*.png', label='up'),
++                                                probe(**BATCH_PROBE)),
++         expect='refused-named:reaches outside the folder in path'),
++    # the folders the SDK cannot tell from others: a path naming a file, a folder with files only in subfolders
++    case('load-batch-path-is-a-file-error', g(batch_loader(path='input/batch/a.jpg', label='file'),
++                                              probe(image=['11', 0])), expect='error'),
++    case('load-batch-only-subfolders-error', g(batch_loader(path='input/nested', label='nested'),
++                                               probe(image=['11', 0])), expect='error'),
++    case('load-batch-dot-pattern', g(batch_loader(pattern='./*.png', index=1, label='dot'), probe(**BATCH_PROBE))),
++    # more files than the host lists at once: the original loads the one image, V2 refuses by name when it runs
++    case('load-batch-too-many-files-refused', g(batch_loader(path='input/many', pattern='*.png', label='many'),
++                                                probe(**BATCH_PROBE)), expect='refusal'),
++    # a Windows separator: V2 reads input/batch, the original on this Linux host finds no such folder
++    case('load-batch-backslash-path-known', g(batch_loader(path='input\\batch', index=1, label='bs1'),
++                                              batch_loader(node_id='12', path='input/batch', index=1, label='bs2'),
++                                              probe(image=['11', 0]), probe_at('98', image=['12', 0], text=['12', 1])),
++         expect='known:backslash-path'),
++    # one label across two cases: the second folder resets the label's counter, as the original's database did
++    case('load-batch-shared-label-first-folder', g(batch_loader(mode='incremental_image', label='shared'),
++                                                   probe(**BATCH_PROBE)), runs=2),
++    case('load-batch-shared-label-new-folder-resets', g(batch_loader(mode='incremental_image', label='shared',
++                                                                     path='input/other'),
++                                                        probe(**BATCH_PROBE)), runs=2),
++]
++
++
 +def run_side(side):
 +    out = WORK / side
 +    out.mkdir(parents=True, exist_ok=True)
@@ -34582,6 +34701,15 @@
 +        ok = all(errors_o) and errors_o == errors_c
 +        return {'case': name, 'expect': expect, 'verdict': 'ERROR-PARITY' if ok else 'MISMATCH',
 +                'errors': [errors_o, errors_c]}
++    if expect == 'known:backslash-path':
++        # node 11 reads 'input\\batch', node 12 'input/batch': the original (Linux) returns no image for node 11; V2
++        # gives node 11 exactly what both sides give node 12
++        ui_o, ui_c = [_ui(r) for r in runs_o], [_ui(r) for r in runs_c]
++        ok = not any(errors_o) and not any(errors_c) and ui_o[-1]['98'] == ui_c[-1]['98'] \
++            and ui_o[-1]['99']['probe']['image'] == ['NoneType', None] \
++            and ui_c[-1]['99']['probe']['image'] == ui_c[-1]['98']['probe']['image']
++        return {'case': name, 'expect': expect, 'verdict': 'KNOWN-DIFFERENCE' if ok else 'MISMATCH',
++                'original': ui_o, 'v2': ui_c, 'errors': [errors_o, errors_c]}
 +    if expect in ('refusal', 'refusal-outside'):
 +        refused = all(e and e[-1][0] == 'SecureConversionRefusal' for e in errors_c)
 +        if expect == 'refusal':
@@ -34731,7 +34859,7 @@
 +main()
 --- /dev/null
 +++ b/v2/tests/was_parity_worker.py
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,489 @@
 +"""One side of the WAS Node Suite parity run (gate container only).
 +
 +argv: SIDE CASES_JSON OUT_DIR FIXTURES_DIR      SIDE = original | v2
@@ -34786,6 +34914,12 @@
 +OUTPUT = OUT / 'output'
 +CWD = OUT / 'cwd'
 +CWD.mkdir(parents=True, exist_ok=True)
++# The input folder holds the synthetic image fixtures; the original resolves a relative folder path against ComfyUI's
++# working directory, where `input` is the input folder.
++if (Path(FIXTURES) / 'input').is_dir():
++    shutil.copytree(Path(FIXTURES) / 'input', OUT / 'input', dirs_exist_ok=True)
++if not (CWD / 'input').exists():
++    (CWD / 'input').symlink_to(OUT / 'input', target_is_directory=True)
 +os.chdir(CWD)
 +
 +import comfy.lora  # noqa: E402
@@ -35001,6 +35135,7 @@
 +BOUNDARY_CHECKED = []
 +if SIDE == 'v2':
 +    import importlib
++    import inspect
 +    sys.path.insert(0, '/overlay')
 +    from comfy_api.latest import _sdk as SDK
 +    FIX = importlib.import_module('comfy_secure_nodes.guest.fixr1_compat')
@@ -35022,12 +35157,53 @@
 +        original = cls.execute
 +        declared = [item if isinstance(item, str) else '' for item in cls.RETURN_TYPES]
 +
-+        def checked(c, **kwargs):
-+            result = original(**kwargs)
++        def check_all(result):
 +            for index, value in enumerate(list(getattr(result, 'result', None) or [])):
 +                _check_output(value, declared[index] if index < len(declared) else '')
 +            return result
++
++        # core runs execute as a coroutine only when it is a coroutine function, so the wrapper keeps that shape
++        if inspect.iscoroutinefunction(original):
++            async def checked(c, **kwargs):
++                return check_all(await original(**kwargs))
++        else:
++            def checked(c, **kwargs):
++                return check_all(original(**kwargs))
 +        cls.execute = classmethod(checked)
++
++    class _PackStorage:
++        """The host's pack storage for one tenant and pack (comfy_secure_nodes/storage.py): string keys of at most 128
++        bytes, string values of at most 1 MiB, at most 256 entries, kept across prompts. Core's in-process SDK has only
++        a stub for ctx.storage."""
++
++        def __init__(self):
++            self.values = {}
++
++        @staticmethod
++        def _check_key(key):
++            if not isinstance(key, str) or not 1 <= len(key.encode('utf-8')) <= 128 or '\x00' in key:
++                raise ValueError('invalid storage key')
++
++        async def get(self, key):
++            self._check_key(key)
++            return self.values.get(key)
++
++        async def set(self, key, value):
++            self._check_key(key)
++            if not isinstance(value, str) or len(value.encode('utf-8')) > 1024 * 1024:
++                raise ValueError('invalid storage value')
++            if key not in self.values and len(self.values) >= 256:
++                raise ValueError('storage is full')
++            self.values[key] = value
++
++    PACK_STORAGE = _PackStorage()
++    _original_build = SDK.InProcessCtxProvider.build
++
++    def _build_with_storage(self, plan):
++        context = _original_build(self, plan)
++        context.storage = PACK_STORAGE
++        return context
++    SDK.InProcessCtxProvider.build = _build_with_storage
 +
 +    _nodes_module = sys.modules[PACK_MODULE.__name__ + '.was_v2.nodes']
 +    for _node_id in _nodes_module.CONVERTED_IDS:
@@ -35179,7 +35355,7 @@
 +"""WAS Node Suite, Secure Nodes V2 modules (see ../__init__.py and SECURE_CONVERSION.md)."""
 --- /dev/null
 +++ b/v2/was_v2/nodes.py
-@@ -0,0 +1,439 @@
+@@ -0,0 +1,615 @@
 +"""WAS Node Suite as Secure Nodes V2 classes: the converted nodes, and every other declared node registered with
 +its real schema and a refusal (SECURE_CONVERSION.md).
 +
@@ -35187,19 +35363,25 @@
 +Pure value nodes call the original's method from originals.py (copied verbatim from WAS_Node_Suite.py by the
 +build); nodes that touch models, tensors or files go through the guest SDK.
 +"""
++import glob
 +import hashlib
++import io as io_bytes
 +import json
 +import os
 +import posixpath
++import random
 +import re
 +import sys
++
++from PIL import Image, ImageOps
 +
 +from comfy_api.latest import io, sdk
 +
 +from . import originals
 +from .refusals import (IMAGE_SAVE_HISTORY, IMAGE_SAVE_JPEG, IMAGE_SAVE_LISTING, IMAGE_SAVE_OVERWRITE,
-+                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, NEEDS_SCIPY, NO_NETWORK,
-+                       SecureConversionRefusal, not_converted)
++                       IMAGE_SAVE_PATH, IMAGE_SAVE_PREFIX, IMAGE_SAVE_WEBP_EMBED, LOAD_BATCH_LISTING,
++                       LOAD_BATCH_PATH, LOAD_BATCH_PATTERN, NEEDS_SCIPY, NO_NETWORK, SecureConversionRefusal,
++                       not_converted)
 +from .schema_v3 import ROWS, build_schema
 +from .tokens import TextTokens
 +
@@ -35418,6 +35600,173 @@
 +    return io.NodeOutput(await sdk.ctx().models.load_upscale_model(model_name), model_name)
 +
 +
++# ---- Load Image Batch (WAS_Load_Image_Batch, WAS_Node_Suite.py:5313-5437), phase B batch 7
++# Folder reads go through the SDK as in the converted directory loaders of other packs: ctx.assets.list over the input
++# folder, then ctx.assets.resolve and read_bytes for each file. In the guest a host-side error reaches the pack as a
++# transport error rather than as its builtin type, so no branch here depends on an exception's type.
++# ALLOWED_EXT (WAS_Node_Suite.py:162-163)
++_IMAGE_EXTENSIONS = ('.jpeg', '.jpg', '.png', '.tiff', '.gif', '.bmp', '.webp')
++_DRIVE = re.compile(r"^[A-Za-z]:")
++
++
++def _batch_folder(path):
++    """The input-folder subfolder that the original's `path` names. The original globbed `path` on the host, relative
++    to ComfyUI's working directory, where `input` is the input folder; a V2 node reads only that folder. Backslashes
++    count as separators, as on a Windows host."""
++    text = path.replace("\\", "/")
++    if text.startswith("/") or _DRIVE.match(text):
++        raise SecureConversionRefusal(LOAD_BATCH_PATH.format(path=path))
++    normalized = posixpath.normpath(text)
++    if normalized == "input":
++        return ""
++    if normalized.startswith("input/"):
++        return normalized[len("input/"):]
++    raise SecureConversionRefusal(LOAD_BATCH_PATH.format(path=path))
++
++
++def _batch_pattern(pattern):
++    """The original's pattern relative to the folder (glob.glob(os.path.join(glob.escape(path), pattern),
++    recursive=True), WAS_Node_Suite.py:5395-5399), and whether it reaches into subfolders. A '.' part or a doubled
++    separator names the same files for glob and is dropped; the last part is kept as it is (a trailing separator
++    matches only folders). An absolute pattern or a '..' part reads outside the folder and is refused."""
++    text = pattern.replace("\\", "/")
++    parts = text.split("/")
++    if text.startswith("/") or _DRIVE.match(text) or ".." in parts:
++        raise SecureConversionRefusal(LOAD_BATCH_PATTERN.format(pattern=pattern))
++    kept = [part for part in parts[:-1] if part not in ("", ".")] + parts[-1:]
++    return "/".join(kept), len(kept) > 1 or kept == ["**"]
++
++
++def _listing_refusal(folder, error):
++    return SecureConversionRefusal(LOAD_BATCH_LISTING.format(path=posixpath.join("input", folder), reason=error))
++
++
++async def _batch_paths(folder, pattern):
++    """BatchImageLoader.load_images (WAS_Node_Suite.py:5395-5399): glob.glob(os.path.join(glob.escape(path), pattern),
++    recursive=True), image extensions only, then sorted by absolute path, which within one folder is the order of the
++    names. Returns (whether the original's os.path.exists(path) held, as far as the SDK can tell, the batch)."""
++    pattern, recursive = _batch_pattern(pattern)
++    assets = sdk.ctx().assets
++    try:
++        if folder and await assets.exists("input", folder):
++            return True, []  # path names a file: the original's glob inside it found nothing
++        listed = list(await assets.list("input", prefix=folder, recursive=recursive))
++    except Exception as error:  # the host's listing limit (4096 names) or a folder it cannot confine to the input
++        raise _listing_refusal(folder, error) from error
++    exists = bool(listed)
++    if not exists and not recursive:
++        # Files only in subfolders: the folder exists for os.path.exists. The SDK lists files, not folders.
++        try:
++            exists = bool(await assets.list("input", prefix=folder, recursive=True))
++        except Exception:
++            exists = True  # more files below than the host lists at once
++    matcher = re.compile(glob.translate(pattern, recursive=True, include_hidden=False))
++    batch = []
++    for name in listed:
++        relative = name[len(folder) + 1:] if folder else name
++        if matcher.match(relative) and relative.lower().endswith(_IMAGE_EXTENSIONS):
++            batch.append(name)
++    return exists, sorted(batch)
++
++
++def _batch_key(label):
++    return "load-image-batch:" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:40]
++
++
++async def _batch_state(label, path, pattern):
++    """BatchImageLoader.__init__ (WAS_Node_Suite.py:5379-5393): the label's counter, reset to 0 (and stored with the
++    new path and pattern) when the label's stored path or pattern differ. The original kept these in its database in
++    the pack folder; V2 keeps them in the pack's host storage."""
++    storage = sdk.ctx().storage
++    stored = await storage.get(_batch_key(label))
++    state = json.loads(stored) if stored else {}
++    if state.get("path") != path or state.get("pattern") != pattern:
++        state = {"label": label, "path": path, "pattern": pattern, "counter": 0}
++        await storage.set(_batch_key(label), json.dumps(state))
++    return state
++
++
++async def _batch_open(name):
++    data = await sdk.ctx().assets.read_bytes(await sdk.ctx().assets.resolve("input", name))
++    image = Image.open(io_bytes.BytesIO(data))
++    image = ImageOps.exif_transpose(image)
++    return (image, posixpath.basename(name))
++
++
++async def _batch_by_id(names, image_id):
++    # get_image_by_id (WAS_Node_Suite.py:5401-5407): an invalid index prints and returns None
++    if image_id < 0 or image_id >= len(names):
++        originals.cstr(f"Invalid image index `{image_id}`").error.print()
++        return
++    return await _batch_open(names[image_id])
++
++
++async def _load_image_batch(cls, path, pattern='*', index=0, mode="single_image", seed=0, label='Batch 001',
++                            allow_RGBA_output='false', filename_text_extension='true'):
++    allow_RGBA_output = (allow_RGBA_output == 'true')
++    if not path:
++        return io.NodeOutput(None)  # os.path.exists('') is False: the original returned (None, )
++    folder = _batch_folder(path)
++    exists, names = await _batch_paths(folder, pattern)
++    if not exists:
++        return io.NodeOutput(None)  # no such folder in the input folder: the original returned (None, )
++    state = await _batch_state(label, path, pattern)
++    if mode == 'single_image':
++        image, filename = await _batch_by_id(names, index)
++    elif mode == 'incremental_image':
++        # get_next_image (WAS_Node_Suite.py:5409-5420)
++        counter = state["counter"]
++        if counter >= len(names):
++            counter = 0
++        name = names[counter]
++        counter += 1
++        if counter == len(names):
++            counter = 0
++        originals.cstr(f'{originals.cstr.color.YELLOW}{label}{originals.cstr.color.END} Index: {counter}').msg.print()
++        state["counter"] = counter
++        await sdk.ctx().storage.set(_batch_key(label), json.dumps(state))
++        image, filename = await _batch_open(name)
++    else:
++        random.seed(seed)
++        newindex = int(random.random() * len(names))
++        image, filename = await _batch_by_id(names, newindex)
++    if not allow_RGBA_output:
++        image = image.convert("RGB")
++    if filename_text_extension == "false":
++        filename = os.path.splitext(filename)[0]
++    return io.NodeOutput(originals.pil2tensor(image), filename)
++
++
++async def _load_image_batch_fingerprint(cls, **kwargs):
++    # IS_CHANGED (WAS_Node_Suite.py:5428-5437): always changed in the incremental and random modes. For a single image,
++    # the sha256 of os.path.join(path, <base name of the file at the label's stored counter>). Whatever fails there (an
++    # empty batch, a file in a subfolder, which that join misses) makes core count the node as changed, as it did for
++    # the original.
++    if kwargs['mode'] != 'single_image':
++        return float("NaN")
++    path, pattern, label = kwargs['path'], kwargs['pattern'], kwargs['label']
++    folder = _batch_folder(path)
++    _exists, names = await _batch_paths(folder, pattern)
++    state = await _batch_state(label, path, pattern)
++    counter = state["counter"] if state["counter"] < len(names) else 0
++    assets = sdk.ctx().assets
++    target = posixpath.join(folder, posixpath.basename(names[counter]))
++    return await assets.digest(await assets.resolve("input", target), "sha256")
++
++
++async def _load_image_batch_validate(cls, path=None, pattern=None):
++    # A path or pattern that leaves the input folder is refused before the prompt runs; linked values are checked when
++    # the node runs.
++    try:
++        if isinstance(path, str) and path:
++            _batch_folder(path)
++        if isinstance(pattern, str):
++            _batch_pattern(pattern)
++    except SecureConversionRefusal as refusal:
++        return str(refusal)
++    return True
++
++
 +# ---- Image Save (WAS_Image_Save.was_save_images)
 +async def _image_save(cls, images, output_path='', filename_prefix="ComfyUI", filename_delimiter='_',
 +                      extension='png', dpi=96, quality=100, optimize_image="true", lossless_webp="false",
@@ -35580,6 +35929,9 @@
 +    "execute": classmethod(_checkpoint_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
 +    "validate_inputs": classmethod(_combine_validators(_catalogue_validate("configs", "config_name"),
 +                                                       _catalogue_validate("checkpoints", "ckpt_name")))}
++_CONVERTED["Load Image Batch"] = {
++    "execute": classmethod(_load_image_batch), "fingerprint_inputs": classmethod(_load_image_batch_fingerprint),
++    "validate_inputs": classmethod(_load_image_batch_validate), "SDK_PERMISSIONS": ("assets", "storage")}
 +_CONVERTED["Upscale Model Loader"] = {
 +    "execute": classmethod(_upscale_model_loader), "SDK_REFS": True, "SDK_PERMISSIONS": ("assets", "models"),
 +    "validate_inputs": classmethod(_catalogue_validate("upscale_models", "model_name"))}
@@ -38682,7 +39034,7 @@
 +            return image.convert("RGB")
 --- /dev/null
 +++ b/v2/was_v2/refusals.py
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,83 @@
 +"""Named refusals of the WAS Node Suite conversion (SECURE_CONVERSION.md, "Known differences")."""
 +
 +PACK = "was-ns"
@@ -38747,6 +39099,24 @@
 +NO_NETWORK = (
 +    f"{PACK}/{{node}} is not available on Secure Nodes V2: the original fetches its prompts from an online search "
 +    "service when it runs, and a Secure Nodes V2 node has no network access."
++)
++
++LOAD_BATCH_PATH = (
++    f"{PACK}/Load Image Batch: path {{path!r}} is outside ComfyUI's input folder. The original read any folder on the "
++    "host; a Secure Nodes V2 node reads only the input folder. Put the images in a folder under input/ and enter its "
++    "path as 'input/<folder>'."
++)
++
++LOAD_BATCH_PATTERN = (
++    f"{PACK}/Load Image Batch: pattern {{pattern!r}} reaches outside the folder in path (it is absolute or has a '..' "
++    "part). A Secure Nodes V2 node reads only ComfyUI's input folder: put the images in a folder under input/, enter "
++    "that folder as path, and use a pattern inside it."
++)
++
++LOAD_BATCH_LISTING = (
++    f"{PACK}/Load Image Batch: the host could not list {{path!r}} ({{reason}}). A Secure Nodes V2 node lists at most "
++    "4096 files at once, and only files that stay inside ComfyUI's input folder (links out of it are not followed). "
++    "Split a larger batch into folders under input/ of at most 4096 files each."
 +)
 --- /dev/null
 +++ b/v2/was_v2/schema_v3.py
