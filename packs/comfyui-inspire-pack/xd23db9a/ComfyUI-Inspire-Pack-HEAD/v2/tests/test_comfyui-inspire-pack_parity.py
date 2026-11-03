@@ -40,8 +40,10 @@ from comfy_secure_nodes import packdb  # noqa: E402
 from encode_manifest import build_manifest, serialize  # noqa: E402
 
 NODES = ["LoadImagesFromDir //Inspire", "LoadImageListFromDir //Inspire", "ChangeImageBatchSize //Inspire"]
+ROUND2_NODES = ["GlobalSeed //Inspire"]  # its schema and behaviour: tests/test_global_seed.py
 EDITED = {"__init__.py", "pyproject.toml"}
-GUEST_MODULES = ["__init__.py", "secure_inspire.py", "_sn_image.py", "_sn_dir.py", "_sn_comfy_utils.py"]
+GUEST_MODULES = ["__init__.py", "secure_inspire.py", "_sn_image.py", "_sn_dir.py", "_sn_comfy_utils.py",
+                 "_sn_global_seed.py"]
 DENIED = ("comfy.", "comfy_execution", "folder_paths", "nodes", "server", "execution", "urllib",
           "requests", "huggingface_hub", "cv2")
 MEDIA = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".mov", ".webm", ".avi", ".mkv",
@@ -217,7 +219,8 @@ def main():
         record("(pack)", f"ids/{node_id}", P.NODE_CLASS_MAPPINGS.get(node_id) is cls
                and P.NODE_DISPLAY_NAME_MAPPINGS.get(node_id) == H.V1_DISPLAY[node_id], node_id, kind="integrity")
     manifest = json.loads((v2 / "secure-nodes.json").read_bytes())
-    record("(pack)", "ids", list(new.NODE_CLASS_MAPPINGS) == NODES and set(manifest["nodes"]) == set(NODES),
+    record("(pack)", "ids", list(new.NODE_CLASS_MAPPINGS) == NODES + ROUND2_NODES
+           and set(manifest["nodes"]) == set(NODES + ROUND2_NODES),
            [list(new.NODE_CLASS_MAPPINGS), sorted(manifest["nodes"])], kind="integrity")
     record("(pack)", "manifest-is-encoder-output",
            serialize(build_manifest(v2, "ins_v2_regen")) == (v2 / "secure-nodes.json").read_text(),

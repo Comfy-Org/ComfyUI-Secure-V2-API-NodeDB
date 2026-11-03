@@ -74,7 +74,10 @@ def build_manifest(v2: Path, package_name: str = "ins_v2_manifest") -> dict:
         if weights:
             row["required_weights"] = weights
         nodes[node_id] = row
-    return {"format": FORMAT, "nodes": nodes, "runtime": manifest_declaration(v2)}
+    manifest = {"format": FORMAT, "nodes": nodes, "runtime": manifest_declaration(v2)}
+    if (v2 / "web").is_dir():
+        manifest["web_directory"] = "web"
+    return manifest
 
 
 def serialize(manifest: dict) -> str:
