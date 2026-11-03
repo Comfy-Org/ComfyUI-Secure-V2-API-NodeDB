@@ -73,29 +73,7 @@ _CITY96_WEIGHTS = {
     for key, digest in _CITY96_HASHES.items()
 }
 
-_TTL_REVISION = "5f1b2c44497aeef555e44c9e1d035ad186fcecb2"
-_TTL_FILENAMES = {
-    "SD 1.x": (
-        "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sd15_resizer.pt",
-        "8fa1cb8168b305d556f2e8178c820b0a6956f4ba84ebc9443fac69be43ffd6fe",
-    ),
-    "SDXL": (
-        "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sdxl_resizer.pt",
-        "0bca261c96e136cb9e2f330f40386e6cbcaaf464cd39e9f7752c9e7b32e825e8",
-    ),
-}
-_TTL_WEIGHTS = {
-    version: sdk.HuggingFaceWeight(
-        repo_id="Peter-Young/workerflux",
-        filename=filename,
-        folder="latent_upscale_models",
-        revision=_TTL_REVISION,
-        sha256=digest,
-        on_demand=True,
-    )
-    for version, (filename, digest) in _TTL_FILENAMES.items()
-}
-_HIRES_REQUIRED_WEIGHTS = tuple((*_CITY96_WEIGHTS.values(), *_TTL_WEIGHTS.values()))
+_HIRES_REQUIRED_WEIGHTS = tuple(_CITY96_WEIGHTS.values())
 
 
 def _ctx():
@@ -147,206 +125,6 @@ class _City96Upscaler(torch.nn.Module):
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         return self.sequential(value)
-
-
-def _ttl_normalization(channels: int) -> torch.nn.Module:
-    return torch.nn.GroupNorm(32, channels)
-
-
-def _ttl_zero_module(module: torch.nn.Module) -> torch.nn.Module:
-    for parameter in module.parameters():
-        parameter.detach().zero_()
-    return module
-
-
-class _TtlAttentionBlock(torch.nn.Module):
-    def __init__(self, channels: int):
-        super().__init__()
-        self.norm = _ttl_normalization(channels)
-        self.q = torch.nn.Conv2d(channels, channels, 1)
-        self.k = torch.nn.Conv2d(channels, channels, 1)
-        self.v = torch.nn.Conv2d(channels, channels, 1)
-        self.proj_out = torch.nn.Conv2d(channels, channels, 1)
-
-    def forward(self, value: torch.Tensor) -> torch.Tensor:
-        normalized = self.norm(value)
-        q, k, v = (layer(normalized) for layer in (self.q, self.k, self.v))
-        batch, channels, height, width = q.shape
-        flatten = lambda item: item.flatten(2).transpose(1, 2).unsqueeze(1)
-        attended = F.scaled_dot_product_attention(
-            flatten(q), flatten(k), flatten(v)
-        )
-        attended = attended.squeeze(1).transpose(1, 2).reshape(
-            batch, channels, height, width
-        )
-        return value + self.proj_out(attended)
-
-
-class _TtlResidualBlock(torch.nn.Module):
-    def __init__(
-        self,
-        channels: int,
-        embedding_channels: int,
-        dropout: float = 0.0,
-        out_channels: int | None = None,
-        use_conv: bool = False,
-        use_scale_shift_norm: bool = False,
-        kernel_size: int = 3,
-    ):
-        super().__init__()
-        self.channels = channels
-        self.out_channels = out_channels or channels
-        self.use_scale_shift_norm = use_scale_shift_norm
-        padding = kernel_size // 2
-        self.in_layers = torch.nn.Sequential(
-            _ttl_normalization(channels),
-            torch.nn.SiLU(),
-            torch.nn.Conv2d(
-                channels, self.out_channels, kernel_size, padding=padding
-            ),
-        )
-        embedding_outputs = (
-            2 * self.out_channels if use_scale_shift_norm else self.out_channels
-        )
-        self.emb_layers = torch.nn.Sequential(
-            torch.nn.SiLU(),
-            torch.nn.Linear(embedding_channels, embedding_outputs),
-        )
-        self.out_layers = torch.nn.Sequential(
-            _ttl_normalization(self.out_channels),
-            torch.nn.SiLU(),
-            torch.nn.Dropout(p=float(dropout)),
-            _ttl_zero_module(torch.nn.Conv2d(
-                self.out_channels,
-                self.out_channels,
-                kernel_size,
-                padding=padding,
-            )),
-        )
-        if self.out_channels == channels:
-            self.skip_connection = torch.nn.Identity()
-        elif use_conv:
-            self.skip_connection = torch.nn.Conv2d(
-                channels, self.out_channels, kernel_size, padding=padding
-            )
-        else:
-            self.skip_connection = torch.nn.Conv2d(
-                channels, self.out_channels, 1
-            )
-
-    def forward(
-        self, value: torch.Tensor, embedding: torch.Tensor
-    ) -> torch.Tensor:
-        hidden = self.in_layers(value)
-        embedding_out = self.emb_layers(embedding).to(hidden.dtype)
-        while embedding_out.ndim < hidden.ndim:
-            embedding_out = embedding_out[..., None]
-        if self.use_scale_shift_norm:
-            scale, shift = torch.chunk(embedding_out, 2, dim=1)
-            hidden = self.out_layers[0](hidden) * (1 + scale) + shift
-            hidden = self.out_layers[1:](hidden)
-        else:
-            hidden = self.out_layers(hidden + embedding_out)
-        return self.skip_connection(value) + hidden
-
-
-class _TtlLatentResizer(torch.nn.Module):
-    def __init__(
-        self,
-        in_blocks: int,
-        out_blocks: int,
-        channels: int,
-        *,
-        attention: bool,
-        dropout: float = 0.0,
-    ):
-        super().__init__()
-        self.conv_in = torch.nn.Conv2d(4, channels, 3, padding=1)
-        embedding_channels = 32
-        self.embed = torch.nn.Sequential(
-            torch.nn.Linear(1, embedding_channels),
-            torch.nn.SiLU(),
-            torch.nn.Linear(embedding_channels, embedding_channels),
-        )
-        self.in_blocks = torch.nn.ModuleList()
-        for index in range(in_blocks):
-            if attention and index in {1, in_blocks - 1}:
-                self.in_blocks.append(_TtlAttentionBlock(channels))
-            self.in_blocks.append(_TtlResidualBlock(
-                channels, embedding_channels, dropout
-            ))
-        self.out_blocks = torch.nn.ModuleList()
-        for index in range(out_blocks):
-            if attention and index in {1, out_blocks - 1}:
-                self.out_blocks.append(_TtlAttentionBlock(channels))
-            self.out_blocks.append(_TtlResidualBlock(
-                channels, embedding_channels, dropout
-            ))
-        self.norm_out = _ttl_normalization(channels)
-        self.conv_out = torch.nn.Conv2d(channels, 4, 3, padding=1)
-
-    @classmethod
-    def from_state_dict(
-        cls, state: dict[str, torch.Tensor]
-    ) -> "_TtlLatentResizer":
-        try:
-            channels = int(state["conv_in.bias"].shape[0])
-        except (KeyError, IndexError) as exc:
-            raise ValueError("TTL latent upscaler state dict is malformed") from exc
-        in_max = out_max = -1
-        in_attention = out_attention = 0
-        for key in state:
-            parts = key.split(".")
-            if len(parts) < 2 or parts[0] not in {"in_blocks", "out_blocks"}:
-                continue
-            try:
-                index = int(parts[1])
-            except ValueError:
-                continue
-            if parts[0] == "in_blocks":
-                in_max = max(in_max, index)
-                if len(parts) > 3 and parts[2:4] == ["q", "weight"]:
-                    in_attention += 1
-            else:
-                out_max = max(out_max, index)
-                if len(parts) > 3 and parts[2:4] == ["q", "weight"]:
-                    out_attention += 1
-        in_blocks = in_max + 1 - in_attention
-        out_blocks = out_max + 1 - out_attention
-        if in_blocks <= 0 or out_blocks <= 0:
-            raise ValueError("TTL latent upscaler block layout is malformed")
-        model = cls(
-            in_blocks,
-            out_blocks,
-            channels,
-            attention=bool(in_attention or out_attention),
-        )
-        model.load_state_dict(state, strict=True)
-        return model.eval()
-
-    def forward(
-        self, value: torch.Tensor, *, scale: float
-    ) -> torch.Tensor:
-        size = tuple(round(item * float(scale)) for item in value.shape[-2:])
-        if size == value.shape[-2:]:
-            return value
-        scale_embedding = value.new_tensor([[float(scale) - 1.0]])
-        embedding = self.embed(scale_embedding)
-        hidden = self.conv_in(value)
-        for block in self.in_blocks:
-            hidden = (
-                block(hidden, embedding)
-                if isinstance(block, _TtlResidualBlock)
-                else block(hidden)
-            )
-        hidden = F.interpolate(hidden, size=size, mode="bilinear")
-        for block in self.out_blocks:
-            hidden = (
-                block(hidden, embedding)
-                if isinstance(block, _TtlResidualBlock)
-                else block(hidden)
-            )
-        return self.conv_out(F.silu(self.norm_out(hidden)))
 
 
 def _safe_asset_name(value: Any, *, allow_empty: bool = False) -> str:
@@ -752,6 +530,16 @@ def _noise_script(rng_source, cfg_denoiser, add_seed_noise, seed, weight, script
     return (output,)
 
 
+_TTL_REFUSAL = (
+    # The original's TTL latent upscalers load py/sd15_resizer.pt and py/sdxl_resizer.pt, PyTorch pickle files. A
+    # guest loads weights only through reviewed SafeTensors bindings, and none is registered for these two files.
+    "HighRes-Fix Script is not available in this secure build with the latent upscaler {method!r}: the original loads "
+    "the TTL latent upscalers from PyTorch pickle files (py/sd15_resizer.pt, py/sdxl_resizer.pt), and a Secure Nodes "
+    "V2 guest loads weights only through reviewed SafeTensors bindings, none of which exists for these two files. Use "
+    "a City96 latent upscaler (city96.v1 or city96.xl) or a plain latent resize method."
+)
+
+
 async def _hires_script(
     upscale_type,
     hires_ckpt_name,
@@ -800,13 +588,7 @@ async def _hires_script(
                 _CITY96_WEIGHTS[(version, scale_name)]
             )
         elif latent_method.startswith("ttl_nn."):
-            version = latent_method.removeprefix("ttl_nn.")
-            if version not in _TTL_WEIGHTS:
-                raise ValueError("unknown TTL latent upscaler version")
-            factor = min(2.0, max(1.0, factor))
-            latent_weight = await _download_declared_weight(
-                _TTL_WEIGHTS[version]
-            )
+            raise RuntimeError(_TTL_REFUSAL.format(method=latent_method))
         elif latent_method not in {
             "nearest-exact", "bilinear", "area", "bicubic", "bislerp",
         }:
@@ -2173,26 +1955,6 @@ async def _city96_resize_latent(
     return await sdk.LatentRef.from_value(value)
 
 
-async def _ttl_resize_latent(
-    latent, factor: float, version: str, catalogue_name: str
-):
-    state = await _load_declared_state(catalogue_name)
-    value = dict(await latent.value())
-    samples = value.get("samples")
-    if not isinstance(samples, torch.Tensor) or samples.ndim != 4:
-        raise ValueError("TTL latent upscaling requires BCHW samples")
-    model = _TtlLatentResizer.from_state_dict(state)
-    scaling = 0.13025
-    with torch.inference_mode():
-        resized = model(
-            samples.detach().float().cpu() * scaling,
-            scale=float(factor),
-        ) / scaling
-    value["samples"] = resized.to(dtype=samples.dtype)
-    _resize_latent_noise_mask(value, tuple(resized.shape[-2:]))
-    return await sdk.LatentRef.from_value(value)
-
-
 async def _resize_latent_raw(
     latent,
     factor: float,
@@ -2210,11 +1972,7 @@ async def _resize_latent_raw(
             latent, factor, mode.removeprefix("city96."), weight_name
         )
     if mode.startswith("ttl_nn."):
-        if not weight_name:
-            raise ValueError("TTL latent weights were not provisioned")
-        return await _ttl_resize_latent(
-            latent, factor, mode.removeprefix("ttl_nn."), weight_name
-        )
+        raise RuntimeError(_TTL_REFUSAL.format(method=mode))
     if mode not in {"nearest-exact", "bilinear", "area", "bicubic", "bislerp"}:
         mode = "nearest-exact"
     height, width = await latent.spatial_shape()

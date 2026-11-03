@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,77 @@
 +# Secure conversion notes
 +
 +Pinned upstream commit: `4579b7d6076b2870998a08f5d37883fbc8261ff2`. The sealed node schemas and permissions are in `secure-nodes.json`.
@@ -64,6 +64,20 @@
 +Known private SDK use: with "padded", each tile's noise slice reaches `ctx.sample(noise=...)` through
 +`sdk.TensorRef._from_raw` (`_bnk_sample_tile`), as before this round. This stays until the SDK has a public TensorRef
 +constructor for a node's own tensor, or `ctx.sample` accepts such a tensor as noise.
++
++## Repair round r3: the TTL latent upscalers are refused by name
++
++The HighRes-Fix Script's TTL latent upscalers (`ttl_nn.SD 1.x`, `ttl_nn.SDXL`) load the pack's `py/sd15_resizer.pt` and
++`py/sdxl_resizer.pt` (`py/ttl_nn_latent_upscaler.py`). Those are PyTorch pickle files. A Secure Nodes V2 guest loads
++weights only through reviewed SafeTensors bindings, and none exists for these two files. So, with upscale_type
++"latent" and at least one iteration, choosing either TTL upscaler fails with a named refusal before any weight is
++requested. The node declares only the six City96 SafeTensors weights (`required_weights`). The code that only the TTL
++upscalers reached is removed, and so are the two .pt files: this snapshot omits them under the media and model policy
++(OMITTED.md).
++
++The City96 latent upscalers (`city96.v1`, `city96.xl`) are unchanged. They are declared by repository, revision and
++sha256, and they load SafeTensors through `assets.load_state_dict`. With upscale_type "pixel" or "both", the latent
++upscaler choice is not used, as in the original, so a TTL choice there is not refused.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,18 +1,14 @@
@@ -28906,7 +28920,7 @@
 +}
 --- /dev/null
 +++ b/v2/_secure_nodes.py
-@@ -0,0 +1,3144 @@
+@@ -0,0 +1,2902 @@
 +"""Secure Nodes 2.0 implementations for Efficiency Nodes' pinned surface.
 +
 +The original pack mixes workflow data helpers with global monkey patches,
@@ -28982,29 +28996,7 @@
 +    for key, digest in _CITY96_HASHES.items()
 +}
 +
-+_TTL_REVISION = "5f1b2c44497aeef555e44c9e1d035ad186fcecb2"
-+_TTL_FILENAMES = {
-+    "SD 1.x": (
-+        "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sd15_resizer.pt",
-+        "8fa1cb8168b305d556f2e8178c820b0a6956f4ba84ebc9443fac69be43ffd6fe",
-+    ),
-+    "SDXL": (
-+        "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sdxl_resizer.pt",
-+        "0bca261c96e136cb9e2f330f40386e6cbcaaf464cd39e9f7752c9e7b32e825e8",
-+    ),
-+}
-+_TTL_WEIGHTS = {
-+    version: sdk.HuggingFaceWeight(
-+        repo_id="Peter-Young/workerflux",
-+        filename=filename,
-+        folder="latent_upscale_models",
-+        revision=_TTL_REVISION,
-+        sha256=digest,
-+        on_demand=True,
-+    )
-+    for version, (filename, digest) in _TTL_FILENAMES.items()
-+}
-+_HIRES_REQUIRED_WEIGHTS = tuple((*_CITY96_WEIGHTS.values(), *_TTL_WEIGHTS.values()))
++_HIRES_REQUIRED_WEIGHTS = tuple(_CITY96_WEIGHTS.values())
 +
 +
 +def _ctx():
@@ -29056,206 +29048,6 @@
 +
 +    def forward(self, value: torch.Tensor) -> torch.Tensor:
 +        return self.sequential(value)
-+
-+
-+def _ttl_normalization(channels: int) -> torch.nn.Module:
-+    return torch.nn.GroupNorm(32, channels)
-+
-+
-+def _ttl_zero_module(module: torch.nn.Module) -> torch.nn.Module:
-+    for parameter in module.parameters():
-+        parameter.detach().zero_()
-+    return module
-+
-+
-+class _TtlAttentionBlock(torch.nn.Module):
-+    def __init__(self, channels: int):
-+        super().__init__()
-+        self.norm = _ttl_normalization(channels)
-+        self.q = torch.nn.Conv2d(channels, channels, 1)
-+        self.k = torch.nn.Conv2d(channels, channels, 1)
-+        self.v = torch.nn.Conv2d(channels, channels, 1)
-+        self.proj_out = torch.nn.Conv2d(channels, channels, 1)
-+
-+    def forward(self, value: torch.Tensor) -> torch.Tensor:
-+        normalized = self.norm(value)
-+        q, k, v = (layer(normalized) for layer in (self.q, self.k, self.v))
-+        batch, channels, height, width = q.shape
-+        flatten = lambda item: item.flatten(2).transpose(1, 2).unsqueeze(1)
-+        attended = F.scaled_dot_product_attention(
-+            flatten(q), flatten(k), flatten(v)
-+        )
-+        attended = attended.squeeze(1).transpose(1, 2).reshape(
-+            batch, channels, height, width
-+        )
-+        return value + self.proj_out(attended)
-+
-+
-+class _TtlResidualBlock(torch.nn.Module):
-+    def __init__(
-+        self,
-+        channels: int,
-+        embedding_channels: int,
-+        dropout: float = 0.0,
-+        out_channels: int | None = None,
-+        use_conv: bool = False,
-+        use_scale_shift_norm: bool = False,
-+        kernel_size: int = 3,
-+    ):
-+        super().__init__()
-+        self.channels = channels
-+        self.out_channels = out_channels or channels
-+        self.use_scale_shift_norm = use_scale_shift_norm
-+        padding = kernel_size // 2
-+        self.in_layers = torch.nn.Sequential(
-+            _ttl_normalization(channels),
-+            torch.nn.SiLU(),
-+            torch.nn.Conv2d(
-+                channels, self.out_channels, kernel_size, padding=padding
-+            ),
-+        )
-+        embedding_outputs = (
-+            2 * self.out_channels if use_scale_shift_norm else self.out_channels
-+        )
-+        self.emb_layers = torch.nn.Sequential(
-+            torch.nn.SiLU(),
-+            torch.nn.Linear(embedding_channels, embedding_outputs),
-+        )
-+        self.out_layers = torch.nn.Sequential(
-+            _ttl_normalization(self.out_channels),
-+            torch.nn.SiLU(),
-+            torch.nn.Dropout(p=float(dropout)),
-+            _ttl_zero_module(torch.nn.Conv2d(
-+                self.out_channels,
-+                self.out_channels,
-+                kernel_size,
-+                padding=padding,
-+            )),
-+        )
-+        if self.out_channels == channels:
-+            self.skip_connection = torch.nn.Identity()
-+        elif use_conv:
-+            self.skip_connection = torch.nn.Conv2d(
-+                channels, self.out_channels, kernel_size, padding=padding
-+            )
-+        else:
-+            self.skip_connection = torch.nn.Conv2d(
-+                channels, self.out_channels, 1
-+            )
-+
-+    def forward(
-+        self, value: torch.Tensor, embedding: torch.Tensor
-+    ) -> torch.Tensor:
-+        hidden = self.in_layers(value)
-+        embedding_out = self.emb_layers(embedding).to(hidden.dtype)
-+        while embedding_out.ndim < hidden.ndim:
-+            embedding_out = embedding_out[..., None]
-+        if self.use_scale_shift_norm:
-+            scale, shift = torch.chunk(embedding_out, 2, dim=1)
-+            hidden = self.out_layers[0](hidden) * (1 + scale) + shift
-+            hidden = self.out_layers[1:](hidden)
-+        else:
-+            hidden = self.out_layers(hidden + embedding_out)
-+        return self.skip_connection(value) + hidden
-+
-+
-+class _TtlLatentResizer(torch.nn.Module):
-+    def __init__(
-+        self,
-+        in_blocks: int,
-+        out_blocks: int,
-+        channels: int,
-+        *,
-+        attention: bool,
-+        dropout: float = 0.0,
-+    ):
-+        super().__init__()
-+        self.conv_in = torch.nn.Conv2d(4, channels, 3, padding=1)
-+        embedding_channels = 32
-+        self.embed = torch.nn.Sequential(
-+            torch.nn.Linear(1, embedding_channels),
-+            torch.nn.SiLU(),
-+            torch.nn.Linear(embedding_channels, embedding_channels),
-+        )
-+        self.in_blocks = torch.nn.ModuleList()
-+        for index in range(in_blocks):
-+            if attention and index in {1, in_blocks - 1}:
-+                self.in_blocks.append(_TtlAttentionBlock(channels))
-+            self.in_blocks.append(_TtlResidualBlock(
-+                channels, embedding_channels, dropout
-+            ))
-+        self.out_blocks = torch.nn.ModuleList()
-+        for index in range(out_blocks):
-+            if attention and index in {1, out_blocks - 1}:
-+                self.out_blocks.append(_TtlAttentionBlock(channels))
-+            self.out_blocks.append(_TtlResidualBlock(
-+                channels, embedding_channels, dropout
-+            ))
-+        self.norm_out = _ttl_normalization(channels)
-+        self.conv_out = torch.nn.Conv2d(channels, 4, 3, padding=1)
-+
-+    @classmethod
-+    def from_state_dict(
-+        cls, state: dict[str, torch.Tensor]
-+    ) -> "_TtlLatentResizer":
-+        try:
-+            channels = int(state["conv_in.bias"].shape[0])
-+        except (KeyError, IndexError) as exc:
-+            raise ValueError("TTL latent upscaler state dict is malformed") from exc
-+        in_max = out_max = -1
-+        in_attention = out_attention = 0
-+        for key in state:
-+            parts = key.split(".")
-+            if len(parts) < 2 or parts[0] not in {"in_blocks", "out_blocks"}:
-+                continue
-+            try:
-+                index = int(parts[1])
-+            except ValueError:
-+                continue
-+            if parts[0] == "in_blocks":
-+                in_max = max(in_max, index)
-+                if len(parts) > 3 and parts[2:4] == ["q", "weight"]:
-+                    in_attention += 1
-+            else:
-+                out_max = max(out_max, index)
-+                if len(parts) > 3 and parts[2:4] == ["q", "weight"]:
-+                    out_attention += 1
-+        in_blocks = in_max + 1 - in_attention
-+        out_blocks = out_max + 1 - out_attention
-+        if in_blocks <= 0 or out_blocks <= 0:
-+            raise ValueError("TTL latent upscaler block layout is malformed")
-+        model = cls(
-+            in_blocks,
-+            out_blocks,
-+            channels,
-+            attention=bool(in_attention or out_attention),
-+        )
-+        model.load_state_dict(state, strict=True)
-+        return model.eval()
-+
-+    def forward(
-+        self, value: torch.Tensor, *, scale: float
-+    ) -> torch.Tensor:
-+        size = tuple(round(item * float(scale)) for item in value.shape[-2:])
-+        if size == value.shape[-2:]:
-+            return value
-+        scale_embedding = value.new_tensor([[float(scale) - 1.0]])
-+        embedding = self.embed(scale_embedding)
-+        hidden = self.conv_in(value)
-+        for block in self.in_blocks:
-+            hidden = (
-+                block(hidden, embedding)
-+                if isinstance(block, _TtlResidualBlock)
-+                else block(hidden)
-+            )
-+        hidden = F.interpolate(hidden, size=size, mode="bilinear")
-+        for block in self.out_blocks:
-+            hidden = (
-+                block(hidden, embedding)
-+                if isinstance(block, _TtlResidualBlock)
-+                else block(hidden)
-+            )
-+        return self.conv_out(F.silu(self.norm_out(hidden)))
 +
 +
 +def _safe_asset_name(value: Any, *, allow_empty: bool = False) -> str:
@@ -29661,6 +29453,16 @@
 +    return (output,)
 +
 +
++_TTL_REFUSAL = (
++    # The original's TTL latent upscalers load py/sd15_resizer.pt and py/sdxl_resizer.pt, PyTorch pickle files. A
++    # guest loads weights only through reviewed SafeTensors bindings, and none is registered for these two files.
++    "HighRes-Fix Script is not available in this secure build with the latent upscaler {method!r}: the original loads "
++    "the TTL latent upscalers from PyTorch pickle files (py/sd15_resizer.pt, py/sdxl_resizer.pt), and a Secure Nodes "
++    "V2 guest loads weights only through reviewed SafeTensors bindings, none of which exists for these two files. Use "
++    "a City96 latent upscaler (city96.v1 or city96.xl) or a plain latent resize method."
++)
++
++
 +async def _hires_script(
 +    upscale_type,
 +    hires_ckpt_name,
@@ -29709,13 +29511,7 @@
 +                _CITY96_WEIGHTS[(version, scale_name)]
 +            )
 +        elif latent_method.startswith("ttl_nn."):
-+            version = latent_method.removeprefix("ttl_nn.")
-+            if version not in _TTL_WEIGHTS:
-+                raise ValueError("unknown TTL latent upscaler version")
-+            factor = min(2.0, max(1.0, factor))
-+            latent_weight = await _download_declared_weight(
-+                _TTL_WEIGHTS[version]
-+            )
++            raise RuntimeError(_TTL_REFUSAL.format(method=latent_method))
 +        elif latent_method not in {
 +            "nearest-exact", "bilinear", "area", "bicubic", "bislerp",
 +        }:
@@ -31082,26 +30878,6 @@
 +    return await sdk.LatentRef.from_value(value)
 +
 +
-+async def _ttl_resize_latent(
-+    latent, factor: float, version: str, catalogue_name: str
-+):
-+    state = await _load_declared_state(catalogue_name)
-+    value = dict(await latent.value())
-+    samples = value.get("samples")
-+    if not isinstance(samples, torch.Tensor) or samples.ndim != 4:
-+        raise ValueError("TTL latent upscaling requires BCHW samples")
-+    model = _TtlLatentResizer.from_state_dict(state)
-+    scaling = 0.13025
-+    with torch.inference_mode():
-+        resized = model(
-+            samples.detach().float().cpu() * scaling,
-+            scale=float(factor),
-+        ) / scaling
-+    value["samples"] = resized.to(dtype=samples.dtype)
-+    _resize_latent_noise_mask(value, tuple(resized.shape[-2:]))
-+    return await sdk.LatentRef.from_value(value)
-+
-+
 +async def _resize_latent_raw(
 +    latent,
 +    factor: float,
@@ -31119,11 +30895,7 @@
 +            latent, factor, mode.removeprefix("city96."), weight_name
 +        )
 +    if mode.startswith("ttl_nn."):
-+        if not weight_name:
-+            raise ValueError("TTL latent weights were not provisioned")
-+        return await _ttl_resize_latent(
-+            latent, factor, mode.removeprefix("ttl_nn."), weight_name
-+        )
++        raise RuntimeError(_TTL_REFUSAL.format(method=mode))
 +    if mode not in {"nearest-exact", "bilinear", "area", "bicubic", "bislerp"}:
 +        mode = "nearest-exact"
 +    height, width = await latent.spatial_shape()
@@ -41355,7 +41127,7 @@
 -Models = [{location = "/checkpoints/model.safetensor", model_url = "https://example.com/model.zip"}]
 --- /dev/null
 +++ b/v2/secure-nodes.json
-@@ -0,0 +1,31293 @@
+@@ -0,0 +1,31317 @@
 +{
 +  "format": "comfy-secure-nodes-v1",
 +  "nodes": {
@@ -41383,6 +41155,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Apply ControlNet Stack",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -41482,6 +41255,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Control Net Stacker",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -41647,6 +41421,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Eff. Loader SDXL",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -42129,6 +41904,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Efficient Loader",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -42614,6 +42390,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "Evaluate Floats",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -42804,6 +42581,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "Evaluate Integers",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -42991,6 +42769,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "Evaluate Strings",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -43188,22 +42967,6 @@
 +          "repo_id": "city96/SD-Latent-Upscaler",
 +          "revision": "99c65021fa947dfe3d71ec4e24793fe7533a3322",
 +          "sha256": "cedf7806b0b27f883ae3c0d0466d63594d431fa5468d7ef41e55a1bffe38fe1e"
-+        },
-+        {
-+          "filename": "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sd15_resizer.pt",
-+          "folder": "latent_upscale_models",
-+          "on_demand": true,
-+          "repo_id": "Peter-Young/workerflux",
-+          "revision": "5f1b2c44497aeef555e44c9e1d035ad186fcecb2",
-+          "sha256": "8fa1cb8168b305d556f2e8178c820b0a6956f4ba84ebc9443fac69be43ffd6fe"
-+        },
-+        {
-+          "filename": "src/comfyui/custom_nodes/efficiency-nodes-comfyui/py/sdxl_resizer.pt",
-+          "folder": "latent_upscale_models",
-+          "on_demand": true,
-+          "repo_id": "Peter-Young/workerflux",
-+          "revision": "5f1b2c44497aeef555e44c9e1d035ad186fcecb2",
-+          "sha256": "0bca261c96e136cb9e2f330f40386e6cbcaaf464cd39e9f7752c9e7b32e825e8"
 +        }
 +      ],
 +      "schema": {
@@ -43221,6 +42984,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "HighRes-Fix Script",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -43685,6 +43449,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Image Overlay",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -43994,6 +43759,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Join XY Inputs of Same Type",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -44076,6 +43842,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "KSampler (Efficient)",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -44527,6 +44294,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "KSampler Adv. (Efficient)",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -45055,6 +44823,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": true,
++          "loop_boundary": null,
 +          "node_id": "KSampler SDXL (Eff.)",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -45474,6 +45243,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "LoRA Stack to String converter",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -45535,6 +45305,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "LoRA Stacker",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51046,6 +50817,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Manual XY Entry Info",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51103,6 +50875,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Noise Control Script",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51279,6 +51052,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Pack SDXL Tuple",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51438,6 +51212,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Simple Eval Examples",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51497,6 +51272,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Tiled Upscaler Script",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51783,6 +51559,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "Unpack SDXL Tuple",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51914,6 +51691,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Add/Return Noise",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -51988,6 +51766,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Aesthetic Score",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -52133,6 +51912,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: CFG Scale",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -52253,6 +52033,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Checkpoint",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -57220,6 +57001,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Clip Skip",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -57363,6 +57145,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Control Net",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -57719,6 +57502,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Control Net Plot",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -58063,6 +57847,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Denoise",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -58183,6 +57968,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: LoRA",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -62636,6 +62422,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: LoRA Plot",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -63030,6 +62817,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: LoRA Stacks",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -63175,6 +62963,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Manual XY Entry",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -63283,6 +63072,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Prompt S/R",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -64430,6 +64220,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Refiner On/Off",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -64501,6 +64292,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Sampler/Scheduler",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -70049,6 +69841,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Seeds++ Batch",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -70119,6 +69912,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: Steps",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -70404,6 +70198,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Input: VAE",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -72442,6 +72237,7 @@
 +          "is_experimental": false,
 +          "is_input_list": false,
 +          "is_output_node": false,
++          "loop_boundary": null,
 +          "node_id": "XY Plot",
 +          "not_idempotent": false,
 +          "price_badge": null,
@@ -74135,3 +73931,226 @@
 +        globals()[sys.argv[1]](Path(sys.argv[2]))
 +    else:
 +        main()
+--- /dev/null
++++ b/v2/tests/test_efficiency_ttl_refusal.py
+@@ -0,0 +1,220 @@
++"""Repair r3 (B12 asset guard): the TTL latent upscalers refuse by name, and the City96 path still runs.
++
++Run in the lane gate: run_in_gate.sh <pack root (pristine + v2/)> <this tests dir> <results dir>
++test_efficiency_ttl_refusal.py
++
++V2 is loaded as a bare namespace package against the guest SDK base 0cd9adec, as the production loader does. It runs
++inside a real in-process SDK runtime from that base (InProcessCtxProvider and InProcessRefResolver over ComfyUI core
++6257422b), so assets.resolve and assets.load_state_dict are the SDK's own. Only models.download_huggingface_weights is
++replaced: a recorder returns the catalogue name the host would install, and nothing goes to the network. A synthetic
++City96 weight file (SafeTensors, seeded) sits at that name in the latent_upscale_models folder.
++
++Cases:
++- TTL (both versions) through _hires_script: the named refusal, with no weight request;
++- TTL through _resize_latent_raw: the named refusal, with no load_state_dict call;
++- a TTL choice with upscale_type "pixel" or "both", or with zero iterations: no refusal (the choice is unused);
++- City96 through _hires_script: exactly the declared City96 weight is requested (repo, file, folder, revision, sha256);
++- City96 through _resize_latent_raw (assets.resolve, assets.load_state_dict): the latent equals the original
++  py/city96_latent_upscaler.py Upscaler applied to the same weights (exact float32);
++- the manifest declares no .pt weight for HighRes-Fix Script: its required_weights are exactly the six City96
++  SafeTensors files the module declares (repo, file, folder, revision, sha256).
++A tampered expected latent must turn the City96 comparison red. Writes /results/ttl-refusal.json; exit 0 when all
++cases hold.
++"""
++import ast
++import asyncio
++import dataclasses
++import importlib
++import json
++import os
++from pathlib import Path
++import shutil
++import sys
++import types
++
++PACK = Path("/pack")
++RESULTS = Path(os.environ.get("RESULTS", "/results"))
++BASE = "/bases/0cd9adec273a703eb3d1c715d83ff1c7d2bb00746330c866c7e3ac644c80ebbb/common-site-packages"
++WORK = Path("/tmp/eff-ttl")
++REFUSAL = "HighRes-Fix Script is not available in this secure build with the latent upscaler"
++
++
++def _load_v2():
++    sys.argv = [sys.argv[0], "--cpu"]
++    sys.path[:0] = [BASE, "/overlay", "/core"]
++    os.chdir("/tmp")
++    try:
++        from comfy.cli_args import args
++        args.cpu = True
++    except Exception:  # noqa: BLE001
++        pass
++    dst = WORK / "v2"
++    if dst.exists():
++        shutil.rmtree(dst)
++    shutil.copytree(PACK / "v2", dst, ignore=shutil.ignore_patterns("__pycache__"))
++    package = types.ModuleType("eff_v2")
++    package.__path__ = [str(dst)]
++    package.__package__ = "eff_v2"
++    sys.modules["eff_v2"] = package
++    return importlib.import_module("eff_v2._secure_nodes")
++
++
++def _original_upscaler_class():
++    """The original's City96 Upscaler class (py/city96_latent_upscaler.py), executed from its own source. The module's
++    hf_hub_download import is not needed for the class, so only the class is taken."""
++    import torch
++    source = (PACK / "py" / "city96_latent_upscaler.py").read_text()
++    tree = ast.parse(source)
++    node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "Upscaler")
++    namespace = {"torch": torch, "nn": torch.nn}
++    exec(compile(ast.Module(body=[node], type_ignores=[]), "city96_latent_upscaler.py", "exec"), namespace)
++    return namespace["Upscaler"]
++
++
++class WeightRecorder:
++    """models.download_huggingface_weights without the network: records the request, returns the catalogue name."""
++
++    def __init__(self):
++        self.calls = []
++
++    async def download_huggingface_weights(self, repo_id, filename, folder, revision=None, sha256=None):
++        self.calls.append({"repo_id": repo_id, "filename": filename, "folder": folder, "revision": revision,
++                           "sha256": sha256})
++        return f"huggingface/{repo_id}/{revision}/{filename}"
++
++
++def _hires_kwargs(**overrides):
++    values = dict(upscale_type="latent", hires_ckpt_name="(use same)", latent_upscaler="ttl_nn.SDXL",
++                  pixel_upscaler="", upscale_by=1.5, use_same_seed=True, seed=7, hires_steps=4, denoise=0.5,
++                  iterations=1, use_controlnet=False, control_net_name="None", strength=1.0, preprocessor="none",
++                  preprocessor_imgs=False)
++    values.update(overrides)
++    return values
++
++
++async def run_cases(port, sdk_module, recorder, loads):
++    import torch
++    rows = {}
++
++    async def expect_refusal(name, coroutine, method):
++        before_requests, before_loads = len(recorder.calls), len(loads)
++        try:
++            await coroutine
++            rows[name] = {"ok": False, "why": "no refusal"}
++        except RuntimeError as error:
++            message = str(error)
++            ok = (message.startswith(REFUSAL) and repr(method) in message
++                  and len(recorder.calls) == before_requests and len(loads) == before_loads)
++            rows[name] = {"ok": ok, "error": message[:300], "weight_requests": len(recorder.calls) - before_requests,
++                          "state_loads": len(loads) - before_loads}
++
++    for method in ("ttl_nn.SD 1.x", "ttl_nn.SDXL"):
++        await expect_refusal(f"hires-script-refuses-{method}", port._hires_script(**_hires_kwargs(latent_upscaler=method)),
++                             method)
++    latent = await sdk_module.LatentRef.from_value({"samples": torch.zeros(1, 4, 8, 8)})
++    await expect_refusal("resize-latent-refuses-ttl", port._resize_latent_raw(latent, 1.5, "ttl_nn.SDXL", "unused"),
++                         "ttl_nn.SDXL")
++
++    for name, overrides in (("ttl-unused-pixel", dict(upscale_type="pixel")),
++                            ("ttl-unused-both", dict(upscale_type="both")),
++                            ("ttl-unused-zero-iterations", dict(iterations=0))):
++        before = len(recorder.calls)
++        output = (await port._hires_script(**_hires_kwargs(**overrides)))[0]
++        rows[name] = {"ok": len(recorder.calls) == before and output["hiresfix"]["latent_weight"] is None,
++                      "latent_upscaler": output["hiresfix"]["latent_upscaler"]}
++
++    # City96: the declared weight is requested, then the resize runs through assets.resolve + assets.load_state_dict
++    before = len(recorder.calls)
++    output = (await port._hires_script(**_hires_kwargs(latent_upscaler="city96.v1", upscale_by=1.5)))[0]
++    requested = recorder.calls[before:]
++    declared = port._CITY96_WEIGHTS[("v1", "1.5")]
++    expected_request = {"repo_id": declared.repo_id, "filename": declared.filename, "folder": declared.folder,
++                        "revision": declared.revision, "sha256": declared.sha256}
++    weight_name = output["hiresfix"]["latent_weight"]
++    rows["hires-script-city96-requests-declared-weight"] = {
++        "ok": requested == [expected_request] and weight_name == f"huggingface/{declared.repo_id}/"
++                                                                 f"{declared.revision}/{declared.filename}",
++        "requested": requested, "latent_weight": weight_name}
++    return rows, weight_name
++
++
++def main():
++    import torch
++    from safetensors.torch import load_file, save_file
++
++    port = _load_v2()
++    from comfy_api.latest import _sdk
++    import comfy_api
++    import folder_paths
++
++    # the synthetic City96 v1 x1.5 weights, in the folder the host installs declared weights into
++    original_upscaler = _original_upscaler_class()
++    torch.manual_seed(20261103)
++    reference = original_upscaler(1.5)
++    declared = port._CITY96_WEIGHTS[("v1", "1.5")]
++    models_dir = WORK / "latent_upscale_models"
++    weight_path = models_dir / "huggingface" / declared.repo_id / declared.revision / declared.filename
++    weight_path.parent.mkdir(parents=True, exist_ok=True)
++    save_file({key: value.contiguous() for key, value in reference.state_dict().items()}, str(weight_path))
++    folder_paths.folder_names_and_paths["latent_upscale_models"] = ([str(models_dir)], {".safetensors"})
++
++    plan = _sdk.ExecutionPlan(prompt_id="ttl-refusal", node_id="1", node_type="HighRes-Fix Script",
++                              permissions=("assets",), node_module="eff_v2._secure_nodes")
++    recorder = WeightRecorder()
++    ctx = dataclasses.replace(_sdk.InProcessCtxProvider().build(plan), models=recorder)
++    loads = []
++    real_load = ctx.assets.load_state_dict
++
++    async def counted_load(*args, **kwargs):
++        loads.append(1)
++        return await real_load(*args, **kwargs)
++    ctx.assets.load_state_dict = counted_load
++
++    async def run():
++        with _sdk.bind_runtime(_sdk.InProcessRefResolver(), ctx):
++            rows, weight_name = await run_cases(port, _sdk, recorder, loads)
++            generator = torch.Generator().manual_seed(11)
++            samples = torch.randn(1, 4, 12, 16, generator=generator)
++            latent = await _sdk.LatentRef.from_value({"samples": samples.clone()})
++            before = len(loads)
++            resized = await (await port._resize_latent_raw(latent, 1.5, "city96.v1", weight_name)).value()
++            return rows, samples, resized["samples"], len(loads) - before
++
++    rows, samples, v2_samples, state_loads = asyncio.run(run())
++    original = original_upscaler(1.5)
++    original.load_state_dict(load_file(str(weight_path)))
++    expected = original(samples)
++    exact = (v2_samples.shape == expected.shape and v2_samples.dtype == expected.dtype
++             and torch.equal(v2_samples, expected.detach()))
++    tampered = expected.detach().clone()
++    tampered.view(-1)[0] += 1e-3
++    rows["city96-resize-equals-original"] = {"ok": exact and state_loads == 1, "shape": list(v2_samples.shape),
++                                             "state_loads": state_loads}
++    rows["negative-control-turns-red"] = {"ok": not torch.equal(v2_samples, tampered)}
++
++    manifest = json.loads((PACK / "v2" / "secure-nodes.json").read_text())
++    weights = manifest["nodes"]["HighRes-Fix Script"].get("required_weights", [])
++    fields = ("repo_id", "filename", "folder", "revision", "sha256")
++    declared_rows = sorted(tuple(getattr(weight, field) for field in fields)
++                           for weight in port._CITY96_WEIGHTS.values())
++    manifest_rows = sorted(tuple(row.get(field) for field in fields) for row in weights)
++    rows["manifest-declares-city96-only"] = {
++        "ok": (len(weights) == 6 and manifest_rows == declared_rows
++               and all(row["filename"].endswith(".safetensors") for row in weights)),
++        "filenames": sorted(row["filename"] for row in weights)}
++
++    import hashlib
++    sdk_file = Path(_sdk.__file__)
++    report = {"sdk_base": str(sdk_file), "sdk_sha256": hashlib.sha256(sdk_file.read_bytes()).hexdigest(),
++              "sdk_from_base_0cd9adec": str(sdk_file).startswith(BASE), "comfy_api_paths": list(comfy_api.__path__),
++              "core": "/core (ComfyUI 6257422b)", "assets": f"{type(ctx.assets).__module__}.{type(ctx.assets).__name__}",
++              "cases": rows, "all_ok": all(row["ok"] for row in rows.values())}
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    (RESULTS / "ttl-refusal.json").write_text(json.dumps(report, indent=2) + "\n")
++    print(json.dumps({"all_ok": report["all_ok"], "sdk_base": report["sdk_base"], "sdk_sha256": report["sdk_sha256"],
++                      "assets": report["assets"], "cases": {name: row["ok"] for name, row in rows.items()}}, indent=1))
++    sys.exit(0 if report["all_ok"] and report["sdk_from_base_0cd9adec"] else 1)
++
++
++if __name__ == "__main__":
++    main()

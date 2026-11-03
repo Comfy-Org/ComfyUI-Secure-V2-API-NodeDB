@@ -61,3 +61,17 @@ Known differences, all named refusals or the original's own errors:
 Known private SDK use: with "padded", each tile's noise slice reaches `ctx.sample(noise=...)` through
 `sdk.TensorRef._from_raw` (`_bnk_sample_tile`), as before this round. This stays until the SDK has a public TensorRef
 constructor for a node's own tensor, or `ctx.sample` accepts such a tensor as noise.
+
+## Repair round r3: the TTL latent upscalers are refused by name
+
+The HighRes-Fix Script's TTL latent upscalers (`ttl_nn.SD 1.x`, `ttl_nn.SDXL`) load the pack's `py/sd15_resizer.pt` and
+`py/sdxl_resizer.pt` (`py/ttl_nn_latent_upscaler.py`). Those are PyTorch pickle files. A Secure Nodes V2 guest loads
+weights only through reviewed SafeTensors bindings, and none exists for these two files. So, with upscale_type
+"latent" and at least one iteration, choosing either TTL upscaler fails with a named refusal before any weight is
+requested. The node declares only the six City96 SafeTensors weights (`required_weights`). The code that only the TTL
+upscalers reached is removed, and so are the two .pt files: this snapshot omits them under the media and model policy
+(OMITTED.md).
+
+The City96 latent upscalers (`city96.v1`, `city96.xl`) are unchanged. They are declared by repository, revision and
+sha256, and they load SafeTensors through `assets.load_state_dict`. With upscale_type "pixel" or "both", the latent
+upscaler choice is not used, as in the original, so a TTL choice there is not refused.
