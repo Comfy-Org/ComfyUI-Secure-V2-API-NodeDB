@@ -133,9 +133,13 @@ At run time:
   guest and is exact.
 - Verified on CPU. Equality of the init noise on GPU hosts is still to be
   confirmed.
-- Guest runtime: the loop imports numpy, scipy, mpmath, einops and tqdm, as
-  ComfyUI's base runtime provides them. pywt is optional: without it, wavelet
-  noise types are refused by name.
+- Guest runtime: the pack declares a dependency profile in `pyproject.toml`
+  (exact pins: einops, scipy, tqdm). The ClownsharKSampler_Beta loop needs
+  einops and tqdm when its module is imported. The beta57 scheduler needs
+  scipy when it runs. numpy, torch and mpmath come from the guest base. Every
+  other node, and every refusal, needs only torch and the SDK, so they load
+  with or without the profile (`tests/test_profile_load.py`). pywt is optional:
+  without it, wavelet noise types are refused by name.
 
 ## Verification
 
@@ -162,5 +166,9 @@ and flow). No checkpoints, workflows or media are used.
   guest resolves it: only the row's module is imported, without the pack's
   `__init__.py`, and the class is looked up by its manifest name. Checked in
   process and through a real guest.
+- `tests/test_profile_load.py`: maps which nodes need the dependency profile.
+  Every node and both schedulers then run in a real guest that can import the
+  profile's modules only from the mounted profile wheels: once with them
+  (everything loads), once without them (only the mapped nodes fail).
 - `tests/freeze_all.py` and `tests/freeze_clown.py` capture the frozen schemas
   and lists from the original.
