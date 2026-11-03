@@ -58,10 +58,11 @@ def is_workflow_json(p: Path) -> bool:
 
 
 def is_opencv_model_xml(p: Path) -> bool:
-    """An OpenCV serialized model (cascade classifiers etc.): an XML file whose root is <opencv_storage>."""
+    """An OpenCV serialized model (cascade classifiers etc.): an XML file whose root is <opencv_storage>.
+    The root can follow a long licence comment (haarcascade_upperbody.xml: byte 6059), so look at the first 64 KB."""
     try:
         with p.open("rb") as f:
-            head = f.read(4096)
+            head = f.read(65536)
     except OSError:
         return False
     return b"<opencv_storage>" in head

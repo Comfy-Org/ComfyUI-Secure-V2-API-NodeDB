@@ -67,7 +67,9 @@ fi
 # ---- 2. packs.json entry ------------------------------------------------------------------------------------------------
 ENTRY=""; for f in "$ST/packs-json-entry.json" "$PK/packs-json-entry.json"; do [ -f "$f" ] && { ENTRY=$f; break; }; done
 if [ -z "$ENTRY" ]; then fail "packs-json-entry.json missing"; else
-  $PY - "$ENTRY" "$C/packs/packs.json" "$slug" "$key" "$pack" "${REPAIR:-0}" > "$OUT/entry-check.json" <<'EOF' || fail "packs.json entry check failed (entry-check.json)"
+  # FULL_REPLACE=1 (an existing pack re-staged whole, e.g. an omission fix-forward) needs main's entry, unchanged, like a repair.
+  entry_mode="${REPAIR:-0}"; [ "${FULL_REPLACE:-0}" = 1 ] && entry_mode=1
+  $PY - "$ENTRY" "$C/packs/packs.json" "$slug" "$key" "$pack" "$entry_mode" > "$OUT/entry-check.json" <<'EOF' || fail "packs.json entry check failed (entry-check.json)"
 import json, sys
 entry_path, corpus_json, slug, key, pack, repair = sys.argv[1:]
 e = json.load(open(entry_path)); corpus = json.load(open(corpus_json))
