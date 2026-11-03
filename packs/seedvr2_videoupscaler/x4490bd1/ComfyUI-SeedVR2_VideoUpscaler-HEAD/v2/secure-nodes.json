@@ -1,0 +1,1229 @@
+{
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "SeedVR2LoadDiTModel": {
+      "class": "SeedVR2LoadDiTModel",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": true
+      },
+      "module": "secure_seedvr2",
+      "permissions": [
+        "graph"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "SEEDVR2",
+          "description": "Load and configure SeedVR2 DiT (Diffusion Transformer) model for video upscaling. Supports BlockSwap memory optimization for low VRAM systems, model caching for batch processing, multi-GPU offloading, and torch.compile acceleration. \n\nConnect to Video Upscaler node.",
+          "display_name": "SeedVR2 (Down)Load DiT Model",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "SeedVR2LoadDiTModel",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "model",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "seedvr2_ema_3b-Q4_K_M.gguf",
+                "seedvr2_ema_3b-Q8_0.gguf",
+                "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+                "seedvr2_ema_3b_fp16.safetensors",
+                "seedvr2_ema_7b-Q4_K_M.gguf",
+                "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+                "seedvr2_ema_7b_fp16.safetensors",
+                "seedvr2_ema_7b_sharp-Q4_K_M.gguf",
+                "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+                "seedvr2_ema_7b_sharp_fp16.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "DiT (Diffusion Transformer) model for video upscaling.\nModels automatically download on first use.\nAdditional models can be added to the ComfyUI models folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "cuda:0",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "device",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "cuda:0"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "GPU device for DiT model inference (upscaling phase)",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "blocks_to_swap",
+              "lazy": null,
+              "max": 36,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Number of transformer blocks to swap between devices for VRAM optimization.\n\u2022 0: Disabled (default)\n\u2022 3B model: 0-32 blocks\n\u2022 7B model: 0-36 blocks\n\nRequires offload_device to be set and different from device.\nNot available on macOS (unified memory architecture).",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "swap_io_components",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Offload input/output embeddings and normalization layers to reduce VRAM.\nRequires offload_device to be set and different from device.\nNot available on macOS (unified memory architecture).",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "none",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "offload_device",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "none",
+                "cpu",
+                "cuda:0"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Device to offload DiT model when not actively processing.\n\u2022 'none': Keep model on inference device (default, fastest)\n\u2022 'cpu': Offload to system RAM (reduces VRAM usage)\n\u2022 'cuda:X': Offload to another GPU (good balance if available)\n\nRequired for BlockSwap (blocks_to_swap or swap_io_components).",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "cache_model",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Keep DiT model loaded on offload_device between workflow runs.\nUseful for batch processing to avoid repeated loading.\nRequires offload_device to be set.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "sdpa",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "attention_mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "sdpa",
+                "flash_attn_2",
+                "flash_attn_3",
+                "sageattn_2",
+                "sageattn_3"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Attention computation backend:\n\u2022 sdpa: PyTorch scaled_dot_product_attention (default, stable, always available)\n\u2022 flash_attn_2: Flash Attention 2 (Ampere+, requires flash-attn package)\n\u2022 flash_attn_3: Flash Attention 3 (Hopper+, requires flash-attn with FA3 support)\n\u2022 sageattn_2: SageAttention 2 (requires sageattention package)\n\u2022 sageattn_3: SageAttention 3 (Blackwell/RTX 50xx only, requires sageattn3 package)\n\nSDPA is recommended - stable and works everywhere.\nFlash Attention and SageAttention provide speedup through optimized CUDA kernels on compatible GPUs.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "torch_compile_args",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional torch.compile optimization settings from SeedVR2 Torch Compile Settings node.\nProvides 20-40% speedup with compatible PyTorch 2.0+ and Triton installation."
+            },
+            "io_type": "TORCH_COMPILE_ARGS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_SEEDVR2_DIT_",
+              "is_output_list": false,
+              "tooltip": "DiT model configuration containing model path, device settings, BlockSwap parameters, and compilation options. Connect to Video Upscaler node."
+            },
+            "io_type": "SEEDVR2_DIT",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false,
+      "validation_inputs": {
+        "args": [
+          "cls",
+          "model"
+        ],
+        "kwargs": false
+      }
+    },
+    "SeedVR2LoadVAEModel": {
+      "class": "SeedVR2LoadVAEModel",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_seedvr2",
+      "permissions": [
+        "graph"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "SEEDVR2",
+          "description": "Load and configure SeedVR2 VAE (Variational Autoencoder) for encoding/decoding video frames to/from latent space. Supports tiled processing to handle high resolutions on limited VRAM, model caching, multi-GPU offloading, and torch.compile acceleration. \n\nConnect to Video Upscaler node.",
+          "display_name": "SeedVR2 (Down)Load VAE Model",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "SeedVR2LoadVAEModel",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "ema_vae_fp16.safetensors",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "model",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "ema_vae_fp16.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "VAE (Variational Autoencoder) model for encoding/decoding.\nModels automatically download on first use.\nAdditional models can be added to the ComfyUI models folder.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "cuda:0",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "device",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "cuda:0"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "GPU device for VAE model inference (encoding/decoding phases)",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "encode_tiled",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Enable tiled encoding to reduce VRAM usage during the encoding phase",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "encode_tile_size",
+              "lazy": null,
+              "max": null,
+              "min": 64,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 32,
+              "tooltip": "Encoding tile size in pixels (default: 1024).\nApplied to both height and width.\nLower values reduce VRAM usage but may increase processing time.\nOnly used when encode_tiled is enabled.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 128,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "encode_tile_overlap",
+              "lazy": null,
+              "max": null,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 32,
+              "tooltip": "Pixel overlap between encoding tiles (default: 128).\nReduces visible seams between tiles through blending.\nHigher values improve quality but slow processing.\nOnly used when encode_tiled is enabled.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "decode_tiled",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Enable tiled decoding to reduce VRAM usage during the decoding phase",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1024,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "decode_tile_size",
+              "lazy": null,
+              "max": null,
+              "min": 64,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 32,
+              "tooltip": "Decoding tile size in pixels (default: 1024).\nApplied to both height and width.\nLower values reduce VRAM usage but may increase processing time.\nOnly used when decode_tiled is enabled.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 128,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "decode_tile_overlap",
+              "lazy": null,
+              "max": null,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 32,
+              "tooltip": "Pixel overlap between decoding tiles (default: 128).\nReduces visible seams between tiles through blending.\nHigher values improve quality but slow processing.\nOnly used when decode_tiled is enabled.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "false",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "tile_debug",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "false",
+                "encode",
+                "decode"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Tile debug visualization mode:\n\u2022 'false': No visualization overlay (default)\n\u2022 'encode': Show encoding tile boundaries\n\u2022 'decode': Show decoding tile boundaries\n\nOnly works when respective tiling is enabled.",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "none",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "offload_device",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "none",
+                "cpu",
+                "cuda:0"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Device to offload VAE model when not actively processing.\n\u2022 'none': Keep model on inference device (default, fastest)\n\u2022 'cpu': Offload to system RAM (reduces VRAM usage)\n\u2022 'cuda:X': Offload to another GPU (good balance if available)",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "cache_model",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Keep VAE model loaded on offload_device between workflow runs.\nUseful for batch processing to avoid repeated loading.\nRequires offload_device to be set.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "torch_compile_args",
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "tooltip": "Optional torch.compile optimization settings from SeedVR2 Torch Compile Settings node.\nProvides 15-25% speedup with compatible PyTorch 2.0+ and Triton installation."
+            },
+            "io_type": "TORCH_COMPILE_ARGS",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_SEEDVR2_VAE_",
+              "is_output_list": false,
+              "tooltip": "VAE model configuration containing model path, device settings, tiling parameters, and compilation options. Connect to Video Upscaler node."
+            },
+            "io_type": "SEEDVR2_VAE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "SeedVR2TorchCompileSettings": {
+      "class": "SeedVR2TorchCompileSettings",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_seedvr2",
+      "permissions": [],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "SEEDVR2",
+          "description": "Configure SeedVR2 torch.compile optimization for 20-40% DiT speedup and 15-25% VAE speedup. Trades longer first-run compilation time for faster inference.\n\nConnect to DiT and/or VAE model loaders. Requires PyTorch 2.0+ and Triton for inductor backend.",
+          "display_name": "SeedVR2 Torch Compile Settings",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "SeedVR2TorchCompileSettings",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "inductor",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "backend",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "inductor",
+                "cudagraphs"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Compilation backend:\n\u2022 inductor: Full optimization with Triton kernel generation and fusion (recommended)\n\u2022 cudagraphs: Lightweight wrapper using CUDA graphs, no kernel optimization",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "default",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "mode",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "default",
+                "reduce-overhead",
+                "max-autotune",
+                "max-autotune-no-cudagraphs"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Optimization level (compilation time vs runtime performance):\n\u2022 default: Fast compilation with good speedup (recommended for development)\n\u2022 reduce-overhead: Lower overhead, optimized for smaller models\n\u2022 max-autotune: Slowest compilation, best runtime performance (recommended for production)\n\u2022 max-autotune-no-cudagraphs: Like max-autotune but without CUDA graphs",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "fullgraph",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Compile entire model as single graph without breaks.\n\u2022 False: Allow graph breaks for better compatibility (default)\n\u2022 True: Enforce no breaks for maximum optimization (may fail with dynamic shapes)",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dynamic",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Handle varying input shapes without recompilation.\n\u2022 False: Specialize for exact input shapes (default)\n\u2022 True: Create dynamic kernels that adapt to shape variations\n\nEnable when processing different resolutions or batch sizes.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 64,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dynamo_cache_size_limit",
+              "lazy": null,
+              "max": 1024,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Maximum cached compiled versions per function (default: 64).\nControls how many shape variations to compile before stopping.\n\n\u2022 Increase: When processing many different input shapes (more memory usage)\n\u2022 Decrease: When recompilation cost outweighs benefits (faster fallback to eager)",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 128,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "dynamo_recompile_limit",
+              "lazy": null,
+              "max": 1024,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Maximum recompilation attempts before fallback to eager mode (default: 128).\nSafety limit to prevent infinite compilation loops.\n\nOnly increase if you see 'hit config.recompile_limit' warnings and have bounded shape variations.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_TORCH_COMPILE_ARGS_",
+              "is_output_list": false,
+              "tooltip": "torch.compile optimization settings including backend, mode, and Dynamo configuration. Connect to DiT and/or VAE model loader nodes."
+            },
+            "io_type": "TORCH_COMPILE_ARGS",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    },
+    "SeedVR2VideoUpscaler": {
+      "class": "SeedVR2VideoUpscaler",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "secure_seedvr2",
+      "permissions": [
+        "raw",
+        "assets",
+        "models.download"
+      ],
+      "required_weights": [
+        {
+          "filename": "seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "numz/SeedVR2_comfyUI",
+          "revision": "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+          "sha256": "3bf1e43ebedd570e7e7a0b1b60d6a02e105978f505c8128a241cde99a8240cff"
+        },
+        {
+          "filename": "seedvr2_ema_3b_fp16.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "numz/SeedVR2_comfyUI",
+          "revision": "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+          "sha256": "2fd0e03a3dad24e07086750360727ca437de4ecd456f769856e960ae93e2b304"
+        },
+        {
+          "filename": "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "AInVFX/SeedVR2_comfyUI",
+          "revision": "ac66d6d98fa49975d893b58c55bff7677191c862",
+          "sha256": "3d68b5ec0b295ae28092e355c8cad870edd00b817b26587d0cb8f9dd2df19bb2"
+        },
+        {
+          "filename": "seedvr2_ema_7b_fp16.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "numz/SeedVR2_comfyUI",
+          "revision": "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+          "sha256": "7b8241aa957606ab6cfb66edabc96d43234f9819c5392b44d2492d9f0b0bbe4a"
+        },
+        {
+          "filename": "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "AInVFX/SeedVR2_comfyUI",
+          "revision": "ac66d6d98fa49975d893b58c55bff7677191c862",
+          "sha256": "0d2c5b8be0fda94351149c5115da26aef4f4932a7a2a928c6f184dda9186e0be"
+        },
+        {
+          "filename": "seedvr2_ema_7b_sharp_fp16.safetensors",
+          "folder": "diffusion_models",
+          "on_demand": true,
+          "repo_id": "numz/SeedVR2_comfyUI",
+          "revision": "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+          "sha256": "20a93e01ff24beaeebc5de4e4e5be924359606c356c9c51509fba245bd2d77dd"
+        },
+        {
+          "filename": "ema_vae_fp16.safetensors",
+          "folder": "vae",
+          "on_demand": true,
+          "repo_id": "numz/SeedVR2_comfyUI",
+          "revision": "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+          "sha256": "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"
+        },
+        {
+          "filename": "pos_emb.safetensors",
+          "folder": "embeddings",
+          "repo_id": "gerald-test-local/seedvr2-embeddings-converted",
+          "revision": "65f24803292a0815ee1304d97d10906318f324d4",
+          "sha256": "dd2c63c6bd8df2f0c7e5baa4e71616592f6fb67b54068c05588107b4a1a465c9"
+        },
+        {
+          "filename": "neg_emb.safetensors",
+          "folder": "embeddings",
+          "repo_id": "gerald-test-local/seedvr2-embeddings-converted",
+          "revision": "65f24803292a0815ee1304d97d10906318f324d4",
+          "sha256": "1f6afefcb104aa92d2d9ecdf6eb7999bcf1840d38626c241db1a1dd6f22563d0"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "SEEDVR2",
+          "description": "SeedVR2 main upscaling node: processes video frames using DiT and VAE models with diffusion-based enhancement. Handles RGB/RGBA formats, maintains temporal consistency across frames, applies color correction, and manages VRAM through intelligent tensor offloading. \n\nRequires DiT and VAE model configurations.",
+          "display_name": "SeedVR2 Video Upscaler (v2.5.24)",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "SeedVR2VideoUpscaler",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "image",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "Input video frames as image batch.\nAccepts both RGB (3-channel) and RGBA (4-channel) formats.\nOutput format will match input format."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "dit",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "DiT model configuration from SeedVR2 (Down)Load DiT Model node"
+            },
+            "io_type": "SEEDVR2_DIT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "vae",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": "VAE model configuration from SeedVR2 (Down)Load VAE Model node"
+            },
+            "io_type": "SEEDVR2_VAE",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 42,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "seed",
+              "lazy": null,
+              "max": 4294967295,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Random seed for reproducible generation (default: 42).\nSame seed with same inputs produces identical output.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 1080,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "resolution",
+              "lazy": null,
+              "max": 16384,
+              "min": 16,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 2,
+              "tooltip": "Target resolution for the shortest edge in pixels (default: 1080).\nAutomatically maintains aspect ratio of input.\nEven values required for optimal processing.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "max_resolution",
+              "lazy": null,
+              "max": 16384,
+              "min": 0,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 2,
+              "tooltip": "Maximum resolution limit for any dimension (default: 0, no limit).\nIf any edge exceeds this after applying resolution,\nboth dimensions are scaled down proportionally.\nUseful to prevent excessive VRAM usage on extreme aspect ratios.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 5,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "batch_size",
+              "lazy": null,
+              "max": 16384,
+              "min": 1,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "step": 4,
+              "tooltip": "Number of frames processed together per batch (default: 5).\nMust follow pattern 4n+1: 1, 5, 9, 13, 17, 21, ...\n\n\u2022 Higher values: Better temporal consistency and faster processing\n\u2022 Lower values: Reduced VRAM usage\n\nIdeally match to shot length for best quality.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "uniform_batch_size",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Pad final batch to match batch_size (default: False).\nPrevents temporal artifacts caused by small final batch.\nAdd extra compute but recommended for optimal quality.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "temporal_overlap",
+              "lazy": null,
+              "max": 16,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Overlapping frames between consecutive batches (default: 0, disabled).\nImproves temporal consistency across batch boundaries through blending.\nValues 1-4 work well for most content.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": 0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "prepend_frames",
+              "lazy": null,
+              "max": 32,
+              "min": 0,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "step": 1,
+              "tooltip": "Number of frames to prepend (reversed from start) before processing (default: 0).\nHelps reduce artifacts at video beginning.\nPrepended frames are automatically removed from final output.",
+              "widget_type": null
+            },
+            "io_type": "INT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "lab",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "color_correction",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "lab",
+                "wavelet",
+                "wavelet_adaptive",
+                "hsv",
+                "adain",
+                "none"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Corrects color shifts in upscaled output to match original input (default: lab).\nThe upscaling process may alter colors; this applies color grading to restore them.\n\n\u2022 lab: Perceptual color matching with detail preservation (recommended)\n\u2022 wavelet: Frequency-based natural colors, preserves fine details\n\u2022 wavelet_adaptive: Wavelet base with targeted saturation correction\n\u2022 hsv: Hue-conditional saturation matching\n\u2022 adain: Statistical style transfer approach\n\u2022 none: No color correction applied",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "input_noise_scale",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Input noise injection scale (default: 0.0, disabled).\nAdds controlled variation to input images before encoding.\nRange: 0.0 (no noise) to 1.0 (maximum noise).\nCan help with certain types of artifacts.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": 0.0,
+              "display_mode": null,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "gradient_stops": null,
+              "id": "latent_noise_scale",
+              "lazy": null,
+              "max": 1.0,
+              "min": 0.0,
+              "optional": true,
+              "rawLink": null,
+              "round": null,
+              "socketless": null,
+              "step": 0.001,
+              "tooltip": "Latent space noise injection scale (default: 0.0, disabled).\nAdds controlled variation during the diffusion process.\nRange: 0.0 (no noise) to 1.0 (maximum noise).\nCan soften details if input_noise_scale doesn't help.",
+              "widget_type": null
+            },
+            "io_type": "FLOAT",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "cpu",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "offload_device",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "none",
+                "cpu",
+                "cuda:0"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": "Device for storing intermediate tensors between processing phases (default: cpu).\n\u2022 'none': Keep all tensors on inference device (fastest but highest VRAM usage)\n\u2022 'cpu': Offload to system RAM (recommended for long videos, slower transfers)\n\u2022 'cuda:X': Offload to another GPU (good balance if available, faster than CPU)",
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "default": false,
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "enable_debug",
+              "label_off": null,
+              "label_on": null,
+              "lazy": null,
+              "optional": true,
+              "rawLink": null,
+              "socketless": null,
+              "tooltip": "Enable detailed debug logging (default: False).\nShows memory usage, timing information, and processing details.\nUseful for troubleshooting errors and performance issues.",
+              "widget_type": null
+            },
+            "io_type": "BOOLEAN",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": null,
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": "Upscaled video frames with color correction applied. Format (RGB/RGBA) matches input. Range [0, 1] normalized for ComfyUI compatibility."
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": false
+    }
+  },
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
+  }
+}
