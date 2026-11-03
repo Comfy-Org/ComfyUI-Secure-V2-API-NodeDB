@@ -31,10 +31,10 @@ and wrote into an arbitrary `models/depthanything` directory, then read the
 file back off disk. All nine checkpoints are now declared as
 `sdk.HuggingFaceWeight` with a pinned 40-character repository revision and a
 SHA-256, fetched on demand through `models.download_huggingface_weights`,
-verified by the host, and read with `assets.load_state_dict`. The digests are
-the Hugging Face LFS object ids at the pinned revisions — the publisher's own
-hashes. The catalogue is the host-owned `geometry_estimation` folder, never a
-path.
+verified by the host, resolved to an asset with `assets.resolve`, and read with
+`assets.load_state_dict`. The digests are the Hugging Face LFS object ids at
+the pinned revisions — the publisher's own hashes. The catalogue is the
+host-owned `geometry_estimation` folder, never a path.
 
 **The DAMODEL handoff.** Upstream passed a live `torch.nn.Module` between its
 two nodes inside a dict. That cannot cross a process boundary — and it never
@@ -67,7 +67,49 @@ broadcast subtract-and-divide it is, so the pack declares no dependencies.
 non-fp32 dtype would have entered `torch.autocast("cpu", torch.float16)`.
 The converted guard covers that case. On CUDA the behaviour is identical.
 
+## Repair r1: loading the weight
+
+- **Asset reference.** The loader passed the catalogue name returned by
+  `models.download_huggingface_weights` straight to
+  `assets.load_state_dict`. That call takes an AssetRef, so every load failed.
+  The name is now resolved with `assets.resolve(weight.folder, installed)` and
+  the resulting reference is loaded.
+- **Capabilities.** The host grants `models.download` only for weights a node
+  declares, and requires `assets` for `assets.resolve` and
+  `assets.load_state_dict`.
+  - The loader now declares its nine weights (`SDK_REQUIRED_WEIGHTS`) and
+    `models.download` and `assets`.
+  - The depth node declares `assets`. It only rebuilds the module after a
+    cache miss, for example in a new guest process. It then reads the weight
+    the loader installed, under the same catalogue name, and never downloads.
+- **Output image.** The depth image is created with the public
+  `ImageRef.from_value` in place of the private `_from_raw`. This sets the
+  minimum guest base to 0cd9adec. `from_value` refuses non-finite pixels. The
+  original's NaN output for a perfectly flat depth map (0/0 in its
+  normalisation) is therefore refused rather than passed on.
+
 ## Verification
+
+`tests/test_dav2_weight_resolution.py`, run in the lane gate on both guest
+bases, covers the loading path end to end.
+- **What it runs:**
+  - the loader node, then the depth node, then the depth node again after a
+    cache miss;
+  - the real in-process SDK, called as Core calls an SDK node;
+  - a synthetic SafeTensors weight installed where the host's download puts
+    it, with that one declaration pointed at the fixture.
+- **What it checks:**
+  - the loaded parameters equal the fixture;
+  - the depth image is finite, BHWC and in [0, 1];
+  - the rebuild after a cache miss uses only `assets.resolve` and
+    `assets.load_state_dict` and gives the same bytes;
+  - every capability those calls need on the overlay host (read from its
+    handlers) is granted by the committed manifest rows;
+  - the manifest equals the real encoder's output.
+- **Before the repair:** against the published pack, the same test fails at
+  the asset load and finds the missing capabilities.
+
+The original conversion's suite:
 
 `backend/tests/test_depthanything_pack_conversion.py` — 90 tests: exact
 census, schema, dropdown order and defaults, and sealed manifest; every one of

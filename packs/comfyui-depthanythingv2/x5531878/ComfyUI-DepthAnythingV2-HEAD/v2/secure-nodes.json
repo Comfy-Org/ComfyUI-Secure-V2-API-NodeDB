@@ -1,203 +1,282 @@
 {
- "format": "comfy-secure-nodes-v1",
- "runtime": {
-  "python": {
-   "requires": ">=3.13,<3.14",
-   "resolved": "3.13"
-  }
- },
- "nodes": {
-  "DepthAnything_V2": {
-   "module": "nodes",
-   "class": "DepthAnything_V2",
-   "sdk_refs": true,
-   "permissions": [
-    "models",
-    "raw",
-    "progress"
-   ],
-   "methods": {
-    "validate_inputs": false,
-    "fingerprint_inputs": false,
-    "check_lazy_status": false
-   },
-   "schema": {
-    "attrs": {
-     "node_id": "DepthAnything_V2",
-     "display_name": "Depth Anything V2",
-     "category": "DepthAnythingV2",
-     "description": "https://depth-anything-v2.github.io\n",
-     "search_aliases": [],
-     "is_input_list": false,
-     "is_output_node": false,
-     "is_deprecated": false,
-     "is_experimental": false,
-     "is_dev_only": false,
-     "is_api_node": false,
-     "price_badge": null,
-     "not_idempotent": false,
-     "enable_expand": false,
-     "accept_all_inputs": false,
-     "essentials_category": null,
-     "has_intermediate_output": false
+  "format": "comfy-secure-nodes-v1",
+  "nodes": {
+    "DepthAnything_V2": {
+      "class": "DepthAnything_V2",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "models",
+        "assets",
+        "raw",
+        "progress"
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "DepthAnythingV2",
+          "description": "https://depth-anything-v2.github.io\n",
+          "display_name": "Depth Anything V2",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "DepthAnything_V2",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "da_model",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "DAMODEL",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "display_name": null,
+              "extra_dict": {},
+              "id": "images",
+              "lazy": null,
+              "optional": false,
+              "rawLink": null,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "image",
+              "id": "_0_IMAGE_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "IMAGE",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
     },
-    "inputs": [
-     {
-      "kind": "standard",
-      "io_type": "DAMODEL",
-      "attrs": {
-       "id": "da_model",
-       "display_name": null,
-       "optional": false,
-       "tooltip": null,
-       "lazy": null,
-       "extra_dict": {},
-       "rawLink": null,
-       "advanced": null
-      }
-     },
-     {
-      "kind": "standard",
-      "io_type": "IMAGE",
-      "attrs": {
-       "id": "images",
-       "display_name": null,
-       "optional": false,
-       "tooltip": null,
-       "lazy": null,
-       "extra_dict": {},
-       "rawLink": null,
-       "advanced": null
-      }
-     }
-    ],
-    "outputs": [
-     {
-      "kind": "standard",
-      "io_type": "IMAGE",
-      "attrs": {
-       "id": "_0_IMAGE_",
-       "display_name": "image",
-       "tooltip": null,
-       "is_output_list": false
-      }
-     }
-    ],
-    "hidden": []
-   }
+    "DownloadAndLoadDepthAnythingV2Model": {
+      "class": "DownloadAndLoadDepthAnythingV2Model",
+      "methods": {
+        "check_lazy_status": false,
+        "fingerprint_inputs": false,
+        "validate_inputs": false
+      },
+      "module": "nodes",
+      "permissions": [
+        "models",
+        "models.download",
+        "assets",
+        "raw"
+      ],
+      "required_weights": [
+        {
+          "filename": "depth_anything_v2_vits_fp16.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "a7c1a8c8cdd7885fb8391069cd1eee789126c8d896f7de6750499b1097f817ea"
+        },
+        {
+          "filename": "depth_anything_v2_vits_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "cb2d537ed6e45921f27f61f0b605dcfafb6b97c7d1a15e551280bdd867605c86"
+        },
+        {
+          "filename": "depth_anything_v2_vitb_fp16.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "386758cbd2a2cac62ca62286d3ba810734561b3097d86a585dd3dac357153941"
+        },
+        {
+          "filename": "depth_anything_v2_vitb_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "faf1f5673511fb897525781a177c5001fc790c266cff518b95e516f4912cc42b"
+        },
+        {
+          "filename": "depth_anything_v2_vitl_fp16.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "f075a9099f94bae54a5bfe21a1423346429309bae40abb85b9935985b1f35a09"
+        },
+        {
+          "filename": "depth_anything_v2_vitl_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "203aba6a1b551aa6a1818652b92ac9a43a50fdc7daef9780eb265e4ee9c7521e"
+        },
+        {
+          "filename": "depth_anything_v2_vitg_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Nap/depth_anything_v2_vitg",
+          "revision": "0abc42090032bad02d95d47256ba9f4ffd8ebdf0",
+          "sha256": "fe4a9216b261e676f549609f2f2316faabb0ea6a516073f1f22b5afdcf91d515"
+        },
+        {
+          "filename": "depth_anything_v2_metric_hypersim_vitl_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "76bc12f47f4fc543d67d4c3b695d09ae5399aa2f212382a204965a9aca4dc8bd"
+        },
+        {
+          "filename": "depth_anything_v2_metric_vkitti_vitl_fp32.safetensors",
+          "folder": "geometry_estimation",
+          "on_demand": true,
+          "repo_id": "Kijai/DepthAnythingV2-safetensors",
+          "revision": "5aa7ab578df757d94c743998b157a0204ff29215",
+          "sha256": "eebc4c27a8067bf904c26c51e648dd17d47cada7cff61267393eda06cd8b649b"
+        }
+      ],
+      "schema": {
+        "attrs": {
+          "accept_all_inputs": false,
+          "category": "DepthAnythingV2",
+          "description": "Models autodownload to `ComfyUI/models/depthanything` from   \nhttps://huggingface.co/Kijai/DepthAnythingV2-safetensors/tree/main   \n   \nfp16 reduces quality by a LOT, not recommended.\n",
+          "display_name": "DownloadAndLoadDepthAnythingV2Model",
+          "enable_expand": false,
+          "essentials_category": null,
+          "has_intermediate_output": false,
+          "is_api_node": false,
+          "is_deprecated": false,
+          "is_dev_only": false,
+          "is_experimental": false,
+          "is_input_list": false,
+          "is_output_node": false,
+          "loop_boundary": null,
+          "node_id": "DownloadAndLoadDepthAnythingV2Model",
+          "not_idempotent": false,
+          "price_badge": null,
+          "search_aliases": []
+        },
+        "hidden": [],
+        "inputs": [
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "depth_anything_v2_vitl_fp32.safetensors",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "model",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": false,
+              "options": [
+                "depth_anything_v2_vits_fp16.safetensors",
+                "depth_anything_v2_vits_fp32.safetensors",
+                "depth_anything_v2_vitb_fp16.safetensors",
+                "depth_anything_v2_vitb_fp32.safetensors",
+                "depth_anything_v2_vitl_fp16.safetensors",
+                "depth_anything_v2_vitl_fp32.safetensors",
+                "depth_anything_v2_vitg_fp32.safetensors",
+                "depth_anything_v2_metric_hypersim_vitl_fp32.safetensors",
+                "depth_anything_v2_metric_vkitti_vitl_fp32.safetensors"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          },
+          {
+            "attrs": {
+              "advanced": null,
+              "control_after_generate": null,
+              "default": "auto",
+              "display_name": null,
+              "extra_dict": {},
+              "force_input": null,
+              "id": "precision",
+              "image_folder": null,
+              "lazy": null,
+              "multiselect": false,
+              "optional": true,
+              "options": [
+                "auto",
+                "bf16",
+                "fp16",
+                "fp32"
+              ],
+              "rawLink": null,
+              "remote": null,
+              "socketless": null,
+              "tooltip": null,
+              "upload": null,
+              "widget_type": null
+            },
+            "io_type": "COMBO",
+            "kind": "standard"
+          }
+        ],
+        "outputs": [
+          {
+            "attrs": {
+              "display_name": "da_v2_model",
+              "id": "_0_DAMODEL_",
+              "is_output_list": false,
+              "tooltip": null
+            },
+            "io_type": "DAMODEL",
+            "kind": "standard"
+          }
+        ]
+      },
+      "sdk_refs": true
+    }
   },
-  "DownloadAndLoadDepthAnythingV2Model": {
-   "module": "nodes",
-   "class": "DownloadAndLoadDepthAnythingV2Model",
-   "sdk_refs": true,
-   "permissions": [
-    "models",
-    "raw"
-   ],
-   "methods": {
-    "validate_inputs": false,
-    "fingerprint_inputs": false,
-    "check_lazy_status": false
-   },
-   "schema": {
-    "attrs": {
-     "node_id": "DownloadAndLoadDepthAnythingV2Model",
-     "display_name": "DownloadAndLoadDepthAnythingV2Model",
-     "category": "DepthAnythingV2",
-     "description": "Models autodownload to `ComfyUI/models/depthanything` from   \nhttps://huggingface.co/Kijai/DepthAnythingV2-safetensors/tree/main   \n   \nfp16 reduces quality by a LOT, not recommended.\n",
-     "search_aliases": [],
-     "is_input_list": false,
-     "is_output_node": false,
-     "is_deprecated": false,
-     "is_experimental": false,
-     "is_dev_only": false,
-     "is_api_node": false,
-     "price_badge": null,
-     "not_idempotent": false,
-     "enable_expand": false,
-     "accept_all_inputs": false,
-     "essentials_category": null,
-     "has_intermediate_output": false
-    },
-    "inputs": [
-     {
-      "kind": "standard",
-      "io_type": "COMBO",
-      "attrs": {
-       "id": "model",
-       "display_name": null,
-       "optional": false,
-       "tooltip": null,
-       "lazy": null,
-       "extra_dict": {},
-       "rawLink": null,
-       "advanced": null,
-       "default": "depth_anything_v2_vitl_fp32.safetensors",
-       "socketless": null,
-       "widget_type": null,
-       "force_input": null,
-       "multiselect": false,
-       "options": [
-        "depth_anything_v2_vits_fp16.safetensors",
-        "depth_anything_v2_vits_fp32.safetensors",
-        "depth_anything_v2_vitb_fp16.safetensors",
-        "depth_anything_v2_vitb_fp32.safetensors",
-        "depth_anything_v2_vitl_fp16.safetensors",
-        "depth_anything_v2_vitl_fp32.safetensors",
-        "depth_anything_v2_vitg_fp32.safetensors",
-        "depth_anything_v2_metric_hypersim_vitl_fp32.safetensors",
-        "depth_anything_v2_metric_vkitti_vitl_fp32.safetensors"
-       ],
-       "control_after_generate": null,
-       "upload": null,
-       "image_folder": null,
-       "remote": null
-      }
-     },
-     {
-      "kind": "standard",
-      "io_type": "COMBO",
-      "attrs": {
-       "id": "precision",
-       "display_name": null,
-       "optional": true,
-       "tooltip": null,
-       "lazy": null,
-       "extra_dict": {},
-       "rawLink": null,
-       "advanced": null,
-       "default": "auto",
-       "socketless": null,
-       "widget_type": null,
-       "force_input": null,
-       "multiselect": false,
-       "options": [
-        "auto",
-        "bf16",
-        "fp16",
-        "fp32"
-       ],
-       "control_after_generate": null,
-       "upload": null,
-       "image_folder": null,
-       "remote": null
-      }
-     }
-    ],
-    "outputs": [
-     {
-      "kind": "standard",
-      "io_type": "DAMODEL",
-      "attrs": {
-       "id": "_0_DAMODEL_",
-       "display_name": "da_v2_model",
-       "tooltip": null,
-       "is_output_list": false
-      }
-     }
-    ],
-    "hidden": []
-   }
+  "runtime": {
+    "python": {
+      "requires": ">=3.13,<3.14",
+      "resolved": "3.13"
+    }
   }
- }
 }

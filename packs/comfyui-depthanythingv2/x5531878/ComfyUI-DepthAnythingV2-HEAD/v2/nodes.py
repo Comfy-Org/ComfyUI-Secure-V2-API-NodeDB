@@ -129,17 +129,29 @@ def model_config_for(model_name):
     return config
 
 
-async def _build(model_name):
-    """Fetch the declared weight, verify it, and construct the architecture."""
+async def _install(model_name):
+    """Fetch the declared weight (the host verifies it) and return its name.
+
+    The return value is a logical catalogue name, never a ref or a path.
+    """
     weight = _WEIGHTS[model_name]
-    installed = await sdk.ctx().models.download_huggingface_weights(
+    return await sdk.ctx().models.download_huggingface_weights(
         repo_id=weight.repo_id,
         filename=weight.filename,
         folder=weight.folder,
         revision=weight.revision,
         sha256=weight.sha256,
     )
-    state_dict = await sdk.ctx().assets.load_state_dict(installed)
+
+
+async def _build(model_name, installed):
+    """Read the installed weight through the asset broker and construct the
+    architecture."""
+    weight = _WEIGHTS[model_name]
+    # assets.load_state_dict takes an AssetRef, not the catalogue name that
+    # download_huggingface_weights returns: resolve the name first.
+    asset = await sdk.ctx().assets.resolve(weight.folder, installed)
+    state_dict = await sdk.ctx().assets.load_state_dict(asset)
 
     model = DepthAnythingV2(**model_config_for(model_name))
     # strict=False matches upstream: the checkpoints carry extra keys.
@@ -148,18 +160,31 @@ async def _build(model_name):
     return model
 
 
-async def _get_model(model_name, dtype_name):
+async def _get_model(model_name, dtype_name, install=False):
+    """The guest's module for (checkpoint, precision), built on first use.
+
+    The loader node installs the weight (models.download). The depth node
+    only rebuilds after a cache miss, for example in a new guest process; it
+    reads the weight the loader installed under its catalogue name.
+    """
     key = (model_name, dtype_name)
     model = _LOADED.get(key)
     if model is None:
-        model = await _build(model_name)
+        if install:
+            installed = await _install(model_name)
+        else:
+            installed = _WEIGHTS[model_name].catalogue_name
+        model = await _build(model_name, installed)
         _LOADED[key] = model
     return model
 
 
 class DownloadAndLoadDepthAnythingV2Model(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ("models", "raw")
+    # The host grants models.download only for weights declared here, and
+    # assets for assets.resolve and assets.load_state_dict.
+    SDK_PERMISSIONS = ("models", "models.download", "assets", "raw")
+    SDK_REQUIRED_WEIGHTS = tuple(_WEIGHTS[name] for name in MODEL_NAMES)
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -190,7 +215,7 @@ class DownloadAndLoadDepthAnythingV2Model(io.ComfyNode):
                 "DepthAnythingV2 accepts only its declared checkpoints; "
                 f"unknown model {model!r}")
         dtype_name = dtype_name_for(model, precision)
-        built = await _get_model(model, dtype_name)
+        built = await _get_model(model, dtype_name, install=True)
         # A wire-safe description, not a live module.
         return io.NodeOutput({
             "model": model,
@@ -201,7 +226,7 @@ class DownloadAndLoadDepthAnythingV2Model(io.ComfyNode):
 
 class DepthAnything_V2(io.ComfyNode):
     SDK_REFS = True
-    SDK_PERMISSIONS = ("models", "raw", "progress")
+    SDK_PERMISSIONS = ("models", "assets", "raw", "progress")
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -223,7 +248,7 @@ class DepthAnything_V2(io.ComfyNode):
         dtype = _DTYPES[da_model["dtype"]]
 
         images = await images.raw()
-        return io.NodeOutput(await sdk.ImageRef._from_raw(
+        return io.NodeOutput(await sdk.ImageRef.from_value(
             infer(model, images, dtype, bool(da_model["is_metric"]))))
 
 
