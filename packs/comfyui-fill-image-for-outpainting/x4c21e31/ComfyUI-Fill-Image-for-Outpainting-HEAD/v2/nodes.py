@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import scipy.signal
 import torch
-from comfy_api.latest import ComfyExtension, io
+from comfy_api.latest import ComfyExtension, io, sdk
 
 FILL_METHODS = ["cv2_ns", "cv2_telea", "edge_pad"]
 MAX_DIMENSION = 8192
@@ -97,7 +97,7 @@ class FillImageForOutpainting(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, image, mask, fill_method) -> io.NodeOutput:
+    async def execute(cls, image, mask, fill_method) -> io.NodeOutput:
         _validate_inputs(image, mask)
         if fill_method not in FILL_METHODS:
             raise ValueError(f"unsupported fill method: {fill_method}")
@@ -113,7 +113,11 @@ class FillImageForOutpainting(io.ComfyNode):
 
         result_image = torch.from_numpy(result) / 255.0
         result_mask = torch.from_numpy(mask_value) / 255.0
-        return io.NodeOutput(result_image.unsqueeze(0), result_mask)
+        # Upstream's mask is the two-dimensional HxW tensor; a guest publishes a MASK output only as BHW (or
+        # B1HW), so it crosses as an exact value: the host holds this tensor unchanged (repair NED r1).
+        return io.NodeOutput(
+            result_image.unsqueeze(0), await sdk.ValueRef.from_value(result_mask)
+        )
 
 
 NODE_CLASS_MAPPINGS = {"FillImageForOutpainting": FillImageForOutpainting}

@@ -123,6 +123,28 @@ def _values():
     return image, mask
 
 
+def _execute(node, image, mask, method):
+    """The node's async execute, run in an in-process runtime; the exact-value mask ref is resolved."""
+
+    async def run():
+        refs = _sdk.InProcessRefResolver()
+        plan = _sdk.ExecutionPlan(
+            prompt_id="fill-outpaint-direct", node_id="1", node_type=node.__name__
+        )
+        with _sdk.bind_runtime(
+            refs, _sdk.InProcessCtxProvider().build(plan), _sdk.InProcessOps()
+        ):
+            output = await node.execute(image, mask, method)
+            return tuple(
+                [
+                    await refs.resolve(value) if isinstance(value, _sdk.Ref) else value
+                    for value in output.result
+                ]
+            )
+
+    return asyncio.run(run())
+
+
 def _exact(actual, expected):
     assert actual.dtype == expected.dtype == torch.float32
     assert tuple(actual.shape) == tuple(expected.shape)
@@ -173,7 +195,7 @@ def test_all_three_fill_methods_are_pixel_exact_to_upstream(tmp_path, method):
     secure = _secure()
     image, mask = _values()
     expected_image, expected_mask = pristine.fill_image(image, mask, method)
-    result = secure.FillImageForOutpainting.execute(image, mask, method).result
+    result = _execute(secure.FillImageForOutpainting, image, mask, method)
     _exact(result[0], expected_image)
     _exact(result[1], expected_mask)
 
@@ -188,9 +210,7 @@ def test_first_image_quantization_and_mask_result_match_upstream(tmp_path):
     alternate[1:] = 1 - alternate[1:]
     for method in secure.FILL_METHODS:
         expected = pristine.fill_image(alternate, mask, method)
-        actual = secure.FillImageForOutpainting.execute(
-            alternate, mask, method
-        ).result
+        actual = _execute(secure.FillImageForOutpainting, alternate, mask, method)
         _exact(actual[0], expected[0])
         _exact(actual[1], expected[1])
         assert actual[0].shape[0] == 1
@@ -203,23 +223,23 @@ def test_malformed_shapes_method_and_resource_bounds_fail_closed():
     image, mask = _values()
     node = secure.FillImageForOutpainting
     with pytest.raises(ValueError, match="unsupported"):
-        node.execute(image, mask, "unknown")
+        _execute(node, image, mask, "unknown")
     with pytest.raises(TypeError, match="BHWC"):
-        node.execute(image[0], mask, "cv2_ns")
+        _execute(node, image[0], mask, "cv2_ns")
     with pytest.raises(ValueError, match="batch"):
-        node.execute(image[:0], mask, "cv2_ns")
+        _execute(node, image[:0], mask, "cv2_ns")
     with pytest.raises(ValueError, match="RGB"):
-        node.execute(image[..., :2], mask, "cv2_ns")
+        _execute(node, image[..., :2], mask, "cv2_ns")
     with pytest.raises(TypeError, match="two-dimensional"):
-        node.execute(image, mask.unsqueeze(0), "cv2_ns")
+        _execute(node, image, mask.unsqueeze(0), "cv2_ns")
     with pytest.raises(ValueError, match="dimensions must match"):
-        node.execute(image, mask[:-1], "cv2_ns")
+        _execute(node, image, mask[:-1], "cv2_ns")
     too_large = torch.empty(
         (1, 1, secure.nodes.MAX_PIXELS + 1, 3), device="meta"
     )
     huge_mask = torch.empty((1, secure.nodes.MAX_PIXELS + 1), device="meta")
     with pytest.raises(ValueError, match="dimensions"):
-        node.execute(too_large, huge_mask, "cv2_ns")
+        _execute(node, too_large, huge_mask, "cv2_ns")
 
 
 def test_real_isolated_guest_matches_upstream_and_denies_raw(tmp_path):
@@ -289,7 +309,6 @@ def test_stubs_license_authority_patch_and_cache_are_exact(tmp_path):
         "sys.",
         "ctx()",
         "_from_raw",
-        "from_value",
         "socket",
         "urllib",
     ):

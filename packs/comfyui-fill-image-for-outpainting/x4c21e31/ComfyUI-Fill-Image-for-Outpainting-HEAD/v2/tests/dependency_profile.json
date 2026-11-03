@@ -1,0 +1,28 @@
+{
+  "pack": "comfyui-fill-image-for-outpainting",
+  "key": "x4c21e31",
+  "folder": "ComfyUI-Fill-Image-for-Outpainting-HEAD",
+  "pins": {"cv2": "4.11.0.86", "scipy": "1.18.1"},
+  "dists": {"cv2": "opencv_python_headless", "scipy": "scipy"},
+  "pyproject_old": "dependencies = [\n    \"numpy>=2,<3\",\n    \"opencv-python>=4.13,<6\",\n    \"scipy>=1.18,<2\",\n    \"torch>=2.6,<3\",\n]\n",
+  "pyproject_new": "dependencies = [\"opencv-python-headless==4.11.0.86\", \"scipy==1.18.1\"]\n",
+  "pyproject_line": "dependencies = [\"opencv-python-headless==4.11.0.86\", \"scipy==1.18.1\"]",
+  "load_fail_rows": ["FillImageForOutpainting"],
+  "reference_deps": true,
+  "guest_cases": [
+    {"node": "FillImageForOutpainting", "label": "cv2_ns: OpenCV inpainting, exact mask",
+     "original": {"module": "nodes", "class": "FillImageForOutpainting"},
+     "inputs": {"image": {"__tensor__": true, "shape": [1, 24, 32, 3], "seed": 1},
+                "mask": {"__mask__": true, "shape": [24, 32], "seed": 2}, "fill_method": "cv2_ns"}},
+    {"node": "FillImageForOutpainting", "label": "cv2_telea: OpenCV inpainting, exact mask",
+     "original": {"module": "nodes", "class": "FillImageForOutpainting"},
+     "inputs": {"image": {"__tensor__": true, "shape": [1, 24, 32, 3], "seed": 3},
+                "mask": {"__mask__": true, "shape": [24, 32], "seed": 4}, "fill_method": "cv2_telea"}},
+    {"node": "FillImageForOutpainting", "label": "edge_pad: scipy.signal, exact mask",
+     "original": {"module": "nodes", "class": "FillImageForOutpainting"},
+     "inputs": {"image": {"__tensor__": true, "shape": [1, 24, 32, 3], "seed": 5},
+                "mask": {"__mask__": true, "shape": [24, 32], "seed": 6}, "fill_method": "edge_pad"}}
+  ],
+  "doc_title": "## Repair NED r1: the mask crosses exactly; dependency profile opencv-python-headless 4.11.0.86, scipy 1.18.1",
+  "doc_note": "- Upstream returns its mask as the two-dimensional HxW tensor `torch.from_numpy(mask) / 255.0`. A guest publishes a\n  MASK output only as BHW (or B1HW), so `execute` (now async) returns it through `sdk.ValueRef.from_value`: the host\n  holds upstream's exact tensor, unchanged in shape and values.\n- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not\n  Core's requirements; the guest bases have neither OpenCV nor SciPy. `nodes.py` imports both when it loads (cv2 for\n  the two inpainting methods, scipy.signal for edge_pad), so without the profile the node does not load.\n- `pyproject.toml` pins exactly `opencv-python-headless==4.11.0.86` (cp37-abi3 manylinux_2_17 x86_64; PyPI sha256\n  0e0a27c19dd1f40ddff94976cfe43066fbbe9dfbb2ec1907d66c19caef42a57b) and `scipy==1.18.1` (cp313 manylinux_2_27/2_28\n  x86_64; PyPI sha256 fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9). They replace the earlier\n  ranges: numpy and torch are in the sealed lock, and the headless OpenCV build provides the same cv2 module without\n  the GUI libraries.\n- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.\n- `tests/test_dependency_profile.py` lets cv2 and scipy, and the other modules the guest bases lack (torchvision,\n  tqdm, yaml), come only from the pinned copies under /deps. Its guest cases run all three fill methods against the\n  pristine upstream node.\n- `tests/test_fill_image_for_outpainting_secure_conversion.py` awaits `execute` in an in-process runtime and resolves\n  the exact-value mask; `from_value` is no longer on its list of names `nodes.py` must not use.\n"
+}
