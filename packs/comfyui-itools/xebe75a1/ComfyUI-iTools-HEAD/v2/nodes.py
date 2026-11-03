@@ -292,70 +292,83 @@ def _clean_text(text: Any) -> str:
     return value.strip().replace(" .", ".")
 
 
-async def _style_data(file_name: Any) -> list[dict[str, str]]:
-    name = _safe_name(file_name, suffix=".yaml")
-    data = None
-    for folder in _STYLE_FOLDERS:
-        if await _ctx().assets.exists(folder, name):
-            data = await _asset_bytes(folder, name)
-            break
-    if data is None:
-        raise FileNotFoundError(f"unknown iTools style file {name!r}")
-    parsed = yaml.safe_load(data.decode("utf-8"))
-    if not isinstance(parsed, list) or len(parsed) > 10_000:
-        raise ValueError("style file must contain a bounded YAML list")
-    result = []
-    for item in parsed:
-        if not isinstance(item, dict) or "name" not in item:
-            continue
-        entry = {
-            "name": _bounded_text(item.get("name", ""), "style name"),
-            "prompt": _bounded_text(item.get("prompt", ""), "style prompt"),
-            "negative_prompt": _bounded_text(
-                item.get("negative_prompt", ""), "negative style prompt"
-            ),
-        }
-        result.append(entry)
-    return result
+async def _v1_read_replace_and_combine(template_name, positive_prompt, negative_prompt, _file_name):
+    """V1 prompter.read_replace_and_combine, line for line (repair r2).
+
+    The two file reads (styles/, then styles/more examples/) go through the broker.
+    """
+
+    _yaml_data = (await _v1_load_yaml_data(_STYLE_FOLDERS[0], _file_name)
+                  or await _v1_load_yaml_data(_STYLE_FOLDERS[1], _file_name))
 
 
-def _choose_template(data: list[dict[str, str]], name: str) -> dict[str, str]:
-    requested = str(name)
-    if requested == "random":
-        candidates = [x for x in data if x["name"] not in {"none", "random"}]
-        if not candidates:
-            raise ValueError("style file has no selectable templates")
-        return random.choice(candidates)
-    for item in data:
-        if item["name"] == requested:
-            return item
-    if requested == "none":
-        return {"name": "none", "prompt": "", "negative_prompt": ""}
-    raise ValueError(f"No template found with name {requested!r}")
+    if template_name == "none":
+        template_name = f"({_file_name.replace('.yaml', '')}:{template_name})"
+        return _clean_text(positive_prompt), _clean_text(negative_prompt), template_name
+
+    if template_name == "random":
+        # Extract available templates, excluding "none", "random"
+        available_templates = [
+            t['name'] for t in _yaml_data
+            if 'name' in t and 'prompt' in t
+            and t['name'] not in {"none", "random",}
+        ]
+
+        if not available_templates:
+            raise ValueError("No valid templates found in the YAML file.")
+
+        template_name = random.choice(available_templates)
+
+    try:
+        # Ensure the data is a list of templates
+        if not isinstance(_yaml_data, list):
+            raise ValueError("Invalid data. Expected a list of templates.")
+
+        # Iterate over each template in the YAML data
+        for template in _yaml_data:
+            # Skip if the template does not have 'name' or 'prompt' fields
+            if 'name' not in template or 'prompt' not in template:
+                continue
+
+            # Skip special templates like "none", "random", and "increment"
+            if template['name'] in {"none", "random", "increment"}:
+                continue
+
+            # If the template name matches, process it
+            if template['name'] == template_name:
+                # Replace {prompt} in the positive prompt if present
+                if template['prompt'] and "{prompt}" in template['prompt']:
+                    positive_prompt = template['prompt'].replace("{prompt}", positive_prompt)
+                else:
+                    positive_prompt = f"{positive_prompt}, {template['prompt']}"
+
+                # Handle negative prompts
+                yaml_negative_prompt = template.get('negative_prompt', "")
+                if yaml_negative_prompt and negative_prompt:
+                    negative_prompt = f"{yaml_negative_prompt}, {negative_prompt}"
+                elif yaml_negative_prompt:
+                    negative_prompt = yaml_negative_prompt  # Only YAML negative prompt
+
+                template_name = f"({_file_name.replace('.yaml', '')}:{template_name})"
+                return _clean_text(positive_prompt), _clean_text(negative_prompt), template_name
+
+        # If no matching template is found, raise an error
+        raise ValueError(f"No template found with name '{template_name}'.")
+
+    except ValueError as ve:
+        raise ve  # Propagate specific errors for better debugging
+    except Exception as e:
+        raise RuntimeError(f"An unexpected error occurred: {str(e)}")
 
 
 async def _prompt_styler(
     text_positive, text_negative, style_file, template_name, **_kwargs
 ):
-    positive = _bounded_text(text_positive, "positive prompt")
-    negative = _bounded_text(text_negative, "negative prompt")
-    file_name = _safe_name(style_file, suffix=".yaml")
-    selected = _choose_template(await _style_data(file_name), str(template_name))
-    if selected["name"] == "none":
-        return _clean_text(positive), _clean_text(negative), f"({file_name[:-5]}:none)"
-    style_prompt = selected["prompt"]
-    positive = (
-        style_prompt.replace("{prompt}", positive)
-        if "{prompt}" in style_prompt
-        else f"{positive}, {style_prompt}"
-    )
-    style_negative = selected["negative_prompt"]
-    if style_negative:
-        negative = f"{style_negative}, {negative}" if negative else style_negative
-    return (
-        _clean_text(positive),
-        _clean_text(negative),
-        f"({file_name[:-5]}:{selected['name']})",
+    return await _v1_read_replace_and_combine(
+        template_name,
+        _bounded_text(text_positive, "positive prompt"),
+        _bounded_text(text_negative, "negative prompt"),
+        style_file,
     )
 
 
@@ -986,6 +999,18 @@ async def _extra_validate_inputs(cls, base_style, second_style, third_style, fou
 
 
 NODE_CLASS_MAPPINGS["iToolsPromptStylerExtra"].validate_inputs = classmethod(_extra_validate_inputs)
+
+
+async def _styler_validate_inputs(cls, template_name):
+    """V1 VALIDATE_INPUTS(cls, template_name): True (repair r2).
+
+    The template menu depends on the chosen file, so V1 has core skip that one menu check; core reads
+    this exact argument list, so the file menu is still checked.
+    """
+    return True
+
+
+NODE_CLASS_MAPPINGS["iToolsPromptStyler"].validate_inputs = classmethod(_styler_validate_inputs)
 NODE_DISPLAY_NAME_MAPPINGS = {
     node_id: definition["schema"]["attrs"]["display_name"]
     for node_id, definition in SCHEMAS.items()

@@ -71,3 +71,14 @@ Rejected: none. Pending API gaps: none.
 - **Style menus.** The node declares the original's validator for its four style inputs. A style chosen
   from a file other than the default is therefore accepted, as in the original. The file menus are still
   checked.
+
+## Repair r2
+
+- **Prompt Styler follows the original exactly.** It runs `read_replace_and_combine`, ported line for line,
+  with only the file reads going through the asset broker; Prompt Builder's merge uses it too. That covers:
+  - "none" returns `(file:none)` with the cleaned text, before anything is read;
+  - entries named none, random or increment, and entries without a prompt, are skipped;
+  - a template without `{prompt}` is appended as `text, template`;
+  - the "not found" message is the original's.
+- **Template menu.** The node declares the original's validator for `template_name`. A template from a file
+  other than `basic.yaml` is therefore accepted, as in the original. The file menu is still checked.
