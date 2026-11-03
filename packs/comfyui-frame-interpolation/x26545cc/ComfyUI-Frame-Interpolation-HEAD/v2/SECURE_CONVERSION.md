@@ -71,3 +71,19 @@ torch, numpy, einops, torchvision (`vfi_utils.py` imports), packaging (`vfi_mode
 4. V3 output nodes get hidden `prompt`/`extra_pnginfo` automatically (the refused KSampler node). Core fills these; they are not shown.
 5. RIFE `torch_compile=True` keeps upstream's `torch.compile` call. It is not exercised in tier 1, because the gate has no C compiler. Where the guest runs, it needs one, as upstream does.
 6. `/object_info` `python_module` is the secure mount path.
+
+## Dependency profile (NED profile r1): einops 0.8.2, torchvision 0.23.0
+- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not
+  Core's requirements; base 0cd9adec has neither einops nor torchvision.
+- Every row loads without them: `secure_nodes.py` imports the upstream modules inside `execute`.
+- The converted nodes need both as they run: `vfi_utils.py` imports einops (line 6) and torchvision (line 8) at
+  module level, and VFI FloatToInt, Make Interpolation State List and the three VFI models (RIFE, FILM, IFRNet)
+  import it.
+- `pyproject.toml` pins exactly `einops==0.8.2` (py3-none-any, PyPI sha256
+  54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193) and `torchvision==0.23.0` (cp313
+  manylinux_2_28_x86_64, PyPI sha256 a76fafe113b2977be3a21bf78f115438c1f88631d7a87203acb3dd6ae55889e6).
+  torch is in the sealed lock, so it is not pinned here (torchvision 0.23.0 requires torch 2.8.0).
+- Not covered by this profile: RIFE VFI also imports `packaging` when it runs (`vfi_models/rife/__init__.py:8`).
+- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.
+- `tests/test_dependency_profile.py` lets both modules, and the modules the guest bases lack (scipy, torchvision,
+  tqdm, yaml, cv2), come only from the pinned copies under /deps.

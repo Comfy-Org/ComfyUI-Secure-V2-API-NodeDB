@@ -1,0 +1,20 @@
+{
+  "pack": "comfyui-frame-interpolation",
+  "key": "x26545cc",
+  "folder": "ComfyUI-Frame-Interpolation-HEAD",
+  "pins": {"einops": "0.8.2", "torchvision": "0.23.0"},
+  "dists": {"einops": "einops", "torchvision": "torchvision"},
+  "pyproject_old": "requires-python = \">=3.13,<3.14\"\n",
+  "pyproject_new": "requires-python = \">=3.13,<3.14\"\ndependencies = [\"einops==0.8.2\", \"torchvision==0.23.0\"]\n",
+  "pyproject_line": "dependencies = [\"einops==0.8.2\", \"torchvision==0.23.0\"]",
+  "load_fail_rows": [],
+  "guest_cases": [
+    {"node": "VFI FloatToInt", "label": "vfi_utils imports einops and torchvision",
+     "original": {"module": "vfi_utils", "class": "FloatToInt"}, "inputs": {"float": 2.7}},
+    {"node": "Make Interpolation State List", "label": "vfi_utils imports einops and torchvision",
+     "original": {"module": "vfi_utils", "class": "MakeInterpolationStateList"}, "token_output": true,
+     "inputs": {"frame_indices": "1,2,3", "is_skip_list": true}}
+  ],
+  "doc_title": "## Dependency profile (NED profile r1): einops 0.8.2, torchvision 0.23.0",
+  "doc_note": "- A production guest sees only its sealed lock, the pack's runtime base and its declared dependency profile, not\n  Core's requirements; base 0cd9adec has neither einops nor torchvision.\n- Every row loads without them: `secure_nodes.py` imports the upstream modules inside `execute`.\n- The converted nodes need both as they run: `vfi_utils.py` imports einops (line 6) and torchvision (line 8) at\n  module level, and VFI FloatToInt, Make Interpolation State List and the three VFI models (RIFE, FILM, IFRNet)\n  import it.\n- `pyproject.toml` pins exactly `einops==0.8.2` (py3-none-any, PyPI sha256\n  54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193) and `torchvision==0.23.0` (cp313\n  manylinux_2_28_x86_64, PyPI sha256 a76fafe113b2977be3a21bf78f115438c1f88631d7a87203acb3dd6ae55889e6).\n  torch is in the sealed lock, so it is not pinned here (torchvision 0.23.0 requires torch 2.8.0).\n- Not covered by this profile: RIFE VFI also imports `packaging` when it runs (`vfi_models/rife/__init__.py:8`).\n- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.\n- `tests/test_dependency_profile.py` lets both modules, and the modules the guest bases lack (scipy, torchvision,\n  tqdm, yaml, cv2), come only from the pinned copies under /deps.\n"
+}
