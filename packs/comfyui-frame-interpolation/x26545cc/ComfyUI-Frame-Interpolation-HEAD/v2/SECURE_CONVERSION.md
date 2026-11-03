@@ -87,3 +87,12 @@ torch, numpy, einops, torchvision (`vfi_utils.py` imports), packaging (`vfi_mode
 - `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.
 - `tests/test_dependency_profile.py` lets both modules, and the modules the guest bases lack (scipy, torchvision,
   tqdm, yaml, cv2), come only from the pinned copies under /deps.
+
+## Repair: manifest class bindings (MERVYN, 2026-11-03)
+- The guest loads each manifest row by its `class` name on its module, and the provisioning prewarm probe asserts
+  `hasattr(module, class)` for every row. `_vfi_refused` names its classes `<id>_Refused` (for example
+  `AMT_VFI_Refused`, the name `secure-nodes.json` records), but they were bound only as `AMT_VFI` etc. So the probe
+  failed for the 9 refused VFI nodes, and the whole pack failed provisioning.
+- `secure_nodes.py` now also binds each of the 9 classes under its own name. Behaviour and the manifest are unchanged.
+- `tests/test_manifest_class_bindings.py` imports every row's module as the guest does (bare package, no
+  `__init__`) and checks that the recorded class is bound with that `__name__`, with a negative control.

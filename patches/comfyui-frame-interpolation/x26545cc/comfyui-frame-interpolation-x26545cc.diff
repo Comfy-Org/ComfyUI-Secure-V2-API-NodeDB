@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/v2/SECURE_CONVERSION.md
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,98 @@
 +# Secure conversion report: ComfyUI-Frame-Interpolation
 +
 +- Upstream: `https://github.com/Fannovel16/ComfyUI-Frame-Interpolation`
@@ -90,6 +90,15 @@
 +- `secure-nodes.json` gains `runtime.dependencies.profile_sha256` when the profile is built.
 +- `tests/test_dependency_profile.py` lets both modules, and the modules the guest bases lack (scipy, torchvision,
 +  tqdm, yaml, cv2), come only from the pinned copies under /deps.
++
++## Repair: manifest class bindings (MERVYN, 2026-11-03)
++- The guest loads each manifest row by its `class` name on its module, and the provisioning prewarm probe asserts
++  `hasattr(module, class)` for every row. `_vfi_refused` names its classes `<id>_Refused` (for example
++  `AMT_VFI_Refused`, the name `secure-nodes.json` records), but they were bound only as `AMT_VFI` etc. So the probe
++  failed for the 9 refused VFI nodes, and the whole pack failed provisioning.
++- `secure_nodes.py` now also binds each of the 9 classes under its own name. Behaviour and the manifest are unchanged.
++- `tests/test_manifest_class_bindings.py` imports every row's module as the guest does (bare package, no
++  `__init__`) and checks that the recorded class is bound with that `__name__`, with a negative control.
 --- a/__init__.py
 +++ b/v2/__init__.py
 @@ -1,48 +1,12 @@
@@ -8243,7 +8252,7 @@
 +}
 --- /dev/null
 +++ b/v2/secure_nodes.py
-@@ -0,0 +1,451 @@
+@@ -0,0 +1,463 @@
 +"""Secure Nodes V2 registration of ComfyUI-Frame-Interpolation (pin 26545cc2).
 +
 +All 16 node ids are registered with the original schemas (literals, from a census
@@ -8605,6 +8614,18 @@
 +    "Sepconv VFI", ["sepconv.pth"],
 +    NOT_CONVERTED_WEIGHTS.format(names="sepconv.pth")
 +    + ", and it runs CUDA kernels through cupy, which a Secure Nodes guest cannot run")
++
++# The guest loads each manifest row by its "class" name on this module (the provisioning prewarm probe asserts
++# hasattr(module, class)). _vfi_refused names its classes "<id>_Refused", so bind each one under that name too.
++AMT_VFI_Refused = AMT_VFI
++ATM_VFI_Refused = ATM_VFI
++CAIN_VFI_Refused = CAIN_VFI
++FLAVR_VFI_Refused = FLAVR_VFI
++IFUnet_VFI_Refused = IFUnet_VFI
++M2M_VFI_Refused = M2M_VFI
++MOMO_VFI_Refused = MOMO_VFI
++STMFNet_VFI_Refused = STMFNet_VFI
++Sepconv_VFI_Refused = SepconvVFI
 +
 +# Frozen copies of core's KSampler menus at ComfyUI 6257422b. The refusal
 +# validator takes both inputs, so a saved value missing from these lists still
@@ -10267,6 +10288,79 @@
 +    Path("/results/dependency_profile.json").write_text(json.dumps(out, indent=1, default=str) + "\n")
 +    print(json.dumps({"failed": out["failed"]}, indent=1))
 +    return 1 if out["failed"] else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+--- /dev/null
++++ b/v2/tests/test_manifest_class_bindings.py
+@@ -0,0 +1,70 @@
++"""Every manifest row's class is a module attribute under the name the manifest records (gate test).
++
++    run_in_gate.sh <pack root (pristine + v2/)> <.../v2/tests> <results dir> test_manifest_class_bindings.py
++
++The production guest imports a row's module from v2/ as a bare namespace package (v2/__init__.py does not run) and
++looks the class up by the manifest's "class" name. The provisioning prewarm probe asserts exactly that:
++    assert all(hasattr(m, c) for e, m in zip(entries, modules) for c in e['classes'])
++This test reproduces it for every row, checks the attribute's __name__, and adds a negative control (an unbound
++name must be reported). Writes /results/class_bindings.json; exits 1 on any failure.
++"""
++import importlib
++import json
++import sys
++import types
++from pathlib import Path
++
++sys.path[:0] = ["/core", "/overlay"]
++from comfy.cli_args import args as _cli_args  # noqa: E402
++
++_cli_args.cpu = True
++
++
++def pack_root(root=Path("/pack")):
++    if (root / "v2").is_dir():
++        return root
++    heads = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
++    if len(heads) != 1:
++        raise SystemExit(f"/pack must hold exactly one pack folder: {heads}")
++    return heads[0]
++
++
++PACK = pack_root()
++V2 = PACK / "v2"
++RESULTS = Path("/results")
++PKG = "fi_v2_bare"
++
++
++def bare_package():
++    # The guest's view: a namespace package over v2/, so v2/__init__.py does not run.
++    module = types.ModuleType(PKG)
++    module.__path__ = [str(V2)]
++    sys.modules[PKG] = module
++    return module
++
++
++def main():
++    RESULTS.mkdir(parents=True, exist_ok=True)
++    manifest = json.loads((V2 / "secure-nodes.json").read_text())
++    bare_package()
++    rows, failed = [], []
++    for node_id, row in sorted(manifest["nodes"].items()):
++        module = importlib.import_module(f"{PKG}.{row['module']}")
++        cls = getattr(module, row["class"], None)
++        ok = cls is not None and getattr(cls, "__name__", None) == row["class"]
++        rows.append({"node_id": node_id, "module": row["module"], "class": row["class"], "ok": ok})
++        if not ok:
++            failed.append(node_id)
++    # Negative control: a class name the module does not bind must be caught.
++    first = next(iter(manifest["nodes"].values()))
++    control_module = importlib.import_module(f"{PKG}.{first['module']}")
++    control_caught = not hasattr(control_module, first["class"] + "_DoesNotExist")
++    report = {"rows": len(rows), "failed": failed, "negative_control_caught": control_caught,
++              "passed": not failed and control_caught, "details": rows}
++    (RESULTS / "class_bindings.json").write_text(json.dumps(report, indent=1))
++    print(json.dumps({k: report[k] for k in ("rows", "failed", "negative_control_caught", "passed")}, indent=1))
++    return 0 if report["passed"] else 1
 +
 +
 +if __name__ == "__main__":

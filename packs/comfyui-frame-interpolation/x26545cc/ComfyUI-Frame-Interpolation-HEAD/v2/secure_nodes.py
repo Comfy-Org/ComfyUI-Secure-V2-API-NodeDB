@@ -360,6 +360,18 @@ SepconvVFI = _vfi_refused(
     NOT_CONVERTED_WEIGHTS.format(names="sepconv.pth")
     + ", and it runs CUDA kernels through cupy, which a Secure Nodes guest cannot run")
 
+# The guest loads each manifest row by its "class" name on this module (the provisioning prewarm probe asserts
+# hasattr(module, class)). _vfi_refused names its classes "<id>_Refused", so bind each one under that name too.
+AMT_VFI_Refused = AMT_VFI
+ATM_VFI_Refused = ATM_VFI
+CAIN_VFI_Refused = CAIN_VFI
+FLAVR_VFI_Refused = FLAVR_VFI
+IFUnet_VFI_Refused = IFUnet_VFI
+M2M_VFI_Refused = M2M_VFI
+MOMO_VFI_Refused = MOMO_VFI
+STMFNet_VFI_Refused = STMFNet_VFI
+Sepconv_VFI_Refused = SepconvVFI
+
 # Frozen copies of core's KSampler menus at ComfyUI 6257422b. The refusal
 # validator takes both inputs, so a saved value missing from these lists still
 # gets the refusal, not "value not in list".
